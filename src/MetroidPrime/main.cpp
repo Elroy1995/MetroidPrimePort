@@ -34,6 +34,9 @@
 #include "Kyoto/Input/IController.hpp"
 #include "Kyoto/Math/CloseEnough.hpp"
 
+// Port: drives the streamed-audio AI DMA callback (see platform/ai_dma.cpp).
+extern "C" void AIPortPoll(void);
+
 #include "Kyoto/CMemoryCardSys.hpp"
 #include "Kyoto/CPakFile.hpp"
 #include "Kyoto/CResFactory.hpp"
@@ -746,6 +749,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
       }
       // Port: run ARAM transfer callbacks completed by Aurora's ARQ.
       ARQPoll();
+      // Port: service the streamed-audio AI DMA callback on the main thread.
+      AIPortPoll();
       archSupport->GetStopwatch2().Reset();
       gpResourceFactory->GetResLoader().AsyncIdlePakLoading();
       if (gpMemoryCard == nullptr && gpResourceFactory->GetResLoader().AreAllPaksLoaded()) {
