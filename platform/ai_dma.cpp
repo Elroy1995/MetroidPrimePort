@@ -33,9 +33,9 @@ void EnsureStarted() {
     return;
   }
   sStarted = true;
-  if (std::getenv("MP_DISABLE_AI_AUDIO") != nullptr) {
-    sOutputEnabled = false;
-  }
+  // Off by default: the streamed-audio source data is not yet valid on PC, so
+  // emitting it produces full-scale noise. Enable with MP_ENABLE_AI_AUDIO=1.
+  sOutputEnabled = std::getenv("MP_ENABLE_AI_AUDIO") != nullptr;
   // Silence the AI is notionally playing before the first AIInitDMA, so the
   // guest's `AIGetDMAStartAddr` always yields a readable buffer.
   static uint8_t sSilence[0x280] = {};
