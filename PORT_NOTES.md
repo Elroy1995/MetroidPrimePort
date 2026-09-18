@@ -197,18 +197,25 @@ initialize.
 ## Next steps
 
 Automated PAD input now advances through the front end, initializes the first room,
-constructs `CInGameGuiManager` and `CMFGame`, and runs beyond frame 29,000 with an
+constructs `CInGameGuiManager` and `CMFGame`, and runs beyond frame 58,000 with an
 AddressSanitizer-clean run past frame 21,000 and a normal exit on forced SIGTERM.
 
-1. Investigate the near-black first-room framebuffer. Screen captures show only very
-   dim content while the front end renders normally, so determine whether the game is
-   still in a transition/cinematic or whether world rendering is failing.
+Verified with injected input and state probes:
+- Left-stick input moves the player; the walk stays grounded (height ~0.8) and is
+  constrained by room collision, so input, physics, and collision are all live.
+- The player stays alive (`CPlayer::x9f4_deathTime` remains 0). The earlier death at
+  ~frame 11,400 was a symptom of the DVD ARAM race rather than game logic.
+- The MusyX mixer outputs non-zero interleaved PCM during gameplay (left/right
+  samples in the thousands).
+
+1. Restore a screenshot path. `xwd` now fails for both the game window and the root
+   (`unable to get image at 0x0+0+0`) even though the window reports `IsViewable`
+   640x480, so whether the dark first-room framebuffer is correct is unverified.
 2. Confirm MusyX music and effects are audible end to end, and validate the mixer
    against a variety of songs, samples, and streaming audio.
 3. Replace the session-long AGSC buffer retention with a proper lifetime once MusyX
    voice lifetimes are understood.
-4. Exercise player movement, rendering, collision, and room transitions with richer
-   automated input to identify the next gameplay blocker.
+4. Exercise room transitions and CARD saves with richer automated input.
 
 ## Licensing
 
