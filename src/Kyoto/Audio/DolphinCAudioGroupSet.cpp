@@ -218,6 +218,38 @@ uint CountSampleDirEntries(const uchar* sampleDir, uint sampleDirSize) {
   return available + 1;
 }
 
+// Native `SDIR_DATA` is larger than the disc's `SDIR_DATA_INTER` (its `addr` is a
+// host pointer), so the ADPCM info blocks that follow the disc entries have to be
+// copied and converted, and each entry's `extraData` offset rebased onto the new
+// entry array.
+void ConvertAdpcmInfoBlocks(uchar* sampleDir, uint blocksOffset, uint blocksSize,
+                            SDIR_DATA* entries, uint count, uint discEntryBytes) {
+  uint converted[256];
+  uint convertedCount = 0;
+  for (uint i = 0; i < count; ++i) {
+    const uint oldOffset = entries[i].extraData;
+    if (oldOffset < discEntryBytes) {
+      continue;
+    }
+    const uint newOffset = blocksOffset + (oldOffset - discEntryBytes);
+    if (newOffset + 0x28 > blocksOffset + blocksSize) {
+      continue;
+    }
+    entries[i].extraData = newOffset;
+    if (!RecordOffset(converted, convertedCount, 256, newOffset)) {
+      continue;
+    }
+    uchar* info = sampleDir + newOffset;
+    WriteU16(info + 0x00, ReadBigU16(info + 0x00)); // numCoef
+    WriteU16(info + 0x04, ReadBigU16(info + 0x04)); // loopY0
+    WriteU16(info + 0x06, ReadBigU16(info + 0x06)); // loopY1
+    for (uint c = 0; c < 16; ++c) {
+      const uint at = 0x08 + c * 2;
+      WriteU16(info + at, ReadBigU16(info + at)); // coefTab[8][2]
+    }
+  }
+}
+
 void ConvertSampleDir(SDIR_DATA* dest, uint destCount, const uchar* source, uint sourceSize) {
   const uint sourceCount = sourceSize / sizeof(SDIR_DATA_INTER);
   uint i = 0;
@@ -299,8 +331,11 @@ CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length
   const uint sampleDirOffset =
       (projectEnd + sizeof(void*) - 1) & ~(static_cast< uint >(sizeof(void*)) - 1);
   const uint sampleDirCount = CountSampleDirEntries(ptr + sdirOffset + 4, sdirSize);
-  x8_groupData = rstl::auto_ptr< uchar >(static_cast< uchar* >(CMemory::Alloc(
-      sampleDirOffset + sampleDirCount * sizeof(SDIR_DATA), IAllocator::kHI_RoundUpLen)));
+  const uint entryBytes = sampleDirCount * sizeof(SDIR_DATA);
+  const uint discEntryBytes = sampleDirCount * sizeof(SDIR_DATA_INTER);
+  const uint blockBytes = sdirSize > discEntryBytes ? sdirSize - discEntryBytes : 0;
+  x8_groupData = rstl::auto_ptr< uchar >(static_cast< uchar* >(
+      CMemory::Alloc(sampleDirOffset + entryBytes + blockBytes, IAllocator::kHI_RoundUpLen)));
 #else
   x8_groupData = rstl::auto_ptr< uchar >(static_cast< uchar* >(
       CMemory::Alloc(poolSize + projectSize + sdirSize + 8, IAllocator::kHI_RoundUpLen)));
@@ -320,6 +355,12 @@ CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length
   ConvertProject(x38_project, projectSize);
   ConvertSampleDir(reinterpret_cast< SDIR_DATA* >(x3c_sampleDir), sampleDirCount,
                    ptr + sdirOffset + 4, sdirSize);
+  if (blockBytes != 0) {
+    memcpy(x3c_sampleDir + entryBytes, ptr + (sdirOffset + 4) + discEntryBytes, blockBytes);
+  }
+  ConvertAdpcmInfoBlocks(x3c_sampleDir, entryBytes, blockBytes,
+                         reinterpret_cast< SDIR_DATA* >(x3c_sampleDir), sampleDirCount,
+                         discEntryBytes);
 #else
   uint roundedProjectSize = ((projectSize + 3) & ~3);
   roundedProjectSize = roundedPoolSize + roundedProjectSize;

@@ -198,6 +198,11 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   (measured ~29x real time) because it only throttled on the SDL queue depth,
   overrunning the stream and producing dropouts; it now sleeps until the next
   160-sample frame is due, which removed the buffer-boundary discontinuities.
+- The AGSC sample directory's trailing ADPCM info blocks are now preserved and
+  converted for little-endian hosts, and each entry's `extraData` offset is rebased
+  onto the native `SDIR_DATA` array (whose entries are larger than the disc's
+  32-bit form). Without this, in-level voices decoded with garbage coefficients and
+  produced noise.
 - Streamed audio (front-end music) now decodes correctly: `DecodeMonoAndMix` wrote
   the decoded samples *on top of* the buffer still being played, feeding the
   output back into itself until it saturated into full-scale noise. It writes the
