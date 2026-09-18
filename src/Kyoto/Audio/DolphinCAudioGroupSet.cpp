@@ -305,6 +305,10 @@ CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length
   x40_samples = &ptr[sampOffset + 4];
 }
 
+CAudioGrpSetLoc::~CAudioGrpSetLoc() {
+  CMemory::Free(x8_groupData.release());
+}
+
 void CAudioGrpSetLoc::FreeSampleBuffer() {
   x0_data = nullptr;
   x40_samples = nullptr;

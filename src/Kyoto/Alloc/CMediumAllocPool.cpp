@@ -1,5 +1,7 @@
 #include "Kyoto/Alloc/CMediumAllocPool.hpp"
 
+#include "Kyoto/Alloc/CMemory.hpp"
+
 CMediumAllocPool* CMediumAllocPool::gMediumAllocPtr = nullptr;
 
 CMediumAllocPool::CMediumAllocPool() : x18_lastNodePrev(x0_list.begin()) { gMediumAllocPtr = this; }
@@ -107,7 +109,11 @@ SMediumAllocPuddle::SMediumAllocPuddle(const uint numBlocks, void* data, const b
   SMediumAllocPuddle::InitBookKeeping(x8_bookKeeping, numBlocks);
 }
 
-SMediumAllocPuddle::~SMediumAllocPuddle() {}
+SMediumAllocPuddle::~SMediumAllocPuddle() {
+  if (x0_mainData.owner()) {
+    CMemory::Free(x0_mainData.release());
+  }
+}
 
 void* SMediumAllocPuddle::FindFree(uint blockCount) {
   void* bookKeepingptr;

@@ -15,6 +15,7 @@ class CInputStream;
 class CAudioGrpSetLoc {
 public:
   CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length);
+  ~CAudioGrpSetLoc();
   const rstl::string& GetBaseDirName() const { return x10_baseDirName; }
   const rstl::string& GetGroupSetName() const { return x20_groupSetName; }
   void FreeSampleBuffer();

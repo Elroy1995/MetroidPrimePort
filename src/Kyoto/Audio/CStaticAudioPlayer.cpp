@@ -96,7 +96,14 @@ CStaticAudioPlayer::CStaticAudioPlayer(const rstl::string& filepath, const int l
   }
 }
 
-CStaticAudioPlayer::~CStaticAudioPlayer() { StopMixOut(); }
+CStaticAudioPlayer::~CStaticAudioPlayer() {
+  StopMixOut();
+  for (int i = 0; i < x48_buffers.size(); ++i) {
+    CMemory::Free(x48_buffers[i].release());
+  }
+  CMemory::Free(x28_dmaLeft.release());
+  CMemory::Free(x30_dmaRight.release());
+}
 
 const bool CStaticAudioPlayer::IsReady() const {
   return !x38_dvdRequests.empty() ? x38_dvdRequests.back()->IsComplete() : true;

@@ -152,9 +152,10 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   rounded DVD request sizes instead of placing `CMemory::Alloc` pointers behind
   host `delete` owners.
 
-Current blocker: terminating the long-running process still reports an invalid
-free during shutdown cleanup. Normal main-loop execution remains stable for the
-75-second verification window.
+Host shutdown now completes cleanly. Game-heap buffers owned by `CGBASupport`,
+`CStaticAudioPlayer`, `CAudioGrpSetLoc`, and `SMediumAllocPuddle` are released
+through `CMemory` instead of host `delete`, and the PC build skips the guest-stack
+usage scan that it does not initialize.
 
 ## Next steps
 

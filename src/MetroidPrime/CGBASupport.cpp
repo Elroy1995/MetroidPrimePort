@@ -39,7 +39,10 @@ CGBASupport::CGBASupport()
 #endif
 }
 
-CGBASupport::~CGBASupport() { g_GBA = nullptr; }
+CGBASupport::~CGBASupport() {
+  CMemory::Free(x2c_buffer.release());
+  g_GBA = nullptr;
+}
 
 void CGBASupport::InitializeSupport() {
   x34_phase = kP_Standby;

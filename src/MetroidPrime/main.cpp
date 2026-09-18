@@ -262,6 +262,7 @@ void CMain::ShutdownSubsystems() {
   CElementGen::ShutDown();
   CAnimData::FreeCache();
 
+#ifndef TARGET_PC
   OSThread* thread = OSGetCurrentThread();
   uchar* stackEnd =
       reinterpret_cast< uchar* >(ALIGN_UP(reinterpret_cast< uintptr_t >(thread->stackEnd), 0x400));
@@ -275,6 +276,7 @@ void CMain::ShutdownSubsystems() {
   }
   const int used = static_cast< int >(stackBase - 0x2000 - ptr) + 0x2000;
   OSReport("Stack usage: %d bytes (%dk)\n", used, static_cast< uint >(used) / 1024);
+#endif
 }
 
 CGameGlobalObjects::CGameGlobalObjects(COsContext& osContext, CMemorySys& memorySys)
