@@ -107,6 +107,32 @@ fatal). Two separate issues:
 Temporary memory diagnostics are in `CGameAllocator::Initialize` and
 `COsContext::OpenWindow` (stderr prints of heap/arena/framebuffer sizes).
 
+### Bring-up fixes after the allocator (2026-09-18)
+
+The game now runs through `PostInitialize`/`AddPaksAndFactories` pak loading with
+no crashes. Fixes landed:
+- **`CGameAllocator` overflow** (root cause of the OOM): `Alloc(0x20)`/`Alloc(0x1c)`
+  for `CSmallAllocPool`/`CMediumAllocPool` were 32-bit object sizes; on x86-64 the
+  objects are larger and overflowed the next free block's header. Now use
+  `sizeof(...)`. Free list stays healthy.
+- **ARQ recursion**: Aurora's `ARQPostRequest` invoked the ARAM completion callback
+  synchronously, so `CDvdFile::PingARAMTransfer <-> HandleARAMInterrupt` recursed to
+  stack overflow. Callbacks are now queued and drained by an iterative `ARQPoll()`
+  (called from `ARQPostRequest` and once per game frame; re-entrancy guarded).
+- **GX breakpoint / VI retrace**: `CGraphics::EndScene` spins on
+  `mNumBreakpointsWaiting`, which only a VI retrace decrements. `GXEnableBreakPt`
+  now pulses the registered breakpoint + pre/post retrace callbacks (stored by the
+  VI shims) so frames complete.
+- **`delete` on CMemory memory**: `rstl::aligned_allocator::deallocate` used
+  `delete[]` while `allocate` used `CMemory::Alloc`; on clang the game's
+  `operator delete`->`CMemory::Free` is MWCC-only, so glibc freed a game pointer.
+  Routed the free to `CMemory::Free`; `CDvdFileARAM` buffers now use `rs_new`.
+
+Current blocker: `aurora::gfx::acquire_frame_slot` blocks (waiting for frame-slot
+GPU progress) — the per-scene `CGraphics::BeginScene/EndScene` frame bracketing may
+be over-driving Aurora frames; revisit the frame model (e.g. one Aurora frame per
+game loop iteration rather than per scene, or ensure `aurora_end_frame` completes).
+
 ## Next steps
 
 1. Add a port CMake target mirroring Dusklight: list the decomp sources, link

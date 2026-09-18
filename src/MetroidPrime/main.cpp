@@ -726,7 +726,11 @@ int CMain::RsMain(int argc, const char* const* argv) {
     }
 
     const double dt = 1.f / 60.f;
+    unsigned s_frameLog = 0;
     while (!x160_24_finished) {
+      if ((s_frameLog++ % 60) == 0) {
+        fprintf(stderr, "MP frame %u\n", s_frameLog);
+      }
       // Port: pump Aurora's window/input events.
       {
         const AuroraEvent* event = aurora_update();
@@ -737,6 +741,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
           ++event;
         }
       }
+      // Port: run ARAM transfer callbacks completed by Aurora's ARQ.
+      ARQPoll();
       archSupport->GetStopwatch2().Reset();
       gpResourceFactory->GetResLoader().AsyncIdlePakLoading();
       if (gpMemoryCard == nullptr && gpResourceFactory->GetResLoader().AreAllPaksLoaded()) {

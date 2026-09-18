@@ -109,12 +109,15 @@ bool CGameAllocator::Initialize(COsContext& ctx) {
   x68_smallAllocBookKeeping = Alloc(0x16000, kHI_None, kSC_Unk1, kTP_Heap,
                                     CCallStack(0xffffffff, "SmallAllocBookKeeping", " - Ignore"));
 
-  x60_smallAllocPool = new (Alloc(0x20, kHI_None, kSC_Unk1, kTP_Heap,
-                                  CCallStack(0xffffffff, "SmallAllocClass      ", " - Ignore")))
-      CSmallAllocPool(0x2c000, x64_smallAllocMainData, x68_smallAllocBookKeeping);
+  // Port: the original hardcoded 32-bit object size; use the host size so the
+  // placement-new cannot overflow the block on 64-bit.
+  x60_smallAllocPool =
+      new (Alloc(sizeof(CSmallAllocPool), kHI_None, kSC_Unk1, kTP_Heap,
+                 CCallStack(0xffffffff, "SmallAllocClass      ", " - Ignore")))
+          CSmallAllocPool(0x2c000, x64_smallAllocMainData, x68_smallAllocBookKeeping);
 
   x74_mediumPool =
-      new (Alloc(0x1c, kHI_None, kSC_Unk1, kTP_Heap,
+      new (Alloc(sizeof(CMediumAllocPool), kHI_None, kSC_Unk1, kTP_Heap,
                  CCallStack(0xffffffff, "MediumAllocClass      ", " - Ignore"))) CMediumAllocPool();
 
   uint mediumSize = CMediumAllocPool::GetAllocMemoryRequired(0x1000);

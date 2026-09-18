@@ -31,15 +31,29 @@ extern "C" u16 GXReadDrawSync(void) {
 }
 
 // --- GX breakpoints / write-gather pipe -------------------------------------
-// No-ops: Aurora has no GX breakpoint or redirected-gather-pipe path. The game
-// only uses these for its display-list patching and DMA paths.
+// Aurora has no GX breakpoint path. The game uses GXEnableBreakPt to learn when
+// the GPU has consumed the FIFO, then a VI retrace to flip buffers and advance
+// its frame counter (CGraphics::VideoPostCallback). Simulate that completion
+// synchronously: breakpoint callback, then the registered pre/post retrace
+// callbacks. Without this, CGraphics::EndScene spins forever.
+namespace {
+GXBreakPtCallback s_breakPtCallback = nullptr;
+} // namespace
+
+extern "C" void AuroraRetracePulse(void);
+
 extern "C" void GXEnableBreakPt(void* breakPt) {
     (void)breakPt;
+    if (s_breakPtCallback != nullptr) {
+        s_breakPtCallback();
+    }
+    AuroraRetracePulse();
 }
 extern "C" void GXDisableBreakPt(void) {}
 extern "C" GXBreakPtCallback GXSetBreakPtCallback(GXBreakPtCallback cb) {
-    (void)cb;
-    return nullptr;
+    GXBreakPtCallback previous = s_breakPtCallback;
+    s_breakPtCallback = cb;
+    return previous;
 }
 extern "C" volatile void* GXRedirectWriteGatherPipe(void* buf) {
     return buf;

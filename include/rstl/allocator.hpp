@@ -70,7 +70,9 @@ struct aligned_allocator {
 
   template < typename T >
   static void deallocate(T* ptr) {
-    delete[] reinterpret_cast< uchar* >(ptr);
+    // Port: allocate() uses CMemory::Alloc; on clang `delete[]` does not route
+    // to CMemory::Free (that operator is MWCC-only), so match it explicitly.
+    CMemory::Free(ptr);
   }
 };
 } // namespace rstl

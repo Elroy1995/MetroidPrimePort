@@ -196,13 +196,32 @@ extern "C" void VISetBlack(BOOL black) {
 extern "C" void VISetNextFrameBuffer(void* fb) {
     (void)fb;
 }
+// Port: the game registers VI retrace callbacks that flip framebuffers and
+// advance its frame pacing. With no real retrace, GXEnableBreakPt (see
+// platform/shims.cpp) pulses them to complete each frame.
+namespace {
+VIRetraceCallback s_preRetraceCallback = nullptr;
+VIRetraceCallback s_postRetraceCallback = nullptr;
+} // namespace
+
+extern "C" void AuroraRetracePulse(void) {
+    if (s_preRetraceCallback != nullptr) {
+        s_preRetraceCallback(0);
+    }
+    if (s_postRetraceCallback != nullptr) {
+        s_postRetraceCallback(0);
+    }
+}
+
 extern "C" VIRetraceCallback VISetPostRetraceCallback(VIRetraceCallback cb) {
-    (void)cb;
-    return nullptr;
+    VIRetraceCallback previous = s_postRetraceCallback;
+    s_postRetraceCallback = cb;
+    return previous;
 }
 extern "C" VIRetraceCallback VISetPreRetraceCallback(VIRetraceCallback cb) {
-    (void)cb;
-    return nullptr;
+    VIRetraceCallback previous = s_preRetraceCallback;
+    s_preRetraceCallback = cb;
+    return previous;
 }
 extern "C" void VIWaitForRetrace(void) {}
 

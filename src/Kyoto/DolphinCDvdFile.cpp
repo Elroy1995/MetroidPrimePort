@@ -178,10 +178,10 @@ bool CDvdFile::IsARAMFileLoaded() {
 
 void CDvdFile::StartARAMFileLoad() {
   CDvdFileARAM* aramFile = mARAMFile.get();
-  aramFile->mBuffers.push_back(
-      static_cast< uchar* >(CMemory::Alloc(0x10000, IAllocator::kHI_RoundUpLen)));
-  aramFile->mBuffers.push_back(
-      static_cast< uchar* >(CMemory::Alloc(0x10000, IAllocator::kHI_RoundUpLen)));
+  // Port: auto_ptr frees with `delete`; on clang rs_new is plain new, so match
+  // the allocation to it instead of CMemory::Alloc (whose delete is MWCC-only).
+  aramFile->mBuffers.push_back(rs_new uchar[0x10000]);
+  aramFile->mBuffers.push_back(rs_new uchar[0x10000]);
 
   int len = rstl::min_val(mSize, 65536);
   aramFile->mCurBufferLen -= len;

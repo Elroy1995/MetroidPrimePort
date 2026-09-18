@@ -11,6 +11,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+// The game's global `operator delete` (routing to CMemory::Free) lives inline in
+// this header; without it, `delete` on game-allocator memory reaches glibc free.
+#include <Kyoto/Alloc/CMemory.hpp>
+
 // MWCC-isms used throughout the decompiled code.
 #define nofralloc
 #define __abs(x) ((x) < 0 ? -(x) : (x))
@@ -28,6 +32,8 @@
 extern "C" {
 #endif
 s32 CARDFormatAsync(s32 chan, CARDCallback callback);
+// Port: drains Aurora's deferred ARQ completion callbacks (see AR.cpp).
+void ARQPoll(void);
 #ifdef __cplusplus
 }
 #endif
