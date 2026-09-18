@@ -152,14 +152,15 @@ struct Surface {
   int numVertices;
 };
 
-void CMapArea::CMapAreaSurface::Draw(const CVector3f* verts, const CColor& surfColor,
+void CMapArea::CMapAreaSurface::Draw(const CVector3f* verts, uint vertexCount, const CColor& surfColor,
                                      const CColor& lineColor, float lineWidth) const {
   bool hasSurfAlpha = surfColor.GetAlpha() > 0.0f;
   bool hasLineAlpha = lineColor.GetAlpha() > 0.0f;
   int numSurfaces = CBasics::SwapBytes(*x18_surfOffset);
   int numOutlines = CBasics::SwapBytes(*x1c_outlineOffset);
   if (verts) {
-    CGX::SetArray(GX_VA_POS, verts, '\f');
+    // Map vertices are byte-swapped to host order at load, so they are native.
+    CGX::SetArrayNative(GX_VA_POS, verts, vertexCount * sizeof(CVector3f), sizeof(CVector3f));
   }
   if (hasSurfAlpha) {
     CGX::SetTevKColor(GX_KCOLOR0, surfColor.GetGXColor());

@@ -30,8 +30,8 @@ public:
 #else
     void PostConstruct(const void* buf);
 #endif
-    void Draw(const CVector3f* verts, const CColor& surfColor, const CColor& lineColor,
-              float lineWidth) const;
+    void Draw(const CVector3f* verts, uint vertexCount, const CColor& surfColor,
+              const CColor& lineColor, float lineWidth) const;
 
     static void SetupGXMaterial();
 
@@ -48,6 +48,7 @@ public:
   int GetNumSurfaces() const { return x30_surfaceCount; }
   const CMapAreaSurface& GetSurface(int idx) const { return x40_surfaceStart[idx]; }
   const CVector3f* GetVertices() const { return x3c_vertexStart; }
+  uint GetVertexCount() const { return static_cast< uint >(x2c_vertexCount); }
 
   void PostConstruct();
   bool GetIsVisibleToAutoMapper(bool worldVis, bool areaVis) const;

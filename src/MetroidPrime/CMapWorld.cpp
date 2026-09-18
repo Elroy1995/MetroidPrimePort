@@ -456,7 +456,7 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
           gpRender->SetModelMatrix(modelXf * areaXf);
         }
         const CVector3f* vertices = needsVertices ? area->GetVertices() : nullptr;
-        surface.Draw(vertices, color, outlineColor, outlineWidth);
+        surface.Draw(vertices, area->GetVertexCount(), color, outlineColor, outlineWidth);
         lastMode = kDM_Surface;
       } else if (type == CMapObjectSortInfo::kOC_Door || type == CMapObjectSortInfo::kOC_Object) {
         EDrawMode mode = type == CMapObjectSortInfo::kOC_Door ? kDM_Door : kDM_Object;
