@@ -365,7 +365,9 @@ float* CSkinnedModel::AllocateNewWorkspace(float** vertOut) {
   float* ptr = static_cast< float* >(
       CMemory::Alloc(((vertSize + 31) & ~31) + alignedNormSize, IAllocator::kHI_RoundUpLen));
   if (vertOut != nullptr) {
-    *vertOut = reinterpret_cast< float* >(reinterpret_cast< char* >(ptr) + alignedNormSize);
+    // `Calculate` writes points first and then normals, so the normal workspace
+    // must follow the aligned point data.
+    *vertOut = reinterpret_cast< float* >(reinterpret_cast< char* >(ptr) + alignedVertSize);
   }
   return ptr;
 }
