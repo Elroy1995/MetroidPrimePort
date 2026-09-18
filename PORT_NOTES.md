@@ -206,6 +206,12 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   the main thread because the guest mixer is not thread-safe, and the port keeps
   the full 64-bit DMA pointer that the SDK's 32-bit `AIGetDMAStartAddr` truncates.
   `MP_DISABLE_AI_AUDIO=1` isolates this path.
+- Skinned vertex generation advances its output cursor explicitly. On the console
+  the write-gather pipe advances itself as data is written, so `BuildPoints`,
+  `BuildNormals`, and `Calculate`'s padding pass all reused one `pipe` value; on PC
+  that made every bone overwrite the same offset and left the rest of the
+  workspace uninitialised (vertex explosions). The vertex/normal workspaces are
+  also one contiguous allocation, matching the points-then-normals write order.
 - Runtime-generated vertex arrays are marked host-native (`le=true`) instead of
   big-endian, matching the port's native skinning/workspace writes. `ClearArray`
   forces the backend to drop its cached copy, which the skinned path needs because

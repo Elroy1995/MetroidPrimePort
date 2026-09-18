@@ -48,24 +48,44 @@ void CSkinRules::BuildAccumulatedTransforms(const CPoseAsTransforms& pose,
 }
 
 void CSkinRules::BuildPoints(volatile void* pipe) const {
+  // On the console the write-gather pipe advances itself as vertices are
+  // written, so the same `pipe` value is passed to every bone. The PC
+  // implementation writes plain floats and cannot advance the caller's pointer,
+  // so advance it here.
+#ifndef __MWERKS__
+  volatile uchar* out = static_cast< volatile uchar* >(pipe);
+#endif
   for (int i = 0; i < x0_virtualBones.size(); ++i) {
     int vertexCount = x0_virtualBones[i].GetNumIndices();
     ushort* buffer = nullptr;
     for (int done = 0; done < vertexCount;) {
       const int count = ProcessingPoints(vertexCount - done, &buffer);
+#ifdef __MWERKS__
       x0_virtualBones[i].BuildPoints(buffer, pipe, count);
+#else
+      x0_virtualBones[i].BuildPoints(buffer, out, count);
+      out += count * sizeof(CVector3f);
+#endif
       done += count;
     }
   }
 }
 
 void CSkinRules::BuildNormals(volatile void* pipe) const {
+#ifndef __MWERKS__
+  volatile uchar* out = static_cast< volatile uchar* >(pipe);
+#endif
   for (int i = 0; i < x0_virtualBones.size(); ++i) {
     int vertexCount = x0_virtualBones[i].GetNumIndices();
     ushort* buffer = nullptr;
     for (int done = 0; done < vertexCount;) {
       const int count = ProcessingNormals(vertexCount - done, &buffer);
+#ifdef __MWERKS__
       x0_virtualBones[i].BuildNormals(buffer, pipe, count);
+#else
+      x0_virtualBones[i].BuildNormals(buffer, out, count);
+      out += count * sizeof(CVector3f);
+#endif
       done += count;
     }
   }

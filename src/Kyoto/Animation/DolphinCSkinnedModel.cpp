@@ -125,10 +125,18 @@ CSkinnedModel::~CSkinnedModel() { Skinning::DelSkinnedRef(); }
 void CSkinnedModel::Construct() {
   Skinning::AddSkinnedRef();
   if (!x38_owned) {
-    uint numPoints = x10_skinRules->GetNumPoints();
-    uint numNormals = x10_skinRules->GetNumNormals();
-    x28_vertWorkspace = rs_new float[numPoints * 12];
-    x30_normalWorkspace = rs_new float[numNormals * 12];
+    // `Calculate` writes points and then normals into one contiguous buffer, so
+    // the normal workspace must alias the tail of the vertex workspace.
+    const uint vertexCount = x10_skinRules->GetNumPoints();
+    const uint normalCount = x10_skinRules->GetNumNormals();
+    const uint vertSize = (vertexCount * 12 + 31) & ~31u;
+    const uint normSize = (normalCount * 12 + 31) & ~31u;
+    float* ptr = rs_new float[(vertSize + normSize) / sizeof(float)];
+    x28_vertWorkspace = rstl::auto_ptr< float >(ptr);
+    x30_normalWorkspace = rstl::auto_ptr< float >(
+        reinterpret_cast< float* >(reinterpret_cast< uchar* >(ptr) + vertSize));
+    x28_vertWorkspace.release();
+    x30_normalWorkspace.release();
   }
   if (x10_skinRules->GetNumVirtualBones() == 1) {
     x39_disableWorkspaces = true;
@@ -211,6 +219,7 @@ void CSkinnedModel::Calculate(const CPoseAsTransforms& pose,
 
   x10_skinRules->InitLockedCacheState(**x4_model);
   x10_skinRules->BuildAccumulatedTransforms(pose, **x1c_layoutInfo);
+#ifdef __MWERKS__
   x10_skinRules->BuildPoints(pipe);
 
   int numWords = x10_skinRules->GetNumPoints() * 3;
@@ -220,6 +229,22 @@ void CSkinnedModel::Calculate(const CPoseAsTransforms& pose,
   }
 
   x10_skinRules->BuildNormals(pipe);
+#else
+  // The console's write-gather pipe advances as data is written; the PC buffers
+  // are plain memory, so the write cursor has to be advanced explicitly.
+  volatile uchar* writePtr = static_cast< volatile uchar* >(pipe);
+  x10_skinRules->BuildPoints(writePtr);
+
+  const int numWords = x10_skinRules->GetNumPoints() * 3;
+  writePtr += numWords * sizeof(u32);
+  const int padWords = ((numWords + 7) & ~7) - numWords;
+  for (int i = 0; i < padWords; i++) {
+    *reinterpret_cast< volatile u32* >(writePtr) = 0;
+    writePtr += sizeof(u32);
+  }
+
+  x10_skinRules->BuildNormals(writePtr);
+#endif
   GXRestoreWriteGatherPipe();
   OSRestoreInterrupts(interruptState);
 
