@@ -327,13 +327,6 @@ void* CAudioSys::SampleDataUploadCallback(u32 address, u32 bytes) {
 }
 
 bool CAudioSys::SysPushGroupIntoARAM(const rstl::string& name, const uchar groupId) {
-#if TARGET_LITTLE_ENDIAN
-  // Disc AGSC data uses big-endian 32-bit MusyX structures. Skip registration
-  // until the host runtime has a native-endian/64-bit data converter.
-  (void)name;
-  (void)groupId;
-  return true;
-#else
   rstl::ncrc_ptr< CAudioGroupSet > groupSet = FindGroupSet(name);
   CAudioGroupSet* group = groupSet.GetPtr();
   if (group) {
@@ -350,14 +343,9 @@ bool CAudioSys::SysPushGroupIntoARAM(const rstl::string& name, const uchar group
     return result;
   }
   return false;
-#endif
 }
 
-void CAudioSys::SysPopGroupFromARAM() {
-#if !TARGET_LITTLE_ENDIAN
-  sndPopGroup();
-#endif
-}
+void CAudioSys::SysPopGroupFromARAM() { sndPopGroup(); }
 
 const rstl::string& CAudioSys::SysGetGroupSetName(const uint id) {
   rstl::map< uint, rstl::string >::const_iterator it = mpGroupSetResNameDB->find(id);

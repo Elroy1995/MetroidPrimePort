@@ -139,9 +139,14 @@ so ARAM palette storage follows delayed `CMemory::Free` cleanup.
 
 Further host bring-up fixes now sustain the main loop through at least frame 48,601:
 - GameCube AGSC payloads are big-endian 32-bit MusyX structures, while the vendored
-  host runtime expects converted native-endian structures (including 64-bit sample
-  directory pointers). Group push/pop is temporarily disabled on little-endian
-  hosts, so the port is silent rather than passing corrupt data to `sndPushGroup`.
+  host runtime expects native-endian structures (including 64-bit sample directory
+  pointers). `CAudioGrpSetLoc` now converts the pool, project, and sample directory
+  into host-native layout on little-endian hosts: big-endian `GROUP_DATA`,
+  `POOL_DATA`, `MEM_DATA`/`FX_TAB`, ID lists, and `SDIR_DATA_INTER` are byte-swapped
+  and expanded to native `SDIR_DATA`; raw curve bodies and PCM samples are left
+  untouched. MusyX group push/pop is enabled again and `sndPushGroup` succeeds for
+  the boot groups. A `s32`->`size_t` cast in `dataAddSampleReference` fixes truncation
+  of 64-bit sample bases.
 - CMDL header fields, section sizes, and bounds are byte-swapped before model setup.
 - Movie buffers owned by `single_ptr`/`auto_ptr` use matching host allocations and
   rounded DVD request sizes instead of placing `CMemory::Alloc` pointers behind
