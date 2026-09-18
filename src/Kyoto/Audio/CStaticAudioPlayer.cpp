@@ -96,7 +96,7 @@ CStaticAudioPlayer::CStaticAudioPlayer(const rstl::string& filepath, const int l
 
     rstl::auto_ptr< uchar > buf((uchar*)CMemory::Alloc(uVar1, IAllocator::kHI_RoundUpLen));
     x48_buffers.push_back(buf);
-    x38_dvdRequests.push_back(dvdFile.SyncRead(buf.get(), uVar1));
+    x38_dvdRequests.push_back(dvdFile.SyncReadBlocking(buf.get(), uVar1));
   }
 }
 
@@ -110,7 +110,14 @@ CStaticAudioPlayer::~CStaticAudioPlayer() {
 }
 
 const bool CStaticAudioPlayer::IsReady() const {
-  return !x38_dvdRequests.empty() ? x38_dvdRequests.back()->IsComplete() : true;
+  // Every chunk has to be resident before playback; checking only the last one
+  // let the mixer start on buffers whose DVD reads had not landed yet.
+  for (int i = 0; i < x38_dvdRequests.size(); ++i) {
+    if (!x38_dvdRequests[i]->IsComplete()) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void CStaticAudioPlayer::StartMixOut() {
@@ -199,10 +206,10 @@ void CStaticAudioPlayer::DecodeMonoAndMix(ushort* bufIn, ushort* bufOut, int num
     uchar* byte = x48_buffers[curBuf].get() + (curSample - (curBuf * 0x20000));
     int i = 0;
     while (i < thisBytes) {
-      int samp1 =
-          reinterpret_cast< short* >(bufOut)[0] + ((vol * g721_decoder(*byte & 0xf, &state)) >> 15);
-      int samp2 =
-          reinterpret_cast< short* >(bufOut)[2] + ((vol * g721_decoder(*byte >> 4, &state)) >> 15);
+      // Write the decoded samples; accumulating onto the buffer that is still
+      // being played feeds the output back into itself and runs away.
+      int samp1 = (vol * g721_decoder(*byte & 0xf, &state)) >> 15;
+      int samp2 = (vol * g721_decoder(*byte >> 4, &state)) >> 15;
 
       short clamped1;
       if (samp1 < -0x8000) {

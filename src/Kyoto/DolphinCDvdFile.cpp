@@ -266,6 +266,26 @@ void CDvdFile::SyncSeekRead(void* dest, uint len, ESeekOrigin origin, int offset
   UpdateFilePos(len);
 }
 
+CDvdRequest* CDvdFile::SyncReadBlocking(void* dest, uint len) {
+  StallForARAMFile();
+  const int roundedLen = (len + 31) & ~31;
+  CDvdRequest* request;
+  if (mARAMAllocated) {
+    DCFlushRange(dest, roundedLen);
+    request = rs_new CARAMDvdRequest(CARAMManager::DMAToMRAM(mARAMBuffer + mOffset, dest, roundedLen,
+                                                             CARAMManager::kDMAPrio_One));
+  } else {
+    CRealDvdRequest* req = rs_new CRealDvdRequest();
+    DVDFileInfo* info = req->FileInfo();
+    DVDFastOpen(mFileEntry, info);
+    // DVDReadPrio waits for the worker, so the data is resident on return.
+    DVDReadPrio(info, dest, roundedLen, mOffset, 2);
+    request = req;
+  }
+  UpdateFilePos(len);
+  return request;
+}
+
 CDvdRequest* CDvdFile::AsyncSeekRead(void* dest, uint len, ESeekOrigin origin, int offset) {
   StallForARAMFile();
   CalcFileOffset(offset, origin);

@@ -33,6 +33,8 @@ public:
   void StartARAMFileLoad();
   void StallForARAMFile();
   CDvdRequest* SyncRead(void* buf, uint len);
+  // Port: blocking read that does not rely on the async completion state.
+  CDvdRequest* SyncReadBlocking(void* buf, uint len);
   void SyncSeekRead(void* buf, uint len, ESeekOrigin, int offset);
   CDvdRequest* AsyncSeekRead(void* buf, uint len, ESeekOrigin, int offset);
   void CloseFile();

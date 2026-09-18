@@ -33,9 +33,9 @@ void EnsureStarted() {
     return;
   }
   sStarted = true;
-  // Off by default: the streamed-audio source data is not yet valid on PC, so
-  // emitting it produces full-scale noise. Enable with MP_ENABLE_AI_AUDIO=1.
-  sOutputEnabled = std::getenv("MP_ENABLE_AI_AUDIO") != nullptr;
+  // Enabled by default; MP_DISABLE_AI_AUDIO=1 isolates streamed audio (music)
+  // from the MusyX effects when diagnosing.
+  sOutputEnabled = std::getenv("MP_DISABLE_AI_AUDIO") == nullptr;
   // Silence the AI is notionally playing before the first AIInitDMA, so the
   // guest's `AIGetDMAStartAddr` always yields a readable buffer.
   static uint8_t sSilence[0x280] = {};
@@ -63,7 +63,7 @@ extern "C" uintptr_t AIPortGetDMAStartAddr(void) { return sBuffer; }
 // guest audio state (the main loop).
 extern "C" void AIPortPoll(void) {
   EnsureStarted();
-  if (sCallback == nullptr || sOutputEnabled == false) {
+  if (sCallback == nullptr) {
     // Nothing is playing; resynchronise so a later stream does not burst.
     sNextFrameNs = SDL_GetTicksNS();
     return;
@@ -80,7 +80,7 @@ extern "C" void AIPortPoll(void) {
     sCallback();
     const uintptr_t buffer = sBuffer;
     const uint32_t length = sLength;
-    if (sStream != nullptr && buffer != 0 && length != 0) {
+    if (sOutputEnabled && sStream != nullptr && buffer != 0 && length != 0) {
       SDL_PutAudioStreamData(sStream, reinterpret_cast< const void* >(buffer), length);
     }
     const uint64_t duration = length != 0

@@ -198,6 +198,12 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   (measured ~29x real time) because it only throttled on the SDL queue depth,
   overrunning the stream and producing dropouts; it now sleeps until the next
   160-sample frame is due, which removed the buffer-boundary discontinuities.
+- Streamed audio (front-end music) now decodes correctly: `DecodeMonoAndMix` wrote
+  the decoded samples *on top of* the buffer still being played, feeding the
+  output back into itself until it saturated into full-scale noise. It writes the
+  decoded samples now, `IsReady` waits for every chunk rather than only the last,
+  and the non-ARAM `CDvdFile` read is blocking (`DVDReadPrio`) so playback cannot
+  start on unfilled buffers.
 - The GameCube audio-interface DMA path is implemented in `platform/ai_dma.cpp`:
   the registered DMA callback is driven from the main loop (`AIPortPoll`) at the
   buffer rate and the submitted buffer is fed to its own SDL stream. Streamed
