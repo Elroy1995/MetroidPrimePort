@@ -103,6 +103,10 @@ void CCubeModel::SetArraysCurrent() const {
 }
 
 void CCubeModel::SetSkinningArraysCurrent(const float* positions, const float* normals) const {
+  // The skinned workspaces reuse the same pointer each frame, so force the
+  // backend to drop its cached copy or the new vertex data is never uploaded.
+  CGX::ClearArray(GX_VA_POS);
+  CGX::ClearArray(GX_VA_NRM);
   CGraphics::sRenderState.SetVtxState(positions, normals,
                                       static_cast< const uint* >(x0_instance.GetColorPointer()));
   SetStaticArraysCurrent();

@@ -198,6 +198,11 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   (measured ~29x real time) because it only throttled on the SDL queue depth,
   overrunning the stream and producing dropouts; it now sleeps until the next
   160-sample frame is due, which removed the buffer-boundary discontinuities.
+- Runtime-generated vertex arrays are marked host-native (`le=true`) instead of
+  big-endian, matching the port's native skinning/workspace writes. `ClearArray`
+  forces the backend to drop its cached copy, which the skinned path needs because
+  the workspace pointer is reused every frame. The map-screen mappable-object and
+  area surfaces still pass no vertex size and remain to be converted.
 
 Host shutdown now completes cleanly. Game-heap buffers owned by `CGBASupport`,
 `CStaticAudioPlayer`, and `SMediumAllocPuddle` are released through `CMemory` instead

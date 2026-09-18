@@ -136,6 +136,8 @@ void CSkinnedModel::Construct() {
 }
 
 void CSkinnedModel::Draw(const CModelFlags& flags) const {
+  CGraphics::sRenderState.SetSkinnedArraySizes(x10_skinRules->GetNumPoints() * 12,
+                                               x10_skinRules->GetNumNormals() * 12);
   if (x39_disableWorkspaces) {
     CTransform4f saved(CGraphics::GetModelMatrix());
     CGraphics::SetModelMatrix(saved * x10_skinRules->GetVirtualBones()[0].GetTransform());
@@ -150,6 +152,8 @@ void CSkinnedModel::Draw(const CModelFlags& flags) const {
 }
 
 void CSkinnedModel::Draw(const TDrawFunc func, void* data) {
+  CGraphics::sRenderState.SetSkinnedArraySizes(x10_skinRules->GetNumPoints() * 12,
+                                               x10_skinRules->GetNumNormals() * 12);
   if (x39_disableWorkspaces) {
     CTransform4f saved(CGraphics::GetModelMatrix());
     CGraphics::SetModelMatrix(saved * x10_skinRules->GetVirtualBones()[0].GetTransform());
@@ -170,6 +174,8 @@ void CSkinnedModel::Draw(const TDrawFunc func, void* data) {
 
 void CSkinnedModel::Draw(const float* positions, const float* normals,
                          const CModelFlags& flags) const {
+  CGraphics::sRenderState.SetSkinnedArraySizes(x10_skinRules->GetNumPoints() * 12,
+                                               x10_skinRules->GetNumNormals() * 12);
   x4_model->Draw(positions, normals, flags);
   PostDrawFunc();
 }

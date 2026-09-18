@@ -1615,9 +1615,9 @@ CGraphics::CRenderState::CRenderState() {
 void CGraphics::CRenderState::Flush() {}
 
 int CGraphics::CRenderState::SetVtxState(const float* pos, const float* nrm, const uint* clr) {
-  CGX::SetArray(GX_VA_POS, pos, 12);
-  CGX::SetArray(GX_VA_NRM, nrm, 12);
-  CGX::SetArray(GX_VA_CLR0, clr, 4);
+  CGX::SetArrayNative(GX_VA_POS, pos, x8_skinnedPosBytes, 12);
+  CGX::SetArrayNative(GX_VA_NRM, nrm, xc_skinnedNrmBytes, 12);
+  CGX::SetArray(GX_VA_CLR0, clr, 0, 4);
   int result = 1;
   if (nrm != nullptr) {
     result |= 2;
@@ -1630,10 +1630,13 @@ int CGraphics::CRenderState::SetVtxState(const float* pos, const float* nrm, con
 
 void CGraphics::CRenderState::ResetFlushAll() {
   x0_ = 0;
-  SetVtxState(nullptr, nullptr, nullptr);
+  CGX::ClearArray(GX_VA_POS);
+  CGX::ClearArray(GX_VA_NRM);
+  CGX::ClearArray(GX_VA_CLR0);
   for (int i = 0; i < 8; i++) {
-    CGX::SetArray(static_cast< GXAttr >(GX_VA_TEX0 + i), nullptr, 8);
+    CGX::ClearArray(static_cast< GXAttr >(GX_VA_TEX0 + i));
   }
+  SetVtxState(nullptr, nullptr, nullptr);
   Flush();
 }
 

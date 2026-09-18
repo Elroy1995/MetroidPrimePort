@@ -124,7 +124,7 @@ static inline void draw_door_surface(const CColor& firstColor, const CColor& sec
                                      int surfaceIdx, bool needsVtxLoad) {
   const SDrawData& drawData = skDoorSurfaceInfos[surfaceIdx];
   if (needsVtxLoad) {
-    CGX::SetArray(GX_VA_POS, skDoorVerts, sizeof(skDoorVerts[0]));
+    CGX::SetArrayNative(GX_VA_POS, skDoorVerts, sizeof(skDoorVerts), sizeof(skDoorVerts[0]));
   }
 
   CGX::SetTevKColor(GX_KCOLOR0, firstColor.GetGXColor());

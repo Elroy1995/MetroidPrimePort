@@ -193,6 +193,14 @@ public:
     void Flush();
     void ResetFlushAll();
     int SetVtxState(const float* pos, const float* nrm, const uint* clr);
+    // Byte sizes of the skinned position/normal arrays, since the renderer needs
+    // them to upload the array data (the original SDK form carried no size).
+    void SetSkinnedArraySizes(uint positionsBytes, uint normalsBytes) {
+      x8_skinnedPosBytes = positionsBytes;
+      xc_skinnedNrmBytes = normalsBytes;
+    }
+    uint GetSkinnedPosBytes() const { return x8_skinnedPosBytes; }
+    uint GetSkinnedNrmBytes() const { return xc_skinnedNrmBytes; }
 
     // In map this takes two args, but x4 is unused?
     void Set(int v0) { x0_ = v0; }
@@ -200,6 +208,8 @@ public:
   private:
     int x0_;
     int x4_;
+    uint x8_skinnedPosBytes = 0;
+    uint xc_skinnedNrmBytes = 0;
   };
 
   class CProjectionState {

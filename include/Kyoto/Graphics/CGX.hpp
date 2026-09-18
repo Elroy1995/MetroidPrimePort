@@ -60,6 +60,7 @@ public:
 
   struct SGXState {
     const void* x0_arrayPtrs[12];
+    uint x4_arraySizes[12];
     ushort x30_prevChanCtrls[2];
     ushort x34_chanCtrls[2];
     GXColor x38_chanAmbColors[2];
@@ -145,6 +146,10 @@ public:
   static void SetTexCoordGen_Compressed(GXTexCoordID dstCoord, uint flags);
   static void SetArray(GXAttr attr, const void* data, uchar stride);
   static void SetArray(GXAttr attr, const void* data, uint size, uchar stride);
+  // Host-native array data (runtime-generated vertices, not big-endian disc data).
+  static void SetArrayNative(GXAttr attr, const void* data, uint size, uchar stride);
+  // Forces the backend to drop its cached copy so the next SetArray re-uploads.
+  static void ClearArray(GXAttr attr);
   static void SetFog(GXFogType type, float startZ, float endZ, float nearZ, float farZ,
                      const GXColor& color);
   static void SetLineWidth(uchar width, GXTexOffset offset);

@@ -305,13 +305,34 @@ CGX_INLINE void CGX::SetArray(GXAttr attr, const void* data, uchar stride) {
 
 CGX_INLINE void CGX::SetArray(GXAttr attr, const void* data, uint size, uchar stride) {
   uint idx = attr - GX_VA_POS;
-  if (data == nullptr || sGXState.x0_arrayPtrs[idx] == data) {
+  if (data == nullptr ||
+      (sGXState.x0_arrayPtrs[idx] == data && sGXState.x4_arraySizes[idx] == size)) {
     return;
   }
   sGXState.x0_arrayPtrs[idx] = data;
+  sGXState.x4_arraySizes[idx] = size;
   // Port: Aurora's GXSetArray takes (attr, data, size, stride, le) and uploads
   // `size` bytes of the array; guest vertex data is big-endian, hence le=false.
   GXSetArray(attr, data, size, stride, false);
+}
+
+CGX_INLINE void CGX::SetArrayNative(GXAttr attr, const void* data, uint size, uchar stride) {
+  uint idx = attr - GX_VA_POS;
+  if (data == nullptr ||
+      (sGXState.x0_arrayPtrs[idx] == data && sGXState.x4_arraySizes[idx] == size)) {
+    return;
+  }
+  sGXState.x0_arrayPtrs[idx] = data;
+  sGXState.x4_arraySizes[idx] = size;
+  // Runtime-generated vertices are host-native (little-endian) on this port.
+  GXSetArray(attr, data, size, stride, true);
+}
+
+CGX_INLINE void CGX::ClearArray(GXAttr attr) {
+  uint idx = attr - GX_VA_POS;
+  sGXState.x0_arrayPtrs[idx] = nullptr;
+  sGXState.x4_arraySizes[idx] = 0;
+  GXSetArray(attr, nullptr, 0, 0, true);
 }
 
 CGX_INLINE void CGX::CallDisplayList(const void* ptr, size_t size) {
