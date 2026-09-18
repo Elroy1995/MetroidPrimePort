@@ -39,7 +39,7 @@ struct CMoviePlayer::SIndexLoad {
   int x10_state;
 
   SIndexLoad()
-  : xc_buffer(static_cast< uchar* >(CMemory::Alloc(64, IAllocator::kHI_RoundUpLen)))
+  : xc_buffer(rs_new uchar[64])
   , x10_state(0) {}
 };
 const unsigned char skInterlacePattern[32] = {
@@ -321,10 +321,10 @@ void CMoviePlayer::InitializeTextures() {
   const uint uvSize = OSRoundUp32B(x6c_videoInfo.mXSize * x6c_videoInfo.mYSize / 4);
   const uint audioSize = x28_header.mAudioMaxSamples * 4;
   for (int i = 0; i < x80_textures.capacity(); ++i) {
-    void* y = CMemory::Alloc(ySize, IAllocator::kHI_RoundUpLen);
-    void* u = CMemory::Alloc(uvSize, IAllocator::kHI_RoundUpLen);
-    void* v = CMemory::Alloc(uvSize, IAllocator::kHI_RoundUpLen);
-    void* audio = CMemory::Alloc(audioSize, IAllocator::kHI_RoundUpLen);
+    void* y = rs_new uchar[ySize];
+    void* u = rs_new uchar[uvSize];
+    void* v = rs_new uchar[uvSize];
+    void* audio = rs_new uchar[audioSize];
     DCFlushRangeNoSync(y, ySize);
     DCFlushRangeNoSync(u, uvSize);
     DCFlushRangeNoSync(v, uvSize);
@@ -340,8 +340,7 @@ void CMoviePlayer::InitializeTextures() {
 
 void CMoviePlayer::PostDVDReadRequestIfNeeded() {
   if (xc0_curLoadFrame < x28_header.mNumFrames) {
-    x90_requestBuffer = rstl::auto_ptr< uchar >(
-        static_cast< uchar* >(CMemory::Alloc(xb0_nextReadSize, IAllocator::kHI_RoundUpLen)));
+    x90_requestBuffer = rstl::auto_ptr< uchar >(rs_new uchar[(xb0_nextReadSize + 31) & ~31]);
     x98_request = x0_dvdFile.AsyncSeekRead(x90_requestBuffer.get(), xb0_nextReadSize, kSO_Begin,
                                            xb4_nextReadOff);
   }

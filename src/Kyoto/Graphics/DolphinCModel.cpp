@@ -25,7 +25,7 @@ static uint sFrameCounter = 0;
 
 static uchar* MemoryFromPartData(uchar*& dataCur, int*& secSizeCur) {
   uchar* ret = *secSizeCur != 0 ? dataCur : nullptr;
-  dataCur += *secSizeCur;
+  dataCur += CBasics::SwapBytes(*secSizeCur);
   secSizeCur++;
   return ret;
 }
@@ -42,20 +42,20 @@ CModel::CModel(const rstl::auto_ptr< uchar >& data, int length, IObjectStore& st
 
   uint sectionSizeStart = 0x2c;
   uchar* dataPtr = data.get();
-  const uint flags = *reinterpret_cast< const uint* >(dataPtr + 8);
-  const uint version = *reinterpret_cast< const uint* >(dataPtr + 4);
+  const uint flags = CBasics::SwapBytes(*reinterpret_cast< const uint* >(dataPtr + 8));
+  const uint version = CBasics::SwapBytes(*reinterpret_cast< const uint* >(dataPtr + 4));
   const uint visorFlags = (flags >> 1) & 1;
   const bool hasShortUvs = (flags >> 2) & 1;
   if (version == 1) {
     sectionSizeStart = 0x28;
   }
 
-  const int sectionCount = *reinterpret_cast< const int* >(dataPtr + 0x24);
+  const int sectionCount = CBasics::SwapBytes(*reinterpret_cast< const int* >(dataPtr + 0x24));
   uchar* dataCur;
   int* sectionSizes = reinterpret_cast< int* >(dataPtr + sectionSizeStart);
   int numMatSets = 1;
   if (version >= 2) {
-    numMatSets = *reinterpret_cast< const int* >(dataPtr + 0x28);
+    numMatSets = CBasics::SwapBytes(*reinterpret_cast< const int* >(dataPtr + 0x28));
   }
   int* secSizeCur = sectionSizes;
   dataCur = dataPtr + ((sectionSizeStart + sectionCount * 4 + 31) & ~31);
@@ -85,10 +85,13 @@ CModel::CModel(const rstl::auto_ptr< uchar >& data, int length, IObjectStore& st
     x8_surfaces.push_back(MemoryFromPartData(dataCur, secSizeCur));
   }
 
+  const float* bounds = reinterpret_cast< const float* >(dataPtr + 0xc);
+  const CAABox aabb(CBasics::SwapBytes(bounds[0]), CBasics::SwapBytes(bounds[1]),
+                    CBasics::SwapBytes(bounds[2]), CBasics::SwapBytes(bounds[3]),
+                    CBasics::SwapBytes(bounds[4]), CBasics::SwapBytes(bounds[5]));
   x28_modelInstance = rs_new CCubeModel(
       &x8_surfaces, &x18_matSets.front().x0_textures, x18_matSets.front().x10_data, positions,
-      normals, vtxColors, floatUvs, shortUvs, *reinterpret_cast< const CAABox* >(dataPtr + 0xc),
-      visorFlags ? 1 : 0, true, -1);
+      normals, vtxColors, floatUvs, shortUvs, aabb, visorFlags ? 1 : 0, true, -1);
   sThisFrameList = this;
   if (x34_next != nullptr) {
     x34_next->x30_prev = this;
