@@ -27,6 +27,25 @@ runtime.
 - Aurora `examples/simple` builds on this machine (prebuilt Dawn for
   linux-x86_64 is fetched automatically by CMake).
 
+### Port scaffold build status (2026-09-18)
+
+`CMakeLists.txt` + `files.cmake` (632 sources) + `platform/{compat.h,main.cpp}` build
+`mp_game` against Aurora. First full compile went 1269 -> 138 errors after:
+- `platform/compat.h` (force-included) restoring the SDK `AUTO`/`AUTO_REF`/
+  `AUTO_CONST_REF` macros Aurora omits;
+- excluding `src/NESemu/modwrapper.cpp` (raw PowerPC asm) and
+  `src/MetroidPrime/TypesMatch.cpp` (decomp-only type scaffolding);
+- `-Wno-narrowing`.
+
+Remaining 138 errors are a bounded compatibility-shim queue:
+- GX declarations Aurora implements but does not declare in headers:
+  `GXSetTexCopyDst/Src`, `GXPixModeSync`, `GXCopyTex`, `GXSetTevColor`,
+  `GXInitLightPos/Attn`, `GXSetCullMode`; plus a `GXSetArray` signature
+  difference (Aurora adds a 5th arg).
+- Missing SDK headers: `dolphin/arq.h`, `dolphin/thp/THPInfo.h`.
+- `OSContext` member mismatches (`gpr`, `srr0`) in the game's own view.
+- `COBBTree::CNode::operator new` placement-new mismatch.
+
 ## Next steps
 
 1. Add a port CMake target mirroring Dusklight: list the decomp sources, link
