@@ -667,23 +667,13 @@ uint CAudioSys::S3dFindLowerPriorityHandle(const uint prio) {
 
 uint CAudioSys::SeqPlayEx(const ushort gid, const ushort sid, void* arrfile, SND_PLAYPARA* para,
                            const uchar studio) {
-#ifdef TARGET_PC
-  return 0;
-#else
   return sndSeqPlayEx(gid, sid, arrfile, para, studio);
-#endif
 }
 
-void CAudioSys::SeqStop(u32 seqId) {
-#ifndef TARGET_PC
-  sndSeqStop(seqId);
-#endif
-}
+void CAudioSys::SeqStop(u32 seqId) { sndSeqStop(seqId); }
 
 void CAudioSys::SeqVolume(const u8 volume, const u16 time, const u32 seqId, const u8 mode) {
-#ifndef TARGET_PC
   sndSeqVolume(volume, time, seqId, mode);
-#endif
 }
 
 void CAudioSys::SetStereoMode(const bool mode) {

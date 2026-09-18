@@ -162,8 +162,17 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
 - CMDL and MREA geometry now share native surface-header conversion, including
   material indices, display-list lengths, pointer-sized renderer links, normals,
   and optional bounds.
-- MusyX sequence playback is a safe no-op on PC until its synth and output backend
-  exists; MIDI manager handles remain valid so scripted events do not retrigger.
+- MusyX now uses the upstream `origin/sdl3` PC backend (merged into the vendored
+  submodule, with conflicts resolved in favor of the host `s64` typedef and the SDL
+  mutex IRQ). It provides a software voice mixer covering ADPCM/PCM decode, pitch
+  resampling, ADSR envelopes, and studio/AUX mixing, and feeds interleaved `s16`
+  stereo to an SDL3 audio stream. PC sequence playback is enabled again and the
+  audio thread drives `snd_handle_irq`.
+- Big-endian `ARR` song payloads from `CSNG` resources are converted in place for
+  little-endian hosts before sequencing: header offsets, the 64-entry track table,
+  per-track `TENTRY` arrays, the `MTRACK` tempo list, the pattern table, pattern
+  headers, and `NOTE_DATA` note streams are byte-swapped. Byte-oriented pitch-bend
+  and modulation streams need no conversion.
 - Native text rendering checks explicit string lengths before dereferencing the
   next character. Palette entries, MREA section buffers, and map buffers now return
   to the allocator that created them during runtime and delayed shutdown cleanup.
@@ -179,11 +188,10 @@ Automated PAD input now advances through the front end, initializes the first ro
 constructs `CInGameGuiManager` and `CMFGame`, runs beyond frame 10,000, and exits
 normally after forced SIGTERM cleanup.
 
-1. Exercise player movement, rendering, collision, and room transitions with richer
+1. Confirm MusyX music and effects are audible end to end, and validate the mixer
+   against a variety of songs, samples, and streaming audio.
+2. Exercise player movement, rendering, collision, and room transitions with richer
    automated input to identify the next gameplay blocker.
-2. Implement MusyX's missing PC synth/DSP path and feed it to an SDL audio stream;
-   sample directories register correctly, but the current PC backend has no mixer
-   or output implementation.
 3. Continue first-room loading, then verify normal controller input and CARD saves.
 
 ## Licensing
