@@ -183,7 +183,7 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
     }
     CWorldLayers::ReadWorldLayers(in, version, x8_mlvlId);
     x3c_loadToken = nullptr;
-    x40_loadBuf = nullptr;
+    CMemory::Free(x40_loadBuf.release());
     x44_bufSz = 0;
     x4_phase = kP_LoadingMap;
   }
@@ -253,6 +253,7 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
 }
 
 CWorld::~CWorld() {
+  CMemory::Free(x40_loadBuf.release());
   StopSounds();
   CWorldTransManager* transManager = gpGameState->WorldTransitionManager().GetPtr();
   if (transManager->GetTransType() != CWorldTransManager::kTT_Disabled &&

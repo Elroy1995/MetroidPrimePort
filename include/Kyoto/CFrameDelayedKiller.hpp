@@ -24,6 +24,9 @@ public:
 
   static void FlushAllocationsForFrame();
   static void ScheduleDeletion(const EWhichFrame thisFrame, void* victim);
+#ifdef TARGET_PC
+  static void ScheduleHostDeletion(const EWhichFrame thisFrame, void* victim);
+#endif
   static void FlushAllAllocations();
   static void StallAndFlushAllAllocations();
   const CFrameDelayedKiller::Stats& GetStats() {

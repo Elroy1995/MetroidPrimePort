@@ -11,6 +11,9 @@
 
 static uint sCurList = 0;
 static rstl::list< void* > sFrameDelayedList[2];
+#ifdef TARGET_PC
+static rstl::list< void* > sHostFrameDelayedList[2];
+#endif
 
 #if defined(__MWERKS__) && (VERSION < VERSION_GM8P_00 || VERSION == VERSION_GM8E_02)
 #pragma force_active on
@@ -39,6 +42,13 @@ void CFrameDelayedKiller::ScheduleDeletion(const EWhichFrame thisFrame, void* vi
   sFrameDelayedList[index].push_back(victim);
 }
 
+#ifdef TARGET_PC
+void CFrameDelayedKiller::ScheduleHostDeletion(const EWhichFrame thisFrame, void* victim) {
+  uint index = thisFrame == true ? sCurList : sCurList ^ 1;
+  sHostFrameDelayedList[index].push_back(victim);
+}
+#endif
+
 void CFrameDelayedKiller::FlushAllocationsForFrame() {
   sCurList ^= 1;
   rstl::list< void* >& list = sFrameDelayedList[sCurList];
@@ -47,6 +57,13 @@ void CFrameDelayedKiller::FlushAllocationsForFrame() {
   }
 
   list.clear();
+#ifdef TARGET_PC
+  rstl::list< void* >& hostList = sHostFrameDelayedList[sCurList];
+  for (rstl::list< void* >::iterator t = hostList.begin(); t != hostList.end(); ++t) {
+    delete[] static_cast< uchar* >(*t);
+  }
+  hostList.clear();
+#endif
 }
 
 CElementAllocationChunk::CElementAllocationChunk()

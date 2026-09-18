@@ -147,10 +147,15 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   untouched. MusyX group push/pop is enabled again and `sndPushGroup` succeeds for
   the boot groups. A `s32`->`size_t` cast in `dataAddSampleReference` fixes truncation
   of 64-bit sample bases.
-- CMDL header fields, section sizes, and bounds are byte-swapped before model setup.
+- CMDL header fields, section sizes, bounds, and per-surface metadata are byte-swapped
+  before model setup. Surface parent/next links are expanded in place for 64-bit hosts
+  while raw GX display lists remain untouched.
 - Movie buffers owned by `single_ptr`/`auto_ptr` use matching host allocations and
   rounded DVD request sizes instead of placing `CMemory::Alloc` pointers behind
   host `delete` owners.
+- Aurora keyboard input has initial GameCube mappings when no saved mapping exists:
+  WASD and IJKL drive the sticks, X/Z/C/V map A/B/X/Y, Return maps Start, and the
+  arrow keys map the D-pad. Existing user mappings and physical controllers win.
 
 Host shutdown now completes cleanly. Game-heap buffers owned by `CGBASupport`,
 `CStaticAudioPlayer`, `CAudioGrpSetLoc`, and `SMediumAllocPuddle` are released
@@ -159,15 +164,16 @@ usage scan that it does not initialize.
 
 ## Next steps
 
-1. Add a port CMake target mirroring Dusklight: list the decomp sources, link
-   `aurora::core gx gd si vi pad mtx os dvd thp card`, add an application entry
-   point.
-2. Compile the decomp `src/` with clang against Aurora's `include/dolphin/*`
-   (not `extern/sdk`); fix per-file issues iteratively.
-3. Platform glue: `aurora::main` entry, PAD input, DVD via nod (ISO), CARD
-   saves (`.gci`/`.raw`). VI/GX already provided.
-4. Fill decomp gaps that block the modern-compiler build (functions not yet
-   decompiled cannot come from the original MIPS asm in a port).
+Automated PAD input now advances through the front end, initializes the selected
+world, and begins first-room resource loading. The next crash is
+`CPFAreaOctree::Fixup` reading packed big-endian 32-bit PATH octree data as native
+64-bit structures.
+
+1. Convert PATH headers, node links, and arrays before `CPFAreaOctree::Fixup`.
+2. Implement MusyX's missing PC synth/DSP path and feed it to an SDL audio stream;
+   sample directories register correctly, but the current PC backend has no mixer
+   or output implementation.
+3. Continue first-room loading, then verify normal controller input and CARD saves.
 
 ## Licensing
 
