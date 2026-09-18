@@ -1,6 +1,8 @@
 // #include "dolphin/os/OSArena.h"
 #include "dolphin/types.h"
 #include "stddef.h"
+#include <stdio.h>
+#include <dolphin/os.h>
 #include <Kyoto/Alloc/CGameAllocator.hpp>
 
 #include <Kyoto/Alloc/CCallStack.hpp>
@@ -68,6 +70,9 @@ CGameAllocator::~CGameAllocator() {
 bool CGameAllocator::Initialize(COsContext& ctx) {
   x8_heapSize = ctx.GetBaseFreeRam() - 2 * sizeof(SGameMemInfo);
   xc_first = static_cast< SGameMemInfo* >(OSAllocFromArenaLo(x8_heapSize, sizeof(SGameMemInfo)));
+  fprintf(stderr, "CGameAllocator: baseFreeRam=%u heapSize=0x%x first=%p arenaLo=%p arenaHi=%p\n",
+          static_cast< unsigned >(ctx.GetBaseFreeRam()), static_cast< unsigned >(x8_heapSize),
+          static_cast< void* >(xc_first), OSGetArenaLo(), OSGetArenaHi());
   xb4_physicalAddr =
       reinterpret_cast< void* >(reinterpret_cast< intptr_t >(xc_first) -
                                 (reinterpret_cast< uintptr_t >(xc_first) & 0xf0000000));

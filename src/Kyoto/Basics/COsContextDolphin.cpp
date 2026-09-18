@@ -4,6 +4,7 @@
 #include "Kyoto/Basics/CBasics.hpp"
 #include "dolphin/os.h"
 #include "dolphin/vi.h"
+#include <stdio.h>
 #include <string.h>
 
 COsContext::COsContext(bool, bool) {
@@ -68,8 +69,11 @@ int COsContext::OpenWindow(const char* title, int x, int y, int w, int h, bool f
 
   x2c_frameBufferSize =
       (ushort)((x30_renderMode.fbWidth + 15) & ~15) * x30_renderMode.xfbHeight * 2;
+  fprintf(stderr, "OpenWindow: lo=%p hi=%p fbSize=%u\n", OSGetArenaLo(), OSGetArenaHi(),
+          static_cast< unsigned >(x2c_frameBufferSize));
   x24_frameBuffer1 = OSAllocFromArenaLo(x2c_frameBufferSize, 32);
   x28_frameBuffer2 = OSAllocFromArenaLo(x2c_frameBufferSize, 32);
+  fprintf(stderr, "OpenWindow after fb: lo=%p hi=%p\n", OSGetArenaLo(), OSGetArenaHi());
   x20_arenaLo2 = OSGetArenaLo();
   x18_arenaLo1 = OSGetArenaLo();
   x1c_arenaHi = OSGetArenaHi();

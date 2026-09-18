@@ -87,9 +87,25 @@ Issues fixed along the way:
   guest stack); skipped it on PC and gave the dummy `OSThread` a MEM1 stack range.
 - Aurora aborted when the game's error handler called `PADRead` before `PADInit`.
 
-Current blocker: the game's heap allocation fails —
-`CMemory::Alloc(65536) failed` in `CDvdFile::StartARAMFileLoad` — which triggers
-the error handler. This is a memory/ARAM heap setup issue, not a codegen one.
+Current blocker: the game's custom `CGameAllocator` (main heap) returns null for a
+64 KB allocation in `CDvdFile::StartARAMFileLoad` (loading `aram:Tweaks.pak`),
+which triggers the error handler (and then Aurora's `PADRead before PADInit`
+fatal). Two separate issues:
+
+1. **Heap sizing (fixed).** Aurora's internal framebuffer defaulted to the
+   window-scaled 2240x1680, so the game's two `x2c_frameBufferSize` allocations
+   took ~15 MB of the 24 MB MEM1, leaving only a ~10 MB game heap. Pinning
+   `windowWidth/Height` to 640x480 raised the heap to ~20 MB. (Aurora still
+   scales the internal fb to 1120x840 @1.75; a true 640x480 fb needs the DPI
+   scale forced to 1.)
+2. **Allocator free-list (open).** With ~20 MB free the 64 KB allocation still
+   fails, so `CGameAllocator`'s free-block/split bookkeeping is not surviving on
+   the 64-bit host (`SGameMemInfo` packs flags in low pointer bits and uses
+   `sizeof(SGameMemInfo)`, which is ~4x larger than on GameCube). Needs a focused
+   pass over `FindFreeBlock`/`FixupAllocPtrs`/`AddFreeEntryToFreeList`.
+
+Temporary memory diagnostics are in `CGameAllocator::Initialize` and
+`COsContext::OpenWindow` (stderr prints of heap/arena/framebuffer sizes).
 
 ## Next steps
 

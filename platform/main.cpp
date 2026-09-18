@@ -37,6 +37,10 @@ int main(int argc, char** argv) {
         .cachePath = nullptr,
         .resourcesPath = nullptr,
         .desiredBackend = BACKEND_AUTO,
+        // Keep the internal framebuffer at the game's 640x480 so its two
+        // framebuffer allocations fit in MEM1; Aurora upscales to the window.
+        .windowWidth = 640,
+        .windowHeight = 480,
         .mem1Size = MEM1_DEFAULT_SIZE,
         .mem2Size = ARAM_DEFAULT_SIZE,
     };
