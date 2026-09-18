@@ -6,6 +6,7 @@
 #include "Kyoto/CDvdRequest.hpp"
 #include "Kyoto/CResFactory.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
+#include "Kyoto/Graphics/CCubeSurface.hpp"
 #include "Kyoto/Graphics/CTexture.hpp"
 #include "Kyoto/Math/CloseEnough.hpp"
 #include "Kyoto/Streams/CMemoryInStream.hpp"
@@ -259,6 +260,7 @@ void CGameArea::FillInStaticGeometry() {
     if (surfaceCount != 0) {
       surfaces.reserve(surfaceCount);
       for (uint surface = 0; surface < surfaceCount; ++surface) {
+        CCubeSurface::ConvertSurfaceHeader(section->first.get());
         surfaces.push_back(section->first.get());
         ++section;
       }

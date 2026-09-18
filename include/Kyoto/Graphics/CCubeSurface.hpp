@@ -23,6 +23,7 @@ public:
 #pragma pack(pop)
 
   static const CVector3f skDefaultNormal;
+  static void ConvertSurfaceHeader(void* data);
   union {
     uchar* x0_rawdata;
     SSurfaceData* x0_data;

@@ -30,37 +30,6 @@ static uchar* MemoryFromPartData(uchar*& dataCur, int*& secSizeCur) {
   return ret;
 }
 
-#if TARGET_LITTLE_ENDIAN
-static void ConvertSurfaceHeader(uchar* data) {
-  float center[3];
-  float normal[3];
-  for (int i = 0; i < 3; ++i) {
-    center[i] = CBasics::SwapBytes(*reinterpret_cast< const float* >(data + i * 4));
-    normal[i] = CBasics::SwapBytes(*reinterpret_cast< const float* >(data + 0x20 + i * 4));
-  }
-
-  const uint materialIndex = CBasics::SwapBytes(*reinterpret_cast< const uint* >(data + 0xc));
-  const uint displayListSize = CBasics::SwapBytes(*reinterpret_cast< const uint* >(data + 0x10));
-  const uint extraSize = CBasics::SwapBytes(*reinterpret_cast< const uint* >(data + 0x1c));
-  float bounds[6];
-  if (extraSize != 0) {
-    for (int i = 0; i < 6; ++i) {
-      bounds[i] = CBasics::SwapBytes(*reinterpret_cast< const float* >(data + 0x2c + i * 4));
-    }
-  }
-
-  CCubeSurface::SSurfaceData* surface = reinterpret_cast< CCubeSurface::SSurfaceData* >(data);
-  memcpy(&surface->mCenter, center, sizeof(center));
-  surface->mMaterialIndex = materialIndex;
-  surface->mDisplayListSizeAndNormalHint = displayListSize;
-  surface->mExtraSize = extraSize;
-  memcpy(&surface->mNormal, normal, sizeof(normal));
-  if (extraSize != 0) {
-    memcpy(&surface->mBounds, bounds, sizeof(bounds));
-  }
-}
-#endif
-
 CModel::CModel(const rstl::auto_ptr< uchar >& data, int length, IObjectStore& store)
 : x0_data(data.release())
 , x4_dataLen(length)
@@ -114,9 +83,7 @@ CModel::CModel(const rstl::auto_ptr< uchar >& data, int length, IObjectStore& st
 
   for (uint i = 0; i < surfaceCount; ++i) {
     uchar* surface = MemoryFromPartData(dataCur, secSizeCur);
-#if TARGET_LITTLE_ENDIAN
-    ConvertSurfaceHeader(surface);
-#endif
+    CCubeSurface::ConvertSurfaceHeader(surface);
     x8_surfaces.push_back(surface);
   }
 
