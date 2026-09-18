@@ -162,6 +162,8 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
 - CMDL and MREA geometry now share native surface-header conversion, including
   material indices, display-list lengths, pointer-sized renderer links, normals,
   and optional bounds.
+- MusyX sequence playback is a safe no-op on PC until its synth and output backend
+  exists; MIDI manager handles remain valid so scripted events do not retrigger.
 
 Host shutdown now completes cleanly. Game-heap buffers owned by `CGBASupport`,
 `CStaticAudioPlayer`, `CAudioGrpSetLoc`, and `SMediumAllocPuddle` are released
@@ -172,9 +174,10 @@ usage scan that it does not initialize.
 
 Automated PAD input now advances through the front end, initializes the first room,
 constructs `CInGameGuiManager` and `CMFGame`, and runs gameplay updates. The next
-crash is a scripted MIDI playback request entering MusyX's unported PC sequencer.
+test failure occurs only during forced shutdown, where `CTextRenderBuffer` releases
+a `CGraphicsPalette` through the host allocator despite game-heap allocation.
 
-1. Make MIDI playback safe while MusyX's PC synth/DSP backend remains unavailable.
+1. Correct `CTextRenderBuffer` palette allocation ownership during shutdown.
 2. Implement MusyX's missing PC synth/DSP path and feed it to an SDL audio stream;
    sample directories register correctly, but the current PC backend has no mixer
    or output implementation.
