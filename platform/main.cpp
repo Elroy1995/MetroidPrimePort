@@ -51,6 +51,10 @@ int main(int argc, char** argv) {
     }
     std::printf("metroid_prime_port: disc mounted: %s\n", discPath);
 
+    // Prime the window/event state so the game's first aurora_begin_frame can
+    // succeed (the game submits GX during early init, before its main loop).
+    aurora_update();
+
     const int result = metroid_main(argc, argv);
 
     aurora_dvd_close();

@@ -70,6 +70,27 @@ What clearing the remaining errors required:
 - CMake: `LINK_GROUP:RESCAN` around `aurora::core`/`aurora::gx` to break their
   static-library cycle; excluded `src/NESemu` (raw PowerPC asm).
 
+### Boot progress (2026-09-18)
+
+`metroid_prime_port` now boots well into initialization under Aurora:
+1. Aurora initializes (Vulkan device, 2240x1680 framebuffer, CARD, ARAM `0x1000000`).
+2. Disc mounts via `aurora_dvd_open` (user's ISO).
+3. Game entry runs: `CMain` ctor, `RsMain`, `CGameGlobalObjects` ctor, default font
+   (zlib) load, `InitializeSubsystems` (AR/ARQ), `PostInitialize`.
+4. GX commands reach Aurora's FIFO worker and a frame is presented.
+
+Issues fixed along the way:
+- zlib ABI: the bundled zlib 1.1.3 declares a non-standard 3-arg `inflateInit2_`;
+  retargeted to the standard 4-arg form so it matches the linked zlib-ng.
+- `TOneStatic<T>` 1-arg `operator new` had no definition.
+- The guest stack "paint" in `InitializeSubsystems` wrote to address 0 (no emulated
+  guest stack); skipped it on PC and gave the dummy `OSThread` a MEM1 stack range.
+- Aurora aborted when the game's error handler called `PADRead` before `PADInit`.
+
+Current blocker: the game's heap allocation fails —
+`CMemory::Alloc(65536) failed` in `CDvdFile::StartARAMFileLoad` — which triggers
+the error handler. This is a memory/ARAM heap setup issue, not a codegen one.
+
 ## Next steps
 
 1. Add a port CMake target mirroring Dusklight: list the decomp sources, link

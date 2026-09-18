@@ -3,6 +3,25 @@
 // Port: Aurora brackets a presented frame around the game's scene.
 #include <aurora/aurora.h>
 
+// Tracks whether an Aurora frame is currently open. GXInit (CGraphics::Startup)
+// submits register writes the Aurora worker processes, so a frame must be open
+// before it runs; the first EndScene closes it.
+namespace {
+bool s_auroraFrameOpen = false;
+void AuroraFrameBegin() {
+  if (!s_auroraFrameOpen) {
+    aurora_begin_frame();
+    s_auroraFrameOpen = true;
+  }
+}
+void AuroraFrameEnd() {
+  if (s_auroraFrameOpen) {
+    aurora_end_frame();
+    s_auroraFrameOpen = false;
+  }
+}
+} // namespace
+
 #include "Kyoto/Alloc/CMemory.hpp"
 #include "Kyoto/Basics/COsContext.hpp"
 #include "Kyoto/Basics/CStopwatch.hpp"
@@ -283,6 +302,8 @@ void CGraphics::InitGraphicsFifo(GXFifoObj* obj, void* fifo, uint fifoSize) {
 #endif
 
 bool CGraphics::Startup(const COsContext& osContext, uint fifoSize, void* fifoBase) {
+  // Port: open an Aurora frame before GXInit submits FIFO commands.
+  AuroraFrameBegin();
   mpFifo = fifoBase;
   mpFifoObj = GXInit(fifoBase, fifoSize);
 #if VERSION >= VERSION_GM8J_00
@@ -738,7 +759,7 @@ void CGraphics::ClearBackAndDepthBuffers() {
 
 void CGraphics::BeginScene() {
   // Port: a scene maps to one Aurora frame (covers init-time splash draws too).
-  aurora_begin_frame();
+  AuroraFrameBegin();
   ClearBackAndDepthBuffers();
 }
 
@@ -800,7 +821,7 @@ void CGraphics::EndScene() {
   VISetPostRetraceCallback(VideoPostCallback);
   GXFlush();
   // Port: present this Aurora frame before the (stubbed) breakpoint wait.
-  aurora_end_frame();
+  AuroraFrameEnd();
   GXFifoObj* fifo = GXGetGPFifo();
   void* readPtr;
   void* writePtr;
