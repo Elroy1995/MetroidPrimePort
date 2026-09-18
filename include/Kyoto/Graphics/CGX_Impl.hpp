@@ -300,14 +300,18 @@ CGX_INLINE void CGX::SetNumIndStages(uchar num) {
 }
 
 CGX_INLINE void CGX::SetArray(GXAttr attr, const void* data, uchar stride) {
+  SetArray(attr, data, 0, stride);
+}
+
+CGX_INLINE void CGX::SetArray(GXAttr attr, const void* data, uint size, uchar stride) {
   uint idx = attr - GX_VA_POS;
   if (data == nullptr || sGXState.x0_arrayPtrs[idx] == data) {
     return;
   }
   sGXState.x0_arrayPtrs[idx] = data;
-  // Port: Aurora's GXSetArray takes (attr, data, size, stride, le); the SDK
-  // 3-arg form passed only stride. size/le are Aurora's indexed-draw extension.
-  GXSetArray(attr, data, 0, stride, false);
+  // Port: Aurora's GXSetArray takes (attr, data, size, stride, le) and uploads
+  // `size` bytes of the array; guest vertex data is big-endian, hence le=false.
+  GXSetArray(attr, data, size, stride, false);
 }
 
 CGX_INLINE void CGX::CallDisplayList(const void* ptr, size_t size) {

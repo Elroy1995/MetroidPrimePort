@@ -251,10 +251,15 @@ void CGameArea::FillInStaticGeometry() {
   for (int model = 0; model < modelCount; ++model) {
     const void* header = section->first.get();
     const void* positions = (++section)->first.get();
+    const uint positionsSize = section->second;
     const void* normals = (++section)->first.get();
+    const uint normalsSize = section->second;
     const void* colors = (++section)->first.get();
+    const uint colorsSize = section->second;
     const void* texCoords = (++section)->first.get();
+    const uint texCoordsSize = section->second;
     const void* packedTexCoords = (++section)->first.get();
+    const uint packedTexCoordsSize = section->second;
     const uint surfaceCount =
         CBasics::SwapBytes(*reinterpret_cast< const uint* >((++section)->first.get()));
     ++section;
@@ -266,8 +271,9 @@ void CGameArea::FillInStaticGeometry() {
         ++section;
       }
       x12c_postConstructed->x4c_insts.push_back(
-          CMetroidModelInstance(header, x12c_postConstructed->x10d4_firstMatPtr, positions, normals,
-                                colors, texCoords, packedTexCoords, surfaces));
+          CMetroidModelInstance(header, x12c_postConstructed->x10d4_firstMatPtr, positions,
+                                positionsSize, normals, normalsSize, colors, colorsSize, texCoords,
+                                texCoordsSize, packedTexCoords, packedTexCoordsSize, surfaces));
       surfaces.clear();
     }
   }

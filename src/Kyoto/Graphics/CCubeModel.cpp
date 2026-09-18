@@ -20,8 +20,11 @@ CCubeModel::CCubeModel(rstl::vector< void* >* surfaces,
                        rstl::vector< TCachedToken< CTexture > >* textures, const void* materialData,
                        const void* positions, const void* normals, const void* colors,
                        const void* uvs, const void* compressedUvs, const CAABox& bounds,
-                       const uchar visorFlags, const bool texturesLoaded, const uint idx)
-: x0_instance(*surfaces, materialData, positions, normals, colors, uvs, compressedUvs)
+                       const uchar visorFlags, const bool texturesLoaded, const uint idx,
+                       const uint positionsSize, const uint normalsSize, const uint colorsSize,
+                       const uint texCoordsSize, const uint packedTexCoordsSize)
+: x0_instance(*surfaces, materialData, positions, normals, colors, uvs, compressedUvs,
+              positionsSize, normalsSize, colorsSize, texCoordsSize, packedTexCoordsSize)
 , x1c_textures(textures)
 , x20_bounds(bounds)
 , x38_firstUnsorted(nullptr)
@@ -67,7 +70,8 @@ void CCubeModel::MakeTexturesFromMats(const void* data,
 }
 
 void CCubeModel::SetStaticArraysCurrent() const {
-  CGX::SetArray(GX_VA_CLR0, x0_instance.GetColorPointer(), sizeof(CColor));
+  CGX::SetArray(GX_VA_CLR0, x0_instance.GetColorPointer(), x0_instance.GetColorSize(),
+                sizeof(CColor));
   const void* packed = x0_instance.GetPackedTCPointer();
   const void* unpacked = x0_instance.GetTCPointer();
   if (!packed) {
@@ -75,14 +79,15 @@ void CCubeModel::SetStaticArraysCurrent() const {
   }
 
   if (sUsingPackedLightmaps) {
-    CGX::SetArray(GX_VA_TEX0, packed, sizeof(ushort) * 2);
+    CGX::SetArray(GX_VA_TEX0, packed, x0_instance.GetPackedTCSize(), sizeof(ushort) * 2);
   } else {
-    CGX::SetArray(GX_VA_TEX0, unpacked, sizeof(CVector2f));
+    CGX::SetArray(GX_VA_TEX0, unpacked, x0_instance.GetTCSize(), sizeof(CVector2f));
   }
 
   if (unpacked) {
     for (int i = 1; i <= GX_VA_TEX7 - GX_VA_TEX0; ++i) {
-      CGX::SetArray(static_cast< GXAttr >(i + GX_VA_TEX0), unpacked, sizeof(CVector2f));
+      CGX::SetArray(static_cast< GXAttr >(i + GX_VA_TEX0), unpacked, x0_instance.GetTCSize(),
+                    sizeof(CVector2f));
     }
   }
 
@@ -90,9 +95,10 @@ void CCubeModel::SetStaticArraysCurrent() const {
 }
 
 void CCubeModel::SetArraysCurrent() const {
-  CGX::SetArray(GX_VA_POS, x0_instance.GetVertexPointer(), sizeof(CVector3f));
+  CGX::SetArray(GX_VA_POS, x0_instance.GetVertexPointer(), x0_instance.GetVertexSize(),
+                sizeof(CVector3f));
   const int stride = (x41_visorFlags & 1) ? sizeof(short) * 3 : sizeof(CVector3f);
-  CGX::SetArray(GX_VA_NRM, x0_instance.GetNormalPointer(), stride);
+  CGX::SetArray(GX_VA_NRM, x0_instance.GetNormalPointer(), x0_instance.GetNormalSize(), stride);
   SetStaticArraysCurrent();
 }
 
@@ -105,9 +111,11 @@ void CCubeModel::SetSkinningArraysCurrent(const float* positions, const float* n
 void CCubeModel::SetUsingPackedLightmaps(const bool use) const {
   sUsingPackedLightmaps = use;
   if (sUsingPackedLightmaps) {
-    CGX::SetArray(GX_VA_TEX0, x0_instance.GetPackedTCPointer(), sizeof(ushort) * 2);
+    CGX::SetArray(GX_VA_TEX0, x0_instance.GetPackedTCPointer(), x0_instance.GetPackedTCSize(),
+                  sizeof(ushort) * 2);
   } else {
-    CGX::SetArray(GX_VA_TEX0, x0_instance.GetTCPointer(), sizeof(CVector2f));
+    CGX::SetArray(GX_VA_TEX0, x0_instance.GetTCPointer(), x0_instance.GetTCSize(),
+                  sizeof(CVector2f));
   }
 }
 

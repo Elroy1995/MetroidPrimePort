@@ -452,7 +452,8 @@ void CCubeRenderer::AddStaticGeometry(const rstl::vector< CMetroidModelInstance 
             const_cast< rstl::vector< void* >* >(&it->GetSurfaces()), textures.get(),
             it->GetMaterialPointer(), it->GetVertexPointer(), it->GetNormalPointer(),
             it->GetColorPointer(), it->GetTCPointer(), it->GetPackedTCPointer(),
-            it->GetBoundingBox(), it->GetFlags(), false, i));
+            it->GetBoundingBox(), it->GetFlags(), false, i, it->GetVertexSize(), it->GetNormalSize(),
+            it->GetColorSize(), it->GetTCSize(), it->GetPackedTCSize()));
       }
     }
     x1c_areaListItems.push_back(CAreaListItem(geometry, octTree, textures, models, areaIdx));

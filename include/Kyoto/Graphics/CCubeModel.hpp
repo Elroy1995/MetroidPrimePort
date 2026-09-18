@@ -25,14 +25,20 @@ public:
   public:
     ModelInstance(rstl::vector< void* >& surfaces, const void* materialData, const void* positions,
                   const void* normals, const void* colors, const void* uvs,
-                  const void* packedTexCoords)
+                  const void* packedTexCoords, uint positionsSize = 0, uint normalsSize = 0,
+                  uint colorsSize = 0, uint texCoordsSize = 0, uint packedTexCoordsSize = 0)
     : x0_surfacePtrs(surfaces)
     , x4_materialData(materialData)
     , x8_positions(positions)
     , xc_normals(normals)
     , x10_colors(colors)
     , x14_texCoords(uvs)
-    , x18_packedTexCoords(packedTexCoords) {}
+    , x18_packedTexCoords(packedTexCoords)
+    , x1c_positionsSize(positionsSize)
+    , x20_normalsSize(normalsSize)
+    , x24_colorsSize(colorsSize)
+    , x28_texCoordsSize(texCoordsSize)
+    , x2c_packedTexCoordsSize(packedTexCoordsSize) {}
 
     rstl::vector< void* >& Surfaces() { return x0_surfacePtrs; }
     const rstl::vector< void* >& GetSurfaces() const { return x0_surfacePtrs; }
@@ -43,6 +49,11 @@ public:
     const void* GetColorPointer() const { return x10_colors; }
     const void* GetTCPointer() const { return x14_texCoords; }
     const void* GetPackedTCPointer() const { return x18_packedTexCoords; }
+    uint GetVertexSize() const { return x1c_positionsSize; }
+    uint GetNormalSize() const { return x20_normalsSize; }
+    uint GetColorSize() const { return x24_colorsSize; }
+    uint GetTCSize() const { return x28_texCoordsSize; }
+    uint GetPackedTCSize() const { return x2c_packedTexCoordsSize; }
 
   private:
     rstl::vector< void* >& x0_surfacePtrs;
@@ -52,11 +63,18 @@ public:
     const void* x10_colors;
     const void* x14_texCoords;
     const void* x18_packedTexCoords;
+    uint x1c_positionsSize;
+    uint x20_normalsSize;
+    uint x24_colorsSize;
+    uint x28_texCoordsSize;
+    uint x2c_packedTexCoordsSize;
   };
   CCubeModel(rstl::vector< void* >* surfaces, rstl::vector< TCachedToken< CTexture > >* textures,
              const void* materialData, const void* positions, const void* normals,
              const void* colors, const void* uvs, const void* compressedUvs, const CAABox& bounds,
-             uchar visorFlags, bool texturesLoaded, uint idx);
+             uchar visorFlags, bool texturesLoaded, uint idx, uint positionsSize = 0,
+             uint normalsSize = 0, uint colorsSize = 0, uint texCoordsSize = 0,
+             uint packedTexCoordsSize = 0);
   static void SetRenderModelBlack(bool v);
   static void SetModelWireframe(bool v);
   void UnlockTextures() const;

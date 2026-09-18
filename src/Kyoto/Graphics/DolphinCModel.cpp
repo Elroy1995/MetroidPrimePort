@@ -23,9 +23,13 @@ CModel* CModel::sOneFrameList = nullptr;
 CModel* CModel::sTwoFrameList = nullptr;
 static uint sFrameCounter = 0;
 
-static uchar* MemoryFromPartData(uchar*& dataCur, int*& secSizeCur) {
+static uchar* MemoryFromPartData(uchar*& dataCur, int*& secSizeCur, uint* outSize = nullptr) {
+  const uint size = CBasics::SwapBytes(*secSizeCur);
+  if (outSize != nullptr) {
+    *outSize = size;
+  }
   uchar* ret = *secSizeCur != 0 ? dataCur : nullptr;
-  dataCur += CBasics::SwapBytes(*secSizeCur);
+  dataCur += size;
   secSizeCur++;
   return ret;
 }
@@ -67,14 +71,24 @@ CModel::CModel(const rstl::auto_ptr< uchar >& data, int length, IObjectStore& st
     x4_dataLen += shader.x0_textures.size() * 12;
   }
 
-  const void* positions = reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur));
-  const void* normals = reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur));
-  const void* vtxColors = reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur));
+  uint positionsSize = 0;
+  uint normalsSize = 0;
+  uint colorsSize = 0;
+  uint floatUvsSize = 0;
+  uint shortUvsSize = 0;
+  const void* positions =
+      reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur, &positionsSize));
+  const void* normals =
+      reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur, &normalsSize));
+  const void* vtxColors =
+      reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur, &colorsSize));
   uint surfaceCount;
-  const void* floatUvs = reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur));
+  const void* floatUvs =
+      reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur, &floatUvsSize));
   const void* shortUvs = nullptr;
   if (hasShortUvs) {
-    shortUvs = reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur));
+    shortUvs =
+        reinterpret_cast< const void* >(MemoryFromPartData(dataCur, secSizeCur, &shortUvsSize));
   }
 
   uint* surfaceInfo = reinterpret_cast< uint* >(MemoryFromPartData(dataCur, secSizeCur));
@@ -91,9 +105,11 @@ CModel::CModel(const rstl::auto_ptr< uchar >& data, int length, IObjectStore& st
   const CAABox aabb(CBasics::SwapBytes(bounds[0]), CBasics::SwapBytes(bounds[1]),
                     CBasics::SwapBytes(bounds[2]), CBasics::SwapBytes(bounds[3]),
                     CBasics::SwapBytes(bounds[4]), CBasics::SwapBytes(bounds[5]));
-  x28_modelInstance = rs_new CCubeModel(
-      &x8_surfaces, &x18_matSets.front().x0_textures, x18_matSets.front().x10_data, positions,
-      normals, vtxColors, floatUvs, shortUvs, aabb, visorFlags ? 1 : 0, true, -1);
+  x28_modelInstance =
+      rs_new CCubeModel(&x8_surfaces, &x18_matSets.front().x0_textures, x18_matSets.front().x10_data,
+                        positions, normals, vtxColors, floatUvs, shortUvs, aabb,
+                        visorFlags ? 1 : 0, true, -1, positionsSize, normalsSize, colorsSize,
+                        floatUvsSize, shortUvsSize);
   sThisFrameList = this;
   if (x34_next != nullptr) {
     x34_next->x30_prev = this;
@@ -352,9 +368,11 @@ void CModel::RemapData(uchar* data) {
     RemapPointer(x8_surfaces[i], offset);
   }
 
-  x28_modelInstance = rs_new CCubeModel(&x8_surfaces, &x18_matSets.front().x0_textures,
-                                        x18_matSets.front().x10_data, positions, normals, colors,
-                                        uvs, packedUvs, bounds, flags, texturesLoaded, index);
+  x28_modelInstance = rs_new CCubeModel(
+      &x8_surfaces, &x18_matSets.front().x0_textures, x18_matSets.front().x10_data, positions,
+      normals, colors, uvs, packedUvs, bounds, flags, texturesLoaded, index,
+      instance.GetVertexSize(), instance.GetNormalSize(), instance.GetColorSize(),
+      instance.GetTCSize(), instance.GetPackedTCSize());
   MoveToThisFrameList();
 }
 

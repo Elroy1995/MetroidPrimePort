@@ -144,6 +144,7 @@ public:
                              GXBool normalize, GXPTTexMtx postMtx);
   static void SetTexCoordGen_Compressed(GXTexCoordID dstCoord, uint flags);
   static void SetArray(GXAttr attr, const void* data, uchar stride);
+  static void SetArray(GXAttr attr, const void* data, uint size, uchar stride);
   static void SetFog(GXFogType type, float startZ, float endZ, float nearZ, float farZ,
                      const GXColor& color);
   static void SetLineWidth(uchar width, GXTexOffset offset);

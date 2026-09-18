@@ -188,6 +188,16 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   is a no-op on PC, and the DVD worker and main threads raced on the transfer
   counters until `mBufferLen` went negative and `ARQPostRequest` memcpy'd a huge
   length. Non-positive transfer lengths are also treated as complete.
+- Vertex array byte sizes are threaded through to `GXSetArray`. Aurora uploads
+  `size` bytes of each attribute array, and the port was passing 0, so every
+  array-based draw (MREA world geometry, CMDL models, skinned models) uploaded
+  zero bytes and rendered nothing while immediate-mode effects and the HUD still
+  drew. Positions, normals, colors, and UVs now carry the section sizes from the
+  MREA/CMDL loaders.
+- The PC MusyX mixer render thread is paced to real time. It previously free-ran
+  (measured ~29x real time) because it only throttled on the SDL queue depth,
+  overrunning the stream and producing dropouts; it now sleeps until the next
+  160-sample frame is due, which removed the buffer-boundary discontinuities.
 
 Host shutdown now completes cleanly. Game-heap buffers owned by `CGBASupport`,
 `CStaticAudioPlayer`, and `SMediumAllocPuddle` are released through `CMemory` instead

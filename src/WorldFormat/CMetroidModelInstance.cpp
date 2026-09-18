@@ -35,9 +35,11 @@ static CAABox BoundingBoxFromData(const void* ptr) {
 }
 
 CMetroidModelInstance::CMetroidModelInstance(const void* header, const void* firstGeom,
-                                             const void* positions, const void* normals,
-                                             const void* colors, const void* texCoords,
-                                             const void* packedTexCoords,
+                                             const void* positions, uint positionsSize,
+                                             const void* normals, uint normalsSize,
+                                             const void* colors, uint colorsSize,
+                                             const void* texCoords, uint texCoordsSize,
+                                             const void* packedTexCoords, uint packedTexCoordsSize,
                                              const rstl::vector< void* >& surfaces)
 : x0_visorFlags(CBasics::SwapBytes(*reinterpret_cast< const uint* >(header)))
 , x4_worldXf(TransformFromData((uchar*)header + sizeof(uint)))
@@ -48,4 +50,9 @@ CMetroidModelInstance::CMetroidModelInstance(const void* header, const void* fir
 , x64_normals(normals)
 , x68_colors(colors)
 , x6c_texCoords(texCoords)
-, x70_packedTexCoords(packedTexCoords) {}
+, x70_packedTexCoords(packedTexCoords)
+, x74_positionsSize(positionsSize)
+, x78_normalsSize(normalsSize)
+, x7c_colorsSize(colorsSize)
+, x80_texCoordsSize(texCoordsSize)
+, x84_packedTexCoordsSize(packedTexCoordsSize) {}
