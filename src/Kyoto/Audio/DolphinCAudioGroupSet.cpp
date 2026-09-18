@@ -6,8 +6,32 @@
 #include "Kyoto/Alloc/CMemory.hpp"
 #include "musyx/synthdata.h"
 #include "rstl/auto_ptr.hpp"
+#include "rstl/vector.hpp"
 #include <stdint.h>
 #include <string.h>
+
+#ifdef TARGET_PC
+namespace {
+// On PC MusyX has no ARAM copy: it reads samples and macros straight out of
+// `x0_data`/`x8_groupData`, and the MusyX 2.0.0 `sndPopGroup` path does not
+// reliably stop every voice that still references them. Retaining these buffers
+// for the session keeps those pointers valid instead of leaving the audio thread
+// reading freed (unmapped) memory.
+rstl::vector< void* >& RetainedAudioGroupBuffers() {
+  static rstl::vector< void* >* sBuffers = nullptr;
+  if (sBuffers == nullptr) {
+    sBuffers = rs_new rstl::vector< void* >();
+  }
+  return *sBuffers;
+}
+
+void RetainAudioGroupBuffer(void* buffer) {
+  if (buffer != nullptr) {
+    RetainedAudioGroupBuffers().push_back(buffer);
+  }
+}
+} // namespace
+#endif
 
 #if TARGET_LITTLE_ENDIAN
 namespace {
@@ -306,12 +330,24 @@ CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length
 }
 
 CAudioGrpSetLoc::~CAudioGrpSetLoc() {
+#ifdef TARGET_PC
+  RetainAudioGroupBuffer(x8_groupData.release());
+  RetainAudioGroupBuffer(x0_data.release());
+#else
   CMemory::Free(x8_groupData.release());
+#endif
 }
 
 void CAudioGrpSetLoc::FreeSampleBuffer() {
+#ifdef TARGET_PC
+  // On PC `hwSaveSample` never copies samples into ARAM, so MusyX reads sample
+  // data directly from `x0_data` through pointers stored in the pushed sample
+  // directory. Releasing the buffer here would leave those pointers dangling
+  // while the group is still pushed; the buffer is retained at destruction.
+#else
   x0_data = nullptr;
   x40_samples = nullptr;
+#endif
 }
 
 template <>

@@ -176,23 +176,39 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
 - Native text rendering checks explicit string lengths before dereferencing the
   next character. Palette entries, MREA section buffers, and map buffers now return
   to the allocator that created them during runtime and delayed shutdown cleanup.
+- AGSC group buffers are retained for the session on PC. `hwSaveSample` never copies
+  samples into ARAM here, and the MusyX 2.0.0 `sndPopGroup` path can leave voices
+  referencing sample data after a group is popped, so freeing the buffer left the
+  audio thread reading unmapped memory (confirmed with AddressSanitizer).
+- `CCameraFilterPass::DrawRandomStatic` previously faked a random main-memory
+  address as its texture source (the GameCube renderer ignored the pointer, the PC
+  renderer hashes it). It now samples a real scratch buffer of noise, sized for the
+  tiled IA4 extent.
+- DVD ARAM streaming state is serialized with a recursive mutex: `OSDisableInterrupts`
+  is a no-op on PC, and the DVD worker and main threads raced on the transfer
+  counters until `mBufferLen` went negative and `ARQPostRequest` memcpy'd a huge
+  length. Non-positive transfer lengths are also treated as complete.
 
 Host shutdown now completes cleanly. Game-heap buffers owned by `CGBASupport`,
-`CStaticAudioPlayer`, `CAudioGrpSetLoc`, and `SMediumAllocPuddle` are released
-through `CMemory` instead of host `delete`, and the PC build skips the guest-stack
-usage scan that it does not initialize.
+`CStaticAudioPlayer`, and `SMediumAllocPuddle` are released through `CMemory` instead
+of host `delete`, and the PC build skips the guest-stack usage scan that it does not
+initialize.
 
 ## Next steps
 
 Automated PAD input now advances through the front end, initializes the first room,
-constructs `CInGameGuiManager` and `CMFGame`, runs beyond frame 10,000, and exits
-normally after forced SIGTERM cleanup.
+constructs `CInGameGuiManager` and `CMFGame`, and runs beyond frame 29,000 with an
+AddressSanitizer-clean run past frame 21,000 and a normal exit on forced SIGTERM.
 
-1. Confirm MusyX music and effects are audible end to end, and validate the mixer
+1. Investigate the near-black first-room framebuffer. Screen captures show only very
+   dim content while the front end renders normally, so determine whether the game is
+   still in a transition/cinematic or whether world rendering is failing.
+2. Confirm MusyX music and effects are audible end to end, and validate the mixer
    against a variety of songs, samples, and streaming audio.
-2. Exercise player movement, rendering, collision, and room transitions with richer
+3. Replace the session-long AGSC buffer retention with a proper lifetime once MusyX
+   voice lifetimes are understood.
+4. Exercise player movement, rendering, collision, and room transitions with richer
    automated input to identify the next gameplay blocker.
-3. Continue first-room loading, then verify normal controller input and CARD saves.
 
 ## Licensing
 

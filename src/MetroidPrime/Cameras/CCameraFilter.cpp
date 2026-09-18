@@ -298,10 +298,40 @@ void CCameraFilterPass::DrawWideScreen(const CColor& color, const CTexture* tex,
   }
 }
 
+namespace {
+// `DrawRandomStatic` samples a random main-memory address on GameCube to produce
+// noise. The port's renderer dereferences the texture source, so hand it a real
+// scratch buffer of noise instead of a fake address.
+void* RandomStaticTextureData() {
+  constexpr int kMaxWidth = 642;
+  constexpr int kMaxHeight = 482;
+  // IA4 sources are consumed tiled (8x4 texels), so the renderer reads the
+  // rounded-up extent rather than width * height.
+  constexpr uint kMaxSize = ((kMaxWidth + 7) & ~7) * ((kMaxHeight + 3) & ~3);
+  static uchar sBuffer[kMaxSize];
+  static bool sInitialized = false;
+  if (!sInitialized) {
+    sInitialized = true;
+    uint state = 0x9e3779b9u;
+    for (uint i = 0; i + sizeof(u32) <= kMaxSize; i += sizeof(u32)) {
+      state ^= state << 13;
+      state ^= state >> 17;
+      state ^= state << 5;
+      memcpy(sBuffer + i, &state, sizeof(state));
+    }
+  }
+  return sBuffer;
+}
+} // namespace
+
 void CCameraFilterPass::DrawRandomStatic(const CColor& color, float alpha, bool cookieCutterDepth) {
   rstl::pair< CVector2f, CVector2f > vp = gpRender->SetViewportOrtho(true, 0.f, 1.f);
   const CVector2f& lt = vp.first;
   const CVector2f& rb = vp.second;
+
+  const int staticWidth = rstl::min_val(642, static_cast< int >(2.f + (rb.GetX() - lt.GetX())));
+  const int staticHeight = rstl::min_val(482, static_cast< int >(2.f + (rb.GetY() - lt.GetY())));
+  void* staticData = RandomStaticTextureData();
 
   if (cookieCutterDepth) {
     CGraphics::SetAlphaCompare(kAF_GEqual, CCast::ToUint8((1.f - alpha) * 255.f), kAO_And,
@@ -309,18 +339,14 @@ void CCameraFilterPass::DrawRandomStatic(const CColor& color, float alpha, bool 
     gpRender->SetDepthReadWrite(true, true);
     CGraphics::SetTevOp(kTS_Stage0, CGraphics::kEnvModulate);
     CGraphics::SetTevOp(kTS_Stage1, CGraphics::kEnvPassthru);
-    CGraphics::LoadDolphinSpareTexture(
-        static_cast< int >(2.f + (rb.GetX() - lt.GetX())),
-        static_cast< int >(2.f + (rb.GetY() - lt.GetY())), GX_TF_IA4,
-        reinterpret_cast< void* >(((rand() + 0x1f) & ~0x1f) + 0x8000), GX_TEXMAP0);
+    CGraphics::LoadDolphinSpareTexture(staticWidth, staticHeight, GX_TF_IA4, staticData,
+                                       GX_TEXMAP0);
   } else {
     gpRender->SetDepthReadWrite(false, false);
     CGraphics::SetTevOp(kTS_Stage0, CGraphics::kEnvModulateColor);
     CGraphics::SetTevOp(kTS_Stage1, CGraphics::kEnvPassthru);
-    CGraphics::LoadDolphinSpareTexture(
-        static_cast< int >(2.f + (rb.GetX() - lt.GetX())),
-        static_cast< int >(2.f + (rb.GetY() - lt.GetY())), GX_TF_IA4,
-        reinterpret_cast< void* >(((rand() + 0x1f) & ~0x1f) + 0x8000), GX_TEXMAP0);
+    CGraphics::LoadDolphinSpareTexture(staticWidth, staticHeight, GX_TF_IA4, staticData,
+                                       GX_TEXMAP0);
   }
 
   CGraphics::StreamBegin(kP_TriangleStrip);

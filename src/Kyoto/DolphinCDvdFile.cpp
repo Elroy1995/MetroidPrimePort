@@ -15,7 +15,21 @@
 
 #include "string.h"
 
+#include <mutex>
+
 static CDvdFile* sFirstARAM = nullptr;
+
+namespace {
+// The ARAM file state is touched from both the DVD worker thread
+// (`HandleDVDInterrupt`) and the main thread (`HandleARAMInterrupt` via the ARQ
+// callback). The guest guarded this with `OSDisableInterrupts`, which is a no-op
+// on PC, so serialize it here. Recursive because `DVDClose` can synchronously
+// deliver nested DVD callbacks that re-enter these paths.
+std::recursive_mutex& AramFileStateMutex() {
+  static std::recursive_mutex sMutex;
+  return sMutex;
+}
+} // namespace
 
 struct CDvdFileARAM {
   CDvdFileARAM()
@@ -64,6 +78,7 @@ void CDvdFile::ARAMARAMXferCallback(uintptr_t addr) {
 }
 
 void CDvdFile::HandleARAMInterrupt() {
+  std::lock_guard< std::recursive_mutex > guard(AramFileStateMutex());
   BOOL enabled = OSDisableInterrupts();
   CDvdFileARAM* arFile = mARAMFile.get();
 
@@ -77,6 +92,7 @@ void CDvdFile::HandleARAMInterrupt() {
 }
 
 void CDvdFile::HandleDVDInterrupt() {
+  std::lock_guard< std::recursive_mutex > guard(AramFileStateMutex());
   BOOL enabled = OSDisableInterrupts();
   CDvdFileARAM* arFile = mARAMFile.get();
 
@@ -90,9 +106,10 @@ void CDvdFile::HandleDVDInterrupt() {
 }
 
 void CDvdFile::PingARAMTransfer() {
+  std::lock_guard< std::recursive_mutex > guard(AramFileStateMutex());
   CDvdFileARAM* aramFile = mARAMFile.get();
 
-  if (aramFile->mBufferLen == 0) {
+  if (aramFile->mBufferLen <= 0) {
     PopARAMFileLoad();
     return;
   }
@@ -108,7 +125,7 @@ void CDvdFile::PingARAMTransfer() {
   aramFile->mGotARAMInterrupt = false;
   aramFile->mBufferIndex ^= 1;
 
-  if (aramFile->mCurBufferLen != 0) {
+  if (aramFile->mCurBufferLen > 0) {
     int length2 = rstl::min_val(65536, aramFile->mCurBufferLen);
     DVDFastOpen(mFileEntry, &aramFile->mInfo.mDvdFileInfo);
     DVDReadAsync(&aramFile->mInfo.mDvdFileInfo, aramFile->mBuffers[aramFile->mBufferIndex].get(),
