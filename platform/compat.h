@@ -1,9 +1,45 @@
 #pragma once
 
-// The decompiled code targets the original Dolphin SDK headers. Aurora's
-// dolphin/* mirrors the SDK API but omits a handful of Retro Studios
-// convenience macros that the game code relies on. This header is force-included
-// ahead of every game translation unit (see CMakeLists.txt) to restore them.
+// The decompiled code targets the original Dolphin SDK. Aurora mirrors the SDK
+// API but (a) hides OSContext/renames PADStatus members under TARGET_PC, (b)
+// omits some Retro Studios convenience macros, and (c) does not aggregate the
+// individual GX/SI/PAD headers the way the original umbrella headers did. This
+// header is force-included ahead of every game translation unit (see
+// CMakeLists.txt) to restore the SDK-facing view.
+
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+// MWCC-isms used throughout the decompiled code.
+#define nofralloc
+#define __abs(x) ((x) < 0 ? -(x) : (x))
+
+// Umbrella inclusion, as the original SDK headers provided transitively.
+#include <dolphin/gx.h>
+#include <dolphin/gx/GXShims.h>
+#include <dolphin/si.h>
+#include <dolphin/pad.h>
+#include <dolphin/os.h>
+#include <dolphin/card.h>
+
+// Aurora provides CARDFormat but not its async wrapper; see platform/shims.cpp.
+#ifdef __cplusplus
+extern "C" {
+#endif
+s32 CARDFormatAsync(s32 chan, CARDCallback callback);
+#ifdef __cplusplus
+}
+#endif
+
+// Aurora names the PADStatus triggers triggerLeft/triggerRight under
+// TARGET_PC; the game uses the SDK names triggerL/triggerR.
+#ifdef TARGET_PC
+#define triggerL triggerLeft
+#define triggerR triggerRight
+#endif
+
+
 
 #ifndef AUTO
 #if defined(__cplusplus) && __cplusplus >= 201103L

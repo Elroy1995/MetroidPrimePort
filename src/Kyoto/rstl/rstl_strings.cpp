@@ -19,6 +19,36 @@ template <>
 const wchar_t basic_string< wchar_t, case_insensitive_char_traits< wchar_t > >::mNull =
     case_insensitive_char_traits< wchar_t >::eos();
 
+// Port: MWCC tolerated using a member before its explicit specialization was
+// declared; clang requires the specialization to be declared first (otherwise
+// the use implicitly instantiates the primary template and the later
+// specialization is ill-formed). Forward-declare every specialization defined
+// in this file.
+template <> basic_string< char >::basic_string(const basic_string< char >& other);
+template <> basic_string< char >& basic_string< char >::append(const basic_string< char >& other);
+template <> basic_string< char >& basic_string< char >::append(const char* data, int count);
+template <> basic_string< char >& basic_string< char >::append(int count, char value);
+template <> basic_string< char >& basic_string< char >::assign(const basic_string< char >& other);
+template <> void basic_string< char >::internal_allocate(int size);
+template <> void basic_string< char >::internal_dereference();
+template <> void basic_string< char >::internal_prepare_to_write(int len, bool preserve);
+
+template <> basic_string< wchar_t >::basic_string(const basic_string< wchar_t >& other);
+template <>
+basic_string< wchar_t >& basic_string< wchar_t >::append(const basic_string< wchar_t >& other);
+template <> basic_string< wchar_t >& basic_string< wchar_t >::append(const wchar_t* data, int count);
+template <> basic_string< wchar_t >& basic_string< wchar_t >::append(int count, wchar_t value);
+template <> basic_string< wchar_t >& basic_string< wchar_t >::assign(const basic_string< wchar_t >& other);
+template <> basic_string< wchar_t >& basic_string< wchar_t >::assign(const wchar_t* data, int count);
+template <> void basic_string< wchar_t >::internal_allocate(int size);
+template <> void basic_string< wchar_t >::internal_dereference();
+template <> void basic_string< wchar_t >::internal_prepare_to_write(int len, bool preserve);
+
+template <>
+void basic_string< char, case_insensitive_char_traits< char > >::internal_allocate(int size);
+template <>
+void basic_string< char, case_insensitive_char_traits< char > >::internal_dereference();
+
 template <>
 basic_string< char >::basic_string(CInputStream& in, const rmemory_allocator& alloc)
 : x0_ptr(&mNull), x4_cow(nullptr), x8_size(0), xc_allocator(alloc) {

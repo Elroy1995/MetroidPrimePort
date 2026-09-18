@@ -7,6 +7,12 @@
 
 COBBTree::CSimpleAllocator* COBBTree::CNode::spAllocator = nullptr;
 
+// Port: route the unqualified allocation through the host allocator. TODO: use
+// spAllocator (the game's pool) once it is wired up.
+void* COBBTree::CNode::operator new(size_t size) {
+    return ::operator new(size);
+}
+
 COBBTree::SIndexData::SIndexData(CInputStream& in)
 : x0_materials(in)
 , x10_vertMaterials(in)

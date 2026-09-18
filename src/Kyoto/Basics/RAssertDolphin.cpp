@@ -97,6 +97,7 @@ void ErrorHandler(OSError code, OSContext* context, int dsisr, int dar) {
   OSReport("%s\n", BuildTime);
   OSReport("------------------------- Context 0x%08x -------------------------\n", context);
 
+#ifndef TARGET_PC
   for (i = 0; i < 16; ++i) {
     OSReport("r%-2d  = 0x%08x (%14d)  r%-2d  = 0x%08x (%14d)\n", i, context->gpr[i],
              context->gpr[i], i + 0x10, context->gpr[i + 0x10], context->gpr[i + 0x10]);
@@ -104,6 +105,10 @@ void ErrorHandler(OSError code, OSContext* context, int dsisr, int dar) {
 
   OSReport("LR   = 0x%08x                   CR   = 0x%08x\n", context->lr, context->cr);
   OSReport("SRR0 = 0x%08x                   SRR1 = 0x%08x\n", context->srr0, context->srr1);
+#else
+  // Port: Aurora presents OSContext as opaque storage on PC.
+  OSReport("(register dump unavailable on this platform)\n");
+#endif
   OSReport("DSISR= 0x%08x                   DAR  = 0x%08x\n", dsisr, dar);
 
   len = rs_debugger_buffer_size;
@@ -114,7 +119,11 @@ void ErrorHandler(OSError code, OSContext* context, int dsisr, int dar) {
   }
 
   len += sprintf(rs_debugger_buffer + len, "%s\n", BuildTime);
+#ifndef TARGET_PC
   len += sprintf(rs_debugger_buffer + len, "IP: 0x%8.8x  Mem: 0x%8.8x", context->srr0, dar);
+#else
+  len += sprintf(rs_debugger_buffer + len, "IP: unavailable  Mem: 0x%8.8x", dar);
+#endif
 
   if (code == 15) {
     len += sprintf(rs_debugger_buffer + len, " - %d", dsisr);
@@ -122,6 +131,7 @@ void ErrorHandler(OSError code, OSContext* context, int dsisr, int dar) {
 
   len += sprintf(rs_debugger_buffer + len, "\n\n");
 
+#ifndef TARGET_PC
   OSReport("\nAddress:      Back Chain    LR Save\n");
   gpr = (u32*)context->gpr[1];
   for (i = 0; gpr != NULL && gpr != (void*)0xFFFFFFFF && i++ < 16;) {
@@ -139,6 +149,7 @@ void ErrorHandler(OSError code, OSContext* context, int dsisr, int dar) {
   OSReport("\nInstruction at 0x%x (read from SRR0) attempted to access invalid address 0x%x (read "
            "from DAR)\n",
            context->srr0, dar);
+#endif
   if (!CallFatal) {
     OSFatal(fg, bg, rs_debugger_buffer);
   }

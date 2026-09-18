@@ -321,7 +321,8 @@ GXTexRegion* CGraphics::TexRegionCallback(const GXTexObj* obj, GXTexMapID id) {
   if (id == GX_TEXMAP7) {
     return &mTexRegions[0];
   } else {
-    GXTexFmt fmt = GXGetTexObjFmt(obj);
+    // Port: Aurora's GXGetTexObjFmt takes a non-const pointer.
+    GXTexFmt fmt = GXGetTexObjFmt(const_cast< GXTexObj* >(obj));
     if (fmt != GX_TF_C4 && fmt != GX_TF_C8 && fmt != GX_TF_C14X2) {
       if (nextTexRgn == 0) {
         ++nextTexRgn;

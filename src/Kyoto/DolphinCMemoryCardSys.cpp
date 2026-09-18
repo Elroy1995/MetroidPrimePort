@@ -1,4 +1,4 @@
-#include "Kyoto/CCRC32.hpp"
+#include "Kyoto/CCrc32.hpp"
 #include "Kyoto/CMemoryCardSys.hpp"
 #include "Kyoto/Graphics/CGraphicsPalette.hpp"
 #include "Kyoto/Graphics/CTexture.hpp"
@@ -199,7 +199,8 @@ CMemoryCardSys::CMemoryCardSys() {
 
 void CMemoryCardSys::Initialize() {
   if (!mIsInitialized) {
-    CARDInit();
+    // Port: Aurora's CARDInit takes the game id and maker code.
+    CARDInit("GM8E01", "01");
     mIsInitialized = true;
   }
 }

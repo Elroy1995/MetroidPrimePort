@@ -180,7 +180,9 @@ FourCC CResLoader::GetResourceTypeById(const CAssetId asset) const {
 }
 
 bool CResLoader::ResourceExists(const SObjectTag& tag) const {
-  return const_cast< CResLoader* >(this)->ResourceExists(tag.GetId()) != nullptr;
+  // Port: ResourceExists returns bool; the decompiled `!= nullptr` does not
+  // compile on clang.
+  return const_cast< CResLoader* >(this)->ResourceExists(tag.GetId());
 }
 
 uint CResLoader::ResourceSize(const SObjectTag& tag) const {

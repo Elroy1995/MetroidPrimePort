@@ -69,6 +69,9 @@ public:
     uint GetMemoryUsage() const;
 
     static void SetAllocator(CSimpleAllocator* alloc);
+    // Port: the decompiled call sites use plain `new` (rs_new expands to `new`
+    // off-MWCC), but declaring the placement form hides the global allocator.
+    void* operator new(size_t size);
     void* operator new(size_t size, const char* file, int line);
     void operator delete(void* ptr, size_t size);
     void operator delete(void* ptr, const char* file, int line);

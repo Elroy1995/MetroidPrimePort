@@ -305,7 +305,9 @@ CGX_INLINE void CGX::SetArray(GXAttr attr, const void* data, uchar stride) {
     return;
   }
   sGXState.x0_arrayPtrs[idx] = data;
-  GXSetArray(attr, data, stride);
+  // Port: Aurora's GXSetArray takes (attr, data, size, stride, le); the SDK
+  // 3-arg form passed only stride. size/le are Aurora's indexed-draw extension.
+  GXSetArray(attr, data, 0, stride, false);
 }
 
 CGX_INLINE void CGX::CallDisplayList(const void* ptr, size_t size) {

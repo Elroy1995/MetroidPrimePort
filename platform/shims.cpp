@@ -1,0 +1,105 @@
+// Stubs for SDK facilities the Aurora compatibility layer does not provide.
+// These exist so the decompiled game links on the port; a few are no-ops for
+// now and must be implemented for real gameplay (see TODO notes).
+
+#include <dolphin/card.h>
+#include <dolphin/gba.h>
+#include <dolphin/gx.h>
+#include <dolphin/gx/GXShims.h>
+#include <dolphin/PPCArch.h>
+
+// --- PowerPC architecture ---------------------------------------------------
+extern "C" void PPCSync(void) {
+#if defined(__GNUC__) || defined(__clang__)
+    __sync_synchronize();
+#endif
+}
+extern "C" void PPCSetFpIEEEMode(void) {}
+
+// --- GX draw-sync token -----------------------------------------------------
+// Aurora implements GXDrawDone but not the token API the game uses to fence a
+// display list. Report the last token back so callers never spin; GXDrawDone
+// still provides the real ordering.
+namespace {
+u16 s_drawSyncToken = 0;
+}
+extern "C" void GXSetDrawSync(u16 token) {
+    s_drawSyncToken = token;
+}
+extern "C" u16 GXReadDrawSync(void) {
+    return s_drawSyncToken;
+}
+
+// --- GX breakpoints / write-gather pipe -------------------------------------
+// No-ops: Aurora has no GX breakpoint or redirected-gather-pipe path. The game
+// only uses these for its display-list patching and DMA paths.
+extern "C" void GXEnableBreakPt(void* breakPt) {
+    (void)breakPt;
+}
+extern "C" void GXDisableBreakPt(void) {}
+extern "C" GXBreakPtCallback GXSetBreakPtCallback(GXBreakPtCallback cb) {
+    (void)cb;
+    return nullptr;
+}
+extern "C" volatile void* GXRedirectWriteGatherPipe(void* buf) {
+    return buf;
+}
+extern "C" void GXRestoreWriteGatherPipe(void) {}
+
+// --- Memory card ------------------------------------------------------------
+// CARDFormatAsync is defined by Aurora (card.cpp) but not declared in its
+// header; the declaration lives in platform/compat.h.
+
+// --- GBA link cable ---------------------------------------------------------
+// TODO: implement via Aurora when GBA connectivity is wanted.
+extern "C" void GBAInit(void) {}
+extern "C" s32 GBAGetStatus(s32 chan, u8* status) {
+    (void)chan;
+    if (status != nullptr) {
+        *status = 0;
+    }
+    return GBA_NOT_READY;
+}
+extern "C" s32 GBAGetProcessStatus(s32 chan, u8* percentp) {
+    (void)chan;
+    if (percentp != nullptr) {
+        *percentp = 0;
+    }
+    return GBA_NOT_READY;
+}
+extern "C" s32 GBARead(s32 chan, u8* dst, u8* status) {
+    (void)chan;
+    (void)dst;
+    if (status != nullptr) {
+        *status = 0;
+    }
+    return GBA_NOT_READY;
+}
+extern "C" s32 GBAWrite(s32 chan, u8* src, u8* status) {
+    (void)chan;
+    (void)src;
+    if (status != nullptr) {
+        *status = 0;
+    }
+    return GBA_NOT_READY;
+}
+extern "C" s32 GBAReset(s32 chan, u8* status) {
+    (void)chan;
+    if (status != nullptr) {
+        *status = 0;
+    }
+    return GBA_NOT_READY;
+}
+extern "C" s32 GBAJoyBootAsync(s32 chan, s32 palette_color, s32 palette_speed, u8* programp,
+                               s32 length, u8* status, GBACallback callback) {
+    (void)chan;
+    (void)palette_color;
+    (void)palette_speed;
+    (void)programp;
+    (void)length;
+    if (status != nullptr) {
+        *status = 0;
+    }
+    (void)callback;
+    return GBA_NOT_READY;
+}

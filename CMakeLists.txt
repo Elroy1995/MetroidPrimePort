@@ -22,12 +22,17 @@ add_subdirectory(extern/musyx EXCLUDE_FROM_ALL)
 
 # Decompiled game + engine sources (see files.cmake).
 include(files.cmake)
-# Not portable: a raw PowerPC asm wrapper, and decomp-only type-matching scaffolding.
+# Not portable: raw PowerPC asm (NES emulator wrapper), and decomp-only
+# type-matching scaffolding.
 list(REMOVE_ITEM MP_GAME_SOURCES
     src/NESemu/modwrapper.cpp
     src/MetroidPrime/TypesMatch.cpp)
+# The in-game NES emulator embeds hand-written PowerPC asm; exclude it for now
+# and stub its entry points when wiring gameplay.
+list(FILTER MP_GAME_SOURCES EXCLUDE REGEX "^src/NESemu/")
 add_library(mp_game STATIC ${MP_GAME_SOURCES})
 target_include_directories(mp_game PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/platform/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/build/GM8E01_00/include
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/aurora/include
@@ -42,6 +47,12 @@ target_compile_options(mp_game PRIVATE -w
     -Wno-narrowing -Wno-c++11-narrowing
     -include ${CMAKE_CURRENT_SOURCE_DIR}/platform/compat.h)
 
-# Port entry point (Aurora owns the real main; see aurora/main.h).
-add_executable(metroid_prime_port platform/main.cpp)
-target_link_libraries(metroid_prime_port PRIVATE mp_game aurora::main)
+# Port entry point and platform shims (Aurora owns the real main; see
+# aurora/main.h).
+add_executable(metroid_prime_port platform/main.cpp platform/shims.cpp)
+# aurora_core (webgpu/gpu.cpp) and aurora_gx reference each other; group them so
+# the linker rescans and resolves the cycle.
+target_link_libraries(metroid_prime_port PRIVATE
+    mp_game
+    aurora::main
+    "$<LINK_GROUP:RESCAN,aurora::core,aurora::gx>")

@@ -125,7 +125,10 @@ void CStaticAudioPlayer::StopMixOut() {
 void CStaticAudioPlayer::MixCallback() { sCurrentPlayer->DoMix(); }
 
 void CStaticAudioPlayer::DoMix() {
-  u32 aiStart = OSCachedToPhysical(AIGetDMAStartAddr());
+  // Port: Aurora's AIGetDMAStartAddr returns a u32 address; OSCachedToPhysical
+  // takes a void*.
+  u32 aiStart =
+      OSCachedToPhysical(reinterpret_cast< void* >(static_cast< uintptr_t >(AIGetDMAStartAddr())));
   x24_curBuf ^= 1;
   uintptr_t buf =
       reinterpret_cast< uintptr_t >(x24_curBuf != 0 ? x30_dmaRight.get() : x28_dmaLeft.get());

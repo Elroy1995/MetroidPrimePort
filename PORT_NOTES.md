@@ -46,6 +46,30 @@ Remaining 138 errors are a bounded compatibility-shim queue:
 - `OSContext` member mismatches (`gpr`, `srr0`) in the game's own view.
 - `COBBTree::CNode::operator new` placement-new mismatch.
 
+### Build clears (2026-09-18)
+
+`metroid_prime_port` now **compiles and links**: all 632 decomp sources build
+against Aurora with zero errors and produce a 64.5 MB executable that
+initializes Aurora and a Vulkan device.
+
+What clearing the remaining errors required:
+- `platform/compat.h` (force-included): libc, the GX/SI/PAD/OS/CARD umbrellas,
+  `AUTO*`, `nofralloc`, `__abs`, and the `triggerL/R` -> `triggerLeft/Right`
+  mapping for Aurora's `TARGET_PC` `PADStatus`.
+- `platform/include/dolphin/{arq,gba,PPCArch,thp/*}.h`: SDK headers Aurora omits
+  (arq.h re-exports Aurora's `ar.h`; the rest are the original SDK declarations).
+- `platform/include/dolphin/gx/GXShims.h` + `platform/shims.cpp`: GX token,
+  breakpoint, and write-gather-pipe entry points Aurora lacks, plus GBA/PPC
+  shims.
+- Decomp source fixes (port-only, documented in code comments): `RAssertDolphin`
+  OSContext dump guarded for opaque PC `OSContext`; `rstl/string.hpp` declares
+  the member specializations `rstl_strings.cpp` defines (clang requires
+  declaration before instantiation); `GXSetArray` call updated to Aurora's
+  5-arg form; small conversion casts; `CARDFormatAsync` declaration only (Aurora
+  defines it); case-corrected `Kyoto/CCrc32.hpp` include.
+- CMake: `LINK_GROUP:RESCAN` around `aurora::core`/`aurora::gx` to break their
+  static-library cycle; excluded `src/NESemu` (raw PowerPC asm).
+
 ## Next steps
 
 1. Add a port CMake target mirroring Dusklight: list the decomp sources, link
