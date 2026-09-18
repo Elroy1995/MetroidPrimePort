@@ -4,8 +4,17 @@
 
 #include "Kyoto/Math/CMath.hpp"
 #include "Kyoto/Math/CVector2f.hpp"
+#include "Kyoto/Streams/CInputStream.hpp"
 
 #include <float.h>
+
+CPFNode::CPFNode(CInputStream& in) : x0_position(in), xc_normal(in) {}
+
+CPFLink::CPFLink(CInputStream& in)
+: x0_node(in.ReadLong())
+, x4_region(in.ReadLong())
+, x8_2dWidth(in.ReadFloat())
+, xc_oo2dWidth(in.ReadFloat()) {}
 
 CPFRegionData::CPFRegionData()
 : x0_bestPointDistSq(0.f)
@@ -39,6 +48,19 @@ CPFRegion::CPFRegion()
 , x24_regionIdx(0)
 , x28_centroid(CVector3f::Zero())
 , x34_bounds(CAABox::MakeMaxInvertedBox()) {}
+
+CPFRegion::CPFRegion(CInputStream& in)
+: x0_numNodes(in.ReadLong())
+, x4_startNode(reinterpret_cast< CPFNode* >(static_cast< uintptr_t >(in.ReadLong())))
+, x8_numLinks(in.ReadLong())
+, xc_startLink(reinterpret_cast< CPFLink* >(static_cast< uintptr_t >(in.ReadLong())))
+, x10_flags(in.ReadLong())
+, x14_height(in.ReadFloat())
+, x18_normal(in)
+, x24_regionIdx(in.ReadLong())
+, x28_centroid(in)
+, x34_bounds(in)
+, x4c_data(reinterpret_cast< CPFRegionData* >(static_cast< uintptr_t >(in.ReadLong()))) {}
 
 bool CPFRegion::IsPointInside(const CVector3f& point) const {
   bool inside = false;

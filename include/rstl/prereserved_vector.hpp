@@ -11,6 +11,8 @@ public:
   int size() const { return mSize; }
   void set_size(int size) { mSize = size; }
   void set_data(T* data) { mData = data; }
+  T* data() { return mData; }
+  const T* data() const { return mData; }
 
   T& operator[](int idx) { return mData[idx]; }
   const T& operator[](int idx) const { return mData[idx]; }

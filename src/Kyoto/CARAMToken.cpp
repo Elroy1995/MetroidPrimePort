@@ -5,6 +5,7 @@
 
 #include "rstl/construct.hpp"
 
+#include "dolphin/ar.h"
 #include "dolphin/os/OSCache.h"
 
 CARAMToken* CARAMToken::sLists[7];
@@ -174,7 +175,7 @@ bool CARAMToken::RefreshStatus() {
   }
   case kS_Two:
   case kS_Five: {
-    delete[] x4_mramPtr;
+    CMemory::Free(x4_mramPtr);
     x4_mramPtr = nullptr;
     MoveToList(kS_Zero);
     break;
@@ -254,7 +255,8 @@ void* CARAMToken::GetMRAMSafe() {
     return x4_mramPtr;
   }
   LoadToMRAM();
-  while (!RefreshStatus())
-    ;
+  while (!RefreshStatus()) {
+    ARQPoll();
+  }
   return x4_mramPtr;
 }

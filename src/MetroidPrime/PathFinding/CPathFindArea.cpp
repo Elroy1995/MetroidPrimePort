@@ -4,6 +4,7 @@
 #include "Kyoto/Math/CMath.hpp"
 #include "Kyoto/Math/CloseEnough.hpp"
 #include "Kyoto/SObjectTag.hpp"
+#include "Kyoto/Streams/CMemoryInStream.hpp"
 
 #include "rstl/algorithm.hpp"
 
@@ -12,24 +13,18 @@
 
 class CVParamTransfer;
 
-class CPFMemoryStream {
-public:
-  CPFMemoryStream(uchar* data, int size) : x0_data(data), x4_size(size) {}
-  int ReadInt32() {
-    int value = *reinterpret_cast< int* >(x0_data);
-    x0_data += sizeof(int);
-    return value;
+CPFAreaOctree::CPFAreaOctree(CInputStream& in)
+: x0_isLeaf(in.ReadLong())
+, x4_bounds(in)
+, x1c_center(in) {
+  for (int i = 0; i < 8; ++i) {
+    x28_children[i] =
+        reinterpret_cast< CPFAreaOctree* >(static_cast< uintptr_t >(in.ReadLong()));
   }
-  void* GetBlock(int count, int size) {
-    void* block = x0_data;
-    x0_data += count * size;
-    return block;
-  }
-
-private:
-  uchar* x0_data;
-  int x4_size;
-};
+  x48_regions.set_size(in.ReadLong());
+  x48_regions.set_data(
+      reinterpret_cast< CPFRegion** >(static_cast< uintptr_t >(in.ReadLong())));
+}
 
 uint CPFAreaOctree::GetChildIndex(const CVector3f& point) const {
   uint index = 0;
@@ -78,18 +73,24 @@ CPFArea::CPFArea(const rstl::auto_ptr< uchar >& data, int size)
 , x34_regionFindCookie(0)
 , x13c_data(data.release())
 , x188_transform(CTransform4f::Identity()) {
-  CPFMemoryStream stream(x13c_data.get(), size);
-  stream.ReadInt32();
+  CMemoryInStream stream(x13c_data.get(), size);
+  stream.ReadLong();
 
-  int numNodes = stream.ReadInt32();
-  x140_nodes.set_size(numNodes);
-  x140_nodes.set_data(static_cast< CPFNode* >(stream.GetBlock(numNodes, sizeof(CPFNode))));
-  int numLinks = stream.ReadInt32();
-  x148_links.set_size(numLinks);
-  x148_links.set_data(static_cast< CPFLink* >(stream.GetBlock(numLinks, sizeof(CPFLink))));
-  const int numRegions = stream.ReadInt32();
-  x150_regions.set_size(numRegions);
-  x150_regions.set_data(static_cast< CPFRegion* >(stream.GetBlock(numRegions, sizeof(CPFRegion))));
+  int numNodes = stream.ReadLong();
+  x140_nodes.reserve(numNodes);
+  for (int i = 0; i < numNodes; ++i) {
+    x140_nodes.push_back(CPFNode(stream));
+  }
+  int numLinks = stream.ReadLong();
+  x148_links.reserve(numLinks);
+  for (int i = 0; i < numLinks; ++i) {
+    x148_links.push_back(CPFLink(stream));
+  }
+  const int numRegions = stream.ReadLong();
+  x150_regions.reserve(numRegions);
+  for (int i = 0; i < numRegions; ++i) {
+    x150_regions.push_back(CPFRegion(stream));
+  }
   x178_regionData.reserve(numRegions);
   CPFRegionData dataValue = CPFRegionData();
   x178_regionData.resize(numRegions, dataValue);
@@ -102,24 +103,34 @@ CPFArea::CPFArea(const rstl::auto_ptr< uchar >& data, int size)
   x10_polyPoints.reserve(maxRegionNodes);
 
   int numWords = (numRegions * (numRegions - 1) / 2 + 31) / 32;
-  x168_connectionsGround.set_size(numWords);
-  x168_connectionsGround.set_data(static_cast< uint* >(stream.GetBlock(numWords, sizeof(uint))));
-  x170_connectionsFlyers.set_size(numWords);
-  x170_connectionsFlyers.set_data(static_cast< uint* >(stream.GetBlock(numWords, sizeof(uint))));
-  stream.GetBlock(((numRegions * numRegions + 31) / 32 - numWords) * 2, sizeof(uint));
-
-  int numRegionPtrs = stream.ReadInt32();
-  x160_octreeRegions.set_size(numRegionPtrs);
-  x160_octreeRegions.set_data(
-      static_cast< CPFRegion** >(stream.GetBlock(numRegionPtrs, sizeof(CPFRegion*))));
-  for (i = 0; i < numRegionPtrs; ++i) {
-    CPFRegion* const& region = x160_octreeRegions[i];
-    x160_octreeRegions[i] = &x150_regions[reinterpret_cast< intptr_t >(region)];
+  x168_connectionsGround.reserve(numWords);
+  x170_connectionsFlyers.reserve(numWords);
+  for (i = 0; i < numWords; ++i) {
+    x168_connectionsGround.push_back(stream.ReadLong());
   }
-  int numOctreeNodes = stream.ReadInt32();
-  x158_octree.set_size(numOctreeNodes);
-  x158_octree.set_data(
-      static_cast< CPFAreaOctree* >(stream.GetBlock(numOctreeNodes, sizeof(CPFAreaOctree))));
+  for (i = 0; i < numWords; ++i) {
+    x170_connectionsFlyers.push_back(stream.ReadLong());
+  }
+  const int paddingWords = ((numRegions * numRegions + 31) / 32 - numWords) * 2;
+  for (i = 0; i < paddingWords; ++i) {
+    stream.ReadLong();
+  }
+
+  int numRegionPtrs = stream.ReadLong();
+  x160_octreeRegions.reserve(numRegionPtrs);
+  for (i = 0; i < numRegionPtrs; ++i) {
+    x160_octreeRegions.push_back(
+        reinterpret_cast< CPFRegion* >(static_cast< uintptr_t >(stream.ReadLong())));
+  }
+  for (i = 0; i < numRegionPtrs; ++i) {
+    x160_octreeRegions[i] =
+        &x150_regions[reinterpret_cast< uintptr_t >(x160_octreeRegions[i])];
+  }
+  int numOctreeNodes = stream.ReadLong();
+  x158_octree.reserve(numOctreeNodes);
+  for (i = 0; i < numOctreeNodes; ++i) {
+    x158_octree.push_back(CPFAreaOctree(stream));
+  }
   for (i = 0; i < numOctreeNodes; ++i) {
     x158_octree[i].Fixup(*this);
   }

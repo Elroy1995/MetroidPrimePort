@@ -156,6 +156,9 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
 - Aurora keyboard input has initial GameCube mappings when no saved mapping exists:
   WASD and IJKL drive the sticks, X/Z/C/V map A/B/X/Y, Return maps Start, and the
   arrow keys map the D-pad. Existing user mappings and physical controllers win.
+- PATH version-4 resources are read field-by-field into native vectors. Packed
+  big-endian node, link, region, connectivity, and octree fields are converted and
+  their 32-bit indices are rebased only after vector storage is stable.
 
 Host shutdown now completes cleanly. Game-heap buffers owned by `CGBASupport`,
 `CStaticAudioPlayer`, `CAudioGrpSetLoc`, and `SMediumAllocPuddle` are released
@@ -165,11 +168,11 @@ usage scan that it does not initialize.
 ## Next steps
 
 Automated PAD input now advances through the front end, initializes the selected
-world, and begins first-room resource loading. The next crash is
-`CPFAreaOctree::Fixup` reading packed big-endian 32-bit PATH octree data as native
-64-bit structures.
+world, parses its PATH resource, completes blocking ARAM transfers, and reaches
+`CCubeRenderer::AddStaticGeometry`. The next crash is static MREA geometry passing
+unconverted material metadata to `CCubeModel::GetMaterialByIndex`.
 
-1. Convert PATH headers, node links, and arrays before `CPFAreaOctree::Fixup`.
+1. Convert MREA static-geometry material and surface metadata before renderer setup.
 2. Implement MusyX's missing PC synth/DSP path and feed it to an SDL audio stream;
    sample directories register correctly, but the current PC backend has no mixer
    or output implementation.

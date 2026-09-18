@@ -6,8 +6,10 @@
 #include <rstl/vector.hpp>
 
 class CPFArea;
+class CInputStream;
 class CPFNode {
 public:
+  CPFNode(CInputStream& in);
   const CVector3f& GetPos() const { return x0_position; }
   const CVector3f& GetNormal() const { return xc_normal; }
 
@@ -19,6 +21,7 @@ CHECK_SIZEOF(CPFNode, 0x18)
 
 class CPFLink {
 public:
+  CPFLink(CInputStream& in);
   int GetNode() const { return x0_node; }
   int GetRegion() const { return x4_region; }
   float Get2dWidth() const { return x8_2dWidth; }
@@ -86,6 +89,7 @@ CHECK_SIZEOF(CPFRegionData, 0x30)
 class CPFRegion {
 public:
   CPFRegion();
+  CPFRegion(CInputStream& in);
   void Fixup(CPFArea& area, int& numNodes);
   void SetData(CPFRegionData* data) { x4c_data = data; }
   CPFRegionData* Data() const { return x4c_data; }

@@ -63,6 +63,7 @@ CHECK_SIZEOF(CPFOpenList, 0xc0)
 
 class CPFAreaOctree {
 public:
+  CPFAreaOctree(CInputStream& in);
   void Fixup(CPFArea& area);
   uint GetChildIndex(const CVector3f& point) const;
   prereserved_vector< CPFRegion* >* GetRegionList(const CVector3f& point);
@@ -128,29 +129,29 @@ private:
   CPFOpenList x78_openList;
   CPFAreaVersion x138_version;
   rstl::single_ptr< uchar > x13c_data;
-  prereserved_vector< CPFNode > x140_nodes;
-  prereserved_vector< CPFLink > x148_links;
-  prereserved_vector< CPFRegion > x150_regions;
-  prereserved_vector< CPFAreaOctree > x158_octree;
-  prereserved_vector< CPFRegion* > x160_octreeRegions;
-  prereserved_vector< uint > x168_connectionsGround;
-  prereserved_vector< uint > x170_connectionsFlyers;
+  rstl::vector< CPFNode > x140_nodes;
+  rstl::vector< CPFLink > x148_links;
+  rstl::vector< CPFRegion > x150_regions;
+  rstl::vector< CPFAreaOctree > x158_octree;
+  rstl::vector< CPFRegion* > x160_octreeRegions;
+  rstl::vector< uint > x168_connectionsGround;
+  rstl::vector< uint > x170_connectionsFlyers;
   rstl::vector< CPFRegionData > x178_regionData;
   CTransform4f x188_transform;
 };
 CHECK_SIZEOF(CPFArea, 0x1b8)
 
 inline void CPFAreaOctree::Fixup(CPFArea& area) {
-  x0_isLeaf = *reinterpret_cast< const int* >(this) != 0;
+  x0_isLeaf = x0_isLeaf != 0;
   if (x0_isLeaf) {
     if (x48_regions.size() != 0) {
-      x48_regions.set_data(
-          &area.GetOctreeRegionPtrs(reinterpret_cast< intptr_t >(&x48_regions[0])));
+      x48_regions.set_data(&area.GetOctreeRegionPtrs(
+          reinterpret_cast< uintptr_t >(x48_regions.data())));
     }
   } else {
     for (int i = 0; i < 8; ++i) {
-      intptr_t index = reinterpret_cast< intptr_t >(x28_children[i]);
-      x28_children[i] = index >= 0 ? &area.GetOctree(index) : nullptr;
+      uintptr_t index = reinterpret_cast< uintptr_t >(x28_children[i]);
+      x28_children[i] = (index & 0x80000000) == 0 ? &area.GetOctree(index) : nullptr;
     }
   }
 }
