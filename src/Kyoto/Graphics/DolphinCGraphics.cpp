@@ -1,5 +1,8 @@
 #include "Kyoto/Graphics/CGraphics.hpp"
 
+// Port: Aurora brackets a presented frame around the game's scene.
+#include <aurora/aurora.h>
+
 #include "Kyoto/Alloc/CMemory.hpp"
 #include "Kyoto/Basics/COsContext.hpp"
 #include "Kyoto/Basics/CStopwatch.hpp"
@@ -733,7 +736,11 @@ void CGraphics::ClearBackAndDepthBuffers() {
   GXInvalidateVtxCache();
 }
 
-void CGraphics::BeginScene() { ClearBackAndDepthBuffers(); }
+void CGraphics::BeginScene() {
+  // Port: a scene maps to one Aurora frame (covers init-time splash draws too).
+  aurora_begin_frame();
+  ClearBackAndDepthBuffers();
+}
 
 void CGraphics::SwapBuffers() {
   GXDisableBreakPt();
@@ -792,6 +799,8 @@ void CGraphics::EndScene() {
   VISetPreRetraceCallback(VideoPreCallback);
   VISetPostRetraceCallback(VideoPostCallback);
   GXFlush();
+  // Port: present this Aurora frame before the (stubbed) breakpoint wait.
+  aurora_end_frame();
   GXFifoObj* fifo = GXGetGPFifo();
   void* readPtr;
   void* writePtr;

@@ -865,7 +865,11 @@ ZEXTERN int ZEXPORT deflateInit2_ OF((z_streamp strm, int  level, int  method,
                                       int windowBits, int memLevel,
                                       int strategy, const char *version,
                                       int stream_size));
-ZEXTERN int ZEXPORT inflateInit2_ OF((z_streamp strm,
+/* Port: this bundled zlib declared a non-standard 3-arg inflateInit2_ and the
+   port links a standard zlib (zlib-ng compat). Use the standard signature so the
+   macro below expands to the ABI the linked library actually provides. The
+   original omitted windowBits and used the maximum internally. */
+ZEXTERN int ZEXPORT inflateInit2_ OF((z_streamp strm, int windowBits,
                                       const char *version, int stream_size));
 #define deflateInit(strm, level) \
         deflateInit_((strm), (level),       ZLIB_VERSION, sizeof(z_stream))
@@ -875,7 +879,7 @@ ZEXTERN int ZEXPORT inflateInit2_ OF((z_streamp strm,
         deflateInit2_((strm),(level),(method),(windowBits),(memLevel),\
                       (strategy),           ZLIB_VERSION, sizeof(z_stream))
 #define inflateInit2(strm) \
-        inflateInit2_((strm), ZLIB_VERSION, sizeof(z_stream))
+        inflateInit2_((strm), MAX_WBITS, ZLIB_VERSION, sizeof(z_stream))
 
 
 #if !defined(_Z_UTIL_H) && !defined(NO_DUMMY_DECL)

@@ -1,5 +1,10 @@
 #include "MetroidPrime/CMain.hpp"
 
+// Port: Aurora owns the application/window/GPU loop; the game entry is renamed
+// and driven by platform/main.cpp.
+#include <aurora/aurora.h>
+#include <aurora/event.h>
+
 #include "stdint.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -168,7 +173,8 @@ CSaveRegion::CSaveRegion(CMain& main) {
   mSaveBuffer = main.OsContext().AllocFromArena(128);
 }
 
-int main(int argc, char** argv) {
+// Port: called from platform/main.cpp after Aurora and the disc are initialized.
+extern "C" int metroid_main(int argc, char** argv) {
   DVDSetAutoFatalMessaging(TRUE);
   SetErrorHandlers();
   CMain* main = new (&sMainSpace) CMain();
@@ -228,6 +234,11 @@ void CMain::InitializeSubsystems() {
   uchar* stackEnd =
       reinterpret_cast< uchar* >(ALIGN_UP(reinterpret_cast< uintptr_t >(thread->stackEnd), 0x400));
   uchar* stackBase = thread->stackBase;
+#ifdef TARGET_PC
+  // Port: there is no emulated guest stack to fill here; this is a debug aid.
+  (void)stackBase;
+  (void)stackEnd;
+#else
   OSProtectRange(OS_PROTECT_CHAN3, stackEnd, 0x400, OS_PROTECT_CONTROL_NONE);
 
   uchar* ptr = stackEnd + 0x400;
@@ -236,6 +247,7 @@ void CMain::InitializeSubsystems() {
   }
 
   DCFlushRange(stackEnd + 0x400, static_cast< uint >(stackBase - 0x2000 - (stackEnd + 0x400)));
+#endif
   printf("Stack: 0x%8.8x down to 0x%8.8x\n", thread->stackBase, thread->stackEnd);
   CElementGen::Initialize();
   CAnimData::InitializeCache();
@@ -715,6 +727,16 @@ int CMain::RsMain(int argc, const char* const* argv) {
 
     const double dt = 1.f / 60.f;
     while (!x160_24_finished) {
+      // Port: pump Aurora's window/input events.
+      {
+        const AuroraEvent* event = aurora_update();
+        while (event != nullptr && event->type != AURORA_NONE) {
+          if (event->type == AURORA_EXIT) {
+            x160_24_finished = true;
+          }
+          ++event;
+        }
+      }
       archSupport->GetStopwatch2().Reset();
       gpResourceFactory->GetResLoader().AsyncIdlePakLoading();
       if (gpMemoryCard == nullptr && gpResourceFactory->GetResLoader().AreAllPaksLoaded()) {
@@ -736,6 +758,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
         // rs_log_print(str.data());
       }
       if (!x160_26_screenFading) {
+        // Port: Aurora frames are bracketed inside CGraphics::Begin/EndScene.
         gpRender->BeginScene();
         archSupport->GetIOWinManager().Draw();
         DrawDebugMetrics(t1, archSupport->GetStopwatch2());

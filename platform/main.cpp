@@ -1,21 +1,59 @@
-// Port entry point. Aurora supplies the real process entry (aurora_main) and the
-// platform loop; this file boots the game and drives it.
+// Port entry point. Aurora owns the real process entry (aurora_main) and the
+// window/GPU/input/audio backend; this file initializes it, mounts the user's
+// disc, and hands control to the game.
 //
-// TODO: replace the placeholder loop with the game's boot (CMain / CMainFlow)
-// and per-frame update once the decomp sources build against Aurora.
+// Disc path resolution: first non-flag argv, else $MP_DISC, else the default
+// path used during development.
 
 #include <aurora/aurora.h>
+#include <aurora/dvd.h>
 #include <aurora/event.h>
 #include <aurora/main.h>
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
-int main(int argc, char* argv[]) {
+extern "C" int metroid_main(int argc, char** argv);
+
+namespace {
+const char* kDefaultDisc = "/home/odran/rom/Metroid Prime (USA) (v1.00).iso";
+
+const char* ResolveDiscPath(int argc, char** argv) {
+    if (argc > 1 && argv[1][0] != '-') {
+        return argv[1];
+    }
+    if (const char* env = std::getenv("MP_DISC")) {
+        return env;
+    }
+    return kDefaultDisc;
+}
+} // namespace
+
+int main(int argc, char** argv) {
     const AuroraConfig config = {
         .appName = "Metroid Prime",
+        .userPath = nullptr,
+        .cachePath = nullptr,
+        .resourcesPath = nullptr,
+        .desiredBackend = BACKEND_AUTO,
+        .mem1Size = MEM1_DEFAULT_SIZE,
+        .mem2Size = ARAM_DEFAULT_SIZE,
     };
+
     aurora_initialize(argc, argv, &config);
-    std::printf("metroid_prime_port: scaffold built; game boot not wired yet\n");
+
+    const char* discPath = ResolveDiscPath(argc, argv);
+    if (!aurora_dvd_open(discPath)) {
+        std::fprintf(stderr, "metroid_prime_port: failed to open disc image: %s\n", discPath);
+        aurora_shutdown();
+        return 1;
+    }
+    std::printf("metroid_prime_port: disc mounted: %s\n", discPath);
+
+    const int result = metroid_main(argc, argv);
+
+    aurora_dvd_close();
     aurora_shutdown();
-    return 0;
+    return result;
 }

@@ -30,6 +30,9 @@ list(REMOVE_ITEM MP_GAME_SOURCES
 # The in-game NES emulator embeds hand-written PowerPC asm; exclude it for now
 # and stub its entry points when wiring gameplay.
 list(FILTER MP_GAME_SOURCES EXCLUDE REGEX "^src/NESemu/")
+# The game entry is included now that it is adapted to Aurora (its `main` is
+# renamed to `metroid_main` and driven by platform/main.cpp).
+list(APPEND MP_GAME_SOURCES src/MetroidPrime/main.cpp)
 add_library(mp_game STATIC ${MP_GAME_SOURCES})
 target_include_directories(mp_game PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/platform/include
@@ -49,7 +52,10 @@ target_compile_options(mp_game PRIVATE -w
 
 # Port entry point and platform shims (Aurora owns the real main; see
 # aurora/main.h).
-add_executable(metroid_prime_port platform/main.cpp platform/shims.cpp)
+add_executable(metroid_prime_port
+    platform/main.cpp
+    platform/shims.cpp
+    platform/sdk_stubs.cpp)
 # aurora_core (webgpu/gpu.cpp) and aurora_gx reference each other; group them so
 # the linker rescans and resolves the cycle.
 target_link_libraries(metroid_prime_port PRIVATE

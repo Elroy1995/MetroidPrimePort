@@ -38,6 +38,16 @@ void* TOneStatic< T >::operator new(size_t sz, const char* const fileAndLine, co
   return GetAllocSpace();
 }
 
+#ifndef __MWERKS__
+// Port: the 1-arg form is declared for clangd but was never defined; clang uses
+// it for plain `new TOneStatic<T>`.
+template < typename T >
+void* TOneStatic< T >::operator new(const size_t sz) {
+  ReferenceCount()++;
+  return GetAllocSpace();
+}
+#endif
+
 template < typename T >
 void TOneStatic< T >::operator delete(void* ptr) {
   ReferenceCount()--;
