@@ -40,6 +40,10 @@ CGraphicsPalette::~CGraphicsPalette() {
   uint frameDiff = sCurrentFrameCount - x4_frameLoaded;
   if (frameDiff < 2) {
     CFrameDelayedKiller::ScheduleDeletion(frameDiff > 0 ? CFrameDelayedKiller::kWhichFrame_ThisFrame : CFrameDelayedKiller::kWhichFrame_NextFrame, xc_entries.release());
+#ifdef TARGET_PC
+  } else {
+    CMemory::Free(xc_entries.release());
+#endif
   }
 }
 

@@ -106,7 +106,7 @@ void CRasterFont::GetSize(const CDrawStringOptions& options, int& width, int& he
   height = 0;
   int curWidth = 0;
   const CGlyph* prevGlyph = nullptr;
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
   for (const wchar_t* ptr = str; (length == -1 || ptr - str < length) && *ptr != 0; ++ptr) {
 #else
   for (const wchar_t* ptr = str; *ptr != 0 && (length == -1 || ptr - str < length); ++ptr) {
@@ -183,7 +183,7 @@ void CRasterFont::SinglePassDrawString(const CDrawStringOptions& options, const 
   if (x0_initialized) {
     int curX = x;
     const CGlyph* prevGlyph = nullptr;
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
     for (const wchar_t* ptr = str; (length == -1 || ptr - str < length) && *ptr != 0; ++ptr) {
 #else
     for (const wchar_t* ptr = str; *ptr != 0 && (length == -1 || (ptr - str) < length); ++ptr) {

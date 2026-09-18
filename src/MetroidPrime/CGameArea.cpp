@@ -169,6 +169,7 @@ CGameArea::~CGameArea() {
     while (!Invalidate(nullptr)) {
     }
   }
+  KillmAreaData();
 }
 
 void CGameArea::ClearTokenList() {
@@ -585,6 +586,13 @@ void CGameArea::CullDeadAreaRequests() {
 }
 
 void CGameArea::KillmAreaData() {
+#ifdef TARGET_PC
+  for (AUTO(it, x110_mreaSecBufs.begin()); it != x110_mreaSecBufs.end(); ++it) {
+    if (it->first.owner()) {
+      CMemory::Free(it->first.release());
+    }
+  }
+#endif
   x110_mreaSecBufs = rstl::vector< rstl::pair< rstl::auto_ptr< char >, int > >();
 }
 

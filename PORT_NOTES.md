@@ -164,6 +164,9 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   and optional bounds.
 - MusyX sequence playback is a safe no-op on PC until its synth and output backend
   exists; MIDI manager handles remain valid so scripted events do not retrigger.
+- Native text rendering checks explicit string lengths before dereferencing the
+  next character. Palette entries, MREA section buffers, and map buffers now return
+  to the allocator that created them during runtime and delayed shutdown cleanup.
 
 Host shutdown now completes cleanly. Game-heap buffers owned by `CGBASupport`,
 `CStaticAudioPlayer`, `CAudioGrpSetLoc`, and `SMediumAllocPuddle` are released
@@ -173,11 +176,11 @@ usage scan that it does not initialize.
 ## Next steps
 
 Automated PAD input now advances through the front end, initializes the first room,
-constructs `CInGameGuiManager` and `CMFGame`, and runs gameplay updates. The next
-test failure occurs only during forced shutdown, where `CTextRenderBuffer` releases
-a `CGraphicsPalette` through the host allocator despite game-heap allocation.
+constructs `CInGameGuiManager` and `CMFGame`, runs beyond frame 10,000, and exits
+normally after forced SIGTERM cleanup.
 
-1. Correct `CTextRenderBuffer` palette allocation ownership during shutdown.
+1. Exercise player movement, rendering, collision, and room transitions with richer
+   automated input to identify the next gameplay blocker.
 2. Implement MusyX's missing PC synth/DSP path and feed it to an SDL audio stream;
    sample directories register correctly, but the current PC backend has no mixer
    or output implementation.

@@ -45,7 +45,12 @@ CMapArea::CMapArea(CInputStream& in, uint size)
 
 CMapArea::~CMapArea() {
   CMemoryDrawEnum::SubtractWorldMemory(x34_size + sizeof(*this));
+#ifdef TARGET_PC
+  CFrameDelayedKiller::ScheduleHostDeletion(CFrameDelayedKiller::kWhichFrame_NextFrame,
+                                             x44_buf.release());
+#else
   CFrameDelayedKiller::ScheduleDeletion(CFrameDelayedKiller::kWhichFrame_NextFrame, x44_buf.release());
+#endif
 }
 
 void CMapArea::PostConstruct() {
