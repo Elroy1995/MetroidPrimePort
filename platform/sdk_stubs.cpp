@@ -16,24 +16,7 @@
 // CElementGen.cpp declares this SDK entry point directly.
 extern "C" float frsqrte(float x);
 
-// --- AI (audio DMA) ---------------------------------------------------------
-extern "C" u32 AIGetDMAStartAddr(void) {
-    return 0;
-}
-extern "C" void AIInit(u8* stack) {
-    (void)stack;
-}
-extern "C" void AIInitDMA(uintptr_t start_addr, u32 length) {
-    (void)start_addr;
-    (void)length;
-}
-extern "C" AIDCallback AIRegisterDMACallback(AIDCallback callback) {
-    (void)callback;
-    return nullptr;
-}
-extern "C" void AISetStreamPlayState(u32 state) {
-    (void)state;
-}
+// AI (audio DMA) is implemented in platform/ai_dma.cpp.
 
 // --- AR (ARAM) --------------------------------------------------------------
 extern "C" u32 ARGetDMAStatus(void) {

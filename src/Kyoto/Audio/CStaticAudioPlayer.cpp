@@ -34,7 +34,11 @@ void CStaticAudioPlayer::InstallAICallback() {
 }
 
 void CStaticAudioPlayer::AICallback() {
-  sOldDMACallback();
+  // The guest SDK installed a base AI callback that fills the DMA buffer; the
+  // port has no such callback, so it may be null.
+  if (sOldDMACallback != nullptr) {
+    sOldDMACallback();
+  }
 
   for (int i = 0; i < sAICallbacks.size(); ++i) {
     sAICallbacks[i]();
@@ -131,11 +135,16 @@ void CStaticAudioPlayer::StopMixOut() {
 
 void CStaticAudioPlayer::MixCallback() { sCurrentPlayer->DoMix(); }
 
+extern "C" uintptr_t AIPortGetDMAStartAddr(void);
+
 void CStaticAudioPlayer::DoMix() {
-  // Port: Aurora's AIGetDMAStartAddr returns a u32 address; OSCachedToPhysical
-  // takes a void*.
+#ifdef TARGET_PC
+  // The port keeps the full 64-bit DMA pointer; the SDK's u32 form truncates it.
+  uintptr_t aiStart = AIPortGetDMAStartAddr();
+#else
   u32 aiStart =
       OSCachedToPhysical(reinterpret_cast< void* >(static_cast< uintptr_t >(AIGetDMAStartAddr())));
+#endif
   x24_curBuf ^= 1;
   uintptr_t buf =
       reinterpret_cast< uintptr_t >(x24_curBuf != 0 ? x30_dmaRight.get() : x28_dmaLeft.get());

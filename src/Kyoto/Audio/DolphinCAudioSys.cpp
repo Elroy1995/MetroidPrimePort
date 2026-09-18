@@ -712,13 +712,21 @@ void CAudioSys::SetDefaultVolumeScale(const short scale) { mDefaultVolumeScale =
 short CAudioSys::GetDefaultVolumeScale() { return mDefaultVolumeScale; }
 
 void CAudioSys::EnableAICallback(const bool enable) {
-  if (mAICallbackEnabled != enable) {
-    mAICallbackEnabled = enable;
-    if (enable) {
-      AIRegisterDMACallback(reinterpret_cast< AIDCallback >(mAICallback));
-    } else {
-      mAICallback = reinterpret_cast< void* >(AIRegisterDMACallback(nullptr));
-    }
+  if (mAICallbackEnabled == enable) {
+    return;
+  }
+  mAICallbackEnabled = enable;
+#ifdef TARGET_PC
+  // The PC build never installs a base AI callback; leave whatever the streamed
+  // audio path registered alone instead of clearing it.
+  if (mAICallback == nullptr) {
+    return;
+  }
+#endif
+  if (enable) {
+    AIRegisterDMACallback(reinterpret_cast< AIDCallback >(mAICallback));
+  } else {
+    mAICallback = reinterpret_cast< void* >(AIRegisterDMACallback(nullptr));
   }
 }
 

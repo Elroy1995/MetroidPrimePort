@@ -55,7 +55,8 @@ target_compile_options(mp_game PRIVATE -w
 add_executable(metroid_prime_port
     platform/main.cpp
     platform/shims.cpp
-    platform/sdk_stubs.cpp)
+    platform/sdk_stubs.cpp
+    platform/ai_dma.cpp)
 # aurora_core (webgpu/gpu.cpp) and aurora_gx reference each other; group them so
 # the linker rescans and resolves the cycle.
 target_link_libraries(metroid_prime_port PRIVATE

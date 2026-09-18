@@ -198,6 +198,13 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   (measured ~29x real time) because it only throttled on the SDL queue depth,
   overrunning the stream and producing dropouts; it now sleeps until the next
   160-sample frame is due, which removed the buffer-boundary discontinuities.
+- The GameCube audio-interface DMA path is implemented in `platform/ai_dma.cpp`:
+  a service thread drives the registered DMA callback at the buffer rate and feeds
+  the submitted buffer to its own SDL stream. Streamed audio (front-end/in-game
+  music via `CStaticAudioPlayer`, movie audio) previously had no output at all
+  because the AI functions were no-ops. The port keeps the full 64-bit DMA
+  pointer for the guest mixer, which the SDK's 32-bit `AIGetDMAStartAddr` would
+  truncate.
 - Runtime-generated vertex arrays are marked host-native (`le=true`) instead of
   big-endian, matching the port's native skinning/workspace writes. `ClearArray`
   forces the backend to drop its cached copy, which the skinned path needs because
