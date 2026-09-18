@@ -526,6 +526,7 @@ void CGameGlobalObjects::AddPaksAndFactories() {
   gpController = controller.get();
 #endif
   while (!factory.GetResLoader().AreAllPaksLoaded()) {
+    ARQPoll();
     gpResourceFactory->GetResLoader().AsyncIdlePakLoading();
     errorWindow.Update();
     CGraphics::BeginScene();

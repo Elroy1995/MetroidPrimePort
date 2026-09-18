@@ -460,7 +460,7 @@ CDummyWorld::CDummyWorld(CAssetId mlvlId, const bool loadMap)
 , x3c_curAreaId(kInvalidAreaId) {
   const SObjectTag mlvl('MLVL', mlvlId);
   x38_bufSz = gpResourceFactory->ResourceSize(mlvl);
-  x34_loadBuf = static_cast< char* >(CMemory::Alloc(x38_bufSz, IAllocator::kHI_RoundUpLen));
+  x34_loadBuf = rs_new char[(x38_bufSz + 31) & ~31];
   x30_loadToken = gpResourceFactory->GetResLoader().LoadResourceAsync(mlvl, x34_loadBuf.get());
 }
 

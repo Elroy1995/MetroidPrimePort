@@ -9,8 +9,9 @@
 namespace {
 bool s_auroraFrameOpen = false;
 void AuroraFrameBegin() {
-  if (!s_auroraFrameOpen) {
-    aurora_begin_frame();
+  if (!s_auroraFrameOpen && aurora_begin_frame()) {
+    // Only mark open when Aurora actually begins a frame; otherwise a later
+    // end_frame would desynchronise its frame-slot accounting.
     s_auroraFrameOpen = true;
   }
 }

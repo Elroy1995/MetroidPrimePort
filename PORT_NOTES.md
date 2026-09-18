@@ -118,7 +118,9 @@ no crashes. Fixes landed:
 - **ARQ recursion**: Aurora's `ARQPostRequest` invoked the ARAM completion callback
   synchronously, so `CDvdFile::PingARAMTransfer <-> HandleARAMInterrupt` recursed to
   stack overflow. Callbacks are now queued and drained by an iterative `ARQPoll()`
-  (called from `ARQPostRequest` and once per game frame; re-entrancy guarded).
+  at explicit pump/wait points. Running the poll inside `ARQPostRequest` was still
+  too early: multi-chunk transfers observed stale length/interrupt state and left
+  `aram:MiscData.pak` permanently loading.
 - **GX breakpoint / VI retrace**: `CGraphics::EndScene` spins on
   `mNumBreakpointsWaiting`, which only a VI retrace decrements. `GXEnableBreakPt`
   now pulses the registered breakpoint + pre/post retrace callbacks (stored by the
@@ -128,10 +130,16 @@ no crashes. Fixes landed:
   `operator delete`->`CMemory::Free` is MWCC-only, so glibc freed a game pointer.
   Routed the free to `CMemory::Free`; `CDvdFileARAM` buffers now use `rs_new`.
 
-Current blocker: `aurora::gfx::acquire_frame_slot` blocks (waiting for frame-slot
-GPU progress) — the per-scene `CGraphics::BeginScene/EndScene` frame bracketing may
-be over-driving Aurora frames; revisit the frame model (e.g. one Aurora frame per
-game loop iteration rather than per scene, or ensure `aurora_end_frame` completes).
+The apparent frame-slot deadlock was normal frame pacing. The repeated
+`CGraphics::EndScene` caller was the initial pak-loading loop; after fixing ARQ
+completion ordering and synchronous ARAM waits, startup reaches the main loop
+(`MP frame` verified through frame 361). Resource buffers passed to `delete`-based
+owners now use matching host allocations, and palette frame state is initialized
+so ARAM palette storage follows delayed `CMemory::Free` cleanup.
+
+Current blocker: audio startup reaches MusyX `sndPushGroup` for group 39 and then
+faults while walking the group's `nextOff` chain. This is after sustained main-loop
+progress and is separate from the initialization scene loop.
 
 ## Next steps
 

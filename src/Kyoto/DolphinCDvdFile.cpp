@@ -192,7 +192,8 @@ void CDvdFile::StartARAMFileLoad() {
 }
 
 void CDvdFile::StallForARAMFile() {
-  while (mARAMFile.get() != nullptr) {
+  while (!IsARAMFileLoaded()) {
+    ARQPoll();
     OSYieldThread();
   }
 }

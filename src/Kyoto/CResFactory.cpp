@@ -8,6 +8,8 @@
 #include "rstl/math.hpp"
 #include "zlib/zlib.h"
 
+#include <dolphin/ar.h>
+
 static const int kDecompChunkSize = 4096;
 
 // Written by CMFGameLoader; its purpose is not yet identified.
@@ -50,7 +52,9 @@ rstl::auto_ptr< IObj > CResFactory::Build(const SObjectTag& tag, const CVParamTr
   if (it != x84_loadList.end()) {
     IObj** target = it->x10_target;
     while (*target == nullptr) {
+      ARQPoll();
       while (!PumpResource(it, 0)) {
+        ARQPoll();
       }
     }
     return rstl::auto_ptr< IObj >(*target);
@@ -78,7 +82,7 @@ rstl::auto_ptr< IObj > CResFactory::BuildSync(const SObjectTag& tag,
 void CResFactory::BuildAsync(const SObjectTag& tag, const CVParamTransfer& params, IObj** target) {
   *target = nullptr;
   const uint size = ResourceSize(tag);
-  char* buffer = static_cast< char* >(CMemory::Alloc(size, IAllocator::kHI_RoundUpLen));
+  char* buffer = rs_new char[(size + 31) & ~31];
   CDvdRequest* request = LoadResourceAsync(tag, buffer);
   SLoadingData data(tag, request, target, buffer, size, x4_resLoader.GetResourceCompression(tag),
                     params);
@@ -181,8 +185,7 @@ bool CResFactory::SLoadingData::PumpDecompression(uint time) {
     zip->next_in = nullptr;
     zip->next_out = nullptr;
     x24_zip = rstl::auto_ptr< z_stream_s >(zip);
-    x1c_decompBuffer = rstl::auto_ptr< uchar >(
-        static_cast< uchar* >(CMemory::Alloc(length, IAllocator::kHI_RoundUpLen)));
+    x1c_decompBuffer = rstl::auto_ptr< uchar >(rs_new uchar[length]);
   }
 
   const int size = x2c_size;

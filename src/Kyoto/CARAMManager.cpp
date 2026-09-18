@@ -160,8 +160,9 @@ void CARAMManager::WaitForDMACompletion(uint handle) {
     uint uniqueId = (*it)->mUniqueID;
     if (uniqueId == handle) {
       // Spin until complete!
-      while (!(*it)->mComplete)
-        ;
+      while (!(*it)->mComplete) {
+        ARQPoll();
+      }
       delete (*it);
       mActiveDMAs.erase(it);
       return;
@@ -171,6 +172,7 @@ void CARAMManager::WaitForDMACompletion(uint handle) {
 
 void CARAMManager::WaitForAllDMAsToComplete() {
   while ((int)mActiveDMAs.size() > 0) {
+    ARQPoll();
     RefreshActiveDMAList();
   }
 }

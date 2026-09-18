@@ -218,7 +218,7 @@ CInputStream* CResLoader::LoadNewResourceSync(const SObjectTag& tag, char* extBu
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = x50_cachedResInfo;
   uint len = align_size(info->GetSize());
-  void* dest = extBuf ? extBuf : CMemory::Alloc(len, IAllocator::kHI_RoundUpLen);
+  void* dest = extBuf ? extBuf : rs_new char[len];
 
   curPak->DvdFile().SyncSeekRead(dest, len, kSO_Begin, info->GetOffset());
   CInputStream* input = rs_new CMemoryInStream(dest, info->GetSize(),
@@ -249,7 +249,7 @@ void CResLoader::LoadMemResourceSync(const SObjectTag& tag, char** bufOut, int* 
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = x50_cachedResInfo;
   uint len = align_size(info->GetSize());
-  char* buf = static_cast< char* >(CMemory::Alloc(len, IAllocator::kHI_RoundUpLen));
+  char* buf = rs_new char[len];
   curPak->DvdFile().SyncSeekRead(buf, len, kSO_Begin, info->GetOffset());
   *bufOut = buf;
   *lenOut = info->GetSize();
@@ -260,7 +260,7 @@ CInputStream* CResLoader::LoadNewResourcePartSync(const SObjectTag& tag, int off
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = x50_cachedResInfo;
 
-  void* dest = extBuf ? extBuf : CMemory::Alloc(length, IAllocator::kHI_RoundUpLen);
+  void* dest = extBuf ? extBuf : rs_new char[length];
   curPak->DvdFile().SyncSeekRead(dest, length, kSO_Begin, info->GetOffset() + offset);
 
   CInputStream* input = rs_new CMemoryInStream(
