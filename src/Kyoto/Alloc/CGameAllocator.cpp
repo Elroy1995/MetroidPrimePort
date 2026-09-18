@@ -224,6 +224,16 @@ void* CGameAllocator::Alloc(size_t size, const EHint hint, const EScope scope, c
     if (mediumBuf == nullptr) {
       callstack.GetFileAndLineText();
       callstack.GetTypeText();
+      fprintf(stderr, "CGameAllocator OOM: size=0x%x remaining=0x%x bins:",
+              static_cast< unsigned >(size), static_cast< unsigned >(x90_heapSize2));
+      for (int b = 0; b < 16; b++) {
+        int n = 0;
+        for (SGameMemInfo* it = x14_bins[b]; it != nullptr; it = it->GetNextFree()) {
+          ++n;
+        }
+        fprintf(stderr, " %d", n);
+      }
+      fprintf(stderr, "\n");
       DumpAllocations();
       return nullptr;
     }
