@@ -2048,20 +2048,26 @@ void CPlayer::UpdateFreeLook(float dt) {
     return;
   }
 
-  // Port: mouse aim drives the free-look angles 1:1 instead of the smoothed
-  // stick path. The camera already consumes these when isInFreeLook is set
-  // (see UpdateFreeLookState).
+  // Port: mouse aim. Yaw rotates the body transform (the free-look angle is a
+  // limited head offset and wraps past 90 degrees), while pitch stays in the
+  // free-look angle so the camera's own clamp applies.
   if (PortDebug::MouseAim()) {
     float dx = 0.f;
     float dy = 0.f;
     if (PortDebug::ConsumeMouseDelta(dx, dy)) {
       const float sens = PortDebug::MouseSensitivity();
-      x3e4_freeLookYawAngle -= dx * sens;
-      x3ec_freeLookPitchAngle += dy * sens;
-      const float maxPitch = gpTweakPlayer->GetVerticalFreeLookAngleVel();
-      x3ec_freeLookPitchAngle =
-          CMath::Clamp(-maxPitch, x3ec_freeLookPitchAngle, maxPitch);
+      if (dx != 0.f) {
+        const CTransform4f yaw(
+            CQuaternion::ZRotation(CRelAngle(-dx * sens)).BuildTransform(), CVector3f::Zero());
+        SetTransform(yaw * GetTransform());
+      }
+      if (dy != 0.f) {
+        const float maxPitch = gpTweakPlayer->GetVerticalFreeLookAngleVel();
+        x3ec_freeLookPitchAngle =
+            CMath::Clamp(-maxPitch, x3ec_freeLookPitchAngle + dy * sens, maxPitch);
+      }
     }
+    x3e4_freeLookYawAngle = 0.f;
     return;
   }
 

@@ -824,8 +824,19 @@ int CMain::RsMain(int argc, const char* const* argv) {
         static bool sRelativeMouse = false;
         const bool wantRelative = PortDebug::MouseAim() && !PortDebug::Visible();
         if (wantRelative != sRelativeMouse) {
-          sRelativeMouse = wantRelative;
-          if (SDL_Window* window = SDL_GetKeyboardFocus()) {
+          SDL_Window* window = SDL_GetKeyboardFocus();
+          if (window == nullptr) {
+            window = SDL_GetMouseFocus();
+          }
+          if (window == nullptr) {
+            int count = 0;
+            SDL_Window** windows = SDL_GetWindows(&count);
+            if (windows != nullptr && count > 0) {
+              window = windows[0];
+            }
+          }
+          if (window != nullptr) {
+            sRelativeMouse = wantRelative;
             SDL_SetWindowRelativeMouseMode(window, wantRelative);
           }
         }
