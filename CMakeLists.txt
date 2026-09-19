@@ -63,3 +63,10 @@ target_link_libraries(metroid_prime_port PRIVATE
     mp_game
     aurora::main
     "$<LINK_GROUP:RESCAN,aurora::core,aurora::gx>")
+
+# Aurora imports this machine-independent pipeline description cache and
+# compiles its entries in the background before first use.
+add_custom_command(TARGET metroid_prime_port POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/initial_pipeline_cache.db
+        $<TARGET_FILE_DIR:metroid_prime_port>/initial_pipeline_cache.db)

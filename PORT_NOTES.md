@@ -290,6 +290,11 @@ meters in one tick, and rotations over 45 degrees reset interpolation so cuts
 and teleports are never blended. Actor poses and first-person weapon transforms
 still update at the fixed simulation rate.
 
+`assets/initial_pipeline_cache.db` contains machine-independent Aurora pipeline
+descriptions collected from the title, menus, and intro gameplay. CMake copies
+it beside the executable; Aurora merges it into each user's persistent cache
+and compiles the entries on its background pipeline thread.
+
 ## Licensing
 
 - Aurora: MIT. Port-specific code: ours.
