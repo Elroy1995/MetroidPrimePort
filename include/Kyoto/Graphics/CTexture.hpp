@@ -38,10 +38,14 @@ public:
     uint xc_;
     bool x10_;
     rstl::single_ptr< CDvdRequest > x14_;
-    rstl::single_ptr< uchar > x18_;
+    // Port: this buffer comes from CMemory::Alloc (the game heap), whose
+    // pointers are not host-malloc-compatible, so it must be freed with
+    // CMemory::Free rather than single_ptr's host delete.
+    uchar* x18_;
 
   public:
     CDumpedBitmapDataReloader(uint unk1, uint unk2, bool unk3);
+    ~CDumpedBitmapDataReloader();
 
     void BeginReloadBitmapData(CResFactory& factory);
     void* TryBuildReloadedBitmapData(CResFactory& factory);

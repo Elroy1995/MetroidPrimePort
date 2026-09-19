@@ -257,7 +257,14 @@ int CTexture::fn_8030F088() const {
 }
 
 CTexture::CDumpedBitmapDataReloader::CDumpedBitmapDataReloader(uint unk1, uint unk2, bool unk3)
-: x0_(0), x4_(unk1), x8_(0), xc_(unk2), x10_(unk3) {}
+: x0_(0), x4_(unk1), x8_(0), xc_(unk2), x10_(unk3), x18_(nullptr) {}
+
+CTexture::CDumpedBitmapDataReloader::~CDumpedBitmapDataReloader() {
+  if (x18_ != nullptr) {
+    CMemory::Free(x18_);
+    x18_ = nullptr;
+  }
+}
 
 void CTexture::CDumpedBitmapDataReloader::BeginReloadBitmapData(CResFactory& factory) {
   if (x0_ != 0) {
@@ -265,8 +272,11 @@ void CTexture::CDumpedBitmapDataReloader::BeginReloadBitmapData(CResFactory& fac
   }
   SObjectTag tag('TXTR', x4_);
   x8_ = factory.ResourceSize(tag);
+  if (x18_ != nullptr) {
+    CMemory::Free(x18_);
+  }
   x18_ = (uchar*)CMemory::Alloc(x8_, IAllocator::kHI_RoundUpLen);
-  x14_ = factory.GetResLoader().LoadResourceAsync(tag, (char*)x18_.get());
+  x14_ = factory.GetResLoader().LoadResourceAsync(tag, (char*)x18_);
   x0_ = 1;
 }
 
@@ -276,7 +286,7 @@ void* CTexture::CDumpedBitmapDataReloader::TryBuildReloadedBitmapData(CResFactor
     x14_ = nullptr;
 
     SObjectTag tag('TXTR', x4_);
-    rstl::single_ptr< CInputStream > buf = factory.LoadResourceFromMemorySync(tag, x18_.get());
+    rstl::single_ptr< CInputStream > buf = factory.LoadResourceFromMemorySync(tag, x18_);
     CInputStream* in = buf.get();
     ETexelFormat format = ETexelFormat(in->ReadInt32());
     const int w = in->ReadInt16();
@@ -309,7 +319,10 @@ void* CTexture::CDumpedBitmapDataReloader::TryBuildReloadedBitmapData(CResFactor
       DCFlushRangeNoSync((char*)ptr + off, OSRoundUp32B(len));
     }
     PPCSync();
-    x18_ = nullptr;
+    if (x18_ != nullptr) {
+      CMemory::Free(x18_);
+      x18_ = nullptr;
+    }
     return ptr;
   }
   return nullptr;
