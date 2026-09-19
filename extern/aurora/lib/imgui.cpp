@@ -76,8 +76,12 @@ void enqueue_texture_upload(wgpu::Buffer buffer, wgpu::TexelCopyTextureInfo dst,
 } // namespace
 
 struct DrawData::Impl {
+  struct DrawListDeleter {
+    void operator()(ImDrawList* list) const { IM_DELETE(list); }
+  };
   ImDrawData drawData;
-  std::vector<std::unique_ptr<ImDrawList>> drawLists;
+  // CloneOutput uses ImGui's allocator, which is not C++ operator new.
+  std::vector<std::unique_ptr<ImDrawList, DrawListDeleter>> drawLists;
 };
 
 void create_context() noexcept {
