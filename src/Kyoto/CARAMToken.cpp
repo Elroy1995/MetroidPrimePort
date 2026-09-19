@@ -188,6 +188,11 @@ bool CARAMToken::RefreshStatus() {
 }
 
 void CARAMToken::UpdateAllDMAs() {
+  // Port: Aurora defers ARQ completion callbacks until ARQPoll runs on the main
+  // thread. Callers that spin on a token (map/pause texture eviction, room
+  // transitions) never reach the main-loop poll, so pump it here or the DMA
+  // status never advances and the game hangs.
+  ARQPoll();
   for (int i = kS_Two; i <= kS_Five; ++i) {
     CARAMToken* ptr = sLists[i];
     while (ptr != nullptr) {

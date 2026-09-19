@@ -225,6 +225,12 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   decoded samples now, `IsReady` waits for every chunk rather than only the last,
   and the non-ARAM `CDvdFile` read is blocking (`DVDReadPrio`) so playback cannot
   start on unfilled buffers.
+- `CARAMToken::UpdateAllDMAs` pumps `ARQPoll` before refreshing status. Aurora
+  defers ARQ completion callbacks until `ARQPoll` runs on the main thread, but
+  the map/pause texture eviction and room-transition code spin on a token
+  (`while (texture.IsARAMTransferInProgress()) UpdateAllDMAs();`) and so never
+  reached the main-loop poll; the DMA never completed and the game froze with
+  audio still playing (opening the map always hung).
 - The GameCube audio-interface DMA path is implemented in `platform/ai_dma.cpp`:
   the registered DMA callback is driven from the main loop (`AIPortPoll`) at the
   buffer rate and the submitted buffer is fed to its own SDL stream. Streamed
