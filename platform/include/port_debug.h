@@ -20,6 +20,10 @@ void SetVsyncEnabled(bool enabled);
 // 0 = auto (native, driven by the display scale), otherwise a fixed multiplier.
 float RenderScale();
 void SetRenderScale(float scale);
+// Renders a 16:9 image (wider horizontal FOV). Startup-only: the game's render
+// mode is configured before the first frame, so changing it needs a restart.
+bool Widescreen();
+void SetWidescreen(bool enabled);
 
 // Audio paths
 bool AiAudioEnabled();

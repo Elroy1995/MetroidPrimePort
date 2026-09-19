@@ -26,6 +26,7 @@ float sCutsceneSpeed = 8.f;
 bool sFrameLimitEnabled = true;
 bool sVsyncEnabled = false;
 float sRenderScale = 1.f;
+bool sWidescreen = false;
 bool sAiAudioEnabled = true;
 bool sMusyxAudioEnabled = true;
 bool sResetRequested = false;
@@ -39,6 +40,7 @@ void EnsureInitialized() {
   sFastBoot = std::getenv("MP_FAST_BOOT") != nullptr;
   sSkipCutscenes = std::getenv("MP_SKIP_CUTSCENES") != nullptr;
   sVisible = std::getenv("MP_SHOW_DEBUG_UI") != nullptr;
+  sWidescreen = std::getenv("MP_WIDESCREEN") != nullptr;
   sAiAudioEnabled = std::getenv("MP_DISABLE_AI_AUDIO") == nullptr;
   if (const char* speed = std::getenv("MP_CUTSCENE_SPEED")) {
     const float value = static_cast< float >(std::atof(speed));
@@ -102,6 +104,16 @@ void SetRenderScale(float scale) {
   }
   sRenderScale = scale;
   VISetFrameBufferScale(scale);
+}
+
+bool Widescreen() {
+  EnsureInitialized();
+  return sWidescreen;
+}
+
+void SetWidescreen(bool enabled) {
+  EnsureInitialized();
+  sWidescreen = enabled;
 }
 
 bool AiAudioEnabled() {
@@ -171,6 +183,11 @@ void DrawRenderTab() {
   bool vsync = sVsyncEnabled;
   if (ImGui::Checkbox("Vsync", &vsync)) {
     SetVsyncEnabled(vsync);
+  }
+
+  bool widescreen = sWidescreen;
+  if (ImGui::Checkbox("Widescreen 16:9 (restart)", &widescreen)) {
+    SetWidescreen(widescreen);
   }
 
   bool autoScale = sRenderScale <= 0.f;

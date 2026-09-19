@@ -4,6 +4,9 @@
 #include "Kyoto/Basics/CBasics.hpp"
 #include "dolphin/os.h"
 #include "dolphin/vi.h"
+
+#include "port_debug.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -61,6 +64,15 @@ int COsContext::OpenWindow(const char* title, int x, int y, int w, int h, bool f
   }
 
   GXAdjustForOverscan(rModeObj, &x30_renderMode, 0, 16);
+
+  // Port: widen the render mode for a 16:9 image. Aurora derives the internal
+  // EFB size and the game's aspect ratio from fbWidth, so the horizontal FOV and
+  // the present both widen. Needs a restart, since the framebuffers are sized
+  // from this before the first frame.
+  if (PortDebug::Widescreen()) {
+    x30_renderMode.fbWidth =
+        static_cast< u16 >(((static_cast< unsigned >(x30_renderMode.efbHeight) * 16u + 8u) / 9u) & ~1u);
+  }
 
   x8_left = x30_renderMode.viXOrigin;
   xc_top = x30_renderMode.viYOrigin;

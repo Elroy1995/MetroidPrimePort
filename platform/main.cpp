@@ -11,6 +11,8 @@
 #include <aurora/main.h>
 #include <dolphin/vi.h>
 
+#include "port_debug.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -32,6 +34,9 @@ const char* ResolveDiscPath(int argc, char** argv) {
 } // namespace
 
 int main(int argc, char** argv) {
+    // A 16:9 window when widescreen is requested; the game's render mode is
+    // widened to match. Values are the default window size only.
+    const bool widescreen = PortDebug::Widescreen();
     const AuroraConfig config = {
         .appName = "Metroid Prime",
         .userPath = nullptr,
@@ -39,9 +44,9 @@ int main(int argc, char** argv) {
         .resourcesPath = nullptr,
         .desiredBackend = BACKEND_AUTO,
         .vsync = false,
-        // Keep the internal framebuffer at the game's 640x480 so its two
+        // Keep the internal framebuffer at the game's logical size so its two
         // framebuffer allocations fit in MEM1; Aurora upscales to the window.
-        .windowWidth = 640,
+        .windowWidth = static_cast<uint32_t>(widescreen ? 854 : 640),
         .windowHeight = 480,
         .mem1Size = MEM1_DEFAULT_SIZE,
         .mem2Size = ARAM_DEFAULT_SIZE,
