@@ -1,6 +1,7 @@
 #include "Kyoto/Audio/CDSPStreamManager.hpp"
 
 #include "Kyoto/Alloc/CMemory.hpp"
+#include "Kyoto/Basics/CBasics.hpp"
 #include "Kyoto/CDvdFile.hpp"
 
 #include "dolphin/dvd.h"
@@ -12,6 +13,30 @@
 CDSPStreamManager g_Streams[4] = {CDSPStreamManager(), CDSPStreamManager(), CDSPStreamManager(),
                                   CDSPStreamManager()};
 static int sHandleCounter;
+
+#if TARGET_LITTLE_ENDIAN
+static void ConvertDSPHeader(dspadpcm_header& header) {
+  header.x0_numSamples = CBasics::SwapBytes(header.x0_numSamples);
+  header.x4_numNibbles = CBasics::SwapBytes(header.x4_numNibbles);
+  header.x8_sampleRate = CBasics::SwapBytes(header.x8_sampleRate);
+  header.xc_loopFlag = CBasics::SwapBytes(header.xc_loopFlag);
+  header.xe_format = CBasics::SwapBytes(header.xe_format);
+  header.x10_loopStartNibble = CBasics::SwapBytes(header.x10_loopStartNibble);
+  header.x14_loopEndNibble = CBasics::SwapBytes(header.x14_loopEndNibble);
+  header.x18_currentAddress = CBasics::SwapBytes(header.x18_currentAddress);
+  for (int i = 0; i < 8; ++i) {
+    header.x1c_coef[i][0] = CBasics::SwapBytes(header.x1c_coef[i][0]);
+    header.x1c_coef[i][1] = CBasics::SwapBytes(header.x1c_coef[i][1]);
+  }
+  header.x3c_gain = CBasics::SwapBytes(header.x3c_gain);
+  header.x3e_predScale = CBasics::SwapBytes(header.x3e_predScale);
+  header.x40_hist1 = CBasics::SwapBytes(header.x40_hist1);
+  header.x42_hist2 = CBasics::SwapBytes(header.x42_hist2);
+  header.x44_loopPredScale = CBasics::SwapBytes(header.x44_loopPredScale);
+  header.x46_loopHist1 = CBasics::SwapBytes(header.x46_loopHist1);
+  header.x48_loopHist2 = CBasics::SwapBytes(header.x48_loopHist2);
+}
+#endif
 
 class CInterruptGuard {
   bool x0_enabled;
@@ -318,7 +343,14 @@ void CDSPStreamManager::HeaderReadComplete(s32 result, DVDFileInfo* fileInfo) {
     CDSPStreamManager* stream = &g_Streams[idx];
     if (&stream->x80_dvdFile == fileInfo && !stream->x70_24_unclaimed) {
       CInterruptGuard interrupts;
-      if (result <= 0 || !stream->HasSupportedSampleRate()) {
+      if (result <= 0) {
+        *stream = CDSPStreamManager();
+        return;
+      }
+#if TARGET_LITTLE_ENDIAN
+      ConvertDSPHeader(stream->x0_header);
+#endif
+      if (!stream->HasSupportedSampleRate()) {
         *stream = CDSPStreamManager();
         return;
       }

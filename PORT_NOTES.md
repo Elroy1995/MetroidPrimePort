@@ -254,6 +254,9 @@ Verified:
 - Both SDL audio paths maintain a bounded queue instead of depending on exact
   5 ms thread/main-loop scheduling. MusyX also reads raw PCM16 sample payloads as
   GameCube big-endian data instead of host-endian data.
+- In-game `.dsp` stream headers are converted from GameCube endianness after the
+  DVD read. Without this, the native sample-rate check rejected every stream;
+  traced intro playback now allocates a stream at 32000 Hz.
 - GPU captures from the current build show the publisher screen, `[ PRESS START ]`
   title screen, and no-memory-card dialog rendering correctly. The user's reported
   blank front end therefore needs a capture at the exact failing transition.
@@ -268,6 +271,10 @@ Remaining:
 5. Verify CARD saves and the remaining menu flows.
 6. Reproduce the reported blank front-end screen using `F12`; current automated
    captures do not reproduce it.
+
+Debug shortcuts: `F10` toggles Aurora present-mode pacing between the display's
+60 Hz vsync and unlimited without modifying game simulation; `F12` saves the
+resolved framebuffer under `screenshots/`.
 
 ## Licensing
 
