@@ -673,6 +673,7 @@ s32 dataGetSample(u16 sid, SAMPLE_INFO* newsmp) {
         newsmp->length = sheader->length & 0xffffff;
         newsmp->loopLength = sheader->loopLength;
         newsmp->compType = sheader->length >> 24;
+        newsmp->extraData = NULL;
 
         if (result->extraData) {
           newsmp->extraData = (void*)((size_t) & (dataSmpSDirs[i].data)->id + result->extraData);

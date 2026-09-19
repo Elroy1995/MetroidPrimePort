@@ -6,6 +6,8 @@
 #include <SDL3/SDL_timer.h>
 
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "musyx/adsr.h"
 #include "musyx/assert.h"
@@ -13,6 +15,7 @@
 #include "musyx/musyx.h"
 #include "musyx/sal.h"
 #include "musyx/synth.h"
+#include "musyx/pc_audio_math.h"
 
 // Audio parameters
 #define SAL_SAMPLES_PER_FRAME 160
@@ -48,6 +51,9 @@ static SDL_Thread* salAudioThread = NULL;
 static SDL_AtomicInt salAudioThreadRunning;
 static SDL_Mutex* globalMutex;
 static bool salAudioSubsystemInitialized;
+static bool salTraceAudio;
+static u64 salStatsStart, salStatsFrames, salStatsClipped;
+static int salStatsPeak;
 
 // Runtime mute (used by the port's debug overlay). The mixer still runs so the
 // engine's timing is unchanged; only the pushed output is silenced.
@@ -59,9 +65,8 @@ static SND_SOME_CALLBACK userCallback = NULL;
 // ADPCM decode state per voice
 static s16 adpcmYn1[SYNTH_MAX_VOICES];
 static s16 adpcmYn2[SYNTH_MAX_VOICES];
-// Cached decoded ADPCM block per voice
-static s32 adpcmBlockCache[SYNTH_MAX_VOICES][14];
-static u32 adpcmCachedBlock[SYNTH_MAX_VOICES]; // block index currently cached, ~0u = invalid
+static u8 adpcmPS[SYNTH_MAX_VOICES];
+static u8 adpcmRestart[SYNTH_MAX_VOICES];
 
 typedef struct VoiceResamplerState {
   s32 srcBuf[SRC_STAGING_SIZE];
@@ -197,8 +202,8 @@ static inline void mixRampChannel(s32* dest, const s32* src, int nSamples, s16 s
   for (int i = 0; i < nSamples; ++i) {
     s32 env = CLAMP((s32)envStart + (s32)envDelta * i, 0, 0x7FFF);
     s32 vol = startVol + deltaVol * i;
-    s32 mixVol = (vol * env) >> 15;
-    dest[i] += (src[i] * mixVol) >> 15;
+    s32 mixVol = musyxPcScaleQ15(vol, env);
+    dest[i] = musyxPcClamp32((int64_t)dest[i] + musyxPcScaleQ15(src[i], mixVol));
   }
 }
 
@@ -207,75 +212,26 @@ static inline void addThreeChannelBuffer(s32* dst, const s32* src, u16 vol) {
     return;
 
   for (int i = 0; i < SAL_SAMPLES_PER_FRAME * 3; ++i)
-    dst[i] += (src[i] * vol) >> 15;
+    dst[i] = musyxPcClamp32((int64_t)dst[i] + musyxPcScaleQ15(src[i], vol));
 }
 
 static void downmixStudioToStereo(const s32* left, const s32* right, const s32* surround) {
   for (int i = 0; i < SAL_SAMPLES_PER_FRAME; ++i) {
-    mixBufferL[i] += left[i];
-    mixBufferR[i] += right[i];
+    mixBufferL[i] = musyxPcClamp32((int64_t)mixBufferL[i] + left[i]);
+    mixBufferR[i] = musyxPcClamp32((int64_t)mixBufferR[i] + right[i]);
     if (surround != NULL) {
-      s32 surroundMix = (surround[i] * SURROUND_DOWNMIX_GAIN) >> 15;
-      mixBufferL[i] += surroundMix;
-      mixBufferR[i] += surroundMix;
+      s32 surroundMix = musyxPcScaleQ15(surround[i], SURROUND_DOWNMIX_GAIN);
+      mixBufferL[i] = musyxPcClamp32((int64_t)mixBufferL[i] + surroundMix);
+      mixBufferR[i] = musyxPcClamp32((int64_t)mixBufferR[i] + surroundMix);
     }
   }
 }
 
 static void foldStereoToOutput(const s32* left, const s32* right) {
   for (int i = 0; i < SAL_SAMPLES_PER_FRAME; ++i) {
-    mixBufferL[i] += left[i];
-    mixBufferR[i] += right[i];
+    mixBufferL[i] = musyxPcClamp32((int64_t)mixBufferL[i] + left[i]);
+    mixBufferR[i] = musyxPcClamp32((int64_t)mixBufferR[i] + right[i]);
   }
-}
-
-/*
- * Decode a full ADPCM block (8 bytes -> 14 samples) and update history.
- */
-static void decodeADPCMBlockFull(const u8* blockData, const s16 coefTab[8][2], s16* yn1, s16* yn2,
-                                 s32* out) {
-  u8 ps = blockData[0];
-  int pred = (ps >> 4) & 0x7;
-  int scale = 1 << (ps & 0xF);
-  s16 c1 = coefTab[pred][0];
-  s16 c2 = coefTab[pred][1];
-  s16 y1 = *yn1, y2 = *yn2;
-
-  for (int s = 0; s < 14; s++) {
-    int nibble;
-    if (s % 2 == 0) {
-      nibble = (blockData[1 + s / 2] >> 4) & 0xF;
-    } else {
-      nibble = blockData[1 + s / 2] & 0xF;
-    }
-    if (nibble >= 8)
-      nibble -= 16;
-    s32 decoded = (nibble * scale) + ((c1 * (s32)y1 + c2 * (s32)y2) >> 11);
-    decoded = clamp16(decoded);
-    y2 = y1;
-    y1 = (s16)decoded;
-    out[s] = decoded;
-  }
-  *yn1 = y1;
-  *yn2 = y2;
-}
-
-static void ensureADPCMBlockDecoded(SAMPLE_INFO* smp, u32 voiceIdx, u32 blockIdx,
-                                    const s16 coefTab[8][2]) {
-  if (adpcmCachedBlock[voiceIdx] == blockIdx)
-    return;
-
-  u32 startBlock = blockIdx;
-  if (adpcmCachedBlock[voiceIdx] != ~0u && adpcmCachedBlock[voiceIdx] < blockIdx)
-    startBlock = adpcmCachedBlock[voiceIdx] + 1;
-
-  for (u32 b = startBlock; b <= blockIdx; ++b) {
-    const u8* blockData = (const u8*)smp->addr + b * 8;
-    decodeADPCMBlockFull(blockData, coefTab, &adpcmYn1[voiceIdx], &adpcmYn2[voiceIdx],
-                         adpcmBlockCache[voiceIdx]);
-  }
-
-  adpcmCachedBlock[voiceIdx] = blockIdx;
 }
 
 static const s16 zeroCoefTab[8][2] = {{0}};
@@ -296,15 +252,24 @@ static void resetVoiceLoopState(SAMPLE_INFO* smp, u32 voiceIdx) {
   if (!isVoiceADPCM(smp->compType))
     return;
 
+  if (musyxPcStreamedAdpcm(smp->compType)) {
+    // A stream wraps a circular buffer of consecutive audio, not the song.
+    // Match DSP loopType=1: retain predictor history and read the fresh header.
+    adpcmRestart[voiceIdx] = 0;
+    return;
+  }
+
   DSPADPCMplusInfo* adpcmInfo = smp->extraData;
   if (adpcmInfo != NULL) {
     adpcmYn1[voiceIdx] = adpcmInfo->loopY1;
     adpcmYn2[voiceIdx] = adpcmInfo->loopY0;
+    adpcmPS[voiceIdx] = adpcmInfo->loopPS;
   } else {
     adpcmYn1[voiceIdx] = 0;
     adpcmYn2[voiceIdx] = 0;
+    adpcmPS[voiceIdx] = ((const u8*)smp->addr)[(smp->loop / 14) * 8];
   }
-  adpcmCachedBlock[voiceIdx] = ~0u;
+  adpcmRestart[voiceIdx] = 1;
 }
 
 static void updateCurrentAddr(DSPvoice* vp, u32 srcPosHi) {
@@ -337,9 +302,14 @@ static s32 sampleAtPos(SAMPLE_INFO* smp, u32 voiceIdx, u32 posHi, const s16 coef
   case 1:
   case 4:
   case 5: {
-    u32 blockIdx = posHi / 14;
-    ensureADPCMBlockDecoded(smp, voiceIdx, blockIdx, coefTab);
-    return adpcmBlockCache[voiceIdx][posHi % 14];
+    const u8* block = (const u8*)smp->addr + (posHi / 14) * 8;
+    const unsigned sample = posHi % 14;
+    if (!adpcmRestart[voiceIdx] && sample == 0) adpcmPS[voiceIdx] = block[0];
+    adpcmRestart[voiceIdx] = 0;
+    // Decode only the samples actually consumed. Decoding a whole block here
+    // corrupts history when a loop starts or ends partway through that block.
+    return musyxPcAdpcmSample(block, sample, adpcmPS[voiceIdx], coefTab,
+                              &adpcmYn1[voiceIdx], &adpcmYn2[voiceIdx]);
   }
   case 2:
 #if MUSY_VERSION >= MUSY_VERSION_CHECK(2, 0, 2)
@@ -351,7 +321,7 @@ static s32 sampleAtPos(SAMPLE_INFO* smp, u32 voiceIdx, u32 posHi, const s16 coef
     return (s16)((u16)sample[0] << 8 | sample[1]);
   }
   case 3:
-    return ((s32)((u8*)smp->addr)[posHi] - 128) << 8;
+    return musyxPcPcm8(((u8*)smp->addr)[posHi]);
   default:
     return 0;
   }
@@ -367,11 +337,12 @@ static int decodeSourceSamples(DSPvoice* vp, u32 voiceIdx, s32* out, int maxSamp
   int count = 0;
 
   *hitEnd = 0;
+  const u32 end = musyxPcLoopEnd(smp->length, smp->loop, smp->loopLength);
 
   for (; count < maxSamples; ++count) {
-    if (state->srcPosHi >= smp->length) {
-      if (smp->loopLength > 0) {
-        state->srcPosHi = smp->loop + ((state->srcPosHi - smp->length) % smp->loopLength);
+    if (state->srcPosHi >= end) {
+      if (smp->loopLength > 0 && smp->loop < end && smp->loopLength <= end - smp->loop) {
+        state->srcPosHi = smp->loop + ((state->srcPosHi - end) % smp->loopLength);
         resetVoiceLoopState(smp, voiceIdx);
       } else {
         *hitEnd = 1;
@@ -629,7 +600,11 @@ void salCtrlDsp(s16* dest) {
           /* Reset ADPCM decode state for this voice */
           adpcmYn1[voiceIdx] = 0;
           adpcmYn2[voiceIdx] = 0;
-          adpcmCachedBlock[voiceIdx] = (u32)~0u;
+          adpcmRestart[voiceIdx] = 1;
+          adpcmPS[voiceIdx] = isVoiceADPCM(vp->smp_info.compType) && vp->smp_info.extraData != NULL
+                                 ? ((DSPADPCMplusInfo*)vp->smp_info.extraData)->initialPS : 0;
+          if (isVoiceADPCM(vp->smp_info.compType) && vp->smp_info.extraData == NULL && vp->smp_info.addr != NULL)
+            adpcmPS[voiceIdx] = ((const u8*)vp->smp_info.addr)[(vp->playInfo.posHi / 14) * 8];
 #if MUSY_VERSION >= MUSY_VERSION_CHECK(2, 0, 1)
           filterState[voiceIdx] = 0;
 #endif
@@ -642,6 +617,7 @@ void salCtrlDsp(s16* dest) {
             if (adpcmInfo != NULL) {
               adpcmYn2[voiceIdx] = adpcmInfo->blk[offset].Y0;
               adpcmYn1[voiceIdx] = adpcmInfo->blk[offset].Y1;
+              adpcmPS[voiceIdx] = adpcmInfo->blk[offset].PS;
             }
           }
 
@@ -847,6 +823,25 @@ static int salAudioThreadFunc(void* data) {
 
     /* Push rendered buffer to SDL audio stream */
     s16* buf = salOutputBuffers[salOutputIndex];
+    if (salTraceAudio) {
+      ++salStatsFrames;
+      for (int i = 0; i < SAL_STEREO_SAMPLES; ++i) {
+        const int magnitude = abs((int)buf[i]);
+        if (magnitude > salStatsPeak) salStatsPeak = magnitude;
+        if (magnitude >= 32767) ++salStatsClipped;
+      }
+      const u64 now = SDL_GetTicksNS();
+      if (now - salStatsStart >= 1000000000ull) {
+        const double seconds = (double)(now - salStatsStart) / 1000000000.0;
+        fprintf(stderr, "[musyx] rate=%.0f samples/s queued=%.1f ms peak=%d clipped=%.3f%%\n",
+                salStatsFrames * SAL_SAMPLES_PER_FRAME / seconds,
+                queuedBytes > 0 ? queuedBytes * 1000.0 / (32000 * 4) : 0.0,
+                salStatsPeak, 100.0 * salStatsClipped / (salStatsFrames * SAL_STEREO_SAMPLES));
+        salStatsStart = now;
+        salStatsFrames = salStatsClipped = 0;
+        salStatsPeak = 0;
+      }
+    }
     if (salAudioStream) {
       if (SDL_GetAtomicInt(&salMuted)) {
         memset(buf, 0, SAL_BUFFER_BYTES);
@@ -865,11 +860,15 @@ bool salInitAi(SND_SOME_CALLBACK callback, u32 flags, u32* outFreq) {
   memset(salOutputBuffers, 0, sizeof(salOutputBuffers));
   salOutputIndex = 0;
   userCallback = callback;
+  salTraceAudio = getenv("MP_AUDIO_STATS") != NULL;
+  salStatsStart = SDL_GetTicksNS();
+  salStatsFrames = salStatsClipped = 0;
+  salStatsPeak = 0;
 
   memset(adpcmYn1, 0, sizeof(adpcmYn1));
   memset(adpcmYn2, 0, sizeof(adpcmYn2));
-  memset(adpcmBlockCache, 0, sizeof(adpcmBlockCache));
-  memset(adpcmCachedBlock, 0xFF, sizeof(adpcmCachedBlock)); /* ~0u = invalid */
+  memset(adpcmPS, 0, sizeof(adpcmPS));
+  memset(adpcmRestart, 0, sizeof(adpcmRestart));
   memset(voiceResampler, 0, sizeof(voiceResampler));
   initResampleTables();
 
