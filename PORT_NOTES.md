@@ -1,5 +1,52 @@
 # Metroid Prime port — working notes
 
+## Current native-port hardening (2026-09-19)
+
+Current build/run instructions are in [docs/NATIVE_PORT.md](docs/NATIVE_PORT.md).
+The dated sections below are a historical bring-up log, not a current blocker
+list or reproducible build guide.
+
+- Aurora/MusyX are now vendored source snapshots with exact provenance in
+  `extern/README.md`. Clean clones do not depend on unpublished fork commits.
+- The native game uses an OBJECT target and no duplicate-symbol suppression.
+  Windows packaging includes runtime DLLs; Linux GCC/Clang and Windows clang-cl
+  CI run asset-free regression tests.
+- Native font resources are read from the validated user's DOL at startup.
+  Generated asset arrays are no longer a native-build prerequisite.
+- Host arrays and game-heap owners have explicit, different deleters. GUI,
+  animation, collision, movie, resource and streaming owners have been corrected.
+- MusyX addresses stay pointer-sized on Windows; group resources are pinned only
+  while pushed, voices are retired under the IRQ mutex, mute is atomic, and
+  shutdown joins the mixer before freeing its state. Missing devices run silently.
+- AI audio supports enable-after-disabled startup, callback self-unregistration,
+  and explicit teardown. Failed frame acquisition skips rendering and frame-based
+  retirement; hidden windows keep a bounded event pump.
+- DVD/ARAM state changes share a mutex, failed reads terminate with diagnostics,
+  and resource EOF, AGSC section bounds, PATH counts/indices/ranges/cycles and DMA
+  ranges are checked. Empty retail PATH resources are supported.
+- Mouse capture ignores overlay/unfocused motion; the cursor-warp workaround is
+  removed. Slow frames use bounded fixed-step catch-up. Native reset avoids the
+  console reboot/cancel-all path.
+- Save bit fields are MSB-first; CRC writes are big-endian, with legacy native CRC
+  reads accepted. Save compatibility still needs a directed retail round trip.
+- CARD initialization supplies the four-byte game ID; optional callbacks are
+  null-safe, unmount commits successfully, and CARD readiness handles absent
+  channels. A filesystem regression covers format/create/write/status/rename,
+  physical remount/read/delete with the game's null-callback usage.
+
+Validation: GCC 15 and Clang 19 builds; asset-free CTest regressions; a real-disc
+2,400-frame AddressSanitizer lifecycle run through hide/restore, audio re-enable,
+uncapped rendering, restart, and clean exit, with allocation mismatch checking
+enabled. Leak detection was disabled for that runtime run. Windows runtime and
+full-game traversal remain separate validation tasks.
+All 205 GPU-free FIFO/GX tests also pass under ThreadSanitizer. Full-game TSan
+reaches reports in uninstrumented GLib/libdbus/nod startup paths first, so it has
+not validated the full game/audio/DVD thread interaction.
+The CARD filesystem regression passes with null callbacks and a physical
+remount. An isolated real-disc profile produced `MetroidPrime A.gci` and was
+loaded by a subsequent process. A clean source clone builds without a disc or
+generated game headers; five native regression executables pass.
+
 Goal: turn the Metroid Prime recompilation experiment into an actual, maintainable
 PC port by building the PrimeDecomp matching decompilation against the Aurora
 compatibility layer (MIT), instead of a static-recomp module on a Dolphin-derived
@@ -387,7 +434,8 @@ and compiles the entries on its background pipeline thread.
 
 ## Licensing
 
-- Aurora: MIT. Port-specific code: ours.
+- Aurora and the checked-in MusyX snapshot: MIT (see their `LICENSE` files).
+  Port-specific code: ours. Preserve individual source notices as well.
 - The decompiled game/engine source and the game assets remain Nintendo's; this
   is the usual decomp-port situation. Ship no assets; require the user's disc.
 - The earlier recomp path (GPL: DolRecomp / ModernGekko) is preserved separately

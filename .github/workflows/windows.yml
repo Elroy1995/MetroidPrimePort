@@ -3,7 +3,8 @@ name: windows
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [port, main, master]
+  pull_request:
 
 jobs:
   build:
@@ -25,27 +26,20 @@ jobs:
           -DCMAKE_CXX_COMPILER=clang-cl
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DAURORA_ENABLE_TESTS=ON
+          -DMP_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build-win -j
 
-      - name: Inspect archive
-        if: always()
-        shell: pwsh
-        run: |
-          $ar = "C:\Program Files\LLVM\bin\llvm-ar.exe"
-          if (-not (Test-Path $ar)) { $ar = (Get-Command llvm-ar).Source }
-          Write-Host "ar=$ar"
-          Write-Host "=== members ==="
-          & $ar t build-win/mp_game.lib 2>&1 | Select-String -Pattern "CDvdRequestManager|CProjectileWeapon"
-          Write-Host "=== defined symbols ==="
-          $nm = "C:\Program Files\LLVM\bin\llvm-nm.exe"
-          if (-not (Test-Path $nm)) { $nm = (Get-Command llvm-nm).Source }
-          & $nm --defined-only build-win/mp_game.lib 2>&1 | Select-String -Pattern "CProjectileWeapon|CDvdRequestManager" | Select-Object -First 15
-          Write-Host "=== build.ninja archive rule ==="
-          Select-String -Path build-win/build.ninja -Pattern "mp_game.lib" | Select-Object -First 3
-          Write-Host "=== object files ==="
-          Get-ChildItem "build-win/CMakeFiles/mp_game.dir/src/Weapons/CProjectileWeapon.cpp.obj","build-win/CMakeFiles/mp_game.dir/src/Kyoto/CDvdRequestManager.cpp.obj" -ErrorAction SilentlyContinue | Select-Object FullName,Length
+      - name: Test
+        run: ctest --test-dir build-win -L port --output-on-failure
+
+      - name: Build FIFO regressions
+        run: cmake --build build-win --target gx_fifo_tests -j
+
+      - name: Test FIFO regressions
+        run: ./build-win/extern/aurora/tests/gx_fifo_tests.exe --gtest_brief=1
 
       - name: Package
         shell: pwsh
@@ -53,6 +47,27 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item build-win/metroid_prime_port.exe dist/
           Copy-Item build-win/initial_pipeline_cache.db dist/
+          Get-ChildItem build-win/*.dll | Copy-Item -Destination dist/
+          if (Test-Path build-win/metroid_prime_port.pdb) { Copy-Item build-win/metroid_prime_port.pdb dist/ }
+          New-Item -ItemType Directory -Force -Path dist/licenses | Out-Null
+          Copy-Item extern/aurora/LICENSE dist/licenses/aurora.txt
+          Copy-Item extern/musyx/LICENSE dist/licenses/musyx.txt
+          Copy-Item docs/NATIVE_PORT.md dist/README.md
+          # Keep notices supplied by the fetched runtime packages too.
+          Get-ChildItem build-win/_deps -Recurse -File -Include LICENSE*,COPYING*,NOTICE* |
+            ForEach-Object {
+              $relative = [System.IO.Path]::GetRelativePath((Resolve-Path build-win/_deps), $_.FullName)
+              $destination = Join-Path dist/licenses $relative
+              New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
+              Copy-Item $_.FullName $destination
+            }
+
+      - name: Check packaged startup
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ./dist/metroid_prime_port.exe -WorkingDirectory ./dist -Wait -PassThru -RedirectStandardError ./startup-error.log
+          if ($process.ExitCode -ne 1) { throw "Unexpected exit code: $($process.ExitCode)" }
+          if (-not (Select-String -Path ./startup-error.log -Pattern 'no disc image given')) { throw 'Packaged executable did not reach main' }
 
       - uses: actions/upload-artifact@v4
         with:

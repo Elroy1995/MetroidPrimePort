@@ -10,7 +10,15 @@ Metroid Prime
 [Discord Badge]: https://img.shields.io/discord/727908905392275526?color=%237289DA&logo=discord&logoColor=%23FFFFFF
 [discord]: https://discord.gg/hKx3FJJgrV
 
-A work-in-progress decompilation of Metroid Prime.
+On the `port` branch this is the **native Metroid Prime port**, built from the
+decompiled game/Kyoto sources against SDL3 + WebGPU through Aurora.
+
+**Native build, controls, runtime files, and tests: [docs/NATIVE_PORT.md](docs/NATIVE_PORT.md).**
+Dependency snapshots and licenses: [extern/README.md](extern/README.md).
+Port history: [PORT_NOTES.md](PORT_NOTES.md).
+
+The instructions below describe the original matching-decompilation toolchain;
+they are not the native CMake build instructions.
 
 This repository does **not** contain any game assets or assembly whatsoever. An existing copy of the game is required.
 
