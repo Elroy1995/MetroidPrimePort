@@ -27,11 +27,9 @@
 #include <dolphin/os.h>
 #include <dolphin/card.h>
 
-// Aurora implements CARDFormatAsync but does not expose it in its umbrella.
 #ifdef __cplusplus
 extern "C" {
 #endif
-s32 CARDFormatAsync(s32 chan, CARDCallback callback);
 // Port: drains Aurora's deferred ARQ completion callbacks (see AR.cpp).
 void ARQPoll(void);
 #ifdef __cplusplus

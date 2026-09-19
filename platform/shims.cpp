@@ -65,10 +65,6 @@ extern "C" volatile void* GXRedirectWriteGatherPipe(void* buf) {
 }
 extern "C" void GXRestoreWriteGatherPipe(void) {}
 
-// --- Memory card ------------------------------------------------------------
-// CARDFormatAsync is defined by Aurora (card.cpp) but not declared in its
-// header; the declaration lives in platform/compat.h.
-
 // --- GBA link cable ---------------------------------------------------------
 // TODO: implement via Aurora when GBA connectivity is wanted.
 extern "C" void GBAInit(void) {}

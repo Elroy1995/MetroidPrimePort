@@ -21,7 +21,8 @@ std::array<std::filesystem::path, 2> cardPaths;
 constexpr uint16_t CARD_SECTOR_SIZE = 8192;
 
 const char* get_card_region(const char* gameName) {
-  if (gameName == nullptr || std::strlen(gameName) != 4) {
+  // SDK game IDs are four bytes and need not have a trailing NUL (g_gameName).
+  if (gameName == nullptr) {
     return nullptr;
   }
   switch (gameName[3]) {
@@ -37,12 +38,18 @@ const char* get_card_region(const char* gameName) {
 
 #define GET_CARD(slot) CardChannels[slot]
 #define CARD_USE_GCI_FOLDER SelectedFileType == CARD_GCIFOLDER
-#define CARD_READY(slot) (CARD_USE_GCI_FOLDER ? true : std::filesystem::exists(CardChannels[slot]->cardFilename()))
+#define CARD_READY(slot) card_ready(slot)
 #define CARD_STUB Log.debug("{} is stubbed.", __FUNCTION__);
 
 bool Initialized = false;
 CARDFileType SelectedFileType = CARD_GCIFOLDER;
 bool UseFastMode = false;
+
+bool card_ready(s32 slot) {
+  if (!Initialized || CardChannels[slot] == nullptr || cardPaths[slot].empty()) return false;
+  std::error_code error;
+  return std::filesystem::exists(cardPaths[slot], error);
+}
 
 void CopyKabuFileHandleToDolphin(const s32 chan, const aurora::card::FileHandle& handle, CARDFileInfo* fileInfo) {
   fileInfo->chan = chan;
@@ -386,7 +393,7 @@ s32 CARDCheckAsync(const s32 chan, const CARDCallback callback) {
 
   const auto& card = GET_CARD(chan);
   const auto res = static_cast<s32>(card->getError());
-  callback(chan, res);
+  if (callback != nullptr) callback(chan, res);
   return static_cast<s32>(card->getError());
 }
 
@@ -406,9 +413,10 @@ s32 CARDCheckExAsync(const s32 chan, s32* xferBytes [[maybe_unused]], const CARD
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
+  if (!CARD_READY(chan)) return CARD_RESULT_NOCARD;
   const auto& card = GET_CARD(chan);
   const auto res = static_cast<s32>(card->getError());
-  callback(chan, res);
+  if (callback != nullptr) callback(chan, res);
   return static_cast<s32>(card->getError());
 }
 
@@ -437,7 +445,7 @@ s32 CARDCreateAsync(const s32 chan, const char* fileName, const u32 size, CARDFi
     return CARD_RESULT_FATAL_ERROR;
   }
   const auto res = CARDCreate(chan, fileName, size, fileInfo);
-  callback(chan, res);
+  if (callback != nullptr) callback(chan, res);
   return res;
 }
 
@@ -465,7 +473,7 @@ s32 CARDDeleteAsync(const s32 chan, const char* fileName, const CARDCallback cal
     return CARD_RESULT_FATAL_ERROR;
   }
   const auto res = CARDDelete(chan, fileName);
-  callback(chan, res);
+  if (callback != nullptr) callback(chan, res);
   return res;
 }
 
@@ -492,7 +500,7 @@ s32 CARDFastDeleteAsync(const s32 chan, const s32 fileNo, const CARDCallback cal
     return CARD_RESULT_FATAL_ERROR;
   }
   const auto res = CARDFastDelete(chan, fileNo);
-  callback(chan, res);
+  if (callback != nullptr) callback(chan, res);
   return res;
 }
 
@@ -531,7 +539,7 @@ s32 CARDFormatAsync(const s32 chan, const CARDCallback callback) {
     return CARD_RESULT_FATAL_ERROR;
   }
   const auto res = CARDFormat(chan);
-  callback(chan, res);
+  if (callback != nullptr) callback(chan, res);
   return res;
 }
 
@@ -654,14 +662,16 @@ s32 CARDMount(const s32 chan, void* workArea [[maybe_unused]], CARDCallback deta
     return CARD_RESULT_FATAL_ERROR;
   }
 
-  return CARD_RESULT_READY;
+  return CARD_READY(chan) ? CARD_RESULT_READY : CARD_RESULT_NOCARD;
 }
 s32 CARDMountAsync(const s32 chan, void* workArea [[maybe_unused]], const CARDCallback detachCallback [[maybe_unused]],
                    const CARDCallback attachCallback [[maybe_unused]]) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
-  return CARD_RESULT_READY;
+  const s32 result = CARDMount(chan, workArea, detachCallback);
+  if (attachCallback != nullptr) attachCallback(chan, result);
+  return result;
 }
 
 s32 CARDOpen(const s32 chan, const char* fileName, CARDFileInfo* fileInfo) {
@@ -684,8 +694,9 @@ s32 CARDOpen(const s32 chan, const char* fileName, CARDFileInfo* fileInfo) {
 
 BOOL CARDProbe(const s32 chan) {
   if (chan < 0 || chan >= 2) {
-    return CARD_RESULT_FATAL_ERROR;
+    return FALSE;
   }
+  if (!Initialized || GET_CARD(chan) == nullptr) return FALSE;
   const auto& card = GET_CARD(chan);
 
   aurora::card::ProbeResults probeData = card->probeCardFile(cardPaths[chan]);
@@ -696,6 +707,7 @@ s32 CARDProbeEx(const s32 chan, s32* memSize, s32* sectorSize) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
+  if (!Initialized || GET_CARD(chan) == nullptr) return CARD_RESULT_NOCARD;
   const auto& card = GET_CARD(chan);
 
   // ReSharper disable once CppUseStructuredBinding
@@ -723,7 +735,7 @@ s32 CARDRenameAsync(const s32 chan, const char* oldName, const char* newName, co
     return CARD_RESULT_FATAL_ERROR;
   }
   const auto res = CARDRename(chan, oldName, newName);
-  callback(chan, res);
+  if (callback != nullptr) callback(chan, res);
   return res;
 }
 
@@ -780,7 +792,7 @@ s32 CARDSetStatusAsync(const s32 chan, const s32 fileNo, const CARDStat* stat, c
     return CARD_RESULT_FATAL_ERROR;
   }
   const auto res = CARDSetStatus(chan, fileNo, stat);
-  callback(chan, res);
+  if (callback != nullptr) callback(chan, res);
   return res;
 }
 
@@ -788,8 +800,10 @@ s32 CARDUnmount(const s32 chan) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
-  // TODO:
-  return CARD_RESULT_NOCARD;
+  if (!CARD_READY(chan)) return CARD_RESULT_NOCARD;
+  // Aurora retains the backing store; the SDK client can now release its work
+  // area and later mount again. Persist changes before reporting completion.
+  return static_cast<s32>(GET_CARD(chan)->commit());
 }
 
 s32 CARDGetCurrentMode(const s32 chan, u32* mode [[maybe_unused]]) {
@@ -823,6 +837,7 @@ s32 CARDClose(CARDFileInfo* fileInfo) {
 }
 
 s32 CARDRead(const CARDFileInfo* fileInfo, void* addr, s32 length, const s32 offset) {
+  if (fileInfo == nullptr || addr == nullptr || length < 0 || offset < 0) return CARD_RESULT_FATAL_ERROR;
   if (fileInfo->chan < 0 || fileInfo->chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
@@ -843,12 +858,14 @@ s32 CARDRead(const CARDFileInfo* fileInfo, void* addr, s32 length, const s32 off
 
 s32 CARDReadAsync(const CARDFileInfo* fileInfo, void* addr, const s32 length, const s32 offset,
                   const CARDCallback callback) {
+  if (fileInfo == nullptr) return CARD_RESULT_FATAL_ERROR;
   const auto res = CARDRead(fileInfo, addr, length, offset);
-  callback(fileInfo->chan, res);
+  if (callback != nullptr) callback(fileInfo->chan, res);
   return res;
 }
 
 s32 CARDWrite(const CARDFileInfo* fileInfo, const void* addr, const s32 length, const s32 offset) {
+  if (fileInfo == nullptr || addr == nullptr || length < 0 || offset < 0) return CARD_RESULT_FATAL_ERROR;
   if (fileInfo->chan < 0 || fileInfo->chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
@@ -872,8 +889,9 @@ s32 CARDWrite(const CARDFileInfo* fileInfo, const void* addr, const s32 length, 
 
 s32 CARDWriteAsync(const CARDFileInfo* fileInfo, const void* addr, const s32 length, const s32 offset,
                    const CARDCallback callback) {
+  if (fileInfo == nullptr) return CARD_RESULT_FATAL_ERROR;
   const auto res = CARDWrite(fileInfo, addr, length, offset);
-  callback(fileInfo->chan, res);
+  if (callback != nullptr) callback(fileInfo->chan, res);
   return res;
 }
 }

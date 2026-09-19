@@ -214,7 +214,7 @@ CMemoryCardSys::CMemoryCardSys() {
 void CMemoryCardSys::Initialize() {
   if (!mIsInitialized) {
     // Port: Aurora's CARDInit takes the game id and maker code.
-    CARDInit("GM8E01", "01");
+    CARDInit("GM8E", "01");
     mIsInitialized = true;
   }
 }
