@@ -337,12 +337,14 @@ otherwise the lock-on zone sits left of the reticle in widescreen and centred
 targets are never acquired.
 
 Aspect ratio is selectable via `MP_ASPECT=4:3|16:9|window` (or the debug
-overlay's Render tab): 4:3 is the original 640x480, 16:9 is a fixed 854x480, and
-`window` tracks the window and reprocesses on `AURORA_WINDOW_RESIZED`. The game
-resizes its render mode (`CGraphics::PortResizeFrameBuffer`) and refreshes
-`CCameraManager`'s cached aspect; Aurora derives the internal EFB from the render
-mode, so the horizontal FOV, culling frustum, and present all widen together. The
-HUD is anchored to the view edges and scales with it.
+overlay's Render tab, applied live): 4:3 is the original 640x480, 16:9 is a fixed
+854x480, and `window` tracks the window on `AURORA_WINDOW_RESIZED`. Each frame the
+game recomputes the render-mode width (`CGraphics::PortResizeFrameBuffer`) and
+refreshes `CCameraManager`'s cached aspect; Aurora derives the internal EFB from
+the render mode, so the horizontal FOV, culling frustum, and present all widen
+together. The port enables `AURORA_VIEWPORT_FIT`, so the EFB matches the selected
+aspect and the present letterboxes rather than stretching when the window shape
+differs. The HUD is anchored to the view edges and scales with it.
 
 `F1` toggles an in-game debug overlay (Aurora's ImGui) with sections for
 Performance (frame limiter, FPS), Cutscenes (skip and speed), Render (vsync and

@@ -56,6 +56,10 @@ int main(int argc, char** argv) {
 
     aurora_initialize(argc, argv, &config);
     VISetFrameBufferScale(1.f);
+    // Fit the internal EFB to the game's render-mode aspect rather than the
+    // window aspect, so fixed 4:3/16:9 modes are never stretched when the window
+    // shape differs; the present letterboxes instead.
+    AuroraSetViewportPolicy(AURORA_VIEWPORT_FIT);
 
     // Optional HD texture replacements, in Aurora's naming convention
     // (tex1_<w>x<h>_<texhash>[_<tluthash>]_<format>.dds/.png). Loaded once and

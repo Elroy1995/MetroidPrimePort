@@ -140,19 +140,33 @@ u32 sARAMMemArray[2];
 float sInfiniteLoopTime;
 static uint sTicksAdvanced = 0;
 
-// Port: when the aspect mode follows the window, resize the game's framebuffer
-// and viewport to the window's aspect ratio. Aurora derives the internal EFB
-// from the render mode, so this also resizes the presented image.
-static void ApplyWindowAspect(int windowWidth, int windowHeight) {
-  if (PortDebug::AspectMode() != PortDebug::kAspect_Window || windowWidth <= 0 || windowHeight <= 0) {
-    return;
-  }
+// Port: apply the selected aspect ratio to the game's framebuffer and viewport.
+// Aurora derives the internal EFB from the render mode, so this also resizes the
+// presented image, and it applies live when the debug overlay changes the mode.
+static int sLastWindowWidth = 0;
+static int sLastWindowHeight = 0;
+
+static void ApplyAspectMode() {
   const GXRenderModeObj& renderMode = CGraphics::GetRenderMode();
   const int efbHeight = renderMode.efbHeight;
-  int fbWidth = static_cast< int >(static_cast< double >(efbHeight) *
-                                        static_cast< double >(windowWidth) /
-                                        static_cast< double >(windowHeight) +
-                                    0.5);
+  int fbWidth = renderMode.fbWidth;
+  switch (PortDebug::AspectMode()) {
+  case PortDebug::kAspect_4_3:
+    fbWidth = efbHeight * 4 / 3;
+    break;
+  case PortDebug::kAspect_16_9:
+    fbWidth = (efbHeight * 16 + 8) / 9;
+    break;
+  case PortDebug::kAspect_Window: {
+    const int windowWidth = sLastWindowWidth > 0 ? sLastWindowWidth : 854;
+    const int windowHeight = sLastWindowHeight > 0 ? sLastWindowHeight : 480;
+    fbWidth = static_cast< int >(static_cast< double >(efbHeight) *
+                                     static_cast< double >(windowWidth) /
+                                     static_cast< double >(windowHeight) +
+                                 0.5);
+    break;
+  }
+  }
   fbWidth &= ~1;
   // Clamp to 4:3 .. 21:9. Extreme aspects produce degenerate projections and a
   // blank present.
@@ -793,12 +807,16 @@ int CMain::RsMain(int argc, const char* const* argv) {
             PortDebug::Toggle();
           } else if (event->type == AURORA_WINDOW_RESIZED ||
                      event->type == AURORA_DISPLAY_SCALE_CHANGED) {
-            ApplyWindowAspect(static_cast< int >(event->windowSize.width),
-                              static_cast< int >(event->windowSize.height));
+            sLastWindowWidth = static_cast< int >(event->windowSize.width);
+            sLastWindowHeight = static_cast< int >(event->windowSize.height);
+            ApplyAspectMode();
           }
           ++event;
         }
       }
+      // Port: apply the selected aspect ratio; no-op unless it changed (e.g. the
+      // debug overlay's aspect combo).
+      ApplyAspectMode();
       // Port: run ARAM transfer callbacks completed by Aurora's ARQ.
       ARQPoll();
       // Port: service the streamed-audio AI DMA callback on the main thread.
