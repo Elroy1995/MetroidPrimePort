@@ -316,6 +316,14 @@ drives the title through file select into a new game without input;
 fast-forwards the ones that do not (the opening frigate sequence deliberately has
 no skip object), so control is granted in roughly 15 seconds instead of minutes.
 
+HD textures: `MP_TEXTURES=<dir>` loads replacements with Aurora's
+`tex1_<w>x<h>[_m]_<texhash>[_<tluthash>]_<format>.dds|.png` convention (hash
+fields may be `$` wildcards). The format may be Aurora's numeric GX format or
+Dolphin's name (`CMPR`, `RGBA8`, `C8`, ...); Dolphin also hashes with
+`XXH64(data, size, 0)` and uses the same `tex1_` layout, so Dolphin packs should
+resolve once the hashed size and paletted tlut handling are confirmed against a
+real pack.
+
 Aspect ratio is selectable via `MP_ASPECT=4:3|16:9|window` (or the debug
 overlay's Render tab): 4:3 is the original 640x480, 16:9 is a fixed 854x480, and
 `window` tracks the window and reprocesses on `AURORA_WINDOW_RESIZED`. The game
