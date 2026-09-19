@@ -16,20 +16,6 @@ extern "C" void PPCSync(void) {
 }
 extern "C" void PPCSetFpIEEEMode(void) {}
 
-// --- GX draw-sync token -----------------------------------------------------
-// Aurora implements GXDrawDone but not the token API the game uses to fence a
-// display list. Report the last token back so callers never spin; GXDrawDone
-// still provides the real ordering.
-namespace {
-u16 s_drawSyncToken = 0;
-}
-extern "C" void GXSetDrawSync(u16 token) {
-    s_drawSyncToken = token;
-}
-extern "C" u16 GXReadDrawSync(void) {
-    return s_drawSyncToken;
-}
-
 // --- GX breakpoints / write-gather pipe -------------------------------------
 // Aurora has no GX breakpoint path. The game uses GXEnableBreakPt to learn when
 // the GPU has consumed the FIFO, then a VI retrace to flip buffers and advance

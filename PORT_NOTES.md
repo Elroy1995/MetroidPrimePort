@@ -228,6 +228,13 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   forces the backend to drop its cached copy, which the skinned path needs because
   the workspace pointer is reused every frame. Map-screen mappable-object and area
   arrays are also host-native and provide their real byte sizes.
+- `GXSetDrawSync`/`GXReadDrawSync` are real FIFO-ordered tokens in Aurora rather
+  than a shim that echoed the last token. The skinned-model circular workspace
+  frees a buffer once its token is readable, so an echoed token let the game reuse
+  a workspace before Aurora's FIFO thread had copied its vertices, corrupting
+  intermittent draws (the reported geometry explosion). The token command is
+  processed by the FIFO worker in the same order as the draw that references the
+  data, so the fence now holds.
 - `F12` asynchronously reads back the resolved EFB and saves a 640x480 BMP under
   `screenshots/`. This avoids compositor-dependent tools and provides captures for
   diagnosing rendering regressions.
@@ -266,7 +273,8 @@ Remaining:
    triggered a second `CWorld::TravelToArea`, so room transitions are unverified.
 2. Retest title music, spaceship music, and effects by ear after queue-depth and
    PCM16-endianness fixes; verify pitch/tempo and that spaceship music starts.
-3. Occasional geometry explosion remains in some skinned draws (intermittent).
+3. Confirm the draw-sync fence removed the intermittent skinned geometry
+   explosion with an F12 capture at the failing frame if it still occurs.
 4. Replace the session-long AGSC buffer retention with a bounded lifetime.
 5. Verify CARD saves and the remaining menu flows.
 6. Reproduce the reported blank front-end screen using `F12`; current automated

@@ -23,8 +23,6 @@ void GXDisableBreakPt(void);
 GXBreakPtCallback GXSetBreakPtCallback(GXBreakPtCallback cb);
 volatile void* GXRedirectWriteGatherPipe(void* buf);
 void GXRestoreWriteGatherPipe(void);
-void GXSetDrawSync(u16 token);
-u16 GXReadDrawSync(void);
 #ifdef __cplusplus
 }
 #endif
