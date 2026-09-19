@@ -31,6 +31,27 @@ enum EAspectMode {
 EAspectMode AspectMode();
 void SetAspectMode(EAspectMode mode);
 
+// Mouse aim: relative mouse drives the first-person camera through the game's
+// own turn/pitch inputs. Wayland locks the pointer via the compositor, so the
+// port retries the request and falls back to cursor deltas if it is refused.
+bool MouseAim();
+void SetMouseAim(bool enabled);
+float MouseSensitivity();
+void SetMouseSensitivity(float radiansPerPixel);
+// Called from the input event loop as relative motion arrives.
+void AddMouseDelta(float dx, float dy);
+// Called once per simulated frame to latch the deltas for that frame.
+void BeginFrameMouse();
+void GetFrameMouseDelta(float& dx, float& dy);
+// Mouse-look camera angles (radians): world yaw and pitch. The game owns the
+// update and applies them to the first-person camera.
+float AimYaw();
+void SetAimYaw(float radians);
+float AimPitch();
+void SetAimPitch(float radians);
+bool AimInitialized();
+void SetAimInitialized(bool initialized);
+
 // Audio paths
 bool AiAudioEnabled();
 void SetAiAudioEnabled(bool enabled);

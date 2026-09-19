@@ -4,6 +4,7 @@
 // and driven by platform/main.cpp.
 #include <aurora/aurora.h>
 #include <aurora/event.h>
+#include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_timer.h>
 
 #include "port_debug.h"
@@ -810,8 +811,37 @@ int CMain::RsMain(int argc, const char* const* argv) {
             sLastWindowWidth = static_cast< int >(event->windowSize.width);
             sLastWindowHeight = static_cast< int >(event->windowSize.height);
             ApplyAspectMode();
+          } else if (event->type == AURORA_SDL_EVENT &&
+                     event->sdl.type == SDL_EVENT_MOUSE_MOTION) {
+            PortDebug::AddMouseDelta(event->sdl.motion.xrel, event->sdl.motion.yrel);
           }
           ++event;
+        }
+      }
+      // Port: lock the pointer for mouse aim. Wayland manages the lock through
+      // the compositor and can drop or refuse it, so re-request whenever the
+      // reported state disagrees; relative motion still arrives as deltas even
+      // when the lock is refused.
+      {
+        static SDL_Window* sCaptureWindow = nullptr;
+        if (sCaptureWindow == nullptr) {
+          sCaptureWindow = SDL_GetKeyboardFocus();
+          if (sCaptureWindow == nullptr) {
+            sCaptureWindow = SDL_GetMouseFocus();
+          }
+          if (sCaptureWindow == nullptr) {
+            int count = 0;
+            SDL_Window** windows = SDL_GetWindows(&count);
+            if (windows != nullptr && count > 0) {
+              sCaptureWindow = windows[0];
+            }
+          }
+        }
+        if (sCaptureWindow != nullptr) {
+          const bool wantRelative = PortDebug::MouseAim() && !PortDebug::Visible();
+          if (SDL_GetWindowRelativeMouseMode(sCaptureWindow) != wantRelative) {
+            SDL_SetWindowRelativeMouseMode(sCaptureWindow, wantRelative);
+          }
         }
       }
       // Port: apply the selected aspect ratio; no-op unless it changed (e.g. the

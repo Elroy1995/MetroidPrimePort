@@ -28,6 +28,15 @@ bool sFrameLimitEnabled = true;
 bool sVsyncEnabled = false;
 float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
+bool sMouseAim = false;
+float sMouseSensitivity = 0.0035f;
+float sMousePendingX = 0.f;
+float sMousePendingY = 0.f;
+float sMouseFrameX = 0.f;
+float sMouseFrameY = 0.f;
+float sAimYaw = 0.f;
+float sAimPitch = 0.f;
+bool sAimInitialized = false;
 bool sAiAudioEnabled = true;
 bool sMusyxAudioEnabled = true;
 bool sResetRequested = false;
@@ -49,6 +58,13 @@ void EnsureInitialized() {
     }
   } else if (std::getenv("MP_WIDESCREEN") != nullptr) {
     sAspectMode = PortDebug::kAspect_16_9;
+  }
+  sMouseAim = std::getenv("MP_MOUSE_AIM") != nullptr;
+  if (const char* sens = std::getenv("MP_MOUSE_SENS")) {
+    const float value = static_cast< float >(std::atof(sens));
+    if (value > 0.f) {
+      sMouseSensitivity = value;
+    }
   }
   sAiAudioEnabled = std::getenv("MP_DISABLE_AI_AUDIO") == nullptr;
   if (const char* speed = std::getenv("MP_CUTSCENE_SPEED")) {
@@ -124,6 +140,52 @@ void SetAspectMode(EAspectMode mode) {
   EnsureInitialized();
   sAspectMode = mode;
 }
+
+bool MouseAim() {
+  EnsureInitialized();
+  return sMouseAim;
+}
+
+void SetMouseAim(bool enabled) {
+  EnsureInitialized();
+  sMouseAim = enabled;
+}
+
+float MouseSensitivity() {
+  EnsureInitialized();
+  return sMouseSensitivity;
+}
+
+void SetMouseSensitivity(float radiansPerPixel) {
+  EnsureInitialized();
+  if (radiansPerPixel > 0.f) {
+    sMouseSensitivity = radiansPerPixel;
+  }
+}
+
+void AddMouseDelta(float dx, float dy) {
+  sMousePendingX += dx;
+  sMousePendingY += dy;
+}
+
+void BeginFrameMouse() {
+  sMouseFrameX = sMousePendingX;
+  sMouseFrameY = sMousePendingY;
+  sMousePendingX = 0.f;
+  sMousePendingY = 0.f;
+}
+
+void GetFrameMouseDelta(float& dx, float& dy) {
+  dx = sMouseFrameX;
+  dy = sMouseFrameY;
+}
+
+float AimYaw() { return sAimYaw; }
+void SetAimYaw(float radians) { sAimYaw = radians; }
+float AimPitch() { return sAimPitch; }
+void SetAimPitch(float radians) { sAimPitch = radians; }
+bool AimInitialized() { return sAimInitialized; }
+void SetAimInitialized(bool initialized) { sAimInitialized = initialized; }
 
 bool AiAudioEnabled() {
   EnsureInitialized();
@@ -212,6 +274,15 @@ void DrawRenderTab() {
   }
 }
 
+void DrawInputTab() {
+  bool mouseAim = sMouseAim;
+  if (ImGui::Checkbox("Mouse aim", &mouseAim)) {
+    SetMouseAim(mouseAim);
+  }
+  ImGui::SliderFloat("Sensitivity", &sMouseSensitivity, 0.0005f, 0.02f, "%.4f rad/px",
+                     ImGuiSliderFlags_Logarithmic);
+}
+
 void DrawAudioTab() {
   bool ai = sAiAudioEnabled;
   if (ImGui::Checkbox("Streamed audio (music/movies)", &ai)) {
@@ -255,6 +326,10 @@ void DrawUI() {
       }
       if (ImGui::BeginTabItem("Cutscenes")) {
         DrawCutscenesTab();
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Input")) {
+        DrawInputTab();
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Render")) {

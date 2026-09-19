@@ -1,5 +1,7 @@
 #include "MetroidPrime/Player/CPlayer.hpp"
 
+#include "port_debug.h"
+
 #include "Collision/CInternalCollisionStructure.hpp"
 #include "Kyoto/CDependencyGroup.hpp"
 #include "Kyoto/SObjectTag.hpp"
@@ -771,6 +773,31 @@ void CPlayer::ForceGunOrientation(const CTransform4f& xf, CStateManager& mgr) {
 }
 
 void CPlayer::Update(float dt, CStateManager& mgr) {
+  // Port: latch this frame's mouse delta, then update the mouse-look aim. The
+  // camera reads the aim angles directly (CFirstPersonCamera) and the body is
+  // rotated to match so movement stays view-relative.
+  PortDebug::BeginFrameMouse();
+  if (PortDebug::MouseAim()) {
+    if (!PortDebug::AimInitialized()) {
+      const CVector3f forward = GetTransform().GetColumn(kDY);
+      PortDebug::SetAimYaw(atan2f(-forward.GetX(), forward.GetY()));
+      PortDebug::SetAimPitch(0.f);
+      PortDebug::SetAimInitialized(true);
+    }
+    float mdx = 0.f;
+    float mdy = 0.f;
+    PortDebug::GetFrameMouseDelta(mdx, mdy);
+    const float sensitivity = PortDebug::MouseSensitivity();
+    const float maxPitch = gpTweakPlayer->GetVerticalFreeLookAngleVel();
+    const float yaw = PortDebug::AimYaw() - mdx * sensitivity;
+    const float pitch = CMath::Clamp(-maxPitch, PortDebug::AimPitch() + mdy * sensitivity, maxPitch);
+    PortDebug::SetAimYaw(yaw);
+    PortDebug::SetAimPitch(pitch);
+    SetTransform(
+        CQuaternion::ZRotation(CRelAngle(yaw)).BuildTransform4f(GetTransform().GetTranslation()));
+  } else {
+    PortDebug::SetAimInitialized(false);
+  }
   SetCoefficientOfRestitutionModifier(0.f);
   UpdateMorphBallTransition(dt, mgr);
 

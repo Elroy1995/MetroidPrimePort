@@ -1,5 +1,7 @@
 #include "MetroidPrime/Cameras/CFirstPersonCamera.hpp"
 
+#include "port_debug.h"
+
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
@@ -92,7 +94,14 @@ void CFirstPersonCamera::UpdateTransform(CStateManager& mgr, float dt) {
   float cosPitch = cosf(x1c0_pitch);
   cosPitch = CMath::Limit(cosPitch, 1.f);
   CVector3f lookDir = playerXf.Rotate(CVector3f(0.f, cosPitch, sinPitch));
-  if (player->IsInFreeLook()) {
+  if (PortDebug::MouseAim() && PortDebug::AimInitialized()) {
+    // Port: mouse-look drives the camera directly (world yaw/pitch). The body
+    // is kept facing the same yaw by CPlayer::Update, and orbit/jump/fall
+    // cameras below still override this.
+    const float yaw = PortDebug::AimYaw();
+    const float pitch = PortDebug::AimPitch();
+    lookDir = CVector3f(sinf(-yaw) * cosf(pitch), cosf(-yaw) * cosf(pitch), sinf(pitch));
+  } else if (player->IsInFreeLook()) {
     CRelAngle angle(player->GetFreeLookAngleX());
     const CRelAngle maxAngle(gpTweakPlayer->GetVerticalFreeLookAngleVel() -
                              CMath::AbsF(x1c0_pitch));

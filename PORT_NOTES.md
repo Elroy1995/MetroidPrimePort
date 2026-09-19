@@ -346,6 +346,17 @@ together. The port enables `AURORA_VIEWPORT_FIT`, so the EFB matches the selecte
 aspect and the present letterboxes rather than stretching when the window shape
 differs. The HUD is anchored to the view edges and scales with it.
 
+Mouse aim (`MP_MOUSE_AIM=1`, or the debug overlay's Input tab) captures the
+pointer and drives the first-person camera directly, similar to how PrimeHack
+takes over the game's aim: `CPlayer::Update` integrates the relative motion into
+a world yaw/pitch (pitch clamped to the tweak's vertical free-look limit) and
+keeps the body facing that yaw so movement stays view-relative, while
+`CFirstPersonCamera::UpdateTransform` builds the view from those angles. It does
+not use the game's free-look angle, which is a limited head offset that wraps
+past 90 degrees. Orbit, jump/fall cameras, and lock-on still override aim; the
+pointer is released while the debug overlay is open. `MP_MOUSE_SENS` sets radians
+per pixel (default 0.0035).
+
 `F1` toggles an in-game debug overlay (Aurora's ImGui) with sections for
 Performance (frame limiter, FPS), Cutscenes (skip and speed), Render (vsync and
 internal EFB scale), Audio (mute the streamed/AI path or MusyX independently),
