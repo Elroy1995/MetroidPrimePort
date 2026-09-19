@@ -226,8 +226,11 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
 - Runtime-generated vertex arrays are marked host-native (`le=true`) instead of
   big-endian, matching the port's native skinning/workspace writes. `ClearArray`
   forces the backend to drop its cached copy, which the skinned path needs because
-  the workspace pointer is reused every frame. The map-screen mappable-object and
-  area surfaces still pass no vertex size and remain to be converted.
+  the workspace pointer is reused every frame. Map-screen mappable-object and area
+  arrays are also host-native and provide their real byte sizes.
+- `F12` asynchronously reads back the resolved EFB and saves a 640x480 BMP under
+  `screenshots/`. This avoids compositor-dependent tools and provides captures for
+  diagnosing rendering regressions.
 
 Host shutdown now completes cleanly. Game-heap buffers owned by `CGBASupport`,
 `CStaticAudioPlayer`, and `SMediumAllocPuddle` are released through `CMemory` instead
@@ -248,6 +251,9 @@ Verified:
 - The player stays alive (`CPlayer::x9f4_deathTime` remains 0).
 - Streamed (front-end) audio decodes to tonal PCM, and in-level MusyX frames are
   tonal rather than noise after the ADPCM info-block conversion.
+- GPU captures from the current build show the publisher screen, `[ PRESS START ]`
+  title screen, and no-memory-card dialog rendering correctly. The user's reported
+  blank front end therefore needs a capture at the exact failing transition.
 
 Remaining:
 1. Directed input needed to reach and open a door; wandering for ~48k frames never
@@ -256,6 +262,8 @@ Remaining:
 3. Occasional geometry explosion remains in some skinned draws (intermittent).
 4. Replace the session-long AGSC buffer retention with a bounded lifetime.
 5. Verify CARD saves and the remaining menu flows.
+6. Reproduce the reported blank front-end screen using `F12`; current automated
+   captures do not reproduce it.
 
 ## Licensing
 
