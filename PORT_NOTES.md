@@ -347,13 +347,11 @@ aspect and the present letterboxes rather than stretching when the window shape
 differs. The HUD is anchored to the view edges and scales with it.
 
 Mouse aim (`MP_MOUSE_AIM=1`, or the debug overlay's Input tab) captures the
-pointer and turns the first-person view: horizontal motion rotates the player
-transform yaw and vertical motion drives the free-look pitch (kept in free look
-so the camera's own clamp applies). Rotating the body rather than accumulating
-the free-look yaw matters, because that angle is a limited head offset and wraps
-past 90 degrees. Lock-on and morph ball still override it, and the pointer is
-released while the debug overlay is open. `MP_MOUSE_SENS` sets radians per pixel
-(default 0.0035).
+pointer and drives first-person free look directly: the accumulated relative
+mouse motion is applied to `CPlayer`'s free-look yaw/pitch each tick and free
+look is forced active, instead of the smoothed stick path. Lock-on and morph
+ball still override it, and the pointer is released while the debug overlay is
+open. `MP_MOUSE_SENS` sets radians per pixel (default 0.0035).
 
 `F1` toggles an in-game debug overlay (Aurora's ImGui) with sections for
 Performance (frame limiter, FPS), Cutscenes (skip and speed), Render (vsync and
