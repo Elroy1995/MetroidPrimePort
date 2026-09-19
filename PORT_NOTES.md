@@ -330,6 +330,12 @@ Dolphin's name (`CMPR`, `RGBA8`, `C8`, ...); Dolphin also hashes with
 resolve once the hashed size and paletted tlut handling are confirmed against a
 real pack.
 
+Lock-on uses `CPlayer::WithinOrbitScreenBox`/`WithinOrbitScreenEllipse`, which
+compare the target's live-viewport screen position against the player tweak's
+fixed 640x480 coordinates. Those coordinates are now scaled by the viewport size;
+otherwise the lock-on zone sits left of the reticle in widescreen and centred
+targets are never acquired.
+
 Aspect ratio is selectable via `MP_ASPECT=4:3|16:9|window` (or the debug
 overlay's Render tab): 4:3 is the original 640x480, 16:9 is a fixed 854x480, and
 `window` tracks the window and reprocesses on `AURORA_WINDOW_RESIZED`. The game

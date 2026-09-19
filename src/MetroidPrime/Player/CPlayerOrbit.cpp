@@ -558,18 +558,30 @@ bool CPlayer::CheckOrbitDisableSourceList(const CStateManager& mgr) {
   return !x9e4_orbitDisableList.empty();
 }
 
+// Port: the orbit/lock-on zone tweaks are authored in the original 640x480
+// screen space, but the screen coordinates below are in the live viewport.
+// Scale them so the zone stays centred on the reticle in widescreen.
+static float OrbitZoneScaleX() {
+  return static_cast< float >(CGraphics::GetViewportWidth()) / 640.f;
+}
+static float OrbitZoneScaleY() {
+  return static_cast< float >(CGraphics::GetViewportHeight()) / 480.f;
+}
+
 bool CPlayer::WithinOrbitScreenEllipse(const CVector3f& screenCoords, EPlayerZoneInfo zone) const {
   if (screenCoords.GetZ() >= 1.f) {
     return false;
   }
-  const float x =
-      CMath::AbsF(screenCoords.GetX() - CCast::LtoF(gpTweakPlayer->GetOrbitZoneCentreX(zone)));
-  const float heYSq = CCast::LtoF(gpTweakPlayer->GetOrbitZoneHeight(zone) *
-                                  gpTweakPlayer->GetOrbitZoneHeight(zone));
-  const float heXSq =
-      CCast::LtoF(gpTweakPlayer->GetOrbitZoneWidth(zone) * gpTweakPlayer->GetOrbitZoneWidth(zone));
-  const float y =
-      CMath::AbsF(screenCoords.GetY() - CCast::LtoF(gpTweakPlayer->GetOrbitZoneCentreY(zone)));
+  const float sx = OrbitZoneScaleX();
+  const float sy = OrbitZoneScaleY();
+  const float cx = CCast::LtoF(gpTweakPlayer->GetOrbitZoneCentreX(zone)) * sx;
+  const float cy = CCast::LtoF(gpTweakPlayer->GetOrbitZoneCentreY(zone)) * sy;
+  const float heX = CCast::LtoF(gpTweakPlayer->GetOrbitZoneWidth(zone)) * sx;
+  const float heY = CCast::LtoF(gpTweakPlayer->GetOrbitZoneHeight(zone)) * sy;
+  const float x = CMath::AbsF(screenCoords.GetX() - cx);
+  const float y = CMath::AbsF(screenCoords.GetY() - cy);
+  const float heYSq = heY * heY;
+  const float heXSq = heX * heX;
   return x * x <= (1.f - y * y / heYSq) * heXSq;
 }
 
@@ -579,15 +591,20 @@ bool CPlayer::WithinOrbitScreenBox(const CVector3f& screenCoords, EPlayerZoneInf
     return false;
   }
   switch (type) {
-  case kZT_Box:
-    if (CMath::AbsF(screenCoords.GetX() - CCast::LtoF(gpTweakPlayer->GetOrbitZoneCentreX(zone))) <=
-            CCast::LtoF(gpTweakPlayer->GetOrbitZoneWidth(zone)) &&
-        CMath::AbsF(screenCoords.GetY() - CCast::LtoF(gpTweakPlayer->GetOrbitZoneCentreY(zone))) <=
-            CCast::LtoF(gpTweakPlayer->GetOrbitZoneHeight(zone)) &&
+  case kZT_Box: {
+    const float sx = OrbitZoneScaleX();
+    const float sy = OrbitZoneScaleY();
+    const float cx = CCast::LtoF(gpTweakPlayer->GetOrbitZoneCentreX(zone)) * sx;
+    const float cy = CCast::LtoF(gpTweakPlayer->GetOrbitZoneCentreY(zone)) * sy;
+    if (CMath::AbsF(screenCoords.GetX() - cx) <=
+            CCast::LtoF(gpTweakPlayer->GetOrbitZoneWidth(zone)) * sx &&
+        CMath::AbsF(screenCoords.GetY() - cy) <=
+            CCast::LtoF(gpTweakPlayer->GetOrbitZoneHeight(zone)) * sy &&
         screenCoords.GetZ() < 1.f) {
       return true;
     }
     break;
+  }
   case kZT_Ellipse:
     return WithinOrbitScreenEllipse(screenCoords, zone);
   default:
