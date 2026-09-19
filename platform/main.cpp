@@ -14,6 +14,7 @@
 #include <dolphin/dvd.h>
 
 #include "port_debug.h"
+#include "port_build_info.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -38,6 +39,11 @@ const char* ResolveDiscPath(int argc, char** argv) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
+        std::printf("Metroid Prime native port %s\n", MP_BUILD_REVISION);
+        return 0;
+    }
+    std::fprintf(stderr, "metroid_prime_port: build %s\n", MP_BUILD_REVISION);
     const char* discPath = ResolveDiscPath(argc, argv);
     if (discPath == nullptr) {
         std::fprintf(stderr,

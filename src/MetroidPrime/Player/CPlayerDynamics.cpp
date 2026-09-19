@@ -1,4 +1,6 @@
 #include "MetroidPrime/Player/CPlayer.hpp"
+#include "port_debug.h"
+#include "port_mouse.h"
 
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
@@ -63,7 +65,13 @@ CVector3f CPlayer::GetDampedClampedVelocityWR() const {
     }
   }
   const float maxSpeed = gpTweakPlayer->GetPlayerTranslationMaxSpeed(GetSurfaceRestraint());
-  localVelocity.SetY(CMath::Limit(localVelocity.GetY(), maxSpeed));
+  if (PortDebug::MouseAim() && PortDebug::MouseGameplayActive() && x304_orbitState == kOS_NoOrbit) {
+    const auto planar = PortMouse::ClampPlanar({localVelocity.GetX(), localVelocity.GetY()}, maxSpeed);
+    localVelocity.SetX(planar.right);
+    localVelocity.SetY(planar.forward);
+  } else {
+    localVelocity.SetY(CMath::Limit(localVelocity.GetY(), maxSpeed));
+  }
   if (x258_movementState == NPlayer::kMS_OnGround) {
     localVelocity.SetZ(0.f);
   }
@@ -276,8 +284,18 @@ void CPlayer::ComputeDash(const CFinalInput& input, float dt, CStateManager& mgr
 
 void CPlayer::ComputeMovement(const CFinalInput& input, CStateManager& mgr, float dt) {
   const float jumpInput = JumpInput(input, mgr);
-  float turnInput = TurnInput(input);
-  const float forwardInput = ForwardInput(input, turnInput);
+  const bool mouseMovement = MouseControlsAllowed(mgr) && x304_orbitState == kOS_NoOrbit;
+  float turnInput = mouseMovement ? 0.f : TurnInput(input);
+  float forwardInput = ForwardInput(input, turnInput);
+  float strafeInput = 0.f;
+  if (mouseMovement) {
+    strafeInput = ControlMapper::GetAnalogInput(ControlMapper::kC_StrafeRight, input) -
+                  ControlMapper::GetAnalogInput(ControlMapper::kC_StrafeLeft, input);
+    const auto inputAxes = PortMouse::ClampPlanar({strafeInput, forwardInput}, 1.f);
+    strafeInput = inputAxes.right;
+    forwardInput = inputAxes.forward;
+    SetAngularVelocityOR(CAxisAngle::Identity());
+  }
   SetVelocityWR(GetDampedClampedVelocityWR());
   float turnSpeedMultiplier = gpTweakPlayer->GetTurnSpeedMultiplier();
   if (gpTweakPlayer->GetFreeLookTurnsPlayer()) {
@@ -340,11 +358,22 @@ void CPlayer::ComputeMovement(const CFinalInput& input, CStateManager& mgr, floa
   } else {
     forwardForce = 0.f;
   }
+  float strafeForce = 0.f;
+  if (mouseMovement) {
+    const float acceleration = gpTweakPlayer->GetMaxTranslationalAcceleration(GetSurfaceRestraint());
+    strafeForce = PortMouse::AxisForce(strafeInput, GetTransform().TransposeRotate(GetVelocityWR()).GetX(),
+                                      gpTweakPlayer->GetPlayerTranslationMaxSpeed(GetSurfaceRestraint()),
+                                      gpTweakPlayer->GetPlayerTranslationFriction(GetSurfaceRestraint()),
+                                      GetMass(), dt, acceleration);
+    const auto force = PortMouse::ClampPlanar({strafeForce, forwardForce}, acceleration);
+    strafeForce = force.right;
+    forwardForce = force.forward;
+  }
   if (x304_orbitState != kOS_NoOrbit && gkFreeLookPreventsOrbitMovement && x3dd_lookButtonHeld) {
     forwardForce = 0.f;
   }
   if (x304_orbitState == kOS_NoOrbit || x3dd_lookButtonHeld) {
-    const CVector3f force = CVector3f(0.f, forwardForce, 0.f) + CVector3f(0.f, 0.f, jumpInput);
+    const CVector3f force(strafeForce, forwardForce, jumpInput);
     ApplyForceOR(force, CAxisAngle::Identity());
     if (turnInput != 0.f) {
       ApplyForceOR(CVector3f::Zero(),

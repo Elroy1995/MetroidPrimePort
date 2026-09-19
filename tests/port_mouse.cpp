@@ -16,6 +16,13 @@ bool Near(float a, float b) { return std::fabs(a - b) < 0.00001f; }
 }
 
 int main() {
+  const auto diagonal = PortMouse::ClampPlanar({1.f, 1.f}, 1.f);
+  Check(std::fabs(std::hypot(diagonal.right, diagonal.forward) - 1.f) < 0.00001f);
+  Check(PortMouse::AxisForce(1.f, 0.f, 12.f, 0.1f, 90.f, 1.f / 60.f, 1000.f) > 0.f);
+  Check(PortMouse::AxisForce(-1.f, 0.f, 12.f, 0.1f, 90.f, 1.f / 60.f, 1000.f) < 0.f);
+  Check(PortMouse::AxisForce(0.f, 5.f, 12.f, 0.1f, 90.f, 1.f / 60.f, 1000.f) == 0.f);
+  const auto speed = PortMouse::ClampPlanar({20.f, 20.f}, 12.f);
+  Check(std::hypot(speed.right, speed.forward) <= 12.0001f);
   PortMouse::AimState aim;
   constexpr float sensitivity = 0.0035f;
   // Right/up mouse motion must turn right/up in world coordinates, immediately.

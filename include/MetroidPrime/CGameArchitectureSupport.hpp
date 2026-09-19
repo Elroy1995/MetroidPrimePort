@@ -2,6 +2,7 @@
 #define _CGAMEARCHITECTURESUPPORT
 
 #include "types.h"
+#include "port_timing.h"
 
 #include "GuiSys/CGuiSys.hpp"
 
@@ -35,7 +36,7 @@ public:
   inline CStopwatch& GetStopwatch2() { return x28_frameStopwatch; }
   inline CIOWinManager& GetIOWinManager() { return x58_ioWinMgr; }
   inline int& GetFramesDrawn() { return x78_gameFrameCount; }
-  float GetTickInterpolation() const { return x7c_tickRemainder * 60.f; }
+  float GetTickInterpolation() const { return x7c_tickClock.Interpolation(); }
   bool IsInfiniteLoopAlarmSet() const { return xc8_infiniteLoopAlarmSet; }
   OSAlarm& GetInfiniteLoopAlarm() { return xa0_infiniteLoopAlarm; }
   void SetInfiniteLoopAlarmSet(bool set) { xc8_infiniteLoopAlarmSet = set; }
@@ -49,9 +50,7 @@ private:
   CGuiSys x44_guiSys;
   CIOWinManager x58_ioWinMgr;
   int x78_gameFrameCount;
-  float x7c_tickRemainder;
-  float x80_previousTickRemainder2;
-  float x84_previousTickRemainder;
+  PortTiming::FixedStepClock x7c_tickClock;
   EAudioLoadStatus x88_audioLoadStatus;
   rstl::vector< CToken > x8c_pendingAudioGroups;
   OSAlarm xa0_infiniteLoopAlarm;

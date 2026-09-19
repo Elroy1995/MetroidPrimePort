@@ -7,6 +7,32 @@ namespace PortMouse {
 constexpr float kMaxPitch = 1.52f; // approximately 87 degrees, short of the pole
 constexpr float kPi = 3.14159265358979323846f;
 
+struct Planar {
+  float right;
+  float forward;
+};
+inline Planar ClampPlanar(Planar value, float maximum) {
+  const float length = std::hypot(value.right, value.forward);
+  if (!std::isfinite(length) || maximum <= 0.f) return {0.f, 0.f};
+  if (length > maximum) {
+    const float scale = maximum / length;
+    value.right *= scale;
+    value.forward *= scale;
+  }
+  return value;
+}
+
+// The retail forward-force law applied to either horizontal axis. Damping and
+// collision integration remain in the player; this is not teleport movement.
+inline float AxisForce(float input, float velocity, float maxSpeed, float friction,
+                       float mass, float dt, float acceleration) {
+  if (input == 0.f || maxSpeed <= 0.f || dt <= 0.f || acceleration <= 0.f) return 0.f;
+  const float frictionSpeed = friction * mass * maxSpeed / (dt * acceleration);
+  const float desired = input * (maxSpeed - frictionSpeed) + (input > 0.f ? frictionSpeed : -frictionSpeed);
+  const float fraction = (desired - velocity) / maxSpeed;
+  return (fraction < -1.f ? -1.f : fraction > 1.f ? 1.f : fraction) * acceleration;
+}
+
 struct AimState {
   float yaw = 0.f;
   float pitch = 0.f;

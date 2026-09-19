@@ -417,9 +417,7 @@ CGameArchitectureSupport::CGameArchitectureSupport(COsContext& osContext)
                      gpTweakPlayer->GetRightAnalogMax())
 , x44_guiSys(gpResourceFactory, gpSimplePool, CGuiSys::kUM_Zero)
 , x78_gameFrameCount(0)
-, x7c_tickRemainder(0.f)
-, x80_previousTickRemainder2(0.f)
-, x84_previousTickRemainder(0.f)
+, x7c_tickClock()
 , x88_audioLoadStatus(kALS_Uninitialized)
 , xc8_infiniteLoopAlarmSet(false) {
   CAudioSys::SysSetVolume(0x7F, 0, 0xFF);
@@ -465,36 +463,22 @@ bool CGameArchitectureSupport::UpdateTicks() {
   x20_tickStopwatch.Reset();
   OSRestoreInterrupts(interrupts);
   sInfiniteLoopTime = 0.f;
-  x7c_tickRemainder += elapsed;
-  if (gpMain->GetScreenFading()) {
-    x7c_tickRemainder = 1.f / 60.f;
-  } else if (x7c_tickRemainder > 0.25f) {
-    // Catch up through ordinary slow frames, but bound a resume/debugger stall
-    // to 15 ticks so event and audio servicing cannot starve indefinitely.
-    x7c_tickRemainder = 0.25f;
-  }
+  const unsigned ticks = x7c_tickClock.Advance(elapsed, gpMain->GetScreenFading(),
+                                             PortDebug::FrameLimitEnabled());
 
   static const float tickPeriod = 1.f / 60.f;
   sTicksAdvanced = 0;
   x4_archQueue.Push(MakeMsg::CreateFrameBegin(kAMT_Game, x78_gameFrameCount));
-  while (x7c_tickRemainder >= tickPeriod) {
+  for (unsigned tick = 0; tick < ticks; ++tick) {
     PortDebug::BeginFrameMouse();
     if (!x30_inputGenerator.Update(1.f / 60.f, x4_archQueue)) {
       terminate = true;
     }
     x4_archQueue.Push(MakeMsg::CreateTimerTick(kAMT_Game, tickPeriod));
-    x7c_tickRemainder -= tickPeriod;
     x58_ioWinMgr.PumpMessages(x4_archQueue);
     ++sTicksAdvanced;
   }
 
-  if (close_enough((x80_previousTickRemainder2 - x84_previousTickRemainder) +
-                       (x84_previousTickRemainder - x7c_tickRemainder),
-                   0.f, 0.00005f)) {
-    x7c_tickRemainder = 0.f;
-  }
-  x80_previousTickRemainder2 = x84_previousTickRemainder;
-  x84_previousTickRemainder = x7c_tickRemainder;
   x58_ioWinMgr.PumpMessages(x4_archQueue);
   return !terminate;
 }
@@ -838,6 +822,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
     uint64_t nextFrameDeadline = SDL_GetTicksNS();
     unsigned s_frameLog = 0;
     while (!x160_24_finished) {
+      const uint64_t loopStartNs = SDL_GetTicksNS();
+      bool presented = false;
       if ((s_frameLog++ % 60) == 0) {
         fprintf(stderr, "MP frame %u\n", s_frameLog);
       }
@@ -961,6 +947,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
         AsyncIdle(idleMicros);
 
         gpRender->EndScene();
+        presented = true;
 
         if (x161_24_gameFrameDrawn) {
           ++archSupport->GetFramesDrawn();
@@ -1021,6 +1008,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
       } else {
         nextFrameDeadline = SDL_GetTicksNS();
       }
+      PortDebug::RecordFrame(SDL_GetTicksNS() - loopStartNs, sTicksAdvanced, presented);
     }
   }
   ShutdownSubsystems();

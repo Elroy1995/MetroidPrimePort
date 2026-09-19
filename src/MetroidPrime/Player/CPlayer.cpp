@@ -1902,6 +1902,14 @@ void CPlayer::ProcessInput(const CFinalInput& input, CStateManager& mgr) {
     return;
   }
 
+  // Establish this tick's mouse-relative basis before applying movement forces.
+  // The later Think call revalidates camera ownership but cannot consume the
+  // same mouse delta twice.
+  if (MouseControlsAllowed(mgr)) {
+    UpdateFreeLookState(input, dt, mgr);
+    UpdateMouseAim(mgr);
+  }
+
   if (x2f8_morphBallState == kMS_Unmorphed && x4a0_playerStuckTracker->IsPlayerStuck()) {
     const CCollidableAABox* prim = static_cast< const CCollidableAABox* >(GetCollisionPrimitive());
     const CAABox& bounds = prim->GetBox();

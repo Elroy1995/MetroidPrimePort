@@ -69,6 +69,15 @@ add_executable(metroid_prime_port
     platform/shims.cpp
     platform/sdk_stubs.cpp
     platform/ai_dma.cpp)
+add_custom_target(port_build_info
+    COMMAND ${CMAKE_COMMAND}
+        "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+        "-DOUTPUT_HEADER=${CMAKE_CURRENT_BINARY_DIR}/generated/port_build_info.h"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BuildRevision.cmake"
+    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/port_build_info.h"
+    VERBATIM)
+add_dependencies(metroid_prime_port port_build_info)
+target_include_directories(metroid_prime_port PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 if(MP_ENABLE_SMOKE_DRIVER)
     target_sources(metroid_prime_port PRIVATE platform/smoke.cpp)
     target_compile_definitions(mp_game PRIVATE MP_ENABLE_SMOKE_DRIVER)
@@ -101,6 +110,9 @@ add_custom_command(TARGET metroid_prime_port POST_BUILD
 
 if(MP_BUILD_TESTS)
     enable_testing()
+    add_test(NAME port_version COMMAND metroid_prime_port --version)
+    set_tests_properties(port_version PROPERTIES TIMEOUT 15 LABELS port
+        PASS_REGULAR_EXPRESSION "Metroid Prime native port")
     add_executable(port_buffer_tests
         tests/port_buffers.cpp
         tests/port_forward_owner.cpp
@@ -121,12 +133,16 @@ if(MP_BUILD_TESTS)
     target_compile_definitions(port_disc_tests PRIVATE TARGET_PC)
     add_executable(port_mouse_tests tests/port_mouse.cpp)
     target_include_directories(port_mouse_tests PRIVATE platform/include)
+    add_executable(port_timing_tests tests/port_timing.cpp)
+    target_include_directories(port_timing_tests PRIVATE platform/include)
+    add_executable(port_audio_math_tests tests/port_audio_math.c)
+    target_include_directories(port_audio_math_tests PRIVATE extern/musyx/include)
     add_executable(port_card_tests tests/port_card.cpp)
     target_link_libraries(port_card_tests PRIVATE aurora::card)
     add_test(NAME port_card_tests COMMAND port_card_tests "${CMAKE_CURRENT_BINARY_DIR}/card-test-data")
     set_tests_properties(port_card_tests PROPERTIES TIMEOUT 15 LABELS port)
     aurora_copy_runtime_dlls(port_card_tests)
-    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_musyx_tests port_disc_tests port_mouse_tests)
+    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_musyx_tests port_disc_tests port_mouse_tests port_timing_tests port_audio_math_tests)
         add_test(NAME ${test} COMMAND ${test})
         set_tests_properties(${test} PROPERTIES TIMEOUT 15 LABELS port)
         aurora_copy_runtime_dlls(${test})

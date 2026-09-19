@@ -1,5 +1,6 @@
 #ifndef METROID_PRIME_PORT_PORT_DEBUG_H
 #define METROID_PRIME_PORT_PORT_DEBUG_H
+#include <cstdint>
 
 // Runtime debug settings shared between the platform layer and the game.
 // Defaults come from environment variables so existing workflows keep working,
@@ -15,6 +16,7 @@ float CutsceneSpeed();
 // Presentation
 bool FrameLimitEnabled();
 void SetFrameLimitEnabled(bool enabled);
+void RecordFrame(uint64_t durationNs, unsigned ticks, bool presented);
 bool VsyncEnabled();
 void SetVsyncEnabled(bool enabled);
 // 0 = auto (native, driven by the display scale), otherwise a fixed multiplier.

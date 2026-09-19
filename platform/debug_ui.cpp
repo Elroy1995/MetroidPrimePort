@@ -4,6 +4,7 @@
 
 #include "port_debug.h"
 #include "port_mouse.h"
+#include "port_build_info.h"
 
 #include <aurora/gfx.h>
 #include <dolphin/vi.h>
@@ -12,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
+#include <cstdio>
 
 namespace aurora {
 void request_screenshot() noexcept;
@@ -28,6 +30,10 @@ bool sFastBoot = false;
 bool sSkipCutscenes = false;
 float sCutsceneSpeed = 8.f;
 bool sFrameLimitEnabled = true;
+bool sTraceTiming = false;
+uint64_t sTimingNs = 0;
+unsigned sTimingFrames = 0, sTimingTicks = 0;
+double sActualFps = 0.0, sActualTps = 0.0;
 bool sVsyncEnabled = false;
 float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
@@ -55,6 +61,7 @@ void EnsureInitialized() {
     return;
   }
   sInitialized = true;
+  sTraceTiming = std::getenv("MP_TRACE_TIMING") != nullptr;
   sFastBoot = std::getenv("MP_FAST_BOOT") != nullptr;
   sSkipCutscenes = std::getenv("MP_SKIP_CUTSCENES") != nullptr;
   sVisible = std::getenv("MP_SHOW_DEBUG_UI") != nullptr;
@@ -108,6 +115,23 @@ float CutsceneSpeed() {
 bool FrameLimitEnabled() {
   EnsureInitialized();
   return sFrameLimitEnabled;
+}
+
+void RecordFrame(uint64_t durationNs, unsigned ticks, bool presented) {
+  sTimingNs += durationNs;
+  sTimingTicks += ticks;
+  if (presented) ++sTimingFrames;
+  if (sTimingNs >= 1000000000ull) {
+    const double seconds = static_cast<double>(sTimingNs) / 1000000000.0;
+    sActualFps = sTimingFrames / seconds;
+    sActualTps = sTimingTicks / seconds;
+    if (sTraceTiming) {
+      std::fprintf(stderr, "[timing] render=%.1f FPS simulation=%.1f ticks/s cap=%s\n",
+                   sActualFps, sActualTps, sFrameLimitEnabled ? "60" : "off");
+    }
+    sTimingNs = 0;
+    sTimingFrames = sTimingTicks = 0;
+  }
 }
 
 void SetFrameLimitEnabled(bool enabled) {
@@ -196,8 +220,10 @@ unsigned MouseWeaponButtons(unsigned held) {
 
 bool UpdateMouseAim(bool active, bool locked, float x, float y, float z) {
   SetMouseGameplayActive(active);
-  return sMouseAimState.Update(active, locked, x, y, z, sMouseFrameX, sMouseFrameY,
-                               MouseSensitivity(), MouseInvertX(), MouseInvertY());
+  const bool applied = sMouseAimState.Update(active, locked, x, y, z, sMouseFrameX, sMouseFrameY,
+                                            MouseSensitivity(), MouseInvertX(), MouseInvertY());
+  if (applied) sMouseFrameX = sMouseFrameY = 0.f;
+  return applied;
 }
 void SynchronizeMouseAim(float x, float y, float z) { sMouseAimState.Synchronize(x, y, z); }
 
@@ -285,11 +311,13 @@ void Toggle() {
 }
 
 void DrawPerformanceTab() {
+  ImGui::Text("Build: %s", MP_BUILD_REVISION);
   bool frameLimit = sFrameLimitEnabled;
-  if (ImGui::Checkbox("Frame limit (60 FPS)", &frameLimit)) {
+  if (ImGui::Checkbox("60 FPS cap (target)", &frameLimit)) {
     sFrameLimitEnabled = frameLimit;
   }
-  ImGui::Text("FPS: %.1f", static_cast< double >(ImGui::GetIO().Framerate));
+  ImGui::Text("Measured render rate: %.1f FPS", sActualFps);
+  ImGui::Text("Measured simulation: %.1f ticks/s (target 60)", sActualTps);
   ImGui::Text("Frame time: %.2f ms", static_cast< double >(ImGui::GetIO().DeltaTime) * 1000.0);
 }
 
