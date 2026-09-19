@@ -357,6 +357,12 @@ past 90 degrees. Orbit, jump/fall cameras, and lock-on still override aim; the
 pointer is released while the debug overlay is open. `MP_MOUSE_SENS` sets radians
 per pixel (default 0.0035).
 
+Wayland can report `SDL_SetWindowRelativeMouseMode` as active while the
+compositor still leaves the pointer visible, so the port also hides the cursor
+(`SDL_HideCursor`) and recenters the pointer with `SDL_WarpMouseInWindow` when it
+nears a window edge; the event loop rejects deltas above ~300 px so the warp
+itself does not spike the aim.
+
 `F1` toggles an in-game debug overlay (Aurora's ImGui) with sections for
 Performance (frame limiter, FPS), Cutscenes (skip and speed), Render (vsync and
 internal EFB scale), Audio (mute the streamed/AI path or MusyX independently),

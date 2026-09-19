@@ -813,7 +813,12 @@ int CMain::RsMain(int argc, const char* const* argv) {
             ApplyAspectMode();
           } else if (event->type == AURORA_SDL_EVENT &&
                      event->sdl.type == SDL_EVENT_MOUSE_MOTION) {
-            PortDebug::AddMouseDelta(event->sdl.motion.xrel, event->sdl.motion.yrel);
+            // Ignore the large jump produced by our own recentering warp.
+            const float motionX = event->sdl.motion.xrel;
+            const float motionY = event->sdl.motion.yrel;
+            if (motionX > -300.f && motionX < 300.f && motionY > -300.f && motionY < 300.f) {
+              PortDebug::AddMouseDelta(motionX, motionY);
+            }
           }
           ++event;
         }
@@ -841,6 +846,36 @@ int CMain::RsMain(int argc, const char* const* argv) {
           const bool wantRelative = PortDebug::MouseAim() && !PortDebug::Visible();
           if (SDL_GetWindowRelativeMouseMode(sCaptureWindow) != wantRelative) {
             SDL_SetWindowRelativeMouseMode(sCaptureWindow, wantRelative);
+          }
+          // Wayland can report the lock as active while the compositor leaves
+          // the pointer visible, so also hide the cursor and pull it back to
+          // the center each frame. The warp's own motion spike is rejected in
+          // the event loop.
+          static bool sCursorHidden = false;
+          if (wantRelative) {
+            if (!sCursorHidden) {
+              SDL_HideCursor();
+              sCursorHidden = true;
+            }
+            // Only recenter near an edge, so the correction is a large jump that
+            // the event loop rejects and does not fight normal motion.
+            int windowWidth = 0;
+            int windowHeight = 0;
+            float mouseX = 0.f;
+            float mouseY = 0.f;
+            SDL_GetWindowSize(sCaptureWindow, &windowWidth, &windowHeight);
+            SDL_GetMouseState(&mouseX, &mouseY);
+            constexpr float kEdge = 8.f;
+            if (windowWidth > 0 && windowHeight > 0 &&
+                (mouseX <= kEdge || mouseY <= kEdge ||
+                 mouseX >= static_cast< float >(windowWidth) - kEdge ||
+                 mouseY >= static_cast< float >(windowHeight) - kEdge)) {
+              SDL_WarpMouseInWindow(sCaptureWindow, static_cast< float >(windowWidth) * 0.5f,
+                                    static_cast< float >(windowHeight) * 0.5f);
+            }
+          } else if (sCursorHidden) {
+            SDL_ShowCursor();
+            sCursorHidden = false;
           }
         }
       }
