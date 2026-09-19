@@ -46,9 +46,14 @@ target_link_libraries(mp_game PUBLIC
     musyx)
 # The decompiled code is written for MWCC; modern-compiler warnings are noise
 # while we work through real errors. compat.h restores SDK macros Aurora omits.
-target_compile_options(mp_game PRIVATE -w
-    -Wno-narrowing -Wno-c++11-narrowing
-    -include ${CMAKE_CURRENT_SOURCE_DIR}/platform/compat.h)
+if(MSVC)
+    target_compile_options(mp_game PRIVATE /w
+        /FI${CMAKE_CURRENT_SOURCE_DIR}/platform/compat.h)
+else()
+    target_compile_options(mp_game PRIVATE -w
+        -Wno-narrowing -Wno-c++11-narrowing
+        -include ${CMAKE_CURRENT_SOURCE_DIR}/platform/compat.h)
+endif()
 
 # Port entry point and platform shims (Aurora owns the real main; see
 # aurora/main.h).
