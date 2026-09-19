@@ -908,6 +908,12 @@ void sndStreamDeactivate(u32 stid) {
   if (i != -1) {
     if (streamInfo[i].state == 1 || streamInfo[i].state == 2) {
       voiceUnblock(streamInfo[i].voice);
+#if MUSY_TARGET == MUSY_TARGET_PC
+      // voiceUnblock queues hwBreak for a future mix. sndStreamFree can free
+      // the host ARAM buffer immediately, including from an update callback,
+      // so detach this software voice before releasing the IRQ mutex.
+      hwOff(streamInfo[i].voice);
+#endif
       streamInfo[i].state = 3;
     }
 

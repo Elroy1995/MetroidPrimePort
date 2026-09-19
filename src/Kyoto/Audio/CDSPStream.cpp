@@ -383,7 +383,9 @@ u32 CDSPStream::UpdateStream(void*, u32 destOffset, void*, u32 len, u32 user) {
 
   if (stream->xec_readsPending == 0) {
     stream->BufferStream();
-    return stream->xdc_streamSamples >> 1;
+    // End-of-stream can synchronously free the MusyX stream in BufferStream.
+    // Do not ask its caller to upload another chunk to the retired buffer.
+    return stream->x0_state == 4 ? stream->xdc_streamSamples >> 1 : 0;
   }
 
   return 0;
