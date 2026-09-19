@@ -3,6 +3,8 @@
 // Port: Aurora brackets a presented frame around the game's scene.
 #include <aurora/aurora.h>
 
+#include "port_debug.h"
+
 // Tracks whether an Aurora frame is currently open. GXInit (CGraphics::Startup)
 // submits register writes the Aurora worker processes, so a frame must be open
 // before it runs; the first EndScene closes it.
@@ -821,6 +823,10 @@ void CGraphics::EndScene() {
   VISetPreRetraceCallback(VideoPreCallback);
   VISetPostRetraceCallback(VideoPostCallback);
   GXFlush();
+  // Port: draw the debug overlay before Aurora freezes this frame's draw data.
+  if (s_auroraFrameOpen) {
+    PortDebug::DrawUI();
+  }
   // Port: present this Aurora frame before the (stubbed) breakpoint wait.
   AuroraFrameEnd();
   GXFifoObj* fifo = GXGetGPFifo();

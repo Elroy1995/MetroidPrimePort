@@ -24,12 +24,7 @@
 #include "MetroidPrime/TCastTo.hpp"
 #include "rstl/math.hpp"
 
-#include <cstdlib>
-
-// Port: MP_SKIP_CUTSCENES=1 makes non-interactive cinematic cameras advance
-// immediately instead of waiting for the player to press Start. Used to reach
-// gameplay quickly when iterating on engine work.
-static const bool sAutoSkipCutscenes = std::getenv("MP_SKIP_CUTSCENES") != nullptr;
+#include "port_debug.h"
 
 CMFGame::CMFGame(rstl::ncrc_ptr< CStateManager > stateManager,
                  rstl::ncrc_ptr< CInGameGuiManager > guiManager,
@@ -102,7 +97,7 @@ CIOWin::EMessageReturn CMFGame::OnMessage(const CArchitectureMessage& message,
     bool wasInitialized = mInitialized;
     mInitialized = true;
     float dt = MakeMsg::GetParmTimerTick(message).GetReal();
-    if (sAutoSkipCutscenes && mFlowState == kGFS_InGame) {
+    if (PortDebug::SkipCutscenes() && mFlowState == kGFS_InGame) {
       const CGameCamera& camera =
           mStateManager->GetCameraManager()->GetCurrentCamera(*mStateManager);
       if (const CCinematicCamera* const cineCam = TCastToConstPtr< CCinematicCamera >(camera)) {
@@ -114,7 +109,7 @@ CIOWin::EMessageReturn CMFGame::OnMessage(const CArchitectureMessage& message,
         } else {
           // The opening cutscene deliberately has no skip object, so fast-forward
           // it instead of waiting out the whole sequence.
-          dt *= 8.f;
+          dt *= PortDebug::CutsceneSpeed();
         }
       }
     }

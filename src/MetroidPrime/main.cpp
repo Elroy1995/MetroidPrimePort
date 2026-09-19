@@ -6,6 +6,8 @@
 #include <aurora/event.h>
 #include <SDL3/SDL_timer.h>
 
+#include "port_debug.h"
+
 #include "stdint.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -136,7 +138,6 @@ void* CSaveRegion::mNonVolatileSettingsBuf;
 bool COsContext::mProgressiveMode;
 u32 sARAMMemArray[2];
 float sInfiniteLoopTime;
-static bool sFrameLimitEnabled = true;
 static uint sTicksAdvanced = 0;
 
 #define GRAPHICS_FIFO_SIZE 0x60000
@@ -399,7 +400,7 @@ bool CGameArchitectureSupport::UpdateTicks() {
 
   static const float tickPeriod = 1.f / 60.f;
   sTicksAdvanced = 0;
-  bool forceFirstTick = sFrameLimitEnabled;
+  bool forceFirstTick = PortDebug::FrameLimitEnabled();
   x4_archQueue.Push(MakeMsg::CreateFrameBegin(kAMT_Game, x78_gameFrameCount));
   while (forceFirstTick || x7c_tickRemainder >= tickPeriod) {
     forceFirstTick = false;
@@ -753,9 +754,13 @@ int CMain::RsMain(int argc, const char* const* argv) {
             x160_24_finished = true;
           } else if (event->type == AURORA_SDL_EVENT && event->sdl.type == SDL_EVENT_KEY_DOWN &&
                      !event->sdl.key.repeat && event->sdl.key.scancode == SDL_SCANCODE_F10) {
-            sFrameLimitEnabled = !sFrameLimitEnabled;
+            PortDebug::SetFrameLimitEnabled(!PortDebug::FrameLimitEnabled());
             nextFrameDeadline = SDL_GetTicksNS();
-            fprintf(stderr, "Frame limit: %s\n", sFrameLimitEnabled ? "60 FPS" : "unlimited");
+            fprintf(stderr, "Frame limit: %s\n",
+                    PortDebug::FrameLimitEnabled() ? "60 FPS" : "unlimited");
+          } else if (event->type == AURORA_SDL_EVENT && event->sdl.type == SDL_EVENT_KEY_DOWN &&
+                     !event->sdl.key.repeat && event->sdl.key.scancode == SDL_SCANCODE_F1) {
+            PortDebug::Toggle();
           }
           ++event;
         }
@@ -792,7 +797,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
           interpolation = 0.f;
         else if (interpolation > 1.f)
           interpolation = 1.f;
-        CCameraManager::SetPresentationInterpolation(sFrameLimitEnabled ? -1.f : interpolation);
+        CCameraManager::SetPresentationInterpolation(PortDebug::FrameLimitEnabled() ? -1.f
+                                                                                   : interpolation);
         archSupport->GetIOWinManager().Draw();
         CCameraManager::SetPresentationInterpolation(-1.f);
         DrawDebugMetrics(t1, archSupport->GetStopwatch2());
@@ -852,7 +858,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
       }
       CheckTweakManagerDebugOptions();
 
-      if (sFrameLimitEnabled) {
+      if (PortDebug::FrameLimitEnabled()) {
         nextFrameDeadline += framePeriodNs;
         const uint64_t now = SDL_GetTicksNS();
         if (nextFrameDeadline > now) {

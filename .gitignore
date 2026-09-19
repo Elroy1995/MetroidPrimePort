@@ -30,3 +30,6 @@ report*.json
 /*.txt
 *.exe
 *.dol
+
+# Port runtime output
+screenshots/

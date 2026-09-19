@@ -54,6 +54,7 @@ target_compile_options(mp_game PRIVATE -w
 # aurora/main.h).
 add_executable(metroid_prime_port
     platform/main.cpp
+    platform/debug_ui.cpp
     platform/shims.cpp
     platform/sdk_stubs.cpp
     platform/ai_dma.cpp)

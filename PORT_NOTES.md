@@ -307,6 +307,11 @@ drives the title through file select into a new game without input;
 fast-forwards the ones that do not (the opening frigate sequence deliberately has
 no skip object), so control is granted in roughly 15 seconds instead of minutes.
 
+`F1` toggles an in-game debug overlay (Aurora's ImGui) with the frame limiter,
+cutscene skipping and speed, FPS, and a screenshot button. The same settings are
+read from `MP_FAST_BOOT`, `MP_SKIP_CUTSCENES`, `MP_CUTSCENE_SPEED`, and
+`MP_SHOW_DEBUG_UI` at startup, and the overlay writes them live.
+
 Unlimited presentation interpolates the active world camera between the two
 most recent simulation transforms. Camera switches, translations over four
 meters in one tick, and rotations over 45 degrees reset interpolation so cuts
