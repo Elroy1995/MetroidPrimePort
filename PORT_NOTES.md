@@ -208,7 +208,10 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   and not `count * entrySize`. The old base was 28 bytes too high, which skipped
   the first block and left samples whose information begins there reading
   coefficients from the entry table; the charge-beam looping layer (id 209) was
-  the audible case and buzzed continuously.
+  the audible case and buzzed continuously. `MP_VALIDATE_SAMPLES=1` scans every
+  loaded sample directory and reports any ADPCM sample whose rebased `extraData`
+  is missing or does not hold `numCoef == 8` (verified clean across the front end
+  and first areas).
 - In-game streamed music now plays. The PC MusyX ARAM layer was entirely stubbed
   (`aramAllocateStreamBuffer` returned 0, `aramGetStreamBufferAddress` returned
   NULL, `aramUploadData` did nothing), so streamed voices got a null sample address
