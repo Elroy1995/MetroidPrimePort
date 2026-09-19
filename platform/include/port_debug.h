@@ -20,10 +20,16 @@ void SetVsyncEnabled(bool enabled);
 // 0 = auto (native, driven by the display scale), otherwise a fixed multiplier.
 float RenderScale();
 void SetRenderScale(float scale);
-// Renders a 16:9 image (wider horizontal FOV). Startup-only: the game's render
-// mode is configured before the first frame, so changing it needs a restart.
-bool Widescreen();
-void SetWidescreen(bool enabled);
+// Rendering aspect ratio. kAspect_4_3 is the game's original 640x480.
+// kAspect_16_9 widens to 16:9; kAspect_Window follows the window and updates
+// live as it is resized.
+enum EAspectMode {
+  kAspect_4_3 = 0,
+  kAspect_16_9,
+  kAspect_Window,
+};
+EAspectMode AspectMode();
+void SetAspectMode(EAspectMode mode);
 
 // Audio paths
 bool AiAudioEnabled();

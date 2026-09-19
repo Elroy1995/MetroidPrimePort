@@ -316,12 +316,13 @@ drives the title through file select into a new game without input;
 fast-forwards the ones that do not (the opening frigate sequence deliberately has
 no skip object), so control is granted in roughly 15 seconds instead of minutes.
 
-`MP_WIDESCREEN=1` widens the game's render mode to 854x480. Aurora derives the
-internal EFB size and the game's aspect ratio from `fbWidth`, so the horizontal
-FOV, culling frustum, and present all widen together; the HUD is anchored to the
-view edges and scales with it. It is a startup setting (the game sizes its
-framebuffers before the first frame), exposed in the debug overlay's Render tab
-with a restart note.
+Aspect ratio is selectable via `MP_ASPECT=4:3|16:9|window` (or the debug
+overlay's Render tab): 4:3 is the original 640x480, 16:9 is a fixed 854x480, and
+`window` tracks the window and reprocesses on `AURORA_WINDOW_RESIZED`. The game
+resizes its render mode (`CGraphics::PortResizeFrameBuffer`) and refreshes
+`CCameraManager`'s cached aspect; Aurora derives the internal EFB from the render
+mode, so the horizontal FOV, culling frustum, and present all widen together. The
+HUD is anchored to the view edges and scales with it.
 
 `F1` toggles an in-game debug overlay (Aurora's ImGui) with sections for
 Performance (frame limiter, FPS), Cutscenes (skip and speed), Render (vsync and

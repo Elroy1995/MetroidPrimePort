@@ -140,6 +140,32 @@ u32 sARAMMemArray[2];
 float sInfiniteLoopTime;
 static uint sTicksAdvanced = 0;
 
+// Port: when the aspect mode follows the window, resize the game's framebuffer
+// and viewport to the window's aspect ratio. Aurora derives the internal EFB
+// from the render mode, so this also resizes the presented image.
+static void ApplyWindowAspect(int windowWidth, int windowHeight) {
+  if (PortDebug::AspectMode() != PortDebug::kAspect_Window || windowWidth <= 0 || windowHeight <= 0) {
+    return;
+  }
+  const GXRenderModeObj& renderMode = CGraphics::GetRenderMode();
+  const int efbHeight = renderMode.efbHeight;
+  int fbWidth = static_cast< int >(static_cast< double >(efbHeight) *
+                                        static_cast< double >(windowWidth) /
+                                        static_cast< double >(windowHeight) +
+                                    0.5);
+  fbWidth &= ~1;
+  if (fbWidth < 320) {
+    fbWidth = 320;
+  } else if (fbWidth > 2048) {
+    fbWidth = 2048;
+  }
+  if (fbWidth == renderMode.fbWidth) {
+    return;
+  }
+  CGraphics::PortResizeFrameBuffer(static_cast< u16 >(fbWidth));
+  CCameraManager::RefreshAspectRatio();
+}
+
 #define GRAPHICS_FIFO_SIZE 0x60000
 static uchar sGraphicsFifo[GRAPHICS_FIFO_SIZE];
 ALIGNAS(CMain) static uchar sMainSpace[sizeof(CMain)];
@@ -761,6 +787,10 @@ int CMain::RsMain(int argc, const char* const* argv) {
           } else if (event->type == AURORA_SDL_EVENT && event->sdl.type == SDL_EVENT_KEY_DOWN &&
                      !event->sdl.key.repeat && event->sdl.key.scancode == SDL_SCANCODE_F1) {
             PortDebug::Toggle();
+          } else if (event->type == AURORA_WINDOW_RESIZED ||
+                     event->type == AURORA_DISPLAY_SCALE_CHANGED) {
+            ApplyWindowAspect(static_cast< int >(event->windowSize.width),
+                              static_cast< int >(event->windowSize.height));
           }
           ++event;
         }

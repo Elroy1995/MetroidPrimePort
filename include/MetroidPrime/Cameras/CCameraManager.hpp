@@ -118,6 +118,8 @@ public:
   static float GetDefaultFirstPersonNearClipDistance();
   static float GetDefaultFirstPersonFarClipDistance();
   static float GetDefaultAspectRatio();
+  // Port: recompute the cached aspect ratio after the framebuffer is resized.
+  static void RefreshAspectRatio();
 
 private:
   TUniqueId x0_curCameraId;

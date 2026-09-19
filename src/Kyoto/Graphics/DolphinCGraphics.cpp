@@ -716,6 +716,16 @@ CMatrix4f CGraphics::CalculatePerspectiveMatrix(float fovy, float aspect, float 
 #endif
 }
 
+void CGraphics::PortResizeFrameBuffer(u16 fbWidth) {
+  if (fbWidth == 0 || fbWidth == mRenderModeObj.fbWidth) {
+    return;
+  }
+  mRenderModeObj.fbWidth = fbWidth;
+  SetViewport(0, 0, fbWidth, mRenderModeObj.efbHeight);
+  SetScissor(0, 0, fbWidth, mRenderModeObj.efbHeight);
+  VIConfigure(&mRenderModeObj);
+}
+
 void CGraphics::SetViewport(int left, int bottom, int width, int height) {
   mViewport.mLeft = left;
   mViewport.mTop = mRenderModeObj.efbHeight - (bottom + height);

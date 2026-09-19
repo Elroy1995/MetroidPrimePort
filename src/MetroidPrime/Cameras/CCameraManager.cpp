@@ -102,6 +102,15 @@ float CCameraManager::GetDefaultFirstPersonFarClipDistance() { return sFarPlane;
 
 float CCameraManager::GetDefaultAspectRatio() { return sAspectRatio; }
 
+void CCameraManager::RefreshAspectRatio() {
+  const CViewport& viewport = CGraphics::GetViewport();
+  sAspectRatio =
+#if VERSION >= VERSION_GM8P_00
+      CGraphics::GetPixelAspectRatio() *
+#endif
+      (static_cast< float >(viewport.mWidth) / static_cast< float >(viewport.mHeight));
+}
+
 void CCameraManager::CreateCameras(CStateManager& mgr) {
   TUniqueId plId = mgr.GetPlayer()->GetUniqueId();
   CTransform4f xf = CTransform4f::Identity();

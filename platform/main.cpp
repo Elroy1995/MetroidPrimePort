@@ -36,7 +36,7 @@ const char* ResolveDiscPath(int argc, char** argv) {
 int main(int argc, char** argv) {
     // A 16:9 window when widescreen is requested; the game's render mode is
     // widened to match. Values are the default window size only.
-    const bool widescreen = PortDebug::Widescreen();
+    const bool widescreen = PortDebug::AspectMode() != PortDebug::kAspect_4_3;
     const AuroraConfig config = {
         .appName = "Metroid Prime",
         .userPath = nullptr,

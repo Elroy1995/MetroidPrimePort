@@ -9,6 +9,7 @@
 #include <imgui.h>
 
 #include <cstdlib>
+#include <cstring>
 
 namespace aurora {
 void request_screenshot() noexcept;
@@ -26,7 +27,7 @@ float sCutsceneSpeed = 8.f;
 bool sFrameLimitEnabled = true;
 bool sVsyncEnabled = false;
 float sRenderScale = 1.f;
-bool sWidescreen = false;
+PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
 bool sAiAudioEnabled = true;
 bool sMusyxAudioEnabled = true;
 bool sResetRequested = false;
@@ -40,7 +41,15 @@ void EnsureInitialized() {
   sFastBoot = std::getenv("MP_FAST_BOOT") != nullptr;
   sSkipCutscenes = std::getenv("MP_SKIP_CUTSCENES") != nullptr;
   sVisible = std::getenv("MP_SHOW_DEBUG_UI") != nullptr;
-  sWidescreen = std::getenv("MP_WIDESCREEN") != nullptr;
+  if (const char* aspect = std::getenv("MP_ASPECT")) {
+    if (std::strcmp(aspect, "16:9") == 0) {
+      sAspectMode = PortDebug::kAspect_16_9;
+    } else if (std::strcmp(aspect, "window") == 0) {
+      sAspectMode = PortDebug::kAspect_Window;
+    }
+  } else if (std::getenv("MP_WIDESCREEN") != nullptr) {
+    sAspectMode = PortDebug::kAspect_16_9;
+  }
   sAiAudioEnabled = std::getenv("MP_DISABLE_AI_AUDIO") == nullptr;
   if (const char* speed = std::getenv("MP_CUTSCENE_SPEED")) {
     const float value = static_cast< float >(std::atof(speed));
@@ -106,14 +115,14 @@ void SetRenderScale(float scale) {
   VISetFrameBufferScale(scale);
 }
 
-bool Widescreen() {
+EAspectMode AspectMode() {
   EnsureInitialized();
-  return sWidescreen;
+  return sAspectMode;
 }
 
-void SetWidescreen(bool enabled) {
+void SetAspectMode(EAspectMode mode) {
   EnsureInitialized();
-  sWidescreen = enabled;
+  sAspectMode = mode;
 }
 
 bool AiAudioEnabled() {
@@ -185,9 +194,9 @@ void DrawRenderTab() {
     SetVsyncEnabled(vsync);
   }
 
-  bool widescreen = sWidescreen;
-  if (ImGui::Checkbox("Widescreen 16:9 (restart)", &widescreen)) {
-    SetWidescreen(widescreen);
+  int aspect = static_cast< int >(sAspectMode);
+  if (ImGui::Combo("Aspect ratio", &aspect, "4:3\0" "16:9\0" "Follow window\0")) {
+    SetAspectMode(static_cast< EAspectMode >(aspect));
   }
 
   bool autoScale = sRenderScale <= 0.f;

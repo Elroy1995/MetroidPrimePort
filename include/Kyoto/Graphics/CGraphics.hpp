@@ -327,6 +327,8 @@ public:
   static CVector2i ProjectPoint(const CVector3f& point);
 
   static const GXRenderModeObj& GetRenderMode() { return mRenderModeObj; }
+  // Port: resize the internal framebuffer and viewport (dynamic aspect ratio).
+  static void PortResizeFrameBuffer(u16 fbWidth);
   static float GetDepthNear() { return mDepthNear; }
   static float GetDepthFar() { return mDepthFar; }
 
