@@ -140,3 +140,9 @@ extern "C" void AISetStreamPlayState(uint32_t state) {
     SDL_ResumeAudioStreamDevice(sStream);
   }
 }
+
+// Runtime mute of the streamed-audio path (used by the debug overlay).
+extern "C" void AIPortSetOutputEnabled(int enabled) {
+  EnsureStarted();
+  sOutputEnabled = enabled != 0;
+}

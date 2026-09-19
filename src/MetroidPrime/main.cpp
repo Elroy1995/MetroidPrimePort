@@ -837,6 +837,9 @@ int CMain::RsMain(int argc, const char* const* argv) {
       if (archSupport->GetIOWinManager().IsEmpty()) {
         // rs_log_print("IOWinManager got empty. Resetting game architecture\n");
         needsReset = true;
+      } else if (PortDebug::ConsumeResetRequest()) {
+        // Debug overlay: restart the architecture, which returns to the menu.
+        needsReset = true;
       } else if (CheckReset()) {
         // rs_log_print("Reset pressed...\n");
         needsReset = true;

@@ -7,12 +7,29 @@
 
 namespace PortDebug {
 
+// Fast iteration
 bool FastBoot();
 bool SkipCutscenes();
 float CutsceneSpeed();
 
+// Presentation
 bool FrameLimitEnabled();
 void SetFrameLimitEnabled(bool enabled);
+bool VsyncEnabled();
+void SetVsyncEnabled(bool enabled);
+// 0 = auto (native, driven by the display scale), otherwise a fixed multiplier.
+float RenderScale();
+void SetRenderScale(float scale);
+
+// Audio paths
+bool AiAudioEnabled();
+void SetAiAudioEnabled(bool enabled);
+bool MusyxAudioEnabled();
+void SetMusyxAudioEnabled(bool enabled);
+
+// Session
+void RequestReset();
+bool ConsumeResetRequest();
 
 bool Visible();
 void Toggle();
