@@ -203,6 +203,12 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   onto the native `SDIR_DATA` array (whose entries are larger than the disc's
   32-bit form). Without this, in-level voices decoded with garbage coefficients and
   produced noise.
+- The disc sample directory ends with a 4-byte `0xFFFFFFFF` terminator rather than
+  a full entry, so the ADPCM info blocks start at `(count - 1) * entrySize + 4`
+  and not `count * entrySize`. The old base was 28 bytes too high, which skipped
+  the first block and left samples whose information begins there reading
+  coefficients from the entry table; the charge-beam looping layer (id 209) was
+  the audible case and buzzed continuously.
 - In-game streamed music now plays. The PC MusyX ARAM layer was entirely stubbed
   (`aramAllocateStreamBuffer` returned 0, `aramGetStreamBufferAddress` returned
   NULL, `aramUploadData` did nothing), so streamed voices got a null sample address

@@ -332,7 +332,13 @@ CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length
       (projectEnd + sizeof(void*) - 1) & ~(static_cast< uint >(sizeof(void*)) - 1);
   const uint sampleDirCount = CountSampleDirEntries(ptr + sdirOffset + 4, sdirSize);
   const uint entryBytes = sampleDirCount * sizeof(SDIR_DATA);
-  const uint discEntryBytes = sampleDirCount * sizeof(SDIR_DATA_INTER);
+  // The disc sample directory ends with a 4-byte 0xFFFFFFFF terminator rather
+  // than a full entry, so the trailing ADPCM info blocks start at
+  // (count - 1) * entrySize + 4. Using count * entrySize skipped the first
+  // block and left samples whose info begins there (e.g. the looping charge
+  // layer) reading coefficients out of the entry table.
+  const uint discEntryBytes =
+      sampleDirCount > 0 ? (sampleDirCount - 1) * sizeof(SDIR_DATA_INTER) + 4 : 0;
   const uint blockBytes = sdirSize > discEntryBytes ? sdirSize - discEntryBytes : 0;
   x8_groupData = rstl::auto_ptr< uchar >(static_cast< uchar* >(
       CMemory::Alloc(sampleDirOffset + entryBytes + blockBytes, IAllocator::kHI_RoundUpLen)));
