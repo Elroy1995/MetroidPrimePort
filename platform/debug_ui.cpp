@@ -150,75 +150,107 @@ void Toggle() {
   sVisible = !sVisible;
 }
 
+void DrawPerformanceTab() {
+  bool frameLimit = sFrameLimitEnabled;
+  if (ImGui::Checkbox("Frame limit (60 FPS)", &frameLimit)) {
+    sFrameLimitEnabled = frameLimit;
+  }
+  ImGui::Text("FPS: %.1f", static_cast< double >(ImGui::GetIO().Framerate));
+  ImGui::Text("Frame time: %.2f ms", static_cast< double >(ImGui::GetIO().DeltaTime) * 1000.0);
+}
+
+void DrawCutscenesTab() {
+  ImGui::Checkbox("Skip / fast-forward cutscenes", &sSkipCutscenes);
+  ImGui::SliderFloat("Cutscene speed", &sCutsceneSpeed, 1.f, 32.f, "%.0fx");
+  if (ImGui::Button("Reset cutscene speed")) {
+    sCutsceneSpeed = 8.f;
+  }
+}
+
+void DrawRenderTab() {
+  bool vsync = sVsyncEnabled;
+  if (ImGui::Checkbox("Vsync", &vsync)) {
+    SetVsyncEnabled(vsync);
+  }
+
+  bool autoScale = sRenderScale <= 0.f;
+  if (ImGui::Checkbox("Auto render scale (native)", &autoScale)) {
+    SetRenderScale(autoScale ? 0.f : 1.f);
+  }
+  if (!autoScale) {
+    float scale = sRenderScale;
+    if (ImGui::SliderFloat("EFB scale", &scale, 1.f, 2.f, "%.2fx")) {
+      SetRenderScale(scale);
+    }
+    ImGui::TextUnformatted("Scales the internal EFB; higher values use more MEM1.");
+  }
+}
+
+void DrawAudioTab() {
+  bool ai = sAiAudioEnabled;
+  if (ImGui::Checkbox("Streamed audio (music/movies)", &ai)) {
+    SetAiAudioEnabled(ai);
+  }
+  bool musyx = sMusyxAudioEnabled;
+  if (ImGui::Checkbox("MusyX audio (effects/streams)", &musyx)) {
+    SetMusyxAudioEnabled(musyx);
+  }
+}
+
+void DrawSessionTab() {
+  if (ImGui::Button("Restart to menu")) {
+    RequestReset();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Screenshot (F12)")) {
+    aurora::request_screenshot();
+  }
+}
+
 void DrawUI() {
   EnsureInitialized();
   if (!sVisible) {
     return;
   }
 
-  ImGui::SetNextWindowPos(ImVec2(12.f, 12.f), ImGuiCond_FirstUseEver);
-  ImGui::SetNextWindowSize(ImVec2(340.f, 0.f), ImGuiCond_FirstUseEver);
-  ImGui::Begin("Metroid Prime Port");
-
-  ImGui::TextUnformatted("F1 to hide");
-  ImGui::Separator();
-
-  if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
-    bool frameLimit = sFrameLimitEnabled;
-    if (ImGui::Checkbox("Frame limit (60 FPS)", &frameLimit)) {
-      sFrameLimitEnabled = frameLimit;
+  ImGui::SetNextWindowPos(ImVec2(8.f, 8.f), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(440.f, 200.f), ImGuiCond_FirstUseEver);
+  bool open = true;
+  if (ImGui::Begin("Metroid Prime Port", &open, ImGuiWindowFlags_MenuBar)) {
+    if (ImGui::BeginMenuBar()) {
+      ImGui::TextUnformatted("F1: hide   F10: frame limit   F12: screenshot");
+      ImGui::EndMenuBar();
     }
-    ImGui::Text("FPS: %.1f", static_cast< double >(ImGui::GetIO().Framerate));
-  }
 
-  if (ImGui::CollapsingHeader("Cutscenes")) {
-    ImGui::Checkbox("Skip / fast-forward cutscenes", &sSkipCutscenes);
-    ImGui::SliderFloat("Cutscene speed", &sCutsceneSpeed, 1.f, 32.f, "%.0fx");
-    if (ImGui::Button("Reset cutscene speed")) {
-      sCutsceneSpeed = 8.f;
-    }
-  }
-
-  if (ImGui::CollapsingHeader("Render")) {
-    bool vsync = sVsyncEnabled;
-    if (ImGui::Checkbox("Vsync", &vsync)) {
-      SetVsyncEnabled(vsync);
-    }
-    bool autoScale = sRenderScale <= 0.f;
-    if (ImGui::Checkbox("Auto render scale (native)", &autoScale)) {
-      SetRenderScale(autoScale ? 0.f : 1.f);
-    }
-    if (!autoScale) {
-      float scale = sRenderScale;
-      if (ImGui::SliderFloat("EFB scale", &scale, 1.f, 2.f, "%.2fx")) {
-        SetRenderScale(scale);
+    if (ImGui::BeginTabBar("##debug_tabs", ImGuiTabBarFlags_FittingPolicyScroll)) {
+      if (ImGui::BeginTabItem("Performance")) {
+        DrawPerformanceTab();
+        ImGui::EndTabItem();
       }
-      ImGui::TextUnformatted("Scales the internal EFB; higher values use more MEM1.");
+      if (ImGui::BeginTabItem("Cutscenes")) {
+        DrawCutscenesTab();
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Render")) {
+        DrawRenderTab();
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Audio")) {
+        DrawAudioTab();
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Session")) {
+        DrawSessionTab();
+        ImGui::EndTabItem();
+      }
+      ImGui::EndTabBar();
     }
   }
-
-  if (ImGui::CollapsingHeader("Audio")) {
-    bool ai = sAiAudioEnabled;
-    if (ImGui::Checkbox("Streamed audio (music/movies)", &ai)) {
-      SetAiAudioEnabled(ai);
-    }
-    bool musyx = sMusyxAudioEnabled;
-    if (ImGui::Checkbox("MusyX audio (effects/streams)", &musyx)) {
-      SetMusyxAudioEnabled(musyx);
-    }
-  }
-
-  if (ImGui::CollapsingHeader("Session")) {
-    if (ImGui::Button("Restart to menu")) {
-      RequestReset();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Screenshot (F12)")) {
-      aurora::request_screenshot();
-    }
-  }
-
   ImGui::End();
+
+  if (!open) {
+    sVisible = false;
+  }
 }
 
 } // namespace PortDebug
