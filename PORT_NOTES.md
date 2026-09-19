@@ -272,9 +272,15 @@ Remaining:
 6. Reproduce the reported blank front-end screen using `F12`; current automated
    captures do not reproduce it.
 
-Debug shortcuts: `F10` toggles Aurora present-mode pacing between the display's
-60 Hz vsync and unlimited without modifying game simulation; `F12` saves the
-resolved framebuffer under `screenshots/`.
+Wayland presentation keeps the game EFB locked to its configured 640x480 with
+`VISetFrameBufferScale(1)`, while Aurora scales that image to the native high-DPI
+swapchain. This prevents the title background from disappearing at fractional
+display scales. Compositor vsync is disabled because it misses presentation
+intervals around the game's own async-idle work; an absolute 60 Hz deadline is
+used instead.
+
+Debug shortcuts: `F10` toggles the 60 FPS deadline/unlimited mode; `F12` saves
+the resolved framebuffer under `screenshots/`.
 
 ## Licensing
 

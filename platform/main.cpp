@@ -9,6 +9,7 @@
 #include <aurora/dvd.h>
 #include <aurora/event.h>
 #include <aurora/main.h>
+#include <dolphin/vi.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -37,6 +38,7 @@ int main(int argc, char** argv) {
         .cachePath = nullptr,
         .resourcesPath = nullptr,
         .desiredBackend = BACKEND_AUTO,
+        .vsync = false,
         // Keep the internal framebuffer at the game's 640x480 so its two
         // framebuffer allocations fit in MEM1; Aurora upscales to the window.
         .windowWidth = 640,
@@ -46,6 +48,7 @@ int main(int argc, char** argv) {
     };
 
     aurora_initialize(argc, argv, &config);
+    VISetFrameBufferScale(1.f);
 
     const char* discPath = ResolveDiscPath(argc, argv);
     if (!aurora_dvd_open(discPath)) {

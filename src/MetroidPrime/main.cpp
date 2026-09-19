@@ -4,7 +4,7 @@
 // and driven by platform/main.cpp.
 #include <aurora/aurora.h>
 #include <aurora/event.h>
-#include <aurora/gfx.h>
+#include <SDL3/SDL_timer.h>
 
 #include "stdint.h"
 #include "stdio.h"
@@ -135,7 +135,7 @@ void* CSaveRegion::mNonVolatileSettingsBuf;
 bool COsContext::mProgressiveMode;
 u32 sARAMMemArray[2];
 float sInfiniteLoopTime;
-static bool sVsyncEnabled = false;
+static bool sFrameLimitEnabled = true;
 
 #define GRAPHICS_FIFO_SIZE 0x60000
 static uchar sGraphicsFifo[GRAPHICS_FIFO_SIZE];
@@ -734,6 +734,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
     }
 
     const double dt = 1.f / 60.f;
+    constexpr uint64_t framePeriodNs = 1000000000ull / 60;
+    uint64_t nextFrameDeadline = SDL_GetTicksNS();
     unsigned s_frameLog = 0;
     while (!x160_24_finished) {
       if ((s_frameLog++ % 60) == 0) {
@@ -747,9 +749,9 @@ int CMain::RsMain(int argc, const char* const* argv) {
             x160_24_finished = true;
           } else if (event->type == AURORA_SDL_EVENT && event->sdl.type == SDL_EVENT_KEY_DOWN &&
                      !event->sdl.key.repeat && event->sdl.key.scancode == SDL_SCANCODE_F10) {
-            sVsyncEnabled = !sVsyncEnabled;
-            aurora_enable_vsync(sVsyncEnabled);
-            fprintf(stderr, "Frame limit: %s\n", sVsyncEnabled ? "60 FPS" : "unlimited");
+            sFrameLimitEnabled = !sFrameLimitEnabled;
+            nextFrameDeadline = SDL_GetTicksNS();
+            fprintf(stderr, "Frame limit: %s\n", sFrameLimitEnabled ? "60 FPS" : "unlimited");
           }
           ++event;
         }
@@ -836,6 +838,18 @@ int CMain::RsMain(int argc, const char* const* argv) {
         tmp->PreloadAudio();
       }
       CheckTweakManagerDebugOptions();
+
+      if (sFrameLimitEnabled) {
+        nextFrameDeadline += framePeriodNs;
+        const uint64_t now = SDL_GetTicksNS();
+        if (nextFrameDeadline > now) {
+          SDL_DelayPrecise(nextFrameDeadline - now);
+        } else if (now - nextFrameDeadline > framePeriodNs) {
+          nextFrameDeadline = now;
+        }
+      } else {
+        nextFrameDeadline = SDL_GetTicksNS();
+      }
     }
   }
   ShutdownSubsystems();
