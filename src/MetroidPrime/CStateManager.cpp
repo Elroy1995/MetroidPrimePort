@@ -1102,6 +1102,7 @@ void CStateManager::Update(float dt) {
   nullsub_34(this);
   UpdateGameState();
 #ifdef MP_ENABLE_SMOKE_DRIVER
+  PortSmokeAreaReload(*this);
   PortSmokeMouseBeforeUpdate(*this);
 #endif
 

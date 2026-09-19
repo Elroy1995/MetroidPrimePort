@@ -4,6 +4,9 @@
 #include "port_mouse.h"
 #include "port_smoke.h"
 #include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/CWorld.hpp"
+#include "MetroidPrime/CGameArea.hpp"
+#include "Kyoto/CARAMToken.hpp"
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
 #include "MetroidPrime/Cameras/CFirstPersonCamera.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
@@ -20,8 +23,14 @@ unsigned sMouseShots = 0, sMouseChargedShots = 0, sMouseMissiles = 0, sMouseLock
 unsigned sGunViewChecks = 0;
 bool sMouseJumped = false;
 bool sMouseMorphed = false, sMouseResumed = false;
+bool sStrafedBeforeUI = false, sStrafedAfterUI = false;
 bool sPowerProjectileSeen = false, sMissileProjectileSeen = false;
 bool sMouseComplete = false;
+unsigned sAreaReloads = 0;
+bool AreaReloadEnabled() {
+  static const bool enabled = std::getenv("MP_SMOKE_AREA_RELOAD") != nullptr;
+  return enabled;
+}
 bool sWasLocked = false;
 CVector3f sLastLockedDirection(0.f, 1.f, 0.f);
 CVector3f sInitialDirection(0.f, 1.f, 0.f);
@@ -31,6 +40,26 @@ void MouseCheck(bool valid, const char* message) {
     std::abort();
   }
 }
+}
+
+void PortSmokeAreaReload(CStateManager& mgr) {
+  if (!AreaReloadEnabled() || sAreaReloads >= 3 || mgr.GetGameState() != CStateManager::kGS_Running ||
+      mgr.GetCameraManager()->IsInCinematicCamera() || !mgr.GetCameraManager()->IsInFPCamera()) return;
+  CWorld* world = mgr.World();
+  if (!world || !world->DoesAreaExist(world->GetCurrentAreaId())) return;
+  CGameArea* area = world->Area(world->GetCurrentAreaId());
+  if (!area->IsLoaded() || area->GetOcclusionState() != CGameArea::kOS_Visible) return;
+  GXDrawDone();
+  std::fprintf(stderr, "[area-smoke] evict/restore area %d cycle %u\n", area->GetId().Value(), sAreaReloads + 1);
+  area->SetOcclusionState(CGameArea::kOS_Occluded);
+  const uint64_t deadline = SDL_GetTicksNS() + 5000000000ull;
+  while (!area->TransferTokensToARAM()) {
+    CARAMToken::UpdateAllDMAs();
+    MouseCheck(SDL_GetTicksNS() < deadline, "area eviction stalled");
+  }
+  area->SetOcclusionState(CGameArea::kOS_Visible);
+  ++sAreaReloads;
+  if (sAreaReloads == 3) std::fputs("[area-smoke] passed: three geometry eviction/reload cycles\n", stderr);
 }
 
 bool PortSmokeMouseEnabled() {
@@ -94,6 +123,10 @@ void PortSmokeMouseBeforeUpdate(CStateManager& mgr) {
   if (sMouseTicks >= 300 && sMouseTicks < 310) jump.button = PAD_BUTTON_B;
   if ((sMouseTicks >= 420 && sMouseTicks < 425) ||
       (sMouseTicks >= 500 && sMouseTicks < 505)) jump.button = PAD_BUTTON_X;
+  if ((sMouseTicks >= 20 && sMouseTicks < 25) ||
+      (sMouseTicks >= 390 && sMouseTicks < 395)) jump.stickX = 80;
+  if ((sMouseTicks >= 25 && sMouseTicks < 30) ||
+      (sMouseTicks >= 395 && sMouseTicks < 400)) jump.stickX = -80;
   PADSetVirtualStatus(0, &jump);
   PortDebug::AddMouseDelta(dx, dy);
   PortDebug::BeginFrameMouse();
@@ -112,6 +145,11 @@ void PortSmokeMouseAfterUpdate(CStateManager& mgr) {
     return;
   }
   if (sMouseMorphed) sMouseResumed = true;
+  const float sidewaysSpeed = CVector3f::Dot(player.GetVelocityWR(), player.GetTransform().GetColumn(kDX));
+  if (player.GetOrbitState() == CPlayer::kOS_NoOrbit && std::fabs(sidewaysSpeed) > 0.03f) {
+    if (sMouseTicks >= 21 && sMouseTicks <= 31) sStrafedBeforeUI = true;
+    if (sMouseTicks >= 391 && sMouseTicks <= 401) sStrafedAfterUI = true;
+  }
   MouseCheck(!PortDebug::MouseCrosshair() || player.IsCrosshairsOpen(), "mouse-aim crosshair was not requested");
   const CVector3f forward = mgr.GetCameraManager()->GetFirstPersonCamera()->GetGunFollowTransform().GetForward();
   const float yaw = PortDebug::AimYaw(), pitch = PortDebug::AimPitch();
@@ -133,9 +171,10 @@ void PortSmokeMouseAfterUpdate(CStateManager& mgr) {
     MouseCheck(sPowerProjectileSeen && sMissileProjectileSeen, "weapon inputs did not create live projectiles");
     MouseCheck(sMouseLocks > 0 && sMouseJumped && sGunViewChecks > 50, "lock/jump/viewmodel coverage incomplete");
     MouseCheck(sMouseMorphed && sMouseResumed, "morph-ball handoff coverage incomplete");
+    MouseCheck(sStrafedBeforeUI && sStrafedAfterUI, "free strafe failed before/after F1");
     PADClearVirtualStatus(0);
     sMouseComplete = true;
-    std::fprintf(stderr, "[mouse-smoke] passed: shots=%u charged=%u missiles=%u lockedTicks=%u gunViews=%u jump=1 morph=1\n",
+    std::fprintf(stderr, "[mouse-smoke] passed: shots=%u charged=%u missiles=%u lockedTicks=%u gunViews=%u jump=1 morph=1 strafe-before/after-F1=1\n",
                  sMouseShots, sMouseChargedShots, sMouseMissiles, sMouseLocks, sGunViewChecks);
   }
 }
@@ -192,7 +231,8 @@ bool PortSmokeFrame(unsigned frame) {
       std::fputs("[smoke] reset to menu\n", stderr);
     }
   }
-  if (frame < limit || (PortSmokeMouseEnabled() && !sMouseComplete)) return false;
+  if (frame < limit || (PortSmokeMouseEnabled() && !sMouseComplete) ||
+      (AreaReloadEnabled() && sAreaReloads < 3)) return false;
   std::fputs("[smoke] clean exit requested\n", stderr);
   return true;
 }

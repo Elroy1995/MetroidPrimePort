@@ -59,6 +59,11 @@ Alternatively set `MP_DISC`. The disc must identify as **GM8E01, disc 0, revisio
 0**; other revisions/regions are rejected. Nod/Aurora supports additional image
 containers, but the same retail content is required.
 
+`metroid_prime_port --version` prints the source revision without initializing
+graphics. The same revision appears in the launch log and F1 Performance tab.
+Include it when reporting a copied build from another machine; a `-dirty` suffix
+means the executable was built with uncommitted source changes.
+
 Aurora selects user/cache directories through its SDL platform paths and logs
 them at initialization. `MP_USER_PATH` and `MP_CACHE_PATH` override these with
 explicit directories; use separate directories for automated testing so runs do
@@ -83,6 +88,11 @@ the working directory. `MP_TEXTURES` points to an optional replacement pack.
   the normal PAD/gun input path, preserving charge timing and weapon cooldowns.
   Existing keyboard/controller weapon bindings are also available; saved mapping
   files are not rewritten. `MP_DISABLE_MOUSE_BUTTONS=1` opts out of these aliases.
+- Outside lock-on, A/D (the left-stick lateral axis) strafe in mouse mode rather
+  than applying the console's turning torque. Movement uses the current mouse
+  heading and the game's acceleration, friction, surface restraints and collision
+  handling. Diagonal input/speed is bounded. Lock-on keeps its native orbit/dash
+  behavior; closing F1 does not require reacquiring a lock to strafe.
 - Mouse mode requests the GC aiming crosshair without holding R or entering the
   console's movement-restricting free-look mode. `MP_DISABLE_MOUSE_CROSSHAIR=1`
   opts out. The Input tab exposes inversion, weapon-button and crosshair toggles.
@@ -100,6 +110,11 @@ the working directory. `MP_TEXTURES` points to an optional replacement pack.
 The simulation uses a 60 Hz accumulator independently of the presentation cap.
 Ordinary slow frames catch up; pauses/debugger stalls are capped to 250 ms of
 simulation work per iteration. Audio runs on wall-clock/device consumption.
+Fractional simulation time is retained through frame jitter. The capped scheduler
+can borrow at most 0.25 ms near a tick boundary and carries that debt forward, so
+it does not alternate zero/two ticks merely due to microsecond sleep jitter.
+The Performance tab distinguishes the **60 FPS target** from measured render FPS
+and simulation ticks/second. `MP_TRACE_TIMING=1` logs both rates once per second.
 Hidden windows continue pumping events and main-thread audio without recording
 rendered frames. Restart-to-menu rebuilds the game architecture instead of
 attempting a console reboot.
@@ -142,7 +157,9 @@ truncated-stream errors, pathfinder bitset bounds, AI enable/callback teardown,
 the MusyX pointer-sized DMA API, and DOL section mapping/bounds. It does not
 require a disc or GPU.
 `port_mouse_tests` checks direction/inversion, pitch limits, yaw normalization,
-lock and non-first-person handoffs, and held-button/capture edge behavior.
+lock and non-first-person handoffs, movement bounds and held-button/capture edge
+behavior. `port_timing_tests` covers fractional-time carry and capped jitter;
+`port_audio_math_tests` covers ADPCM partial loops, PCM8 and wide Q15 mixing.
 The CARD regression creates its own `card-test-data` directory under the build
 tree, tests null callbacks and file operations, and closes/reopens the backing
 store before comparing the saved bytes. It never uses the normal game profile.
@@ -170,6 +187,19 @@ charged release, lock/release, jump and morph-ball handoffs, UI charge cancellat
 crosshair state, and cannon/view orientation while uncapped. Scripted cinematics
 pause the test sequence; the frame limit is a minimum until the scenario finishes.
 Success is reported as `[mouse-smoke] passed` followed by a clean exit.
+The sequence also verifies free strafing on both sides of opening/closing F1.
+
+`MP_SMOKE_AREA_RELOAD=1` exercises three real geometry eviction/ARAM restoration
+cycles. It reproduced the material-flags crash seen when opening a door before
+the one-time native surface-header conversion fix. It can be combined with the
+mouse scenario and reports `[area-smoke] passed`.
+
+For audio reports, `MP_AUDIO_STATS=1` logs MusyX's generated samples/second, queued
+audio, peak output and clipping. Nominal output is 32,000 stereo frames/second;
+short windows vary with the device's buffering. Static ADPCM loops must wrap at
+`loop + loopLength` and restart from the exact loop nibble/history. Streaming
+ADPCM retains its predictor history across ring-buffer wraps. These rules are
+now distinct; neither is tied to the renderer's frame count.
 
 For AddressSanitizer, use a separate Clang build with
 `-DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer"` and the same

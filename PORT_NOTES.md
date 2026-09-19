@@ -1,5 +1,38 @@
 # Metroid Prime port — working notes
 
+## Remote-test regressions (2026-09-19)
+
+- A CachyOS/Radeon 8060S crash in `CCubeMaterial::GetFlags` during door opening
+  was reproduced locally by evicting/restoring area 0 geometry. Surface headers
+  were converted from big endian again after an ARAM round trip. Conversion is
+  now tracked for the lifetime of the area payload, independently of rebuilding
+  its model instances. Three repeated eviction/restoration cycles pass under ASan.
+- The old tick-remainder heuristic could produce only 45 simulation ticks/second
+  at 60 rendered FPS with ±5 us jitter. A double-precision fixed-step accumulator
+  now preserves fractional time and bounded scheduling debt. Runtime logging
+  measures about 60 render FPS / 60 simulation TPS when capped, and 60 TPS when
+  uncapped. F1 shows measured rates separately from the target setting.
+- Free mouse movement now translates A/D instead of using console turning torque
+  which mouse look immediately overwrote. Input is normalized, movement respects
+  native physics, and mouse heading is applied before movement without consuming
+  the same delta twice. The smoke driver verifies strafe before and after F1.
+- MusyX ambient loops active in the first area included non-block-aligned loop
+  starts (e.g. sample 832) and loop ends before the resource length. The software
+  decoder now advances predictor history sample-by-sample, uses the actual loop
+  end and loop context, and preserves streaming history across circular-buffer
+  wraps. Signed PCM8 and wide intermediate Q15 products were corrected too.
+  Golden-sample tests pass; confirmation of the audible static fix on the remote
+  PulseAudio setup is still needed. `MP_AUDIO_STATS=1` reports mixer rate/clipping.
+- Build revisions are generated at build time and exposed by `--version`, the
+  launch log and F1. `MP_TRACE_TIMING=1` logs actual render and simulation rates.
+
+Diagnostics and reproduction flags are documented in `docs/NATIVE_PORT.md`.
+Validation: nine native checks pass in GCC and Clang/ASan builds. The combined
+real-disc run passes three area reload cycles and the mouse scenario including
+free strafe before/after F1, and exits cleanly. Steady capped timing reports
+60 FPS / 60 TPS; uncapped presentation retains 60 TPS. Runtime leak detection
+was disabled; allocation mismatch and invalid-access detection were enabled.
+
 ## Mouse aim / arm-cannon integration (2026-09-19)
 
 - Mouse mode now uses immediate pitch/yaw rather than the retail 60°/s camera
