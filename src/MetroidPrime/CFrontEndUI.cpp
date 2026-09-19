@@ -32,6 +32,8 @@
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CNESEmulator.hpp"
 #include "MetroidPrime/CQuitGameScreen.hpp"
+
+#include <cstdlib>
 #include "MetroidPrime/CSaveGameScreen.hpp"
 #include "MetroidPrime/CSaveWorldMemory.hpp"
 #include "MetroidPrime/CSlideShow.hpp"
@@ -98,6 +100,9 @@ static const s16 FETransitionForwardSFX[3][2] = {
 static const char* const kAudioFrontend1Path = "Audio/frontend_1.rsf";
 static const char* const kAudioFrontend2Path = "Audio/frontend_2.rsf";
 static const char* const kFrontEndAGSCName = "FrontEnd_AGSC";
+
+// Port: env-gated fast path through the front end (see CFrontEndUI::Update).
+static const bool sFastBoot = std::getenv("MP_FAST_BOOT") != nullptr;
 
 static const float AudioFadeTimeB[3] = {
     4.2f,
@@ -1678,6 +1683,29 @@ bool CFrontEndUI::PumpLoad() {
 }
 
 CIOWin::EMessageReturn CFrontEndUI::Update(float dt, CArchitectureQueue& queue) {
+  // Port: MP_FAST_BOOT=1 drives the title screen through file select into a new
+  // game without waiting for input, and completes each screen transition
+  // immediately. Used to reach gameplay quickly when iterating on engine work.
+  if (sFastBoot && (x14_phase == kP_DisplayFrontEnd || x14_phase == kP_ToPlayGame)) {
+    if (x50_curScreen != x54_nextScreen) {
+      CompleteStateTransition();
+    } else {
+      switch (x50_curScreen) {
+      case kS_OpenCredits:
+        StartStateTransition(kS_Title);
+        break;
+      case kS_Title:
+        StartStateTransition(kS_FileSelect);
+        break;
+      case kS_FileSelect:
+        TransitionToFive();
+        break;
+      default:
+        break;
+      }
+    }
+  }
+
   // Update save UI if active and past file select phase
   if (xdc_saveUI.get() != nullptr && x50_curScreen >= kS_FileSelect) {
     int saveResult = xdc_saveUI->Update(dt);

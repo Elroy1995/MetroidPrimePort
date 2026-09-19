@@ -301,6 +301,12 @@ the resolved framebuffer under `screenshots/`. Unlimited mode changes only the
 presentation rate; simulation, input, SFX, and streamed audio remain on Prime's
 fixed 60 Hz clock.
 
+Debug env flags for fast iteration: `MP_FAST_BOOT=1` skips the pre-front-end and
+drives the title through file select into a new game without input;
+`MP_SKIP_CUTSCENES=1` skips cutscenes that set a cinematic skip object and
+fast-forwards the ones that do not (the opening frigate sequence deliberately has
+no skip object), so control is granted in roughly 15 seconds instead of minutes.
+
 Unlimited presentation interpolates the active world camera between the two
 most recent simulation transforms. Camera switches, translations over four
 meters in one tick, and rotations over 45 degrees reset interpolation so cuts
