@@ -1,5 +1,7 @@
 #include "Kyoto/Graphics/CCubeModel.hpp"
 #include "Kyoto/Basics/CBasics.hpp"
+#include <stdexcept>
+#include <string>
 
 #include "Kyoto/Graphics/CCubeSurface.hpp"
 #include "Kyoto/Graphics/CGX.hpp"
@@ -130,6 +132,10 @@ CCubeMaterial CCubeModel::GetMaterialByIndex(const int idx) const {
                               (x1c_textures->size() + 1) * 4;
   materialCount = *reinterpret_cast< const uint* >(materialData++);
   materialCount = CBasics::SwapBytes(materialCount);
+  if (idx < 0 || static_cast<uint>(idx) >= materialCount) {
+    throw std::runtime_error("Surface material index " + std::to_string(idx) +
+                             " exceeds material count " + std::to_string(materialCount));
+  }
   materialData++;
   materialData++;
   materialData++;

@@ -201,6 +201,8 @@ public:
     bool x1108_28_occlusionPinged : 1;
     bool x1108_29_pvsHasActors : 1;
     bool x1108_30_ : 1;
+    // Geometry payloads retain native surface headers across ARAM round trips.
+    bool x1108_31_surfaceHeadersNative : 1;
     rstl::vector< rstl::pair< int, int > > x110c_layerOffsets;
     float x111c_thermalCurrent;
     float x1120_thermalSpeed;

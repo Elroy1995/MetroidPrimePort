@@ -99,9 +99,11 @@ CGameArea::CPostConstructed::CPostConstructed()
 , x1108_24_(false)
 , x1108_25_modelsConstructed(false)
 , x1108_26_(false)
+, x1108_27_(false)
 , x1108_28_occlusionPinged(false)
 , x1108_29_pvsHasActors(false)
 , x1108_30_(false)
+, x1108_31_surfaceHeadersNative(false)
 , x111c_thermalCurrent(0.f)
 , x1120_thermalSpeed(0.f)
 , x1124_thermalTarget(0.f)
@@ -266,7 +268,9 @@ void CGameArea::FillInStaticGeometry() {
     if (surfaceCount != 0) {
       surfaces.reserve(surfaceCount);
       for (uint surface = 0; surface < surfaceCount; ++surface) {
-        CCubeSurface::ConvertSurfaceHeader(section->first.get());
+        if (!x12c_postConstructed->x1108_31_surfaceHeadersNative) {
+          CCubeSurface::ConvertSurfaceHeader(section->first.get());
+        }
         surfaces.push_back(section->first.get());
         ++section;
       }
@@ -278,6 +282,9 @@ void CGameArea::FillInStaticGeometry() {
     }
   }
   x12c_postConstructed->x1108_25_modelsConstructed = true;
+  // CARAMToken copies these mutated bytes back to ARAM on eviction. Rebuilding
+  // the pointer-bearing model instances must not byte-swap the payload again.
+  x12c_postConstructed->x1108_31_surfaceHeadersNative = true;
 }
 
 static inline CVector3f SwapVectorBytes(CVector3f vec) {
