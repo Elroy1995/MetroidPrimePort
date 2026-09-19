@@ -295,8 +295,11 @@ fixed 60 Hz clock.
 Unlimited presentation interpolates the active world camera between the two
 most recent simulation transforms. Camera switches, translations over four
 meters in one tick, and rotations over 45 degrees reset interpolation so cuts
-and teleports are never blended. Actor poses and first-person weapon transforms
-still update at the fixed simulation rate.
+and teleports are never blended. Actor poses still update at the fixed
+simulation rate. The first-person weapon needs no interpolation because it is
+drawn camera-relative (`offsetWorldXf.GetInverse() * CGraphics::GetViewMatrix()`),
+so it stays anchored to the camera frame; only its own 60 Hz animation remains
+stepped.
 
 `assets/initial_pipeline_cache.db` contains machine-independent Aurora pipeline
 descriptions collected from the title, menus, and intro gameplay. CMake copies
