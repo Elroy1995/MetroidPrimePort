@@ -136,6 +136,7 @@ bool COsContext::mProgressiveMode;
 u32 sARAMMemArray[2];
 float sInfiniteLoopTime;
 static bool sFrameLimitEnabled = true;
+static uint sTicksAdvanced = 0;
 
 #define GRAPHICS_FIFO_SIZE 0x60000
 static uchar sGraphicsFifo[GRAPHICS_FIFO_SIZE];
@@ -396,16 +397,18 @@ bool CGameArchitectureSupport::UpdateTicks() {
   }
 
   static const float tickPeriod = 1.f / 60.f;
-  bool first = true;
+  sTicksAdvanced = 0;
+  bool forceFirstTick = sFrameLimitEnabled;
   x4_archQueue.Push(MakeMsg::CreateFrameBegin(kAMT_Game, x78_gameFrameCount));
-  while (first || x7c_tickRemainder >= 1.f / 60.f) {
-    first = false;
+  while (forceFirstTick || x7c_tickRemainder >= tickPeriod) {
+    forceFirstTick = false;
     if (!x30_inputGenerator.Update(1.f / 60.f, x4_archQueue)) {
       terminate = true;
     }
     x4_archQueue.Push(MakeMsg::CreateTimerTick(kAMT_Game, tickPeriod));
-    x7c_tickRemainder -= 1.f / 60.f;
+    x7c_tickRemainder -= tickPeriod;
     x58_ioWinMgr.PumpMessages(x4_archQueue);
+    ++sTicksAdvanced;
   }
 
   if (close_enough((x80_previousTickRemainder2 - x84_previousTickRemainder) +
@@ -809,8 +812,10 @@ int CMain::RsMain(int argc, const char* const* argv) {
       }
 
       archSupport->Update();
-      CSfxManager::Update(dt);
-      UpdateStreamedAudio();
+      for (uint i = 0; i < sTicksAdvanced; ++i) {
+        CSfxManager::Update(dt);
+        UpdateStreamedAudio();
+      }
 
       if (CheckTerminate())
         break;

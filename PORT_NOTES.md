@@ -280,7 +280,9 @@ intervals around the game's own async-idle work; an absolute 60 Hz deadline is
 used instead.
 
 Debug shortcuts: `F10` toggles the 60 FPS deadline/unlimited mode; `F12` saves
-the resolved framebuffer under `screenshots/`.
+the resolved framebuffer under `screenshots/`. Unlimited mode changes only the
+presentation rate; simulation, input, SFX, and streamed audio remain on Prime's
+fixed 60 Hz clock.
 
 ## Licensing
 
