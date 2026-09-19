@@ -9,6 +9,8 @@
 #include <aurora/dvd.h>
 #include <aurora/event.h>
 #include <aurora/main.h>
+#include <dolphin/gx.h>
+#include <aurora/texture.hpp>
 #include <dolphin/vi.h>
 
 #include "port_debug.h"
@@ -54,6 +56,16 @@ int main(int argc, char** argv) {
 
     aurora_initialize(argc, argv, &config);
     VISetFrameBufferScale(1.f);
+
+    // Optional HD texture replacements, in Aurora's naming convention
+    // (tex1_<w>x<h>_<texhash>[_<tluthash>]_<format>.dds/.png). Loaded once and
+    // kept alive for the process. Dolphin pack names are not supported yet.
+    static aurora::texture::ReplacementGroup sTextureReplacements;
+    if (const char* textures = std::getenv("MP_TEXTURES")) {
+        sTextureReplacements = aurora::texture::load_replacement_directory(textures);
+        std::fprintf(stderr, "metroid_prime_port: loaded %zu texture replacements from %s\n",
+                     sTextureReplacements.registrations.size(), textures);
+    }
 
     const char* discPath = ResolveDiscPath(argc, argv);
     if (!aurora_dvd_open(discPath)) {
