@@ -203,6 +203,13 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   onto the native `SDIR_DATA` array (whose entries are larger than the disc's
   32-bit form). Without this, in-level voices decoded with garbage coefficients and
   produced noise.
+- In-game streamed music now plays. The PC MusyX ARAM layer was entirely stubbed
+  (`aramAllocateStreamBuffer` returned 0, `aramGetStreamBufferAddress` returned
+  NULL, `aramUploadData` did nothing), so streamed voices got a null sample address
+  and the software mixer skipped them; the stream never advanced and
+  `UpdateStream` was never called. Each ARAM stream buffer is now backed by host
+  memory and `hwFlushStream` keeps the full 64-bit host pointer instead of
+  truncating it to `u32` (which faulted on the first upload).
 - Streamed audio (front-end music) now decodes correctly: `DecodeMonoAndMix` wrote
   the decoded samples *on top of* the buffer still being played, feeding the
   output back into itself until it saturated into full-scale noise. It writes the
