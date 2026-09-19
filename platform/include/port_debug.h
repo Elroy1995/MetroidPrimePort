@@ -31,6 +31,15 @@ enum EAspectMode {
 EAspectMode AspectMode();
 void SetAspectMode(EAspectMode mode);
 
+// Mouse aim: relative mouse drives the first-person free-look directly.
+bool MouseAim();
+void SetMouseAim(bool enabled);
+float MouseSensitivity();
+void SetMouseSensitivity(float radiansPerPixel);
+void AddMouseDelta(float dx, float dy);
+// Returns true and writes the accumulated delta since the last call.
+bool ConsumeMouseDelta(float& dx, float& dy);
+
 // Audio paths
 bool AiAudioEnabled();
 void SetAiAudioEnabled(bool enabled);
