@@ -4,7 +4,6 @@
 // and driven by platform/main.cpp.
 #include <aurora/aurora.h>
 #include <aurora/event.h>
-#include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_timer.h>
 
 #include "port_debug.h"
@@ -811,23 +810,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
             sLastWindowWidth = static_cast< int >(event->windowSize.width);
             sLastWindowHeight = static_cast< int >(event->windowSize.height);
             ApplyAspectMode();
-          } else if (event->type == AURORA_SDL_EVENT &&
-                     event->sdl.type == SDL_EVENT_MOUSE_MOTION) {
-            PortDebug::AddMouseDelta(event->sdl.motion.xrel, event->sdl.motion.yrel);
           }
           ++event;
-        }
-      }
-      // Port: capture the pointer for mouse aim, but release it while the debug
-      // overlay is open so its widgets stay usable.
-      {
-        static bool sRelativeMouse = false;
-        const bool wantRelative = PortDebug::MouseAim() && !PortDebug::Visible();
-        if (wantRelative != sRelativeMouse) {
-          sRelativeMouse = wantRelative;
-          if (SDL_Window* window = SDL_GetKeyboardFocus()) {
-            SDL_SetWindowRelativeMouseMode(window, wantRelative);
-          }
         }
       }
       // Port: apply the selected aspect ratio; no-op unless it changed (e.g. the

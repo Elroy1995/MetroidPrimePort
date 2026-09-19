@@ -1,7 +1,5 @@
 #include "MetroidPrime/Player/CPlayer.hpp"
 
-#include "port_debug.h"
-
 #include "Collision/CInternalCollisionStructure.hpp"
 #include "Kyoto/CDependencyGroup.hpp"
 #include "Kyoto/SObjectTag.hpp"
@@ -1303,17 +1301,6 @@ void CPlayer::UpdateFreeLookState(const CFinalInput& input, float dt, CStateMana
     return;
   }
 
-  // Port: mouse aim keeps free look active without holding the look buttons.
-  if (PortDebug::MouseAim()) {
-    x3dc_inFreeLook = true;
-    x3dd_lookButtonHeld = true;
-    x3de_lookAnalogHeld = true;
-    x3e8_horizFreeLookAngleVel = 0.f;
-    x3f0_vertFreeLookAngleVel = 0.f;
-    UpdateCrosshairsState(input);
-    return;
-  }
-
   if (gpTweakPlayer->mHoldButtonsForFreeLook) {
     if ((gpTweakPlayer->mTwoButtonsForFreeLook &&
          (ControlMapper::GetDigitalInput(ControlMapper::kC_LookHold1, input) &&
@@ -2045,23 +2032,6 @@ void CPlayer::DetachActorFromPlayer() {
 
 void CPlayer::UpdateFreeLook(float dt) {
   if (GetFrozenState()) {
-    return;
-  }
-
-  // Port: mouse aim drives the free-look angles 1:1 instead of the smoothed
-  // stick path. The camera already consumes these when isInFreeLook is set
-  // (see UpdateFreeLookState).
-  if (PortDebug::MouseAim()) {
-    float dx = 0.f;
-    float dy = 0.f;
-    if (PortDebug::ConsumeMouseDelta(dx, dy)) {
-      const float sens = PortDebug::MouseSensitivity();
-      x3e4_freeLookYawAngle -= dx * sens;
-      x3ec_freeLookPitchAngle += dy * sens;
-      const float maxPitch = gpTweakPlayer->GetVerticalFreeLookAngleVel();
-      x3ec_freeLookPitchAngle =
-          CMath::Clamp(-maxPitch, x3ec_freeLookPitchAngle, maxPitch);
-    }
     return;
   }
 
