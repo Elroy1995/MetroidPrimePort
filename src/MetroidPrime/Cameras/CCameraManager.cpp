@@ -1,5 +1,6 @@
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
 
+#include "Kyoto/Math/CQuaternion.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
 #include "MetroidPrime/CExplosion.hpp"
 #include "MetroidPrime/CFluidPlaneCPU.hpp"
@@ -37,6 +38,23 @@ float CCameraManager::sFarPlane = 750.f;
 float CCameraManager::sAspectRatio = 1.42f;
 float CCameraManager::sMinShakeVolume = 100.f;
 float CCameraManager::sMaxShakeVolume = 127.f;
+
+namespace {
+const CCameraManager* sCameraSnapshotOwner = nullptr;
+TUniqueId sCameraSnapshotId = kInvalidUniqueId;
+CTransform4f sPreviousCameraTransform = CTransform4f::Identity();
+CTransform4f sCurrentCameraTransform = CTransform4f::Identity();
+float sPresentationInterpolation = -1.f;
+
+CTransform4f InterpolateCameraTransform(const CTransform4f& previous,
+                                        const CTransform4f& current, float t) {
+  const CVector3f translation = previous.GetTranslation() * (1.f - t) +
+                                current.GetTranslation() * t;
+  const CQuaternion rotation = CQuaternion::SlerpLocal(CQuaternion::FromMatrix(previous),
+                                                       CQuaternion::FromMatrix(current), t);
+  return rotation.BuildTransform4f(translation);
+}
+} // namespace
 
 CCameraManager::CCameraManager(TUniqueId curCamera)
 : x0_curCameraId(curCamera)
@@ -283,11 +301,31 @@ void CCameraManager::SetWaterFogScale(float fogDensityTarget, float fogDensitySp
 }
 
 void CCameraManager::Update(float dt, CStateManager& mgr) {
+  const TUniqueId previousId = GetCurrentCameraId();
+  const CTransform4f previousTransform =
+      GetCurrentCamera(mgr).GetTransform() * CTransform4f::Translate(x30_shakeOffset);
   UpdateCameraHints(dt, mgr);
   UpdateCameras(dt, mgr);
   UpdateAudioListener(mgr);
   UpdateScreenShake(dt, mgr);
   UpdateFilters(dt, mgr);
+
+  const TUniqueId currentId = GetCurrentCameraId();
+  const CTransform4f currentTransform =
+      GetCurrentCamera(mgr).GetTransform() * CTransform4f::Translate(x30_shakeOffset);
+  const CQuaternion previousRotation = CQuaternion::FromMatrix(previousTransform);
+  const CQuaternion currentRotation = CQuaternion::FromMatrix(currentTransform);
+  const bool discontinuity =
+      (currentTransform.GetTranslation() - previousTransform.GetTranslation()).MagSquared() > 16.f ||
+      fabsf(CQuaternion::Dot(previousRotation, currentRotation)) < 0.9238795f;
+  if (sCameraSnapshotOwner != this || previousId != currentId || discontinuity) {
+    sPreviousCameraTransform = currentTransform;
+  } else {
+    sPreviousCameraTransform = previousTransform;
+  }
+  sCurrentCameraTransform = currentTransform;
+  sCameraSnapshotOwner = this;
+  sCameraSnapshotId = currentId;
 }
 
 void CCameraManager::SetInsideFluid(bool isInside, TUniqueId fluidId) {
@@ -426,8 +464,15 @@ void CCameraManager::RemoveCameraShaker(int id) {
 }
 
 CTransform4f CCameraManager::GetCurrentCameraTransform(const CStateManager& mgr) const {
+  if (sPresentationInterpolation >= 0.f && sCameraSnapshotOwner == this &&
+      sCameraSnapshotId == GetCurrentCameraId()) {
+    return InterpolateCameraTransform(sPreviousCameraTransform, sCurrentCameraTransform,
+                                      sPresentationInterpolation);
+  }
   return GetCurrentCamera(mgr).GetTransform() * CTransform4f::Translate(x30_shakeOffset);
 }
+
+void CCameraManager::SetPresentationInterpolation(float t) { sPresentationInterpolation = t; }
 
 CVector3f CCameraManager::GetGlobalCameraTranslation(const CStateManager& mgr) const {
   return GetCurrentCamera(mgr).GetTransform().Rotate(x30_shakeOffset);

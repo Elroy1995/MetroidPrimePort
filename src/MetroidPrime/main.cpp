@@ -53,6 +53,7 @@ extern "C" void AIPortPoll(void);
 #include "MetroidPrime/CAnimData.hpp"
 #include "MetroidPrime/CAudioStateWin.hpp"
 #include "MetroidPrime/CConsoleOutputWindow.hpp"
+#include "MetroidPrime/Cameras/CCameraManager.hpp"
 #include "MetroidPrime/CDecalManager.hpp"
 #include "MetroidPrime/CEnvFxManager.hpp"
 #include "MetroidPrime/CErrorOutputWindow.hpp"
@@ -786,7 +787,14 @@ int CMain::RsMain(int argc, const char* const* argv) {
       if (!x160_26_screenFading) {
         // Port: Aurora frames are bracketed inside CGraphics::Begin/EndScene.
         gpRender->BeginScene();
+        float interpolation = archSupport->GetTickInterpolation();
+        if (interpolation < 0.f)
+          interpolation = 0.f;
+        else if (interpolation > 1.f)
+          interpolation = 1.f;
+        CCameraManager::SetPresentationInterpolation(sFrameLimitEnabled ? -1.f : interpolation);
         archSupport->GetIOWinManager().Draw();
+        CCameraManager::SetPresentationInterpolation(-1.f);
         DrawDebugMetrics(t1, archSupport->GetStopwatch2());
 
         double t2 = archSupport->GetStopwatch2().GetElapsedTime();

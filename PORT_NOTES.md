@@ -284,6 +284,12 @@ the resolved framebuffer under `screenshots/`. Unlimited mode changes only the
 presentation rate; simulation, input, SFX, and streamed audio remain on Prime's
 fixed 60 Hz clock.
 
+Unlimited presentation interpolates the active world camera between the two
+most recent simulation transforms. Camera switches, translations over four
+meters in one tick, and rotations over 45 degrees reset interpolation so cuts
+and teleports are never blended. Actor poses and first-person weapon transforms
+still update at the fixed simulation rate.
+
 ## Licensing
 
 - Aurora: MIT. Port-specific code: ours.
