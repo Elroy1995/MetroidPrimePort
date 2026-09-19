@@ -326,7 +326,8 @@ void CCameraManager::Update(float dt, CStateManager& mgr) {
   const CQuaternion currentRotation = CQuaternion::FromMatrix(currentTransform);
   const bool discontinuity =
       (currentTransform.GetTranslation() - previousTransform.GetTranslation()).MagSquared() > 16.f ||
-      fabsf(CQuaternion::Dot(previousRotation, currentRotation)) < 0.9238795f;
+      (!mgr.GetPlayer()->MouseLookIsFree(mgr) &&
+       fabsf(CQuaternion::Dot(previousRotation, currentRotation)) < 0.9238795f);
   if (sCameraSnapshotOwner != this || previousId != currentId || discontinuity) {
     sPreviousCameraTransform = currentTransform;
   } else {
@@ -475,9 +476,22 @@ void CCameraManager::RemoveCameraShaker(int id) {
 CTransform4f CCameraManager::GetCurrentCameraTransform(const CStateManager& mgr) const {
   if (sPresentationInterpolation >= 0.f && sCameraSnapshotOwner == this &&
       sCameraSnapshotId == GetCurrentCameraId()) {
-    return InterpolateCameraTransform(sPreviousCameraTransform, sCurrentCameraTransform,
-                                      sPresentationInterpolation);
+    CTransform4f presentation = InterpolateCameraTransform(sPreviousCameraTransform, sCurrentCameraTransform,
+                                                           sPresentationInterpolation);
+    if (mgr.GetPlayer()->MouseLookIsFree(mgr)) {
+      // Mouse aim and firing use this tick's orientation. Smoothing it toward
+      // an older angle would put the visible reticle behind the shot direction.
+      // Translation can still be interpolated for smooth first-person movement.
+      CTransform4f latest = sCurrentCameraTransform;
+      latest.SetTranslation(presentation.GetTranslation());
+      return latest;
+    }
+    return presentation;
   }
+  return GetSimulationCameraTransform(mgr);
+}
+
+CTransform4f CCameraManager::GetSimulationCameraTransform(const CStateManager& mgr) const {
   return GetCurrentCamera(mgr).GetTransform() * CTransform4f::Translate(x30_shakeOffset);
 }
 

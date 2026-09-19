@@ -1,5 +1,35 @@
 # Metroid Prime port — working notes
 
+## Mouse aim / arm-cannon integration (2026-09-19)
+
+- Mouse mode now uses immediate pitch/yaw rather than the retail 60°/s camera
+  easing. Pitch is limited to ±1.52 radians, yaw is normalized, and independent
+  X/Y inversion controls are available (normal, non-inverted Y by default).
+- Playable first-person state owns mouse aim. Lock-on tracks the effective camera
+  and discards hidden deltas; cinematics, scripted input locks, morph ball and
+  menus relinquish ownership and rebase on return. Jump/fall camera pitching no
+  longer replaces mouse pitch. The GC crosshair is independent of holding R.
+- LMB drives fire/charge/release, RMB drives lock-on, and MMB drives missiles via
+  the ordinary PAD input path. Existing mappings remain available. UI/focus
+  changes cancel charging and require a neutral mouse-button state on recapture.
+- Uncapped free mouse aim uses current rotation with interpolated translation.
+  Held weapon geometry and muzzle effects use a simulation-time view, restoring
+  the world view afterwards; the old assertion below about automatic viewmodel
+  anchoring has been corrected.
+- The real-disc mouse smoke scenario verifies firing, charged shots, missiles,
+  lock-on release, jump/morph handoffs, crosshair state, and uncapped cannon/view
+  alignment. It also exposed and fixed ImGui cloned draw-list allocator mismatch
+  and a deferred MusyX stream stop that could read a freed host stream buffer.
+
+See `docs/NATIVE_PORT.md` for controls, opt-outs, and the opt-in smoke driver.
+
+Validation: GCC and Clang/ASan builds plus all six native regression executables
+pass. The real-disc mouse run produced normal/charged/missile shots, observed live
+projectiles, held lock-on for 60 ticks, checked 947 weapon views, and completed
+jump, cinematic interruption, UI cancellation and morph/unmorph handoffs. A separate
+1,800-frame mouse-disabled lifecycle run passed. Runtime ASan leak detection was
+disabled; allocation mismatch and use-after-free checks remained enabled.
+
 ## Current native-port hardening (2026-09-19)
 
 Current build/run instructions are in [docs/NATIVE_PORT.md](docs/NATIVE_PORT.md).
@@ -393,22 +423,14 @@ together. The port enables `AURORA_VIEWPORT_FIT`, so the EFB matches the selecte
 aspect and the present letterboxes rather than stretching when the window shape
 differs. The HUD is anchored to the view edges and scales with it.
 
-Mouse aim (`MP_MOUSE_AIM=1`, or the debug overlay's Input tab) captures the
-pointer and drives the first-person camera directly, similar to how PrimeHack
-takes over the game's aim: `CPlayer::Update` integrates the relative motion into
-a world yaw/pitch (pitch clamped to the tweak's vertical free-look limit) and
-keeps the body facing that yaw so movement stays view-relative, while
-`CFirstPersonCamera::UpdateTransform` builds the view from those angles. It does
-not use the game's free-look angle, which is a limited head offset that wraps
-past 90 degrees. Orbit, jump/fall cameras, and lock-on still override aim; the
-pointer is released while the debug overlay is open. `MP_MOUSE_SENS` sets radians
-per pixel (default 0.0035).
+Mouse aim (`MP_MOUSE_AIM=1`, or the debug overlay's Input tab) integrates relative
+motion into world yaw/pitch in playable first person. Its state handoff, camera
+response, buttons and crosshair are described in the current mouse section above.
+`MP_MOUSE_SENS` sets radians per pixel (default 0.0035).
 
-Wayland can report `SDL_SetWindowRelativeMouseMode` as active while the
-compositor still leaves the pointer visible, so the port also hides the cursor
-(`SDL_HideCursor`) and recenters the pointer with `SDL_WarpMouseInWindow` when it
-nears a window edge; the event loop rejects deltas above ~300 px so the warp
-itself does not spike the aim.
+The former Wayland cursor-warp workaround and large-delta rejection were removed
+during native hardening. SDL relative capture now owns cursor locking; focus/UI
+changes clear pending motion instead of guessing which deltas came from a warp.
 
 `F1` toggles an in-game debug overlay (Aurora's ImGui) with sections for
 Performance (frame limiter, FPS), Cutscenes (skip and speed), Render (vsync and
@@ -418,14 +440,13 @@ and Session (restart to menu, screenshot). The same settings are read from
 `MP_SHOW_DEBUG_UI` at startup, and the overlay writes them live. `MP_DISABLE_AI_AUDIO`
 still exists for isolating streamed audio at startup.
 
-Unlimited presentation interpolates the active world camera between the two
-most recent simulation transforms. Camera switches, translations over four
-meters in one tick, and rotations over 45 degrees reset interpolation so cuts
-and teleports are never blended. Actor poses still update at the fixed
-simulation rate. The first-person weapon needs no interpolation because it is
-drawn camera-relative (`offsetWorldXf.GetInverse() * CGraphics::GetViewMatrix()`),
-so it stays anchored to the camera frame; only its own 60 Hz animation remains
-stepped.
+Unlimited presentation interpolates the active world camera between simulation
+transforms. Free mouse look keeps current rotation so the reticle and shot agree;
+translation remains interpolated. Camera switches, large translations and
+non-mouse camera cuts reset interpolation. A world-space gun transform does not
+automatically stay camera-relative when only the camera is interpolated: the
+held-weapon render pass now uses its matching simulation view explicitly. Actor
+and weapon animations still update at the fixed simulation rate.
 
 `assets/initial_pipeline_cache.db` contains machine-independent Aurora pipeline
 descriptions collected from the title, menus, and intro gameplay. CMake copies

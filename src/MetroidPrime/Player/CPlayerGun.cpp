@@ -1,4 +1,8 @@
 #include "MetroidPrime/Player/CPlayerGun.hpp"
+#include "port_debug.h"
+#ifdef MP_ENABLE_SMOKE_DRIVER
+#include "port_smoke.h"
+#endif
 
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
@@ -521,7 +525,19 @@ inline void CPlayerGun::DrawArm(const CStateManager& mgr, const CVector3f& pos,
 
 void CPlayerGun::Render(const CStateManager& mgr, const CVector3f& pos,
                         const CModelFlags& flags) const {
+  const CTransform4f worldView = CGraphics::GetViewMatrix();
+  if (mgr.GetCameraManager()->IsInFPCamera() &&
+      mgr.GetPlayer()->GetCameraState() == CPlayer::kCS_FirstPerson &&
+      mgr.GetPlayer()->GetMorphballTransitionState() == CPlayer::kMS_Unmorphed) {
+    // The held weapon and its muzzle effects are cached at simulation time.
+    // Render their relative pose against that same camera, not an interpolated
+    // world camera from a different tick. Projectile simulation is unchanged.
+    CGraphics::SetViewPointMatrix(mgr.GetCameraManager()->GetSimulationCameraTransform(mgr));
+  }
   const CGraphics::CProjectionState projState = CGraphics::GetProjectionState();
+#ifdef MP_ENABLE_SMOKE_DRIVER
+  PortSmokeMouseGunView(mgr, *this, worldView);
+#endif
   const CPlayerState::EPlayerVisor visor = mgr.GetPlayerState()->GetCurrentVisor();
   const bool thermalVisor = visor == CPlayerState::kPV_Thermal;
   const CModelFlags& beamFlags =
@@ -625,6 +641,7 @@ void CPlayerGun::Render(const CStateManager& mgr, const CVector3f& pos,
   }
   CGraphics::SetViewPointMatrix(oldViewMtx2);
 
+  CGraphics::SetViewPointMatrix(worldView);
   RenderEnergyDrainEffects(mgr);
 
   CGraphics::SetDepthRange(kDepthWorld, kDepthFar);
@@ -949,7 +966,22 @@ void CPlayerGun::Update(float grappleSwingT, float cameraBobT, float dt, CStateM
   }
 }
 
+void CPlayerGun::CancelMouseInput(CStateManager& mgr) {
+  if (x2ec_lastFireButtonStates != 0 || x2f4_fireButtonStates != 0 ||
+      x32c_chargePhase != kCP_NotCharging) {
+    CancelFiring(mgr);
+  }
+  x2ec_lastFireButtonStates = x2f4_fireButtonStates = x2f0_pressedFireButtonStates = 0;
+}
+
 void CPlayerGun::ProcessInput(const CFinalInput& input, CStateManager& mgr) {
+  if (PortDebug::MouseAim() && PortDebug::MouseGameplayActive() &&
+      (!PortDebug::MouseCaptured() || PortDebug::Visible() || !mgr.GetPlayer()->MouseControlsAllowed(mgr))) {
+    // Losing capture must cancel a held charge, not interpret the cleared PAD
+    // state as a deliberate charge-release shot into the UI/background.
+    CancelMouseInput(mgr);
+    return;
+  }
   const CPlayer* player = mgr.GetPlayer();
   const CPlayerState* cPlayerState = mgr.GetPlayerState();
   CPlayerState* playerState = const_cast< CPlayerState* >(cPlayerState);
@@ -1097,6 +1129,9 @@ void CPlayerGun::UpdateNormalShotCycle(float dt, CStateManager& mgr) {
   xf.AddTranslation(mgr.GetCameraManager()->GetGlobalCameraTranslation(mgr));
   x38c_muzzleEffectVisTimer = 0.0625f;
 
+#ifdef MP_ENABLE_SMOKE_DRIVER
+  PortSmokeMouseShot(x330_chargeState == kCS_Charged, false);
+#endif
   x72c_currentBeam->Fire(
       x834_27_underwater, dt, CPlayerState::EChargeStage(x330_chargeState), xf, mgr,
       static_cast< const TUniqueId& >(targetHoming ? GetTargetId(mgr) : kInvalidUniqueId),
@@ -1154,6 +1189,9 @@ void CPlayerGun::FireSecondary(float dt, CStateManager& mgr) {
     }
 
     xf.AddTranslation(mgr.GetCameraManager()->GetGlobalCameraTranslation(mgr));
+#ifdef MP_ENABLE_SMOKE_DRIVER
+    PortSmokeMouseShot(x330_chargeState == kCS_Charged, true);
+#endif
     x744_auxWeapon->Fire(dt, x834_27_underwater, CPlayerState::EBeamId(x310_currentBeam),
                          CPlayerState::EChargeStage(x330_chargeState), xf, mgr,
                          x72c_currentBeam->GetType(), targetId);

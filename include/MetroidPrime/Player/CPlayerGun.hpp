@@ -149,6 +149,7 @@ public:
   void TakeDamage(bool, bool, CStateManager&);
   void StopChargeSound(CStateManager&);
   void CancelFiring(CStateManager&);
+  void CancelMouseInput(CStateManager& mgr);
   void AcceptScriptMsg(EScriptObjectMessage, TUniqueId, CStateManager&);
   void StopContinuousBeam(CStateManager&, bool);
   void RenderEnergyDrainEffects(const CStateManager&) const;

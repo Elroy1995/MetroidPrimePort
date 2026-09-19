@@ -31,11 +31,23 @@ enum EAspectMode {
 EAspectMode AspectMode();
 void SetAspectMode(EAspectMode mode);
 
-// Mouse aim: relative mouse drives the first-person camera through the game's
-// own turn/pitch inputs. Motion is accepted only while SDL owns relative capture.
+// Mouse FPS mode owns aim only in playable first person; target locks retain
+// their native camera and synchronize the mouse angles for a clean handoff.
+// Motion/buttons are accepted only while SDL owns relative capture.
 bool MouseAim();
 void SetMouseAim(bool enabled);
 void SetMouseCaptured(bool captured);
+bool MouseCaptured();
+bool MouseGameplayActive();
+void SetMouseGameplayActive(bool active);
+bool MouseInvertX();
+bool MouseInvertY();
+bool MouseButtons();
+bool MouseCrosshair();
+unsigned MouseWeaponButtons(unsigned held);
+// Called during simulation, using the effective unbobbed camera direction.
+bool UpdateMouseAim(bool active, bool locked, float x, float y, float z);
+void SynchronizeMouseAim(float x, float y, float z);
 void ResetMouseAim();
 float MouseSensitivity();
 void SetMouseSensitivity(float radiansPerPixel);
@@ -47,11 +59,8 @@ void GetFrameMouseDelta(float& dx, float& dy);
 // Mouse-look camera angles (radians): world yaw and pitch. The game owns the
 // update and applies them to the first-person camera.
 float AimYaw();
-void SetAimYaw(float radians);
 float AimPitch();
-void SetAimPitch(float radians);
 bool AimInitialized();
-void SetAimInitialized(bool initialized);
 
 // Audio paths
 bool AiAudioEnabled();

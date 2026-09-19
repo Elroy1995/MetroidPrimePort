@@ -73,8 +73,23 @@ the working directory. `MP_TEXTURES` points to an optional replacement pack.
 - F1: debug overlay. F10: 60 FPS cap/unlimited presentation. F12: screenshot.
 - `MP_ASPECT=4:3|16:9|window`; the legacy `MP_WIDESCREEN` selects 16:9.
 - `MP_MOUSE_AIM=1`, `MP_MOUSE_SENS=0.0035`: relative mouse aim. Motion is ignored
-  while the overlay is visible or relative capture/focus is absent. There is no
-  manual cursor-warp fallback; SDL and the compositor own pointer locking.
+  while the overlay is visible or relative capture/focus is absent. Mouse mode
+  uses immediate yaw/pitch with an approximately ±87° pitch range. Up moves aim
+  up by default; `MP_MOUSE_INVERT_X=1` and `MP_MOUSE_INVERT_Y=1` invert either axis.
+  SDL and the compositor own pointer locking; capture is released outside
+  playable first person (menus, cinematics, morph ball, and scripted input locks).
+- In mouse mode, **left-click fires / holds a charge / releases a charged shot**,
+  **right-click holds lock-on**, and **middle-click fires missiles**. These feed
+  the normal PAD/gun input path, preserving charge timing and weapon cooldowns.
+  Existing keyboard/controller weapon bindings are also available; saved mapping
+  files are not rewritten. `MP_DISABLE_MOUSE_BUTTONS=1` opts out of these aliases.
+- Mouse mode requests the GC aiming crosshair without holding R or entering the
+  console's movement-restricting free-look mode. `MP_DISABLE_MOUSE_CROSSHAIR=1`
+  opts out. The Input tab exposes inversion, weapon-button and crosshair toggles.
+  Lock-on owns the camera while held; releasing it resumes at the actual locked
+  direction rather than at accumulated mouse angles. Jump/fall auto-pitch is
+  bypassed during free mouse aim. Capture/UI transitions cancel held charges and
+  require mouse-button release before another mouse shot can begin.
 - `MP_DISABLE_AI_AUDIO=1`: start streamed AI audio muted. It can subsequently be
   enabled from the overlay. MusyX mute is independent.
 - `MP_FAST_BOOT=1`, `MP_SKIP_CUTSCENES=1`, `MP_CUTSCENE_SPEED=8`,
@@ -88,6 +103,13 @@ simulation work per iteration. Audio runs on wall-clock/device consumption.
 Hidden windows continue pumping events and main-thread audio without recording
 rendered frames. Restart-to-menu rebuilds the game architecture instead of
 attempting a console reboot.
+
+In uncapped presentation, free mouse aim uses the current simulation orientation
+so the visible reticle does not lag the shot direction; camera translation still
+interpolates. The held cannon/arm and muzzle effects render against the matching
+simulation camera, then restore the world view before world-space effects. This
+keeps the viewmodel stable instead of mixing an interpolated view with a cached
+60 Hz gun transform. Weapon animation and projectile simulation remain 60 Hz.
 
 ## Ownership and threading rules
 
@@ -119,6 +141,8 @@ CTest's `port` label covers array/game-heap ownership, golden save bit fields,
 truncated-stream errors, pathfinder bitset bounds, AI enable/callback teardown,
 the MusyX pointer-sized DMA API, and DOL section mapping/bounds. It does not
 require a disc or GPU.
+`port_mouse_tests` checks direction/inversion, pitch limits, yaw normalization,
+lock and non-first-person handoffs, and held-button/capture edge behavior.
 The CARD regression creates its own `card-test-data` directory under the build
 tree, tests null callbacks and file operations, and closes/reopens the backing
 store before comparing the saved bytes. It never uses the normal game profile.
@@ -137,6 +161,15 @@ This opt-in driver hides/restores the window, mutes/unmutes both audio paths,
 toggles presentation pacing, restarts to the menu, and exits normally. Omit
 `MP_SMOKE_LIFECYCLE` for a bounded ordinary run. Production builds omit the
 driver unless enabled at configure time.
+
+`MP_SMOKE_MOUSE=1` enables an additional deterministic real-disc scenario in that
+build. Run it with `MP_FAST_BOOT=1 MP_SKIP_CUTSCENES=1 MP_SMOKE_FRAMES=1800` and an
+isolated `MP_USER_PATH`/`MP_CACHE_PATH`. It injects mouse input without grabbing
+the real pointer, verifies immediate camera aim, live power/missile projectiles,
+charged release, lock/release, jump and morph-ball handoffs, UI charge cancellation,
+crosshair state, and cannon/view orientation while uncapped. Scripted cinematics
+pause the test sequence; the frame limit is a minimum until the scenario finishes.
+Success is reported as `[mouse-smoke] passed` followed by a clean exit.
 
 For AddressSanitizer, use a separate Clang build with
 `-DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer"` and the same

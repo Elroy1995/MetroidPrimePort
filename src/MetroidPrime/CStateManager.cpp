@@ -1,5 +1,8 @@
 #define CSTATEMANAGER_OUT_OF_LINE_GETPLAYER
 #include "MetroidPrime/CStateManager.hpp"
+#ifdef MP_ENABLE_SMOKE_DRIVER
+#include "port_smoke.h"
+#endif
 #undef CSTATEMANAGER_OUT_OF_LINE_GETPLAYER
 
 #include "MetroidPrime/CActor.hpp"
@@ -1098,6 +1101,9 @@ void CStateManager::Update(float dt) {
   UpdateThermalVisor();
   nullsub_34(this);
   UpdateGameState();
+#ifdef MP_ENABLE_SMOKE_DRIVER
+  PortSmokeMouseBeforeUpdate(*this);
+#endif
 
   const float deathTime = x84c_player->GetDeathTime();
   const bool isDead = deathTime > 0.f;
@@ -1176,6 +1182,9 @@ void CStateManager::Update(float dt) {
   if (x904_gameState != kGS_Paused) {
     PostUpdatePlayer(dt);
   }
+#ifdef MP_ENABLE_SMOKE_DRIVER
+  PortSmokeMouseAfterUpdate(*this);
+#endif
 
   if (xf84_ == xf80_hudMessageFrameCount) {
     ShowPausedHUDMemo(xf88_, xf8c_);

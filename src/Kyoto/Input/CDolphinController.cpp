@@ -1,6 +1,10 @@
 #include "Kyoto/Input/CDolphinController.hpp"
 #include "port_debug.h"
 #include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_mouse.h>
+#ifdef MP_ENABLE_SMOKE_DRIVER
+#include "port_smoke.h"
+#endif
 
 #include <Kyoto/Alloc/CMemory.hpp>
 
@@ -72,13 +76,32 @@ void CDolphinController::Poll() {
 }
 
 void CDolphinController::ReadDevices() {
-  PADStatus status[4];
+  PADStatus status[4]{};
   PADRead(status);
   PADClamp(status);
+  unsigned held = SDL_GetMouseState(nullptr, nullptr) &
+                        (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK | SDL_BUTTON_MMASK);
+  bool inputFocused = SDL_GetKeyboardFocus() != nullptr;
+#ifdef MP_ENABLE_SMOKE_DRIVER
+  held = PortSmokeMouseButtons(held);
+  inputFocused = inputFocused || PortSmokeMouseEnabled();
+#endif
+  const unsigned mouse = PortDebug::MouseWeaponButtons(held);
+  if (PortDebug::MouseGameplayActive() && PortDebug::MouseCaptured() && PortDebug::MouseButtons()) {
+    // Add held states to the normal PAD path: its press/release edges drive
+    // charge shots and missile cooldowns. Saved bindings remain untouched.
+    status[0].err = PAD_ERR_NONE;
+    if (mouse & SDL_BUTTON_LMASK) status[0].button |= PAD_BUTTON_A;
+    if (mouse & SDL_BUTTON_MMASK) status[0].button |= PAD_BUTTON_Y;
+    if (mouse & SDL_BUTTON_RMASK) {
+      status[0].button |= PAD_TRIGGER_L;
+      status[0].triggerL = 150; // fully depressed, after PADClamp's dead zone
+    }
+  }
   for (int i = 0; i < 4; ++i) {
     // One disconnected port must not prevent the other ports updating. Clear
     // stale held buttons on disconnect and keep UI interaction out of gameplay.
-    if (status[i].err != PAD_ERR_NONE || PortDebug::Visible() || SDL_GetKeyboardFocus() == nullptr) {
+    if (status[i].err != PAD_ERR_NONE || PortDebug::Visible() || !inputFocused) {
       const auto error = status[i].err;
       status[i] = {};
       status[i].err = error;

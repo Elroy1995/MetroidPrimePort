@@ -177,6 +177,11 @@ CIOWin::EMessageReturn CMFGame::OnMessage(const CArchitectureMessage& message,
       break;
     }
     CStateManager& mgr = *mStateManager;
+    const bool mouseActive = mFlowState == kGFS_InGame && mgr.GetPlayer()->MouseControlsAllowed(mgr);
+    if (!mouseActive && PortDebug::MouseAim() && PortDebug::MouseGameplayActive()) {
+      mgr.Player()->PlayerGun()->CancelMouseInput(mgr);
+    }
+    PortDebug::SetMouseGameplayActive(mouseActive);
     mGuiManager->Update(mgr, dt, queue, IsCameraActiveFlow());
     if (!wasInitialized)
       gpGameState->WorldTransitionManager()->EndTransition();

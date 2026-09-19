@@ -94,10 +94,9 @@ void CFirstPersonCamera::UpdateTransform(CStateManager& mgr, float dt) {
   float cosPitch = cosf(x1c0_pitch);
   cosPitch = CMath::Limit(cosPitch, 1.f);
   CVector3f lookDir = playerXf.Rotate(CVector3f(0.f, cosPitch, sinPitch));
-  if (PortDebug::MouseAim() && PortDebug::AimInitialized()) {
-    // Port: mouse-look drives the camera directly (world yaw/pitch). The body
-    // is kept facing the same yaw by CPlayer::Update, and orbit/jump/fall
-    // cameras below still override this.
+  const bool mouseLook = player->MouseLookIsFree(mgr) && PortDebug::AimInitialized();
+  if (mouseLook) {
+    // Free mouse aim is immediate; target lock-on still owns its native camera.
     const float yaw = PortDebug::AimYaw();
     const float pitch = PortDebug::AimPitch();
     lookDir = CVector3f(sinf(-yaw) * cosf(pitch), cosf(-yaw) * cosf(pitch), sinf(pitch));
@@ -154,7 +153,7 @@ void CFirstPersonCamera::UpdateTransform(CStateManager& mgr, float dt) {
     break;
   case CPlayer::kOS_NoOrbit:
     if (player->GetMorphballTransitionState() == CPlayer::kMS_Unmorphed &&
-        !player->IsInFreeLook() && x1c4_pitchId == kInvalidUniqueId) {
+        !mouseLook && !player->IsInFreeLook() && x1c4_pitchId == kInvalidUniqueId) {
       if (player->GetJumpCameraTimer() > 0.f) {
         float t = (player->GetJumpCameraTimer() - gpTweakPlayer->GetJumpCameraPitchDownStart()) /
                   gpTweakPlayer->GetJumpCameraPitchDownFull();
@@ -184,7 +183,11 @@ void CFirstPersonCamera::UpdateTransform(CStateManager& mgr, float dt) {
   float angularStep = dt;
   CQuaternion gunRotation = CQuaternion::NoRotation();
   CTransform4f gunXf = x190_gunFollowXf;
-  if (!player->IsInFreeLook()) {
+  if (mouseLook) {
+    // Do not apply controller pitch easing to pixel deltas. Keep the gun-follow
+    // basis in the same tick as the camera and hence the projectile aim.
+    gunXf = CTransform4f::LookAt(CVector3f::Zero(), lookDir);
+  } else if (!player->IsInFreeLook()) {
     switch (player->GetOrbitState()) {
     default: {
       CVector3f gunFront = x190_gunFollowXf.GetForward();
@@ -350,6 +353,10 @@ void CFirstPersonCamera::UpdateTransform(CStateManager& mgr, float dt) {
   x190_gunFollowXf.SetTranslation(eyePos);
   SetTranslation(eyePos + player->GetTransform().Rotate(bobXf.GetTranslation()));
   x190_gunFollowXf.Orthonormalize();
+  if (player->MouseControlsAllowed(mgr) && !mouseLook) {
+    const CVector3f forward = x190_gunFollowXf.GetForward();
+    PortDebug::SynchronizeMouseAim(forward.GetX(), forward.GetY(), forward.GetZ());
+  }
 }
 
 void CFirstPersonCamera::PreThink(float, CStateManager&) {}
@@ -360,6 +367,10 @@ void CFirstPersonCamera::Reset(const CTransform4f& xf, CStateManager& mgr) {
   SetTransform(xf);
   SetTranslation(mgr.GetPlayer()->GetEyePosition());
   x190_gunFollowXf = GetTransform();
+  if (PortDebug::MouseAim()) {
+    const CVector3f forward = x190_gunFollowXf.GetForward();
+    PortDebug::SynchronizeMouseAim(forward.GetX(), forward.GetY(), forward.GetZ());
+  }
 }
 
 void CFirstPersonCamera::CancelCinematicOffset() {
@@ -390,7 +401,9 @@ void CFirstPersonCamera::Think(float dt, CStateManager& mgr) {
       x1c6_24_deferBallTransitionProcessing = false;
     }
     const CTransform4f backupXf = GetTransform();
-    UpdateElevation(mgr);
+    if (!player->MouseControlsAllowed(mgr)) {
+      UpdateElevation(mgr);
+    }
     UpdateTransform(mgr, dt);
     SetTransform(ValidateCameraTransform(GetTransform(), backupXf));
     if (x1d4_closeInTimer > 0.f) {

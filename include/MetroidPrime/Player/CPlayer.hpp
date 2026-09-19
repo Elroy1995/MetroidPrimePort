@@ -182,7 +182,7 @@ public:
           const CMaterialList& ml);
 
   // CEntity
-  // ~CPlayer() override;
+  ~CPlayer() override;
   DECLARE_TYPES_MATCH_OR_ACCEPT;
   void PreThink(float dt, CStateManager& mgr) override;
   void Think(float dt, CStateManager& mgr) override;
@@ -296,6 +296,9 @@ public:
   void UpdateGrappleArmTransform(const CVector3f& offset, CStateManager& mgr, float dt);
   void ForceGunOrientation(const CTransform4f& xf, CStateManager& mgr);
   void Update(float dt, CStateManager& mgr);
+  bool MouseControlsAllowed(const CStateManager& mgr) const;
+  bool MouseLookIsFree(const CStateManager& mgr) const;
+  void UpdateMouseAim(CStateManager& mgr);
   void UpdateMorphBallTransition(float dt, CStateManager& mgr);
   void UpdateAimTarget(CStateManager& mgr);
   void UpdateAimTargetTimer(float dt);

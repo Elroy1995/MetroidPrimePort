@@ -773,31 +773,47 @@ void CPlayer::ForceGunOrientation(const CTransform4f& xf, CStateManager& mgr) {
   UpdateArmAndGunTransforms(0.01f, mgr);
 }
 
-void CPlayer::Update(float dt, CStateManager& mgr) {
-  // Port: latch this frame's mouse delta, then update the mouse-look aim. The
-  // camera reads the aim angles directly (CFirstPersonCamera) and the body is
-  // rotated to match so movement stays view-relative.
-  if (PortDebug::MouseAim()) {
-    if (!PortDebug::AimInitialized()) {
-      const CVector3f forward = GetTransform().GetColumn(kDY);
-      PortDebug::SetAimYaw(atan2f(-forward.GetX(), forward.GetY()));
-      PortDebug::SetAimPitch(0.f);
-      PortDebug::SetAimInitialized(true);
-    }
-    float mdx = 0.f;
-    float mdy = 0.f;
-    PortDebug::GetFrameMouseDelta(mdx, mdy);
-    const float sensitivity = PortDebug::MouseSensitivity();
-    const float maxPitch = gpTweakPlayer->GetVerticalFreeLookAngleVel();
-    const float yaw = PortDebug::AimYaw() - mdx * sensitivity;
-    const float pitch = CMath::Clamp(-maxPitch, PortDebug::AimPitch() + mdy * sensitivity, maxPitch);
-    PortDebug::SetAimYaw(yaw);
-    PortDebug::SetAimPitch(pitch);
-    SetTransform(
-        CQuaternion::ZRotation(CRelAngle(yaw)).BuildTransform4f(GetTransform().GetTranslation()));
-  } else {
-    PortDebug::SetAimInitialized(false);
+CPlayer::~CPlayer() { PortDebug::ResetMouseAim(); }
+
+bool CPlayer::MouseControlsAllowed(const CStateManager& mgr) const {
+  const CCameraManager* cameras = mgr.GetCameraManager();
+  return PortDebug::MouseAim() && mgr.GetGameState() == CStateManager::kGS_Running &&
+         !GetDisableInput() && mgr.GetPlayerState()->IsAlive() &&
+         x2f8_morphBallState == kMS_Unmorphed && x2f4_cameraState == kCS_FirstPerson &&
+         cameras != nullptr && cameras->GetFirstPersonCamera() != nullptr && cameras->IsInFPCamera() &&
+         !cameras->IsInCinematicCamera() && !cameras->GetCurrentCamera(mgr).DisablesInput();
+}
+
+bool CPlayer::MouseLookIsFree(const CStateManager& mgr) const {
+  return MouseControlsAllowed(mgr) && (x304_orbitState == kOS_NoOrbit || x304_orbitState == kOS_Grapple);
+}
+
+void CPlayer::UpdateMouseAim(CStateManager& mgr) {
+  const bool active = MouseControlsAllowed(mgr);
+  if (!active && PortDebug::MouseAim() && PortDebug::MouseGameplayActive()) {
+    x490_gun->CancelMouseInput(mgr);
   }
+  CVector3f forward = GetTransform().GetForward();
+  if (active) {
+    forward = mgr.GetCameraManager()->GetFirstPersonCamera()->GetGunFollowTransform().GetForward();
+  }
+  if (PortDebug::UpdateMouseAim(active, !MouseLookIsFree(mgr),
+                               forward.GetX(), forward.GetY(), forward.GetZ())) {
+    SetTransform(CQuaternion::ZRotation(CRelAngle(PortDebug::AimYaw()))
+                     .BuildTransform4f(GetTransform().GetTranslation()));
+  }
+  if (active) {
+    // Keep native consumers of player aim coherent without pretending that R
+    // is held (which changes movement, gun animations, and controller input).
+    x3ec_freeLookPitchAngle = PortDebug::AimPitch();
+    x294_jumpCameraTimer = 0.f;
+    x29c_fallCameraTimer = 0.f;
+    x9c4_25_showCrosshairs = PortDebug::MouseCrosshair();
+  }
+}
+
+void CPlayer::Update(float dt, CStateManager& mgr) {
+  UpdateMouseAim(mgr);
   SetCoefficientOfRestitutionModifier(0.f);
   UpdateMorphBallTransition(dt, mgr);
 
@@ -1316,6 +1332,16 @@ void CPlayer::SetCameraState(EPlayerCameraState camState, CStateManager& mgr) {
 }
 
 void CPlayer::UpdateFreeLookState(const CFinalInput& input, float dt, CStateManager& mgr) {
+  if (MouseControlsAllowed(mgr)) {
+    x3dc_inFreeLook = false;
+    x3dd_lookButtonHeld = false;
+    x3de_lookAnalogHeld = false;
+    x3e4_freeLookYawAngle = 0.f;
+    x3e8_horizFreeLookAngleVel = 0.f;
+    x3f0_vertFreeLookAngleVel = 0.f;
+    x9c4_25_showCrosshairs = PortDebug::MouseCrosshair();
+    return;
+  }
   if (x304_orbitState == kOS_ForcedOrbitObject || IsMorphBallTransitioning() ||
       x2f8_morphBallState != kMS_Unmorphed ||
       (x3b8_grappleState != kGS_None && x3b8_grappleState != kGS_Firing)) {
@@ -1621,7 +1647,9 @@ void CPlayer::Think(float dt, CStateManager& mgr) {
   AdjustEyeOffset(mgr);
   UpdateEnvironmentDamageCameraShake(dt, mgr);
   UpdatePhazonDamage(dt, mgr);
-  UpdateFreeLook(dt);
+  if (!MouseControlsAllowed(mgr)) {
+    UpdateFreeLook(dt);
+  }
   UpdatePlayerHints(mgr);
 
   if (x2b0_outOfWaterTicks < 2) {
@@ -3058,6 +3086,14 @@ void CPlayer::SetPlayerHitWallDuringMove() {
 }
 
 void CPlayer::DoPostCameraStuff(float dt, CStateManager& mgr) {
+  // Camera scripts can take ownership after the player Think for this tick.
+  if (!MouseControlsAllowed(mgr)) {
+    if (PortDebug::MouseAim() && PortDebug::MouseGameplayActive()) x490_gun->CancelMouseInput(mgr);
+    PortDebug::SetMouseGameplayActive(false);
+  } else {
+    x9c4_25_showCrosshairs = PortDebug::MouseCrosshair();
+    if (PortDebug::AimInitialized()) x3ec_freeLookPitchAngle = PortDebug::AimPitch();
+  }
   UpdateArmAndGunTransforms(dt, mgr);
 
   float grappleSwingT;

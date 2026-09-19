@@ -42,6 +42,7 @@
 // Port: drives the streamed-audio AI DMA callback (see platform/ai_dma.cpp).
 extern "C" void AIPortPoll(void);
 #ifdef MP_ENABLE_SMOKE_DRIVER
+#include "port_smoke.h"
 extern bool PortSmokeFrame(unsigned frame);
 #endif
 
@@ -876,6 +877,11 @@ int CMain::RsMain(int argc, const char* const* argv) {
         }
       }
       // SDL/compositor relative capture owns cursor visibility and warp handling.
+#ifdef MP_ENABLE_SMOKE_DRIVER
+      if (PortSmokeMouseEnabled()) {
+        PortDebug::SetMouseCaptured(PortDebug::MouseGameplayActive() && !PortDebug::Visible());
+      } else
+#endif
       {
         static SDL_Window* sCaptureWindow = nullptr;
         if (sCaptureWindow == nullptr) {
@@ -893,7 +899,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
           }
         }
         if (sCaptureWindow != nullptr) {
-          const bool wantRelative = PortDebug::MouseAim() && !PortDebug::Visible() &&
+          const bool wantRelative = PortDebug::MouseAim() && PortDebug::MouseGameplayActive() &&
+                                    !PortDebug::Visible() &&
                                     SDL_GetKeyboardFocus() == sCaptureWindow;
           if (SDL_GetWindowRelativeMouseMode(sCaptureWindow) != wantRelative) {
             SDL_SetWindowRelativeMouseMode(sCaptureWindow, wantRelative);

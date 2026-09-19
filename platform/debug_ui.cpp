@@ -3,6 +3,7 @@
 // to build the windows between aurora_begin_frame and aurora_end_frame.
 
 #include "port_debug.h"
+#include "port_mouse.h"
 
 #include <aurora/gfx.h>
 #include <dolphin/vi.h>
@@ -32,14 +33,18 @@ float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
 bool sMouseAim = false;
 bool sMouseCaptured = false;
+bool sMouseGameplayActive = false;
+bool sMouseInvertX = false;
+bool sMouseInvertY = false;
+bool sMouseButtons = true;
+bool sMouseCrosshair = true;
+PortMouse::AimState sMouseAimState;
+PortMouse::ButtonGate sMouseButtonGate;
 float sMouseSensitivity = 0.0035f;
 float sMousePendingX = 0.f;
 float sMousePendingY = 0.f;
 float sMouseFrameX = 0.f;
 float sMouseFrameY = 0.f;
-float sAimYaw = 0.f;
-float sAimPitch = 0.f;
-bool sAimInitialized = false;
 bool sAiAudioEnabled = true;
 bool sMusyxAudioEnabled = true;
 bool sResetRequested = false;
@@ -63,6 +68,10 @@ void EnsureInitialized() {
     sAspectMode = PortDebug::kAspect_16_9;
   }
   sMouseAim = std::getenv("MP_MOUSE_AIM") != nullptr;
+  sMouseInvertX = std::getenv("MP_MOUSE_INVERT_X") != nullptr;
+  sMouseInvertY = std::getenv("MP_MOUSE_INVERT_Y") != nullptr;
+  sMouseButtons = std::getenv("MP_DISABLE_MOUSE_BUTTONS") == nullptr;
+  sMouseCrosshair = std::getenv("MP_DISABLE_MOUSE_CROSSHAIR") == nullptr;
   if (const char* sens = std::getenv("MP_MOUSE_SENS")) {
     const float value = static_cast< float >(std::atof(sens));
     if (std::isfinite(value) && value > 0.f) {
@@ -156,16 +165,41 @@ void SetMouseAim(bool enabled) {
 }
 
 void ResetMouseAim() {
-  sAimInitialized = false;
+  sMouseAimState.Reset();
+  sMouseGameplayActive = false;
+  sMouseButtonGate.Reset();
   sMousePendingX = sMousePendingY = sMouseFrameX = sMouseFrameY = 0.f;
 }
 
 void SetMouseCaptured(bool captured) {
   sMouseCaptured = captured;
   if (!captured) {
+    sMouseButtonGate.Reset();
     sMousePendingX = sMousePendingY = sMouseFrameX = sMouseFrameY = 0.f;
   }
 }
+
+bool MouseCaptured() { return sMouseCaptured; }
+bool MouseGameplayActive() { return sMouseGameplayActive; }
+void SetMouseGameplayActive(bool active) {
+  sMouseGameplayActive = active;
+  if (!active) ResetMouseAim();
+}
+bool MouseInvertX() { EnsureInitialized(); return sMouseInvertX; }
+bool MouseInvertY() { EnsureInitialized(); return sMouseInvertY; }
+bool MouseButtons() { EnsureInitialized(); return sMouseButtons; }
+bool MouseCrosshair() { EnsureInitialized(); return sMouseCrosshair; }
+unsigned MouseWeaponButtons(unsigned held) {
+  return sMouseButtonGate.Poll(MouseAim() && MouseButtons() && MouseGameplayActive() &&
+                               MouseCaptured() && !Visible(), held);
+}
+
+bool UpdateMouseAim(bool active, bool locked, float x, float y, float z) {
+  SetMouseGameplayActive(active);
+  return sMouseAimState.Update(active, locked, x, y, z, sMouseFrameX, sMouseFrameY,
+                               MouseSensitivity(), MouseInvertX(), MouseInvertY());
+}
+void SynchronizeMouseAim(float x, float y, float z) { sMouseAimState.Synchronize(x, y, z); }
 
 float MouseSensitivity() {
   EnsureInitialized();
@@ -199,12 +233,9 @@ void GetFrameMouseDelta(float& dx, float& dy) {
   dy = sMouseFrameY;
 }
 
-float AimYaw() { return sAimYaw; }
-void SetAimYaw(float radians) { sAimYaw = radians; }
-float AimPitch() { return sAimPitch; }
-void SetAimPitch(float radians) { sAimPitch = radians; }
-bool AimInitialized() { return sAimInitialized; }
-void SetAimInitialized(bool initialized) { sAimInitialized = initialized; }
+float AimYaw() { return sMouseAimState.yaw; }
+float AimPitch() { return sMouseAimState.pitch; }
+bool AimInitialized() { return sMouseAimState.initialized; }
 
 bool AiAudioEnabled() {
   EnsureInitialized();
@@ -299,6 +330,14 @@ void DrawInputTab() {
   if (ImGui::Checkbox("Mouse aim", &mouseAim)) {
     SetMouseAim(mouseAim);
   }
+  ImGui::Checkbox("Invert mouse X", &sMouseInvertX);
+  ImGui::Checkbox("Invert mouse Y", &sMouseInvertY);
+  if (ImGui::Checkbox("Mouse weapon buttons", &sMouseButtons)) {
+    sMouseButtonGate.Reset();
+  }
+  ImGui::Checkbox("Mouse-aim crosshair", &sMouseCrosshair);
+  ImGui::TextUnformatted("Left: fire/charge   Right: lock-on   Middle: missile");
+  ImGui::TextUnformatted("Existing keyboard/controller weapon bindings also work.");
   ImGui::SliderFloat("Sensitivity", &sMouseSensitivity, 0.0005f, 0.02f, "%.4f rad/px",
                      ImGuiSliderFlags_Logarithmic);
 }

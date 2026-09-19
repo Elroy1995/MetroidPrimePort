@@ -70,6 +70,7 @@ public:
   int AddCameraShaker(const CCameraShakeData& data, bool sfx);
   void RemoveCameraShaker(int id);
   CTransform4f GetCurrentCameraTransform(const CStateManager& mgr) const;
+  CTransform4f GetSimulationCameraTransform(const CStateManager& mgr) const;
   CVector3f GetGlobalCameraTranslation(const CStateManager& mgr) const;
   static void SetPresentationInterpolation(float t);
   bool IsInFPCamera() const;
