@@ -251,6 +251,9 @@ Verified:
 - The player stays alive (`CPlayer::x9f4_deathTime` remains 0).
 - Streamed (front-end) audio decodes to tonal PCM, and in-level MusyX frames are
   tonal rather than noise after the ADPCM info-block conversion.
+- Both SDL audio paths maintain a bounded queue instead of depending on exact
+  5 ms thread/main-loop scheduling. MusyX also reads raw PCM16 sample payloads as
+  GameCube big-endian data instead of host-endian data.
 - GPU captures from the current build show the publisher screen, `[ PRESS START ]`
   title screen, and no-memory-card dialog rendering correctly. The user's reported
   blank front end therefore needs a capture at the exact failing transition.
@@ -258,7 +261,8 @@ Verified:
 Remaining:
 1. Directed input needed to reach and open a door; wandering for ~48k frames never
    triggered a second `CWorld::TravelToArea`, so room transitions are unverified.
-2. Confirm music and effects are audible end to end by ear; verify pitch/tempo.
+2. Retest title music, spaceship music, and effects by ear after queue-depth and
+   PCM16-endianness fixes; verify pitch/tempo and that spaceship music starts.
 3. Occasional geometry explosion remains in some skinned draws (intermittent).
 4. Replace the session-long AGSC buffer retention with a bounded lifetime.
 5. Verify CARD saves and the remaining menu flows.

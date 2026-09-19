@@ -19,6 +19,7 @@ constexpr uint32_t kSampleRate = 32000;
 // 16-bit stereo frames: 4 bytes per frame.
 constexpr uint32_t kBytesPerFrame = 4;
 constexpr uint64_t kDefaultFrameNs = 5000000ull; // 0x280 bytes at 32 kHz
+constexpr int kTargetQueuedBytes = kSampleRate * kBytesPerFrame * 64 / 1000;
 
 AIDCallback sCallback = nullptr;
 uintptr_t sBuffer = 0;
@@ -69,8 +70,26 @@ extern "C" void AIPortPoll(void) {
     return;
   }
 
+  // Keep enough decoded audio queued to absorb main-thread and disc-loading
+  // jitter. A single 5 ms DMA buffer underruns whenever a frame runs long.
+  if (sOutputEnabled && sStream != nullptr) {
+    int queued = SDL_GetAudioStreamQueued(sStream);
+    int budget = 16;
+    while (sCallback != nullptr && queued < kTargetQueuedBytes && budget-- > 0) {
+      sCallback();
+      const uintptr_t buffer = sBuffer;
+      const uint32_t length = sLength;
+      if (buffer == 0 || length == 0 ||
+          !SDL_PutAudioStreamData(sStream, reinterpret_cast< const void* >(buffer), length)) {
+        break;
+      }
+      queued += static_cast<int>(length);
+    }
+    return;
+  }
+
   const uint64_t now = SDL_GetTicksNS();
-  if (sNextFrameNs == 0 || sNextFrameNs < now) {
+  if (sNextFrameNs == 0) {
     sNextFrameNs = now;
   }
 
@@ -80,9 +99,6 @@ extern "C" void AIPortPoll(void) {
     sCallback();
     const uintptr_t buffer = sBuffer;
     const uint32_t length = sLength;
-    if (sOutputEnabled && sStream != nullptr && buffer != 0 && length != 0) {
-      SDL_PutAudioStreamData(sStream, reinterpret_cast< const void* >(buffer), length);
-    }
     const uint64_t duration = length != 0
                                   ? static_cast< uint64_t >(length) * 1000000000ull /
                                         (static_cast< uint64_t >(kBytesPerFrame) * kSampleRate)
