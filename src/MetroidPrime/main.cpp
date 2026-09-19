@@ -154,10 +154,14 @@ static void ApplyWindowAspect(int windowWidth, int windowHeight) {
                                         static_cast< double >(windowHeight) +
                                     0.5);
   fbWidth &= ~1;
-  if (fbWidth < 320) {
-    fbWidth = 320;
-  } else if (fbWidth > 2048) {
-    fbWidth = 2048;
+  // Clamp to 4:3 .. 21:9. Extreme aspects produce degenerate projections and a
+  // blank present.
+  const int minWidth = efbHeight * 4 / 3;
+  const int maxWidth = efbHeight * 21 / 9;
+  if (fbWidth < minWidth) {
+    fbWidth = minWidth;
+  } else if (fbWidth > maxWidth) {
+    fbWidth = maxWidth;
   }
   if (fbWidth == renderMode.fbWidth) {
     return;
