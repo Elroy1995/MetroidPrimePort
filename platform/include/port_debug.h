@@ -32,10 +32,11 @@ EAspectMode AspectMode();
 void SetAspectMode(EAspectMode mode);
 
 // Mouse aim: relative mouse drives the first-person camera through the game's
-// own turn/pitch inputs. Wayland locks the pointer via the compositor, so the
-// port retries the request and falls back to cursor deltas if it is refused.
+// own turn/pitch inputs. Motion is accepted only while SDL owns relative capture.
 bool MouseAim();
 void SetMouseAim(bool enabled);
+void SetMouseCaptured(bool captured);
+void ResetMouseAim();
 float MouseSensitivity();
 void SetMouseSensitivity(float radiansPerPixel);
 // Called from the input event loop as relative motion arrives.

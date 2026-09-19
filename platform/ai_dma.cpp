@@ -9,6 +9,8 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <cstdio>
+#include <limits>
 
 #include <SDL3/SDL.h>
 
@@ -28,6 +30,31 @@ SDL_AudioStream* sStream = nullptr;
 uint64_t sNextFrameNs = 0;
 bool sStarted = false;
 bool sOutputEnabled = true;
+bool sAudioInitialized = false;
+bool sPlaying = true;
+alignas(32) uint8_t sSilence[0x280] = {};
+
+void EnsureStream() {
+  if (sStream != nullptr || !sOutputEnabled) {
+    return;
+  }
+  if (!sAudioInitialized) {
+    sAudioInitialized = SDL_InitSubSystem(SDL_INIT_AUDIO);
+    if (!sAudioInitialized) {
+      std::fprintf(stderr, "AI audio initialization failed: %s\n", SDL_GetError());
+      sOutputEnabled = false;
+      return;
+    }
+  }
+  SDL_AudioSpec spec{SDL_AUDIO_S16, 2, kSampleRate};
+  sStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+  if (sStream == nullptr) {
+    std::fprintf(stderr, "AI audio device unavailable: %s\n", SDL_GetError());
+    sOutputEnabled = false;
+  } else if (sPlaying) {
+    SDL_ResumeAudioStreamDevice(sStream);
+  }
+}
 
 void EnsureStarted() {
   if (sStarted) {
@@ -39,19 +66,10 @@ void EnsureStarted() {
   sOutputEnabled = std::getenv("MP_DISABLE_AI_AUDIO") == nullptr;
   // Silence the AI is notionally playing before the first AIInitDMA, so the
   // guest's `AIGetDMAStartAddr` always yields a readable buffer.
-  static uint8_t sSilence[0x280] = {};
   sBuffer = reinterpret_cast< uintptr_t >(sSilence);
   sLength = sizeof(sSilence);
 
-  if (!sOutputEnabled) {
-    return;
-  }
-  SDL_InitSubSystem(SDL_INIT_AUDIO);
-  SDL_AudioSpec spec{SDL_AUDIO_S16, 2, kSampleRate};
-  sStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
-  if (sStream != nullptr) {
-    SDL_ResumeAudioStreamDevice(sStream);
-  }
+  EnsureStream();
 }
 } // namespace
 
@@ -64,7 +82,7 @@ extern "C" uintptr_t AIPortGetDMAStartAddr(void) { return sBuffer; }
 // guest audio state (the main loop).
 extern "C" void AIPortPoll(void) {
   EnsureStarted();
-  if (sCallback == nullptr) {
+  if (sCallback == nullptr || !sPlaying) {
     // Nothing is playing; resynchronise so a later stream does not burst.
     sNextFrameNs = SDL_GetTicksNS();
     return;
@@ -75,7 +93,7 @@ extern "C" void AIPortPoll(void) {
   if (sOutputEnabled && sStream != nullptr) {
     int queued = SDL_GetAudioStreamQueued(sStream);
     int budget = 16;
-    while (sCallback != nullptr && queued < kTargetQueuedBytes && budget-- > 0) {
+    while (sCallback != nullptr && queued >= 0 && queued < kTargetQueuedBytes && budget-- > 0) {
       sCallback();
       const uintptr_t buffer = sBuffer;
       const uint32_t length = sLength;
@@ -95,9 +113,8 @@ extern "C" void AIPortPoll(void) {
 
   // Catch up to real time, bounded so a long stall cannot fire a burst.
   int budget = 8;
-  while (sNextFrameNs <= now && budget-- > 0) {
+  while (sCallback != nullptr && sNextFrameNs <= now && budget-- > 0) {
     sCallback();
-    const uintptr_t buffer = sBuffer;
     const uint32_t length = sLength;
     const uint64_t duration = length != 0
                                   ? static_cast< uint64_t >(length) * 1000000000ull /
@@ -119,6 +136,12 @@ extern "C" void AIInit(u8* stack) {
 
 extern "C" void AIInitDMA(uintptr_t start_addr, uint32_t length) {
   EnsureStarted();
+  if (start_addr == 0 || length == 0 || length % kBytesPerFrame != 0 ||
+      length > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+    sBuffer = reinterpret_cast<uintptr_t>(sSilence);
+    sLength = sizeof(sSilence);
+    return;
+  }
   sBuffer = start_addr;
   sLength = length;
 }
@@ -127,10 +150,18 @@ extern "C" AIDCallback AIRegisterDMACallback(AIDCallback callback) {
   EnsureStarted();
   AIDCallback previous = sCallback;
   sCallback = callback;
+  // The previous owner may free its DMA buffer immediately after unregistering.
+  sBuffer = reinterpret_cast<uintptr_t>(sSilence);
+  sLength = sizeof(sSilence);
+  sNextFrameNs = SDL_GetTicksNS();
+  if (sStream != nullptr) {
+    SDL_ClearAudioStream(sStream);
+  }
   return previous;
 }
 
 extern "C" void AISetStreamPlayState(uint32_t state) {
+  sPlaying = state != 0;
   if (sStream == nullptr) {
     return;
   }
@@ -145,4 +176,28 @@ extern "C" void AISetStreamPlayState(uint32_t state) {
 extern "C" void AIPortSetOutputEnabled(int enabled) {
   EnsureStarted();
   sOutputEnabled = enabled != 0;
+  sNextFrameNs = SDL_GetTicksNS();
+  if (sStream != nullptr) {
+    SDL_ClearAudioStream(sStream);
+  }
+  EnsureStream();
+}
+
+extern "C" int AIPortOutputEnabled(void) { return sOutputEnabled && sStream != nullptr; }
+
+extern "C" void AIPortShutdown(void) {
+  sCallback = nullptr;
+  if (sStream != nullptr) {
+    SDL_DestroyAudioStream(sStream);
+    sStream = nullptr;
+  }
+  if (sAudioInitialized) {
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
+    sAudioInitialized = false;
+  }
+  sStarted = false;
+  sBuffer = 0;
+  sLength = 0;
+  sNextFrameNs = 0;
+  sPlaying = true;
 }

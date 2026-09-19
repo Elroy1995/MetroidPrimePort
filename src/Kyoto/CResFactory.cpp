@@ -185,7 +185,7 @@ bool CResFactory::SLoadingData::PumpDecompression(uint time) {
     zip->next_in = nullptr;
     zip->next_out = nullptr;
     x24_zip = rstl::auto_ptr< z_stream_s >(zip);
-    x1c_decompBuffer = rstl::auto_ptr< uchar >(rs_new uchar[length]);
+    x1c_decompBuffer = rstl::auto_ptr< uchar[] >(rs_new uchar[length]);
   }
 
   const int size = x2c_size;
@@ -207,8 +207,8 @@ bool CResFactory::SLoadingData::PumpDecompression(uint time) {
   if (length == zip->total_out) {
     inflateEnd(zip);
     x24_zip = rstl::auto_ptr< z_stream_s >();
-    x14_buffer = rstl::auto_ptr< uchar >(x1c_decompBuffer.release());
-    x1c_decompBuffer = rstl::auto_ptr< uchar >();
+    x14_buffer = rstl::auto_ptr< uchar[] >(x1c_decompBuffer.release());
+    x1c_decompBuffer = rstl::auto_ptr< uchar[] >();
     x30_compression = CResLoader::kCompressionType_Uncompressed;
     x2c_size = length;
     return true;

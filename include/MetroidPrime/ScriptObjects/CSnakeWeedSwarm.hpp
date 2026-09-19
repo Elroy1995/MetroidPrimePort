@@ -98,7 +98,7 @@ private:
   bool x140_26_playerTouching : 1;
   CAABox x144_touchBounds;
   CDamageInfo x15c_damageInfo;
-  rstl::reserved_vector< rstl::auto_ptr< float >, 4 > x178_posWorkspaces;
+  rstl::reserved_vector< rstl::auto_ptr< rstl::game_memory< float > >, 4 > x178_posWorkspaces;
   rstl::reserved_vector< float*, 4 > x19c_nrmWorkspaces;
   rstl::reserved_vector< rstl::ncrc_ptr< CModelData >, 4 > x1b0_modelData;
   CModelData::EWhichModel x1c4_which;

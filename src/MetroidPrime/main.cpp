@@ -8,6 +8,7 @@
 #include <SDL3/SDL_timer.h>
 
 #include "port_debug.h"
+#include "port_disc.h"
 
 #include "stdint.h"
 #include "stdio.h"
@@ -40,6 +41,9 @@
 
 // Port: drives the streamed-audio AI DMA callback (see platform/ai_dma.cpp).
 extern "C" void AIPortPoll(void);
+#ifdef MP_ENABLE_SMOKE_DRIVER
+extern bool PortSmokeFrame(unsigned frame);
+#endif
 
 #include "Kyoto/CMemoryCardSys.hpp"
 #include "Kyoto/CPakFile.hpp"
@@ -78,7 +82,7 @@ extern "C" void AIPortPoll(void);
 
 const CFactoryFnReturn FStringTableFactory(const SObjectTag&, CInputStream&,
                                            const CVParamTransfer&);
-const CFactoryFnReturn FModelFactory(const SObjectTag&, const rstl::auto_ptr< uchar >&, int,
+const CFactoryFnReturn FModelFactory(const SObjectTag&, const rstl::auto_ptr< uchar[] >&, int,
                                      const CVParamTransfer&);
 const CFactoryFnReturn FTextureFactory(const SObjectTag&, CInputStream&, const CVParamTransfer&);
 const CFactoryFnReturn FSkinRulesFactory(const SObjectTag&, CInputStream&, const CVParamTransfer&);
@@ -103,14 +107,14 @@ const CFactoryFnReturn AnimPOIDataFactory(const SObjectTag&, CInputStream&, cons
 const CFactoryFnReturn FAiFiniteStateMachineFactory(const SObjectTag&, CInputStream&,
                                                     const CVParamTransfer&);
 const CFactoryFnReturn FAudioGroupSetLocDataFactory(const SObjectTag&,
-                                                    const rstl::auto_ptr< uchar >&, int,
+                                                    const rstl::auto_ptr< uchar[] >&, int,
                                                     const CVParamTransfer&);
 const CFactoryFnReturn FCollidableOBBTreeGroupFactory(const SObjectTag&, CInputStream&,
                                                       const CVParamTransfer&);
 const CFactoryFnReturn FDecalDataFactory(const SObjectTag&, CInputStream&, const CVParamTransfer&);
 const CFactoryFnReturn FAudioTranslationTableFactory(const SObjectTag&, CInputStream&,
                                                      const CVParamTransfer&);
-const CFactoryFnReturn FPathFindAreaFactory(const SObjectTag&, const rstl::auto_ptr< uchar >&, int,
+const CFactoryFnReturn FPathFindAreaFactory(const SObjectTag&, const rstl::auto_ptr< uchar[] >&, int,
                                             const CVParamTransfer&);
 const CFactoryFnReturn FMapWorldFactory(const SObjectTag&, CInputStream&, const CVParamTransfer&);
 const CFactoryFnReturn FMapAreaFactory(const SObjectTag&, CInputStream&, const CVParamTransfer&);
@@ -189,9 +193,12 @@ static void ApplyAspectMode() {
 static uchar sGraphicsFifo[GRAPHICS_FIFO_SIZE];
 ALIGNAS(CMain) static uchar sMainSpace[sizeof(CMain)];
 
-// Generated includes
+// Generated includes belong only to the matching console build. Native builds
+// read these resources from the user's disc instead of embedding extracted data.
+#ifndef TARGET_PC
 #include "MetroidPrime/DefaultFontData.inc"
 #include "MetroidPrime/DefaultFontTexture.inc"
+#endif
 
 struct SAudioGroupInfo {
   const char* name;
@@ -231,8 +238,15 @@ extern "C" int metroid_main(int argc, char** argv) {
   DVDSetAutoFatalMessaging(TRUE);
   SetErrorHandlers();
   CMain* main = new (&sMainSpace) CMain();
-  gpMain->RsMain(argc, argv);
+  try {
+    gpMain->RsMain(argc, argv);
+  } catch (...) {
+    main->~CMain();
+    gpMain = nullptr;
+    throw;
+  }
   main->~CMain();
+  gpMain = nullptr;
   return 0;
 }
 
@@ -301,7 +315,8 @@ void CMain::InitializeSubsystems() {
 
   DCFlushRange(stackEnd + 0x400, static_cast< uint >(stackBase - 0x2000 - (stackEnd + 0x400)));
 #endif
-  printf("Stack: 0x%8.8x down to 0x%8.8x\n", thread->stackBase, thread->stackEnd);
+  printf("Stack: %p down to %p\n", static_cast<void*>(thread->stackBase),
+         static_cast<void*>(thread->stackEnd));
   CElementGen::Initialize();
   CAnimData::InitializeCache();
   CARAMManager::Initialize(0x800);
@@ -347,6 +362,16 @@ CGameGlobalObjects::CGameGlobalObjects(COsContext& osContext, CMemorySys& memory
 }
 
 CRasterFont* CGameGlobalObjects::LoadDefaultFont() {
+#ifdef TARGET_PC
+  // Verified GM8E01_00 symbols; see config/GM8E01_00/symbols.txt.
+  const auto fontData = PortReadDolResource(0x803cb3a0, 0x650);
+  const auto fontTexture = PortReadDolResource(0x803cb9f0, 0x45c);
+  CZipInputStream fontDataStream(rs_new CMemoryInStream(fontData.data(), fontData.size()));
+  rstl::single_ptr<CRasterFont> font(rs_new CRasterFont(fontDataStream, nullptr));
+  CZipInputStream fontTextureStream(rs_new CMemoryInStream(fontTexture.data(), fontTexture.size()));
+  font->SetTexture(rs_new CTexture(fontTextureStream, CTexture::kAM_Zero, CTexture::kBK_Zero));
+  return font.release();
+#else
   CZipInputStream fontDataStream(
       rs_new CMemoryInStream(sDefaultFontData, sizeof(sDefaultFontData)));
   CRasterFont* font = rs_new CRasterFont(fontDataStream, nullptr);
@@ -354,6 +379,7 @@ CRasterFont* CGameGlobalObjects::LoadDefaultFont() {
       rs_new CMemoryInStream(sDefaultFontTexture, sizeof(sDefaultFontTexture)));
   font->SetTexture(rs_new CTexture(fontTextureStream, CTexture::kAM_Zero, CTexture::kBK_Zero));
   return font;
+#endif
 }
 
 void CGameGlobalObjects::PostInitialize(COsContext& osContext, CMemorySys& memorySys) {
@@ -439,16 +465,19 @@ bool CGameArchitectureSupport::UpdateTicks() {
   OSRestoreInterrupts(interrupts);
   sInfiniteLoopTime = 0.f;
   x7c_tickRemainder += elapsed;
-  if (gpMain->GetScreenFading() || elapsed > 0.035f) {
+  if (gpMain->GetScreenFading()) {
     x7c_tickRemainder = 1.f / 60.f;
+  } else if (x7c_tickRemainder > 0.25f) {
+    // Catch up through ordinary slow frames, but bound a resume/debugger stall
+    // to 15 ticks so event and audio servicing cannot starve indefinitely.
+    x7c_tickRemainder = 0.25f;
   }
 
   static const float tickPeriod = 1.f / 60.f;
   sTicksAdvanced = 0;
-  bool forceFirstTick = PortDebug::FrameLimitEnabled();
   x4_archQueue.Push(MakeMsg::CreateFrameBegin(kAMT_Game, x78_gameFrameCount));
-  while (forceFirstTick || x7c_tickRemainder >= tickPeriod) {
-    forceFirstTick = false;
+  while (x7c_tickRemainder >= tickPeriod) {
+    PortDebug::BeginFrameMouse();
     if (!x30_inputGenerator.Update(1.f / 60.f, x4_archQueue)) {
       terminate = true;
     }
@@ -583,12 +612,23 @@ void CGameGlobalObjects::AddPaksAndFactories() {
   gpController = controller.get();
 #endif
   while (!factory.GetResLoader().AreAllPaksLoaded()) {
+    const AuroraEvent* event = aurora_update();
+    for (; event != nullptr && event->type != AURORA_NONE; ++event) {
+      if (event->type == AURORA_EXIT) {
+        // Finish pending reads so their callback owners remain alive. The main
+        // loop observes the exit flag immediately after initialization.
+        gpMain->SetFinished();
+      }
+    }
     ARQPoll();
     gpResourceFactory->GetResLoader().AsyncIdlePakLoading();
     errorWindow.Update();
-    CGraphics::BeginScene();
-    errorWindow.ShowMessage();
-    CGraphics::EndScene();
+    if (CGraphics::BeginScene()) {
+      errorWindow.ShowMessage();
+      CGraphics::EndScene();
+    } else {
+      SDL_Delay(5);
+    }
 #if VERSION != 0
     controller->Poll();
     gpMain->CheckReset();
@@ -672,6 +712,15 @@ bool CMain::CheckReset() {
 
   if (!x160_31_cardBusy &&
       (x160_29_resetRequested || x160_28_manageCard || x160_30_gameExitReset)) {
+#ifdef TARGET_PC
+    // A native reset rebuilds the game architecture below. Do not cancel all
+    // DVD work or stop audio for a console reboot that will never occur.
+    x160_27_resetButtonHeld = false;
+    x160_29_resetRequested = false;
+    x160_30_gameExitReset = false;
+    x160_28_manageCard = false;
+    return true;
+#endif
     if (x164_archSupport != nullptr && x164_archSupport->IsInfiniteLoopAlarmSet()) {
       OSCancelAlarm(&x164_archSupport->GetInfiniteLoopAlarm());
       x164_archSupport->SetInfiniteLoopAlarmSet(false);
@@ -791,6 +840,11 @@ int CMain::RsMain(int argc, const char* const* argv) {
       if ((s_frameLog++ % 60) == 0) {
         fprintf(stderr, "MP frame %u\n", s_frameLog);
       }
+#ifdef MP_ENABLE_SMOKE_DRIVER
+      if (PortSmokeFrame(s_frameLog)) {
+        break;
+      }
+#endif
       // Port: pump Aurora's window/input events.
       {
         const AuroraEvent* event = aurora_update();
@@ -813,20 +867,15 @@ int CMain::RsMain(int argc, const char* const* argv) {
             ApplyAspectMode();
           } else if (event->type == AURORA_SDL_EVENT &&
                      event->sdl.type == SDL_EVENT_MOUSE_MOTION) {
-            // Ignore the large jump produced by our own recentering warp.
-            const float motionX = event->sdl.motion.xrel;
-            const float motionY = event->sdl.motion.yrel;
-            if (motionX > -300.f && motionX < 300.f && motionY > -300.f && motionY < 300.f) {
-              PortDebug::AddMouseDelta(motionX, motionY);
-            }
+            PortDebug::AddMouseDelta(event->sdl.motion.xrel, event->sdl.motion.yrel);
+          } else if (event->type == AURORA_SDL_EVENT &&
+                     event->sdl.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+            PortDebug::SetMouseCaptured(false);
           }
           ++event;
         }
       }
-      // Port: lock the pointer for mouse aim. Wayland manages the lock through
-      // the compositor and can drop or refuse it, so re-request whenever the
-      // reported state disagrees; relative motion still arrives as deltas even
-      // when the lock is refused.
+      // SDL/compositor relative capture owns cursor visibility and warp handling.
       {
         static SDL_Window* sCaptureWindow = nullptr;
         if (sCaptureWindow == nullptr) {
@@ -840,43 +889,16 @@ int CMain::RsMain(int argc, const char* const* argv) {
             if (windows != nullptr && count > 0) {
               sCaptureWindow = windows[0];
             }
+            SDL_free(windows);
           }
         }
         if (sCaptureWindow != nullptr) {
-          const bool wantRelative = PortDebug::MouseAim() && !PortDebug::Visible();
+          const bool wantRelative = PortDebug::MouseAim() && !PortDebug::Visible() &&
+                                    SDL_GetKeyboardFocus() == sCaptureWindow;
           if (SDL_GetWindowRelativeMouseMode(sCaptureWindow) != wantRelative) {
             SDL_SetWindowRelativeMouseMode(sCaptureWindow, wantRelative);
           }
-          // Wayland can report the lock as active while the compositor leaves
-          // the pointer visible, so also hide the cursor and pull it back to
-          // the center each frame. The warp's own motion spike is rejected in
-          // the event loop.
-          static bool sCursorHidden = false;
-          if (wantRelative) {
-            if (!sCursorHidden) {
-              SDL_HideCursor();
-              sCursorHidden = true;
-            }
-            // Only recenter near an edge, so the correction is a large jump that
-            // the event loop rejects and does not fight normal motion.
-            int windowWidth = 0;
-            int windowHeight = 0;
-            float mouseX = 0.f;
-            float mouseY = 0.f;
-            SDL_GetWindowSize(sCaptureWindow, &windowWidth, &windowHeight);
-            SDL_GetMouseState(&mouseX, &mouseY);
-            constexpr float kEdge = 8.f;
-            if (windowWidth > 0 && windowHeight > 0 &&
-                (mouseX <= kEdge || mouseY <= kEdge ||
-                 mouseX >= static_cast< float >(windowWidth) - kEdge ||
-                 mouseY >= static_cast< float >(windowHeight) - kEdge)) {
-              SDL_WarpMouseInWindow(sCaptureWindow, static_cast< float >(windowWidth) * 0.5f,
-                                    static_cast< float >(windowHeight) * 0.5f);
-            }
-          } else if (sCursorHidden) {
-            SDL_ShowCursor();
-            sCursorHidden = false;
-          }
+          PortDebug::SetMouseCaptured(wantRelative && SDL_GetWindowRelativeMouseMode(sCaptureWindow));
         }
       }
       // Port: apply the selected aspect ratio; no-op unless it changed (e.g. the
@@ -906,9 +928,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
         logAudioTweaks = false;
         // rs_log_print(str.data());
       }
-      if (!x160_26_screenFading) {
+      if (!x160_26_screenFading && gpRender->BeginScene()) {
         // Port: Aurora frames are bracketed inside CGraphics::Begin/EndScene.
-        gpRender->BeginScene();
         float interpolation = archSupport->GetTickInterpolation();
         if (interpolation < 0.f)
           interpolation = 0.f;
@@ -939,7 +960,10 @@ int CMain::RsMain(int argc, const char* const* argv) {
           x161_24_gameFrameDrawn = false;
         }
       } else {
-        gpResourceFactory->AsyncIdle(1000000);
+        gpResourceFactory->AsyncIdle(1000);
+        // A minimized/paused window still services events and audio, but never
+        // accumulates a frame's GX commands or advances delayed render frees.
+        SDL_Delay(5);
       }
 
       archSupport->Update();
@@ -966,8 +990,9 @@ int CMain::RsMain(int argc, const char* const* argv) {
         CStreamAudioManager::StopAll();
         PADRecalibrate(0xf0000000);
         CGraphics::SetIsBeginSceneClearFb(true);
-        CGraphics::BeginScene();
-        CGraphics::EndScene();
+        if (CGraphics::BeginScene()) {
+          CGraphics::EndScene();
+        }
         CFrameDelayedKiller::StallAndFlushAllAllocations();
 
         archSupport = nullptr;

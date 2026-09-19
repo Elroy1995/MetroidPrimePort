@@ -176,7 +176,7 @@ private:
   CHealthInfo x3bc_healthInfo;
   CDamageVulnerability x3c4_damageVulnerability;
   int x42c_lockOnIdx;
-  rstl::reserved_vector< rstl::auto_ptr< float >, 10 > x430_posWorkspaces;
+  rstl::reserved_vector< rstl::auto_ptr< rstl::game_memory< float > >, 10 > x430_posWorkspaces;
   rstl::reserved_vector< float*, 10 > x484_nrmWorkspaces;
   rstl::reserved_vector< rstl::ncrc_ptr< CModelData >, 10 > x4b0_modelDatas;
   CModelData::EWhichModel x4dc_whichModel;

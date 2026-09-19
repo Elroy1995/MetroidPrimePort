@@ -14,7 +14,7 @@
 class CInputStream;
 class CAudioGrpSetLoc {
 public:
-  CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length);
+  CAudioGrpSetLoc(const rstl::auto_ptr< uchar[] >& data, int length);
   ~CAudioGrpSetLoc();
   const rstl::string& GetBaseDirName() const { return x10_baseDirName; }
   const rstl::string& GetGroupSetName() const { return x20_groupSetName; }
@@ -34,8 +34,8 @@ private:
     readPosition = in.GetReadPosition();
     return ret;
   }
-  rstl::auto_ptr< uchar > x0_data;
-  rstl::auto_ptr< uchar > x8_groupData;
+  rstl::auto_ptr< uchar[] > x0_data;
+  rstl::auto_ptr< rstl::game_memory< uchar > > x8_groupData;
   rstl::string x10_baseDirName;
   rstl::string x20_groupSetName;
   int x30_aramSize;

@@ -20,9 +20,9 @@ bool CCollisionPrimitive::sCollidersAdding = false;
 
 rstl::single_ptr< rstl::vector< CCollisionPrimitive::Type > >
     CCollisionPrimitive::sCollisionTypeList;
-rstl::single_ptr< ComparisonFunc > CCollisionPrimitive::sTableOfCollidables;
-rstl::single_ptr< BooleanComparisonFunc > CCollisionPrimitive::sTableOfBooleanCollidables;
-rstl::single_ptr< MovingComparisonFunc > CCollisionPrimitive::sTableOfMovingCollidables;
+rstl::single_ptr< ComparisonFunc[] > CCollisionPrimitive::sTableOfCollidables;
+rstl::single_ptr< BooleanComparisonFunc[] > CCollisionPrimitive::sTableOfBooleanCollidables;
+rstl::single_ptr< MovingComparisonFunc[] > CCollisionPrimitive::sTableOfMovingCollidables;
 static ComparisonFunc sNullCollider = nullptr;
 static BooleanComparisonFunc sNullBooleanCollider = nullptr;
 static MovingComparisonFunc sNullMovingCollider = nullptr;

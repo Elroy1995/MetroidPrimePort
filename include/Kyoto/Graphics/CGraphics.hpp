@@ -334,7 +334,7 @@ public:
 
   static bool IsBeginSceneClearFb() { return mIsBeginSceneClearFb; }
   static void SetIsBeginSceneClearFb(bool);
-  static void BeginScene();
+  static bool BeginScene();
   static void EndScene();
   static void SwapBuffers();
   static void SetTevOp(ERglTevStage stage, const CTevCombiners::CTevPass& pass);

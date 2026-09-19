@@ -384,12 +384,12 @@ public:
   }
 
 private:
-  static rstl::auto_ptr< uint > GetRotationsAndOffsets(uint words, CInputStream& in);
+  static rstl::auto_ptr< uint[] > GetRotationsAndOffsets(uint words, CInputStream& in);
 
   uint x0_scratchSize;
   uint x4_evnt;
   rstl::single_ptr< TLockedToken< CAnimPOIData > > x8_evntToken;
-  rstl::single_ptr< uint > xc_rotsAndOffs;
+  rstl::single_ptr< uint[] > xc_rotsAndOffs;
   float x10_averageVelocity;
   CVector3f x14_rootOffset;
 };

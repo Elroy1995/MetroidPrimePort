@@ -8,7 +8,13 @@ class CRefData {
 public:
   CRefData(const void* ptr) : x0_ptr(ptr), x4_refCount(1) {}
   CRefData(const void* ptr, int refCount) : x0_ptr(ptr), x4_refCount(refCount) {}
+#ifdef TARGET_PC
+  template < typename T > CRefData(const T* ptr)
+  : x0_ptr(ptr), x4_refCount(1), mOwnedPtr(ptr), mDelete(&Destroy<T>) {}
+  ~CRefData() { if (mDelete != nullptr) mDelete(mOwnedPtr); }
+#else
   ~CRefData() {}
+#endif
 
   void* GetPtr() const { return const_cast< void* >(x0_ptr); }
   int GetRefCount() const { return x4_refCount; }
@@ -19,12 +25,26 @@ public:
   int x4_refCount;
 
   static CRefData sNull;
+#ifdef TARGET_PC
+private:
+  // Capture the destructor where the owning pointer is constructed and T is
+  // complete. ReleaseData may be instantiated in a forward-declaration-only TU.
+  template < typename T > static void Destroy(const void* ptr) {
+    static_assert(sizeof(T) > 0, "rc_ptr construction requires a complete type");
+    delete static_cast<const T*>(ptr);
+  }
+  const void* mOwnedPtr = nullptr;
+  void (*mDelete)(const void*) = nullptr;
+#endif
 };
 
 template < typename T >
 class rc_ptr {
 public:
   rc_ptr() : x0_refData(&CRefData::sNull) { x0_refData->AddRef(); }
+#ifdef TARGET_PC
+  rc_ptr(std::nullptr_t) : rc_ptr() {}
+#endif
   rc_ptr(const T* ptr) : x0_refData(rs_new CRefData(ptr)) {}
   rc_ptr(const rc_ptr& other) : x0_refData(other.x0_refData) { x0_refData->AddRef(); }
   ~rc_ptr() { ReleaseData(); }
@@ -41,8 +61,16 @@ public:
   template < typename U >
   void Assign(const U* ptr) {
     const T* base = ptr;
+    if (base == GetPtr()) return;
+#ifdef TARGET_PC
+    CRefData* replacement = rs_new CRefData(ptr);
+    replacement->x0_ptr = base;
+    ReleaseData();
+    x0_refData = replacement;
+#else
     ReleaseData();
     x0_refData = rs_new CRefData(base);
+#endif
   }
   void ReleaseData();
   void reset() {
@@ -61,8 +89,10 @@ private:
 template < typename T >
 void rc_ptr< T >::ReleaseData() {
   if (x0_refData->DelRef() <= 0) {
+#ifndef TARGET_PC
     T* const ptr = GetPtr();
     delete ptr;
+#endif
     delete x0_refData;
   }
 }
@@ -71,6 +101,9 @@ template < typename T >
 class ncrc_ptr : public rc_ptr< T > {
 public:
   ncrc_ptr() {}
+#ifdef TARGET_PC
+  ncrc_ptr(std::nullptr_t) : rc_ptr<T>() {}
+#endif
   ncrc_ptr(T* ptr) : rc_ptr< T >(ptr) {}
   ncrc_ptr(const rc_ptr< T >& other) : rc_ptr< T >(other) {}
   ncrc_ptr& operator=(const rc_ptr< T >& other) {

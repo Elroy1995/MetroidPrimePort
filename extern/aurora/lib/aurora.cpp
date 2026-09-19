@@ -328,10 +328,11 @@ bool begin_frame() noexcept {
     }
   }
 
-  imgui::new_frame(window::get_window_size());
   if (!gfx::begin_frame()) {
     return false;
   }
+  // A failed staging-buffer acquisition must not leave an ImGui frame open.
+  imgui::new_frame(window::get_window_size());
   gx::fifo::begin_frame();
 #endif
   return true;

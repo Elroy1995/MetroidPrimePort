@@ -132,10 +132,9 @@ void CSkinnedModel::Construct() {
     const uint vertSize = (vertexCount * 12 + 31) & ~31u;
     const uint normSize = (normalCount * 12 + 31) & ~31u;
     float* ptr = rs_new float[(vertSize + normSize) / sizeof(float)];
-    x28_vertWorkspace = rstl::auto_ptr< float >(ptr);
-    x30_normalWorkspace = rstl::auto_ptr< float >(
+    x28_vertWorkspace = rstl::auto_ptr< float[] >(ptr);
+    x30_normalWorkspace = rstl::auto_ptr< float[] >(
         reinterpret_cast< float* >(reinterpret_cast< uchar* >(ptr) + vertSize));
-    x28_vertWorkspace.release();
     x30_normalWorkspace.release();
   }
   if (x10_skinRules->GetNumVirtualBones() == 1) {
@@ -265,8 +264,8 @@ void CSkinnedModel::Calculate(const CPoseAsTransforms& pose,
 }
 
 void CSkinnedModel::CalculateDefault() {
-  x28_vertWorkspace = rstl::auto_ptr< float >();
-  x30_normalWorkspace = rstl::auto_ptr< float >();
+  x28_vertWorkspace = rstl::auto_ptr< float[] >();
+  x30_normalWorkspace = rstl::auto_ptr< float[] >();
 }
 
 void CSkinnedModel::TickAllocations() {
@@ -326,9 +325,9 @@ void CSkinnedModel::AllocateStorage() {
     if (ptr == Skinning::sStaticSkinningData) {
       GXInvalidateVtxCache();
     }
-    x28_vertWorkspace = rstl::auto_ptr< float >(static_cast< float* >(ptr));
+    x28_vertWorkspace = rstl::auto_ptr< float[] >(static_cast< float* >(ptr));
     x30_normalWorkspace =
-        rstl::auto_ptr< float >(reinterpret_cast< float* >(static_cast< char* >(ptr) + vertSize));
+        rstl::auto_ptr< float[] >(reinterpret_cast< float* >(static_cast< char* >(ptr) + vertSize));
     x28_vertWorkspace.release();
     x30_normalWorkspace.release();
   }
@@ -336,8 +335,8 @@ void CSkinnedModel::AllocateStorage() {
 
 void CSkinnedModel::PostDrawFunc() const {
   if (x38_owned && !x28_vertWorkspace.null()) {
-    x28_vertWorkspace = rstl::auto_ptr< float >();
-    x30_normalWorkspace = rstl::auto_ptr< float >();
+    x28_vertWorkspace = rstl::auto_ptr< float[] >();
+    x30_normalWorkspace = rstl::auto_ptr< float[] >();
     GXSetDrawSync(Skinning::skCurrentToken);
     ++Skinning::skCurrentToken;
   }

@@ -25,7 +25,7 @@ CScriptMailbox::CScriptMailbox(CInputStream& in, const CWorldSaveGameInfo& world
   CMemory::OffsetFakeStatics(sizeof(*this));
 }
 
-CScriptMailbox::~CScriptMailbox() { CMemory::OffsetFakeStatics(-sizeof(*this)); }
+CScriptMailbox::~CScriptMailbox() { CMemory::OffsetFakeStatics(-static_cast<int>(sizeof(*this))); }
 
 void CScriptMailbox::PutTo(COutputStream& out, CWorldSaveGameInfo& world) const {
   rstl::vector< bool > relayStates(world.GetRelays().size(), false);

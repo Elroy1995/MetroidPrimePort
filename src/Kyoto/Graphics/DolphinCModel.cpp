@@ -34,7 +34,7 @@ static uchar* MemoryFromPartData(uchar*& dataCur, int*& secSizeCur, uint* outSiz
   return ret;
 }
 
-CModel::CModel(const rstl::auto_ptr< uchar >& data, int length, IObjectStore& store)
+CModel::CModel(const rstl::auto_ptr< uchar[] >& data, int length, IObjectStore& store)
 : x0_data(data.release())
 , x4_dataLen(length)
 , x28_modelInstance(nullptr)
@@ -208,7 +208,7 @@ void CModel::VerifyCurrentShader(int shader) const {
   }
 }
 
-const CFactoryFnReturn FModelFactory(const SObjectTag& tag, const rstl::auto_ptr< uchar >& ptr,
+const CFactoryFnReturn FModelFactory(const SObjectTag& tag, const rstl::auto_ptr< uchar[] >& ptr,
                                      int len, const CVParamTransfer& xfer) {
   rstl::rc_ptr< IVParamObj > obj = xfer.x0_obj;
   CSimplePool* pool = static_cast< TObjOwnerParam< CSimplePool* >* >(obj.GetPtr())->GetData();
@@ -318,7 +318,7 @@ void CModel::EnableTextureTimeout() { sIsTextureTimeoutEnabled = true; }
 
 uint CModel::GetDataSize() const { return x4_dataLen; }
 
-rstl::auto_ptr< uchar > CModel::GetData() { return rstl::auto_ptr< uchar >(x0_data.get()); }
+rstl::auto_ptr< uchar[] > CModel::GetData() { return rstl::auto_ptr< uchar[] >(x0_data.get()); }
 
 namespace {
 #ifdef __MWERKS__

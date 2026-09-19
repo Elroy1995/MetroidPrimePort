@@ -4,6 +4,7 @@
 #include "Kyoto/Alloc/CCallStack.hpp"
 #include "Kyoto/Alloc/IAllocator.hpp"
 #include "types.h"
+#include "rstl/pointer_deleter.hpp"
 
 class COsContext;
 class CMemory {
@@ -23,6 +24,15 @@ public:
   static void SetOutOfMemoryCallback(IAllocator::FOutOfMemoryCb callback, const void* context);
   static void OffsetFakeStatics(int);
 };
+
+namespace rstl {
+// Explicit game-heap ownership, distinct from host scalar and array new.
+template < typename T > struct game_memory {};
+template < typename T > struct pointer_deleter< game_memory< T > > {
+  typedef T element_type;
+  static void destroy(T* ptr) { CMemory::Free(ptr); }
+};
+} // namespace rstl
 
 #if defined(__MWERKS__) || defined(CLANGD)
 // placement new

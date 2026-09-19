@@ -9,29 +9,7 @@
 #include "rstl/vector.hpp"
 #include <stdint.h>
 #include <string.h>
-
-#ifdef TARGET_PC
-namespace {
-// On PC MusyX has no ARAM copy: it reads samples and macros straight out of
-// `x0_data`/`x8_groupData`, and the MusyX 2.0.0 `sndPopGroup` path does not
-// reliably stop every voice that still references them. Retaining these buffers
-// for the session keeps those pointers valid instead of leaving the audio thread
-// reading freed (unmapped) memory.
-rstl::vector< void* >& RetainedAudioGroupBuffers() {
-  static rstl::vector< void* >* sBuffers = nullptr;
-  if (sBuffers == nullptr) {
-    sBuffers = rs_new rstl::vector< void* >();
-  }
-  return *sBuffers;
-}
-
-void RetainAudioGroupBuffer(void* buffer) {
-  if (buffer != nullptr) {
-    RetainedAudioGroupBuffers().push_back(buffer);
-  }
-}
-} // namespace
-#endif
+#include <stdexcept>
 
 #if TARGET_LITTLE_ENDIAN
 namespace {
@@ -288,7 +266,7 @@ void CAudioGroupSet::Reload() {}
 
 void CAudioGroupSet::FreeSampleBuffer() { x20_groupSetTok.data()->FreeSampleBuffer(); }
 
-CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length)
+CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar[] >& data, int length)
 : x0_data(data.release())
 , x30_aramSize(0)
 , x34_pool(nullptr)
@@ -296,32 +274,38 @@ CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length
 , x3c_sampleDir(nullptr)
 , x40_samples(nullptr) {
   uint readPosition;
+  if (length <= 0) {
+    throw std::runtime_error("Empty AGSC resource");
+  }
   const uint poolSize = ReadHeader(data.get(), length, readPosition);
+  const uint totalSize = static_cast<uint>(length);
+  const auto checkSection = [totalSize](uint offset, uint size) {
+    if (offset > totalSize || size > totalSize - offset) {
+      throw std::runtime_error("AGSC section exceeds resource size");
+    }
+  };
+  const auto readSize = [&](uint offset) {
+    checkSection(offset, 4);
+    uint size;
+    memcpy(&size, data.get() + offset, 4);
+    size = CBasics::SwapBytes(size);
+    checkSection(offset + 4, size);
+    return size;
+  };
+  checkSection(readPosition, poolSize);
   CAudioSys::GetVerbose();
 
   const uint projectOffset = readPosition + poolSize;
-#if TARGET_LITTLE_ENDIAN
-  const uint projectSize = CBasics::SwapBytes(*reinterpret_cast< uint* >(data.get() + projectOffset));
-#else
-  const uint projectSize = *reinterpret_cast< uint* >(data.get() + projectOffset);
-#endif
+  const uint projectSize = readSize(projectOffset);
   CAudioSys::GetVerbose();
 
   const uint sampOffset = 4 + projectSize + projectOffset;
-#if TARGET_LITTLE_ENDIAN
-  const uint sampSize = CBasics::SwapBytes(*reinterpret_cast< uint* >(data.get() + sampOffset));
-#else
-  const uint sampSize = *reinterpret_cast< uint* >(data.get() + sampOffset);
-#endif
+  const uint sampSize = readSize(sampOffset);
   CAudioSys::GetVerbose();
   x30_aramSize = sampSize;
 
   const uint sdirOffset = 4 + sampOffset + sampSize;
-#if TARGET_LITTLE_ENDIAN
-  const uint sdirSize = CBasics::SwapBytes(*reinterpret_cast< uint* >(data.get() + sdirOffset));
-#else
-  const uint sdirSize = *reinterpret_cast< uint* >(data.get() + sdirOffset);
-#endif
+  const uint sdirSize = readSize(sdirOffset);
   CAudioSys::GetVerbose();
 
   uchar* ptr = x0_data.get();
@@ -340,10 +324,10 @@ CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length
   const uint discEntryBytes =
       sampleDirCount > 0 ? (sampleDirCount - 1) * sizeof(SDIR_DATA_INTER) + 4 : 0;
   const uint blockBytes = sdirSize > discEntryBytes ? sdirSize - discEntryBytes : 0;
-  x8_groupData = rstl::auto_ptr< uchar >(static_cast< uchar* >(
+  x8_groupData = rstl::auto_ptr< rstl::game_memory< uchar > >(static_cast< uchar* >(
       CMemory::Alloc(sampleDirOffset + entryBytes + blockBytes, IAllocator::kHI_RoundUpLen)));
 #else
-  x8_groupData = rstl::auto_ptr< uchar >(static_cast< uchar* >(
+  x8_groupData = rstl::auto_ptr< rstl::game_memory< uchar > >(static_cast< uchar* >(
       CMemory::Alloc(poolSize + projectSize + sdirSize + 8, IAllocator::kHI_RoundUpLen)));
 #endif
   x34_pool = x8_groupData.get();
@@ -377,12 +361,9 @@ CAudioGrpSetLoc::CAudioGrpSetLoc(const rstl::auto_ptr< uchar >& data, int length
 }
 
 CAudioGrpSetLoc::~CAudioGrpSetLoc() {
-#ifdef TARGET_PC
-  RetainAudioGroupBuffer(x8_groupData.release());
-  RetainAudioGroupBuffer(x0_data.release());
-#else
+  // CAudioSys pins the resource for each pushed group. sndPopGroup retires
+  // software voices synchronously before dropping that pin.
   CMemory::Free(x8_groupData.release());
-#endif
 }
 
 void CAudioGrpSetLoc::FreeSampleBuffer() {
@@ -390,7 +371,7 @@ void CAudioGrpSetLoc::FreeSampleBuffer() {
   // On PC `hwSaveSample` never copies samples into ARAM, so MusyX reads sample
   // data directly from `x0_data` through pointers stored in the pushed sample
   // directory. Releasing the buffer here would leave those pointers dangling
-  // while the group is still pushed; the buffer is retained at destruction.
+  // while the group is still pushed; CAudioSys owns a pin until it is popped.
 #else
   x0_data = nullptr;
   x40_samples = nullptr;
@@ -403,7 +384,7 @@ CFactoryFnReturn::CFactoryFnReturn(CAudioGrpSetLoc* ptr)
           .release()) {}
 
 const CFactoryFnReturn FAudioGroupSetLocDataFactory(const SObjectTag& tag,
-                                                    const rstl::auto_ptr< uchar >& data, int length,
+                                                    const rstl::auto_ptr< uchar[] >& data, int length,
                                                     const CVParamTransfer& xfer) {
   return rs_new CAudioGrpSetLoc(data, length);
 }

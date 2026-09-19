@@ -70,7 +70,7 @@ private:
   CMappableObject* x38_moStart;
   CVector3f* x3c_vertexStart;
   CMapAreaSurface* x40_surfaceStart;
-  rstl::single_ptr< uchar > x44_buf;
+  rstl::single_ptr< rstl::game_memory< uchar > > x44_buf;
 
 #if UINTPTR_MAX > UINT32_MAX
   rstl::vector< CMapAreaSurface > mNativeSurfaces;

@@ -29,7 +29,7 @@ class CModel {
   static CModel* sTwoFrameList;
 
 public:
-  CModel(const rstl::auto_ptr< uchar >& data, int length, IObjectStore& store);
+  CModel(const rstl::auto_ptr< uchar[] >& data, int length, IObjectStore& store);
   ~CModel();
   void Touch(int) const;
   void Draw(const CModelFlags&) const;
@@ -41,7 +41,7 @@ public:
   const float* GetNormals() const;
   void UpdateLastFrame() const;
   // Retail buffer relocation methods; names are inferred from their implementations.
-  rstl::auto_ptr< uchar > GetData();
+  rstl::auto_ptr< uchar[] > GetData();
   uint GetDataSize() const;
   void RemapData(uchar* data);
 
@@ -72,7 +72,7 @@ public:
   }
 
 private:
-  rstl::single_ptr< uchar > x0_data;
+  rstl::single_ptr< uchar[] > x0_data;
   uint x4_dataLen;
   rstl::vector< void* > x8_surfaces;
   mutable rstl::vector< SShader > x18_matSets;
@@ -84,6 +84,6 @@ private:
   mutable uint x38_lastFrame;
 };
 
-const CFactoryFnReturn FModelFactory(const SObjectTag& tag, const rstl::auto_ptr< uchar >& ptr,
+const CFactoryFnReturn FModelFactory(const SObjectTag& tag, const rstl::auto_ptr< uchar[] >& ptr,
                                      int len, const CVParamTransfer& xfer);
 #endif // _CMODEL

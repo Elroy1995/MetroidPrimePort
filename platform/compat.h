@@ -11,8 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-// The game's global `operator delete` (routing to CMemory::Free) lives inline in
-// this header; without it, `delete` on game-allocator memory reaches glibc free.
+// The native build uses host new/delete. CMemory allocations have a separate
+// lifetime and must be returned explicitly through CMemory::Free.
 #include <Kyoto/Alloc/CMemory.hpp>
 
 // MWCC-isms used throughout the decompiled code.
@@ -27,7 +27,7 @@
 #include <dolphin/os.h>
 #include <dolphin/card.h>
 
-// Aurora provides CARDFormat but not its async wrapper; see platform/shims.cpp.
+// Aurora implements CARDFormatAsync but does not expose it in its umbrella.
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -31,8 +31,8 @@ public:
     SObjectTag x0_tag;
     rstl::auto_ptr< CDvdRequest > x8_dvdReq;
     IObj** x10_target;
-    rstl::auto_ptr< uchar > x14_buffer;
-    rstl::auto_ptr< uchar > x1c_decompBuffer;
+    rstl::auto_ptr< uchar[] > x14_buffer;
+    rstl::auto_ptr< uchar[] > x1c_decompBuffer;
     rstl::auto_ptr< z_stream_s > x24_zip;
     int x2c_size;
     CResLoader::ECompressionType x30_compression;

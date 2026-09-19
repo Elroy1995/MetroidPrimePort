@@ -48,13 +48,13 @@ RotationAndOffsetStorage::RotationAndOffsetStorage(const CRotationAndOffsetVecto
 , xc_rotationsPerFrame(storage.x0_rotations.size() / numFrames)
 , x10_offsetsPerFrame(storage.x10_offsets.size() / numFrames) {}
 
-rstl::auto_ptr< uint >
+rstl::auto_ptr< uint[] >
 RotationAndOffsetStorage::GetRotationsAndOffsets(const rstl::vector< CQuaternion >& rotations,
                                                  const rstl::vector< CVector3f >& offsets,
                                                  uint numFrames) {
   xc_rotationsPerFrame = rotations.size() / numFrames;
   x10_offsetsPerFrame = offsets.size() / numFrames;
-  rstl::auto_ptr< uint > storage(rs_new uint[DataSizeInBytes(rotations.size() / numFrames, //
+  rstl::auto_ptr< uint[] > storage(rs_new uint[DataSizeInBytes(rotations.size() / numFrames, //
                                                              offsets.size() / numFrames,   //
                                                              numFrames                     //
                                                              ) /

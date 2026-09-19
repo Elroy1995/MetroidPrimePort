@@ -95,7 +95,7 @@ public:
   virtual void SetBlendMode_AdditiveDestColor() = 0;
 
   virtual void SetDebugOption(IRenderer::EDebugOption option, int value) = 0;
-  virtual void BeginScene() = 0;
+  virtual bool BeginScene() = 0;
   virtual void EndScene() = 0;
   virtual void BeginPrimitive(IRenderer::EPrimitiveType prim, int count) = 0;
   virtual void BeginLines(int nverts) = 0;

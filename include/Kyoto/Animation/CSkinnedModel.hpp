@@ -73,15 +73,15 @@ private:
   TLockedToken< CModel > x4_model;
   TLockedToken< CSkinRules > x10_skinRules;
   TLockedToken< CCharLayoutInfo > x1c_layoutInfo;
-  mutable rstl::auto_ptr< float > x28_vertWorkspace;
-  mutable rstl::auto_ptr< float > x30_normalWorkspace;
+  mutable rstl::auto_ptr< float[] > x28_vertWorkspace;
+  mutable rstl::auto_ptr< float[] > x30_normalWorkspace;
   bool x38_owned;
   bool x39_disableWorkspaces;
 };
 
 class CSkinnedModelWithAvgNormals {
   CSkinnedModel x0_skinnedModel;
-  rstl::auto_ptr< float > x3c_avgNormals;
+  rstl::auto_ptr< float[] > x3c_avgNormals;
 
 public:
   CSkinnedModelWithAvgNormals(const CSkinnedModel& model);

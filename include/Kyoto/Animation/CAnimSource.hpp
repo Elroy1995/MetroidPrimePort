@@ -29,7 +29,7 @@ public:
 
   static uint DataSizeInBytes(uint, uint, uint);
 
-  rstl::auto_ptr< uint > GetRotationsAndOffsets(const rstl::vector< CQuaternion >& rotations,
+  rstl::auto_ptr< uint[] > GetRotationsAndOffsets(const rstl::vector< CQuaternion >& rotations,
                                                 const rstl::vector< CVector3f >& offsets,
                                                 uint numFrames);
 
@@ -53,7 +53,7 @@ public:
   }
 
 private:
-  rstl::auto_ptr< uint > x0_storage;
+  rstl::auto_ptr< uint[] > x0_storage;
   uint x8_numFrames;
   uint xc_rotationsPerFrame;
   uint x10_offsetsPerFrame;

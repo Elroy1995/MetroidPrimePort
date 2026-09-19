@@ -44,7 +44,8 @@ prereserved_vector< CPFRegion* >* CPFAreaOctree::GetRegionList(const CVector3f& 
   if (x0_isLeaf) {
     return &x48_regions;
   }
-  return x28_children[GetChildIndex(point)]->GetRegionList(point);
+  CPFAreaOctree* child = x28_children[GetChildIndex(point)];
+  return child != nullptr ? child->GetRegionList(point) : nullptr;
 }
 
 void CPFAreaOctree::GetRegionListList(
@@ -57,14 +58,33 @@ void CPFAreaOctree::GetRegionListList(
     lists.push_back(&x48_regions);
   } else {
     for (int i = 0; i < 8; ++i) {
-      if (x28_children[i]->IsPointInsidePaddedAABox(point, padding)) {
+      if (x28_children[i] != nullptr && x28_children[i]->IsPointInsidePaddedAABox(point, padding)) {
         x28_children[i]->GetRegionListList(lists, point, padding);
       }
     }
   }
 }
 
-CPFArea::CPFArea(const rstl::auto_ptr< uchar >& data, int size)
+void CPFAreaOctree::ValidateGraph(const CPFAreaOctree* base, uchar* marks, uint depth) const {
+  const size_t index = this - base;
+  if (marks[index] == 1 || depth > 64) {
+    throw std::runtime_error("PATH octree contains a cycle or excessive depth");
+  }
+  if (marks[index] == 2) {
+    return;
+  }
+  marks[index] = 1;
+  if (!x0_isLeaf) {
+    for (const CPFAreaOctree* child : x28_children) {
+      if (child != nullptr) {
+        child->ValidateGraph(base, marks, depth + 1);
+      }
+    }
+  }
+  marks[index] = 2;
+}
+
+CPFArea::CPFArea(const rstl::auto_ptr< uchar[] >& data, int size)
 : x0_bestPointDistSq(FLT_MAX)
 , x4_closestPoint(CVector3f::Zero())
 , x20_cachedRegionList(nullptr)
@@ -74,19 +94,29 @@ CPFArea::CPFArea(const rstl::auto_ptr< uchar >& data, int size)
 , x13c_data(data.release())
 , x188_transform(CTransform4f::Identity()) {
   CMemoryInStream stream(x13c_data.get(), size);
-  stream.ReadLong();
+  if (size < 4 || stream.ReadLong() != 4) {
+    throw std::runtime_error("Unsupported PATH version (expected 4)");
+  }
+  const auto readCount = [&](uint recordSize) {
+    const uint count = stream.ReadLong();
+    const uint position = stream.GetReadPosition();
+    if (position > static_cast<uint>(size) || count > (size - position) / recordSize) {
+      throw std::runtime_error("PATH record count exceeds resource size");
+    }
+    return static_cast<int>(count);
+  };
 
-  int numNodes = stream.ReadLong();
+  int numNodes = readCount(24);
   x140_nodes.reserve(numNodes);
   for (int i = 0; i < numNodes; ++i) {
     x140_nodes.push_back(CPFNode(stream));
   }
-  int numLinks = stream.ReadLong();
+  int numLinks = readCount(16);
   x148_links.reserve(numLinks);
   for (int i = 0; i < numLinks; ++i) {
     x148_links.push_back(CPFLink(stream));
   }
-  const int numRegions = stream.ReadLong();
+  const int numRegions = readCount(80);
   x150_regions.reserve(numRegions);
   for (int i = 0; i < numRegions; ++i) {
     x150_regions.push_back(CPFRegion(stream));
@@ -102,7 +132,12 @@ CPFArea::CPFArea(const rstl::auto_ptr< uchar >& data, int size)
   maxRegionNodes = maxRegionNodes > 4 ? maxRegionNodes : 4;
   x10_polyPoints.reserve(maxRegionNodes);
 
-  int numWords = (numRegions * (numRegions - 1) / 2 + 31) / 32;
+  const uint64_t connections = (uint64_t(numRegions) * numRegions + 31) / 32;
+  const uint position = stream.GetReadPosition();
+  if (position > static_cast<uint>(size) || connections > (size - position) / 8) {
+    throw std::runtime_error("PATH connectivity tables exceed resource size");
+  }
+  int numWords = (uint64_t(numRegions) * (numRegions - 1) / 2 + 31) / 32;
   x168_connectionsGround.reserve(numWords);
   x170_connectionsFlyers.reserve(numWords);
   for (i = 0; i < numWords; ++i) {
@@ -111,14 +146,17 @@ CPFArea::CPFArea(const rstl::auto_ptr< uchar >& data, int size)
   for (i = 0; i < numWords; ++i) {
     x170_connectionsFlyers.push_back(stream.ReadLong());
   }
-  const int paddingWords = ((numRegions * numRegions + 31) / 32 - numWords) * 2;
+  const int paddingWords = (connections - numWords) * 2;
   for (i = 0; i < paddingWords; ++i) {
     stream.ReadLong();
   }
 
-  int numRegionPtrs = stream.ReadLong();
+  int numRegionPtrs = readCount(4);
   x160_octreeRegions.reserve(numRegionPtrs);
   for (i = 0; i < numRegionPtrs; ++i) {
+    if (reinterpret_cast<uintptr_t>(x160_octreeRegions[i]) >= static_cast<uintptr_t>(numRegions)) {
+      throw std::runtime_error("PATH region index is out of range");
+    }
     x160_octreeRegions.push_back(
         reinterpret_cast< CPFRegion* >(static_cast< uintptr_t >(stream.ReadLong())));
   }
@@ -126,7 +164,7 @@ CPFArea::CPFArea(const rstl::auto_ptr< uchar >& data, int size)
     x160_octreeRegions[i] =
         &x150_regions[reinterpret_cast< uintptr_t >(x160_octreeRegions[i])];
   }
-  int numOctreeNodes = stream.ReadLong();
+  int numOctreeNodes = readCount(80);
   x158_octree.reserve(numOctreeNodes);
   for (i = 0; i < numOctreeNodes; ++i) {
     x158_octree.push_back(CPFAreaOctree(stream));
@@ -134,9 +172,16 @@ CPFArea::CPFArea(const rstl::auto_ptr< uchar >& data, int size)
   for (i = 0; i < numOctreeNodes; ++i) {
     x158_octree[i].Fixup(*this);
   }
+  rstl::vector<uchar> marks(numOctreeNodes, uchar(0));
+  if (!x158_octree.empty()) {
+    x158_octree.back().ValidateGraph(x158_octree.data(), marks.data(), 0);
+  }
 }
 
 prereserved_vector< CPFRegion* >* CPFArea::GetOctreeRegionList(const CVector3f& point) {
+  if (x158_octree.empty()) {
+    return nullptr;
+  }
   if (x30_hasCachedRegionList && close_enough(point, x24_cachedRegionListPoint)) {
     return x20_cachedRegionList;
   }
@@ -146,6 +191,9 @@ prereserved_vector< CPFRegion* >* CPFArea::GetOctreeRegionList(const CVector3f& 
 int CPFArea::FindRegions(rstl::reserved_vector< CPFRegion*, 4 >& regions, const CVector3f& point,
                          uint flags, uint indexMask) {
   prereserved_vector< CPFRegion* >* list = GetOctreeRegionList(point);
+  if (list == nullptr) {
+    return 0;
+  }
   for (int i = 0; i < list->size(); ++i) {
     CPFRegion* region = (*list)[i];
     if ((region->GetFlags() & 0xff & flags) && ((region->GetFlags() >> 16) & 0xff & indexMask) &&
@@ -162,6 +210,9 @@ int CPFArea::FindRegions(rstl::reserved_vector< CPFRegion*, 4 >& regions, const 
 
 CPFRegion* CPFArea::FindClosestRegion(const CVector3f& point, uint flags, uint indexMask,
                                       float padding) {
+  if (x158_octree.empty()) {
+    return nullptr;
+  }
   rstl::reserved_vector< prereserved_vector< CPFRegion* >*, 32 > lists;
   CPFRegion* result = nullptr;
   OSGetTick();
@@ -239,7 +290,7 @@ bool CPFArea::PathExists(const CPFRegion* source, const CPFRegion* destination, 
   return (x168_connectionsGround[bit / 32] >> (bit % 32)) & 1;
 }
 
-const CFactoryFnReturn FPathFindAreaFactory(const SObjectTag& tag, const rstl::auto_ptr< uchar >& data,
+const CFactoryFnReturn FPathFindAreaFactory(const SObjectTag& tag, const rstl::auto_ptr< uchar[] >& data,
                                       int size, const CVParamTransfer& xfer) {
   return rs_new CPFArea(data, size);
 }

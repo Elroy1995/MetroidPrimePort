@@ -82,7 +82,7 @@ public:
   virtual bool IIsActive() const = 0;
   virtual CAssetId IGetAreaAssetId() const = 0;
   virtual int IGetAreaSaveId() const = 0;
-  virtual rstl::pair< rstl::auto_ptr< char >, int > IGetScriptingMemoryAlways() const = 0;
+  virtual rstl::pair< rstl::auto_ptr< char[] >, int > IGetScriptingMemoryAlways() const = 0;
 };
 
 class CPFArea;
@@ -182,7 +182,7 @@ public:
     CPFArea* x10bc_pathArea;
     rstl::single_ptr< CAreaObjectList > x10c0_areaObjectList;
     rstl::single_ptr< CAreaFog > x10c4_areaFog;
-    rstl::auto_ptr< char > x10c8_sclyBuf;
+    rstl::auto_ptr< char[] > x10c8_sclyBuf;
     size_t x10d0_sclySize;
     const u8* x10d4_firstMatPtr;
     const CScriptAreaAttributes* x10d8_areaAttributes;
@@ -225,7 +225,7 @@ public:
   bool IIsActive() const override;
   CAssetId IGetAreaAssetId() const override;
   int IGetAreaSaveId() const override;
-  rstl::pair< rstl::auto_ptr< char >, int > IGetScriptingMemoryAlways() const override;
+  rstl::pair< rstl::auto_ptr< char[] >, int > IGetScriptingMemoryAlways() const override;
 
   TAreaId GetId() const { return x4_selfIdx; }
   int GetNumAttachedAreas() const { return x8c_attachedAreaIndices.size(); }
@@ -357,7 +357,7 @@ private:
   bool xf0_28_validated : 1;
   EPhase xf4_phase;
   rstl::list< rstl::auto_ptr< CDvdRequest > > xf8_loadTransactions;
-  rstl::vector< rstl::pair< rstl::auto_ptr< char >, int > > x110_mreaSecBufs;
+  rstl::vector< rstl::pair< rstl::auto_ptr< rstl::game_memory< char > >, int > > x110_mreaSecBufs;
   int x120_unk;
   int x124_secCount;
   int x128_mreaDataOffset;
@@ -374,7 +374,7 @@ class CDummyGameArea final : public IGameArea {
 
 public:
   CDummyGameArea(CInputStream& in, int idx, const int mlvlVersion);
-  rstl::pair< rstl::auto_ptr< char >, int > IGetScriptingMemoryAlways() const override;
+  rstl::pair< rstl::auto_ptr< char[] >, int > IGetScriptingMemoryAlways() const override;
   int IGetAreaSaveId() const override;
   CAssetId IGetAreaAssetId() const override;
   bool IIsActive() const override;

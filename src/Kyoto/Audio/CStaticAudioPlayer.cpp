@@ -94,7 +94,7 @@ CStaticAudioPlayer::CStaticAudioPlayer(const rstl::string& filepath, const int l
       uVar1 = (i + 31) & ~31;
     }
 
-    rstl::auto_ptr< uchar > buf((uchar*)CMemory::Alloc(uVar1, IAllocator::kHI_RoundUpLen));
+    rstl::auto_ptr< rstl::game_memory< uchar > > buf((uchar*)CMemory::Alloc(uVar1, IAllocator::kHI_RoundUpLen));
     x48_buffers.push_back(buf);
     x38_dvdRequests.push_back(dvdFile.SyncReadBlocking(buf.get(), uVar1));
   }

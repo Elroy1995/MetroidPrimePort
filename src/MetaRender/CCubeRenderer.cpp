@@ -488,7 +488,10 @@ void CCubeRenderer::SetWorldViewpoint(const CTransform4f& xf) {
                         normal);
 }
 
-void CCubeRenderer::BeginScene() {
+bool CCubeRenderer::BeginScene() {
+  if (!CGraphics::BeginScene()) {
+    return false;
+  }
   int width = CGraphics::GetViewport().mWidth;
   int height = CGraphics::GetViewport().mHeight;
   CGraphics::SetUseVideoFilter(true);
@@ -522,7 +525,7 @@ void CCubeRenderer::BeginScene() {
   GXSetPixelFmt(x318_27_currentRGBA6 ? GX_PF_RGBA6_Z24 : GX_PF_RGB8_Z24, GX_ZC_LINEAR);
   GXSetAlphaUpdate(GX_TRUE);
   GXSetDstAlpha(GX_TRUE, 0);
-  CGraphics::BeginScene();
+  return true;
 }
 
 void CCubeRenderer::EndScene() {

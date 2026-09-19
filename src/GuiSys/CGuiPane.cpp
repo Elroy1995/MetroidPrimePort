@@ -37,9 +37,7 @@ CGuiPane::CGuiPane(const CGuiWidgetParms& parms, const float width, const float 
 }
 
 CGuiPane::~CGuiPane() {
-  if (xc0_panePoints && xc0_panePoints) {
-    delete xc0_panePoints;
-  }
+  delete[] xc0_panePoints;
 }
 
 void CGuiPane::Draw(const CGuiWidgetDrawParms& parms) const {

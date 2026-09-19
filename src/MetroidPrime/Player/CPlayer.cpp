@@ -429,6 +429,7 @@ CPlayer::CPlayer(TUniqueId uid, const CTransform4f& xf, const CAABox& aabb, CAss
 , xa28_attachedActorStruggle(0.f)
 , xa2c_damageLoopSfxDelayTicks(2)
 , xa30_samusExhaustedVoiceTimer(4.f) {
+  PortDebug::ResetMouseAim();
   CModelData ballTransitionBeamModelData(
       CStaticRes(gpTweakPlayerRes->GetBallTransitionBeamResId(x7ec_beam), playerScale));
   x7f0_ballTransitionBeamModel = ballTransitionBeamModelData.IsNull()
@@ -776,7 +777,6 @@ void CPlayer::Update(float dt, CStateManager& mgr) {
   // Port: latch this frame's mouse delta, then update the mouse-look aim. The
   // camera reads the aim angles directly (CFirstPersonCamera) and the body is
   // rotated to match so movement stays view-relative.
-  PortDebug::BeginFrameMouse();
   if (PortDebug::MouseAim()) {
     if (!PortDebug::AimInitialized()) {
       const CVector3f forward = GetTransform().GetColumn(kDY);

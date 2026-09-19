@@ -41,10 +41,10 @@ private:
   int x1c_loopStartSamp;
   int x20_loopEndSamp;
   int x24_curBuf;
-  rstl::auto_ptr< uchar > x28_dmaLeft;
-  rstl::auto_ptr< uchar > x30_dmaRight;
+  rstl::auto_ptr< rstl::game_memory< uchar > > x28_dmaLeft;
+  rstl::auto_ptr< rstl::game_memory< uchar > > x30_dmaRight;
   rstl::vector< rstl::auto_ptr< CDvdRequest > > x38_dvdRequests;
-  rstl::vector< rstl::auto_ptr< uchar > > x48_buffers;
+  rstl::vector< rstl::auto_ptr< rstl::game_memory< uchar > > > x48_buffers;
   g72x_state x58_leftState;
   g72x_state x8c_rightState;
   ushort xc0_volume;

@@ -43,7 +43,7 @@ public:
     short x0_songId;
     short x2_groupId;
     CAssetId x4_agscId;
-    rstl::auto_ptr< uchar > x8_data;
+    rstl::auto_ptr< uchar[] > x8_data;
   };
 
   static CSfxHandle Play(const CMidiData&, unsigned short fadeTime, bool stopExisting,

@@ -201,9 +201,9 @@ void CGameArea::VerifyTokenList(CStateManager& mgr) {
   }
 }
 
-static rstl::pair< rstl::auto_ptr< char >, int > GetScriptingMemoryAlways(const IGameArea& area) {
+static rstl::pair< rstl::auto_ptr< char[] >, int > GetScriptingMemoryAlways(const IGameArea& area) {
   SObjectTag tag('MREA', area.IGetAreaAssetId());
-  rstl::auto_ptr< char > headerBuffer = rs_new char[0x60];
+  rstl::auto_ptr< char[] > headerBuffer = rs_new char[0x60];
   const int* header = reinterpret_cast< const int* >(headerBuffer.get());
   rstl::single_ptr< CInputStream > headerStream(
       gpResourceFactory->GetResLoader().LoadNewResourcePartSync(tag, 0, 0x60, headerBuffer.get()));
@@ -231,14 +231,14 @@ static rstl::pair< rstl::auto_ptr< char >, int > GetScriptingMemoryAlways(const 
         offset += sizes[i];
       }
       int size = sizes[scriptSection];
-      rstl::auto_ptr< char > buffer = rs_new char[size];
+      rstl::auto_ptr< char[] > buffer = rs_new char[(size + 31) & ~31];
       rstl::single_ptr< CInputStream > scriptStream(
           gpResourceFactory->GetResLoader().LoadNewResourcePartSync(tag, offset, size,
                                                                     buffer.get()));
-      return rstl::pair< rstl::auto_ptr< char >, int >(buffer, size);
+      return rstl::pair< rstl::auto_ptr< char[] >, int >(buffer, size);
     }
   }
-  return rstl::pair< rstl::auto_ptr< char >, int >(nullptr, 0);
+  return rstl::pair< rstl::auto_ptr< char[] >, int >(nullptr, 0);
 }
 
 void CGameArea::FillInStaticGeometry() {
@@ -287,7 +287,7 @@ static inline CVector3f SwapVectorBytes(CVector3f vec) {
 
 void CGameArea::PostConstructArea() {
   const int version = VerifyHeader();
-  rstl::vector< rstl::pair< rstl::auto_ptr< char >, int > >::const_iterator section =
+  rstl::vector< rstl::pair< rstl::auto_ptr< rstl::game_memory< char > >, int > >::const_iterator section =
       x110_mreaSecBufs.begin();
   const SMREAHeader* header = reinterpret_cast< const SMREAHeader* >(section->first.get());
   // Retail retains these transform comparisons with their results discarded.
@@ -599,7 +599,7 @@ void CGameArea::KillmAreaData() {
     }
   }
 #endif
-  x110_mreaSecBufs = rstl::vector< rstl::pair< rstl::auto_ptr< char >, int > >();
+  x110_mreaSecBufs.clear();
 }
 
 bool CGameArea::Invalidate(CStateManager* mgr) {
@@ -643,7 +643,7 @@ bool CGameArea::Invalidate(CStateManager* mgr) {
 
 char* CGameArea::AllocNewAreaData(int offset, int size) {
   char* buffer = static_cast< char* >(CMemory::Alloc(size, IAllocator::kHI_RoundUpLen));
-  rstl::pair< rstl::auto_ptr< char >, int > data(buffer, size);
+  rstl::pair< rstl::auto_ptr< rstl::game_memory< char > >, int > data(buffer, size);
   x110_mreaSecBufs.push_back(data);
   SObjectTag tag('MREA', x84_mrea);
   xf8_loadTransactions.push_back(rstl::auto_ptr< CDvdRequest >(
@@ -745,7 +745,7 @@ bool CGameArea::StartStreamingMainArea() {
       }
       totalSize += size;
     }
-    rstl::auto_ptr< char > buffer =
+    rstl::auto_ptr< rstl::game_memory< char > > buffer =
         static_cast< char* >(CMemory::Alloc(totalSize, IAllocator::kHI_RoundUpLen));
     xf8_loadTransactions.push_back(
         rstl::auto_ptr< CDvdRequest >(gpResourceFactory->GetResLoader().LoadResourcePartAsync(
@@ -753,12 +753,12 @@ bool CGameArea::StartStreamingMainArea() {
     x128_mreaDataOffset += totalSize;
     const int firstSize = sizes[secCount];
     int offset = firstSize;
-    x110_mreaSecBufs.push_back(rstl::pair< rstl::auto_ptr< char >, int >(buffer, firstSize));
+    x110_mreaSecBufs.push_back(rstl::pair< rstl::auto_ptr< rstl::game_memory< char > >, int >(buffer, firstSize));
     for (int i = secCount + 1; i < targetSecCount; ++i) {
-      rstl::auto_ptr< char > section(buffer.get() + offset);
+      rstl::auto_ptr< rstl::game_memory< char > > section(buffer.get() + offset);
       section.release();
       int size = sizes[i];
-      x110_mreaSecBufs.push_back(rstl::pair< rstl::auto_ptr< char >, int >(section, size));
+      x110_mreaSecBufs.push_back(rstl::pair< rstl::auto_ptr< rstl::game_memory< char > >, int >(section, size));
       offset += size;
     }
     x124_secCount = targetSecCount;
@@ -816,7 +816,7 @@ bool CGameArea::TransferARAMTokensOver(EARAMTransfer mode) {
       char* buffer = static_cast< char* >(it->first.GetMRAMSafe());
       int offset = 0;
       for (int i = 0; i < it->second; ++i) {
-        rstl::auto_ptr< char > section(buffer + offset);
+        rstl::auto_ptr< rstl::game_memory< char > > section(buffer + offset);
         section.release();
         offset += x110_mreaSecBufs[part].second;
         x110_mreaSecBufs[part].first = section;
@@ -832,7 +832,7 @@ bool CGameArea::TransferTokensToARAM() {
   bool finished = true;
   int part = x12c_postConstructed->x10e8_;
   AUTO(it, x12c_postConstructed->x10f0_tokens.begin());
-  rstl::auto_ptr< char > empty;
+  rstl::auto_ptr< rstl::game_memory< char > > empty;
   for (; it != x12c_postConstructed->x10f0_tokens.end(); ++it) {
     for (int i = 0; i < it->second; ++i) {
       x110_mreaSecBufs[part].first = empty;
@@ -1139,7 +1139,7 @@ CAssetId CGameArea::IGetAreaAssetId() const { return x84_mrea; }
 
 int CGameArea::IGetAreaSaveId() const { return x88_areaId; }
 
-rstl::pair< rstl::auto_ptr< char >, int > CGameArea::IGetScriptingMemoryAlways() const {
+rstl::pair< rstl::auto_ptr< char[] >, int > CGameArea::IGetScriptingMemoryAlways() const {
   return GetScriptingMemoryAlways(*this);
 }
 
@@ -1196,7 +1196,7 @@ CAssetId CDummyGameArea::IGetAreaAssetId() const { return xc_mrea; }
 
 int CDummyGameArea::IGetAreaSaveId() const { return x10_areaId; }
 
-rstl::pair< rstl::auto_ptr< char >, int > CDummyGameArea::IGetScriptingMemoryAlways() const {
+rstl::pair< rstl::auto_ptr< char[] >, int > CDummyGameArea::IGetScriptingMemoryAlways() const {
   return GetScriptingMemoryAlways(*this);
 }
 

@@ -117,17 +117,17 @@ public:
 };
 
 template < typename T >
-const T& CMath::Clamp(const T& min, const T& val, const T& max) {
+inline const T& CMath::Clamp(const T& min, const T& val, const T& max) {
   return min > val ? min : max < val ? max : val;
 }
 
 template < typename T >
-const T& CMath::Min(const T& a, const T& b) {
+inline const T& CMath::Min(const T& a, const T& b) {
   return a < b ? a : b;
 }
 
 template < typename T >
-const T& CMath::Max(const T& a, const T& b) {
+inline const T& CMath::Max(const T& a, const T& b) {
   return a > b ? a : b;
 }
 #endif // _CMATH

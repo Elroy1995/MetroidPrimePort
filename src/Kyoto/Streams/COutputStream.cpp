@@ -5,6 +5,7 @@
 #include "Kyoto/Alloc/CMemory.hpp"
 
 #include <stdint.h>
+#include <stdexcept>
 #include <string.h> 
 
 COutputStream::COutputStream(const int len)
@@ -75,8 +76,10 @@ void COutputStream::FlushShiftRegister() {
 }
 
 void COutputStream::WriteBits(const uint val, const uint bitCount) {
-
-#if NONMATCHING
+  if (bitCount > 32) {
+    throw std::runtime_error("Invalid resource bit-field width");
+  }
+#if NONMATCHING || defined(TARGET_PC)
   for (uint i = bitCount; i > 0; --i) {
     if (mShiftRegisterOffset == 0) {
       FlushShiftRegister();

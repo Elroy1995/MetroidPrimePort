@@ -17,7 +17,7 @@ public:
   size_t Read(void* dest, size_t len) override;
 
 private:
-  rstl::single_ptr<uchar> mCompBuf;
+  rstl::single_ptr<uchar[]> mCompBuf;
   rstl::auto_ptr< CInputStream > mStream;
   rstl::single_ptr<z_stream_s> mZStream;
 };

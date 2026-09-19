@@ -10,6 +10,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 
 namespace aurora {
 void request_screenshot() noexcept;
@@ -17,6 +18,7 @@ void request_screenshot() noexcept;
 
 // Implemented by the AI and MusyX audio backends.
 extern "C" void AIPortSetOutputEnabled(int enabled);
+extern "C" int AIPortOutputEnabled(void);
 extern "C" void salSetMuted(int muted);
 
 namespace {
@@ -29,6 +31,7 @@ bool sVsyncEnabled = false;
 float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
 bool sMouseAim = false;
+bool sMouseCaptured = false;
 float sMouseSensitivity = 0.0035f;
 float sMousePendingX = 0.f;
 float sMousePendingY = 0.f;
@@ -62,14 +65,14 @@ void EnsureInitialized() {
   sMouseAim = std::getenv("MP_MOUSE_AIM") != nullptr;
   if (const char* sens = std::getenv("MP_MOUSE_SENS")) {
     const float value = static_cast< float >(std::atof(sens));
-    if (value > 0.f) {
+    if (std::isfinite(value) && value > 0.f) {
       sMouseSensitivity = value;
     }
   }
   sAiAudioEnabled = std::getenv("MP_DISABLE_AI_AUDIO") == nullptr;
   if (const char* speed = std::getenv("MP_CUTSCENE_SPEED")) {
     const float value = static_cast< float >(std::atof(speed));
-    if (value >= 1.f) {
+    if (std::isfinite(value) && value >= 1.f && value <= 32.f) {
       sCutsceneSpeed = value;
     }
   }
@@ -149,6 +152,19 @@ bool MouseAim() {
 void SetMouseAim(bool enabled) {
   EnsureInitialized();
   sMouseAim = enabled;
+  ResetMouseAim();
+}
+
+void ResetMouseAim() {
+  sAimInitialized = false;
+  sMousePendingX = sMousePendingY = sMouseFrameX = sMouseFrameY = 0.f;
+}
+
+void SetMouseCaptured(bool captured) {
+  sMouseCaptured = captured;
+  if (!captured) {
+    sMousePendingX = sMousePendingY = sMouseFrameX = sMouseFrameY = 0.f;
+  }
 }
 
 float MouseSensitivity() {
@@ -158,12 +174,15 @@ float MouseSensitivity() {
 
 void SetMouseSensitivity(float radiansPerPixel) {
   EnsureInitialized();
-  if (radiansPerPixel > 0.f) {
+  if (std::isfinite(radiansPerPixel) && radiansPerPixel > 0.f) {
     sMouseSensitivity = radiansPerPixel;
   }
 }
 
 void AddMouseDelta(float dx, float dy) {
+  if (!sMouseCaptured || !MouseAim() || Visible() || !std::isfinite(dx) || !std::isfinite(dy)) {
+    return;
+  }
   sMousePendingX += dx;
   sMousePendingY += dy;
 }
@@ -189,12 +208,12 @@ void SetAimInitialized(bool initialized) { sAimInitialized = initialized; }
 
 bool AiAudioEnabled() {
   EnsureInitialized();
-  return sAiAudioEnabled;
+  return AIPortOutputEnabled() != 0;
 }
 
 void SetAiAudioEnabled(bool enabled) {
   EnsureInitialized();
-  if (sAiAudioEnabled == enabled) {
+  if (sAiAudioEnabled == enabled && AiAudioEnabled() == enabled) {
     return;
   }
   sAiAudioEnabled = enabled;
@@ -231,6 +250,7 @@ bool Visible() {
 void Toggle() {
   EnsureInitialized();
   sVisible = !sVisible;
+  SetMouseCaptured(false);
 }
 
 void DrawPerformanceTab() {
@@ -270,7 +290,7 @@ void DrawRenderTab() {
     if (ImGui::SliderFloat("EFB scale", &scale, 1.f, 2.f, "%.2fx")) {
       SetRenderScale(scale);
     }
-    ImGui::TextUnformatted("Scales the internal EFB; higher values use more MEM1.");
+    ImGui::TextUnformatted("Scales the internal EFB; higher values use more GPU memory.");
   }
 }
 
@@ -284,7 +304,7 @@ void DrawInputTab() {
 }
 
 void DrawAudioTab() {
-  bool ai = sAiAudioEnabled;
+  bool ai = AiAudioEnabled();
   if (ImGui::Checkbox("Streamed audio (music/movies)", &ai)) {
     SetAiAudioEnabled(ai);
   }

@@ -55,6 +55,9 @@ GraphicsConfig g_graphicsConfig{};
 // --- GXState ---
 namespace aurora::gx {
 GXState g_gxState{};
+static std::atomic<u16> sTestDrawSyncToken{0};
+void set_draw_sync_token(u16 token) noexcept { sTestDrawSyncToken.store(token, std::memory_order_release); }
+u16 draw_sync_token() noexcept { return sTestDrawSyncToken.load(std::memory_order_acquire); }
 void set_viewport_policy(AuroraViewportPolicy policy) noexcept {}
 } // namespace aurora::gx
 

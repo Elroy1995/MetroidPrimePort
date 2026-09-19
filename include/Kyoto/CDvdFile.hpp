@@ -23,7 +23,7 @@ public:
   CDvdFile(const char* name);
   ~CDvdFile();
   uint Length() { return mSize; }
-  void HandleDVDInterrupt();
+  void HandleDVDInterrupt(bool success = true);
   void HandleARAMInterrupt();
   void PingARAMTransfer();
   void TryARAMFile();
@@ -54,6 +54,7 @@ private:
   uchar* mARAMBuffer;
   bool mARAMAllocated;
   bool mARAMPopped;
+  bool mARAMFailed;
   rstl::single_ptr< CDvdFileARAM > mARAMFile;
   int mOffset;
   int mSize;

@@ -5,6 +5,8 @@
 
 #include "Kyoto/Alloc/CMemory.hpp"
 #include "Kyoto/Streams/StreamSupport.hpp"
+#include <stdexcept>
+#include <limits>
 
 CInputStream::CInputStream(int len)
 : x4_blockOffset(0)
@@ -41,6 +43,9 @@ bool CInputStream::InternalReadNext() {
 bool CInputStream::GrabAnotherBlock() { return InternalReadNext(); }
 
 void CInputStream::Get(void* dest, unsigned long len) {
+  if (len > std::numeric_limits<uint>::max() || (dest == nullptr && len != 0)) {
+    throw std::runtime_error("Invalid resource read size");
+  }
   uint remain = len;
   uint readCount = 0;
   x20_bitOffset = 0;
@@ -56,10 +61,15 @@ void CInputStream::Get(void* dest, unsigned long len) {
       x4_blockOffset += blockLen;
     } else if (remain > 256) {
       uint readLen = Read(reinterpret_cast< uchar* >(dest) + readCount, remain);
+      if (readLen == 0 || readLen > remain) {
+        throw std::runtime_error("Truncated resource stream");
+      }
       remain -= readLen;
       readCount += readLen;
     } else {
-      GrabAnotherBlock();
+      if (!GrabAnotherBlock()) {
+        throw std::runtime_error("Truncated resource stream");
+      }
     }
   }
 
@@ -103,7 +113,10 @@ size_t CInputStream::ReadBytes(void* dest, size_t len) {
 }
 
 uint CInputStream::ReadBits(uint bitCount) {
-#if NONMATCHING
+  if (bitCount > 32) {
+    throw std::runtime_error("Invalid resource bit-field width");
+  }
+#if NONMATCHING || defined(TARGET_PC)
   uint result = 0;
   for (uint i = 0; i < bitCount; ++i) {
     if (x20_bitOffset == 0) {
@@ -164,7 +177,7 @@ uint CInputStream::ReadBits(uint bitCount) {
 }
 
 char CInputStream::ReadChar() {
-  static char c;
+  char c;
   Get(&c, sizeof(char));
   return c;
 }
@@ -172,25 +185,25 @@ char CInputStream::ReadChar() {
 bool CInputStream::ReadBool() { return static_cast< uchar >(ReadChar()) != 0; }
 
 ushort CInputStream::ReadShort() {
-  static ushort s;
+  ushort s;
   Get(&s, sizeof(ushort));
   return CBasics::SwapBytes(s);
 }
 
 uint CInputStream::ReadLong() {
-  static uint l;
+  uint l;
   Get(&l, sizeof(uint));
   return CBasics::SwapBytes(l);
 }
 
 u64 CInputStream::ReadLongLong() {
-  static u64 ll;
+  u64 ll;
   Get(&ll, sizeof(u64));
   return CBasics::SwapBytes(ll);
 }
 
 float CInputStream::ReadFloat() {
-  static float f;
+  float f;
   Get(&f, sizeof(float));
   return CBasics::SwapBytes(f);
 }

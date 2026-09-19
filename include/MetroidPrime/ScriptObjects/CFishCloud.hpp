@@ -135,7 +135,7 @@ private:
   CColor x16c_color;
   float x170_weaponKillRadius;
   float x174_containmentRadius;
-  rstl::reserved_vector< rstl::auto_ptr< float >, 4 > x178_posWorkspaces;
+  rstl::reserved_vector< rstl::auto_ptr< rstl::game_memory< float > >, 4 > x178_posWorkspaces;
   rstl::reserved_vector< float*, 4 > x19c_nrmWorkspaces;
   rstl::reserved_vector< rstl::ncrc_ptr< CModelData >, 4 > x1b0_models;
   rstl::reserved_vector< TLockedToken< CGenDescription >, 4 > x1c4_particleDescs;

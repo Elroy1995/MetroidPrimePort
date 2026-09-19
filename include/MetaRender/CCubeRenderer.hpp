@@ -119,7 +119,7 @@ public:
   void SetBlendMode_Replace() override;
   void SetBlendMode_AdditiveDestColor() override;
   void SetDebugOption(IRenderer::EDebugOption option, int value) override;
-  void BeginScene() override;
+  bool BeginScene() override;
   void EndScene() override;
   void BeginPrimitive(IRenderer::EPrimitiveType prim, int count) override;
   void BeginLines(int nverts) override;

@@ -44,10 +44,10 @@ public:
     void SetAudioSamplesConsumed(uint samples) { x24_audioSamplesConsumed = samples; }
 
   private:
-    rstl::auto_ptr< uchar > x0_y;
-    rstl::auto_ptr< uchar > x8_u;
-    rstl::auto_ptr< uchar > x10_v;
-    rstl::auto_ptr< uchar > x18_audio;
+    rstl::auto_ptr< uchar[] > x0_y;
+    rstl::auto_ptr< uchar[] > x8_u;
+    rstl::auto_ptr< uchar[] > x10_v;
+    rstl::auto_ptr< uchar[] > x18_audio;
     uint x20_audioSamples;
     uint x24_audioSamplesConsumed;
   };
@@ -94,9 +94,9 @@ private:
   THPVideoInfoOld x6c_videoInfo;
   THPAudioInfoOld x74_audioInfo;
   rstl::vector< CTHPTextureSet > x80_textures;
-  rstl::auto_ptr< uchar > x90_requestBuffer;
+  rstl::auto_ptr< uchar[] > x90_requestBuffer;
   rstl::single_ptr< CDvdRequest > x98_request;
-  rstl::vector< rstl::auto_ptr< uchar > > x9c_requestQueue;
+  rstl::vector< rstl::auto_ptr< uchar[] > > x9c_requestQueue;
   rstl::single_ptr< SIndexLoad > xac_indexLoad;
   uint xb0_nextReadSize;
   uint xb4_nextReadOff;

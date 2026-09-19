@@ -35,7 +35,7 @@ struct CMoviePlayer::SIndexLoad {
   rstl::single_ptr< CDvdRequest > x0_headerRequest;
   rstl::single_ptr< CDvdRequest > x4_videoRequest;
   rstl::single_ptr< CDvdRequest > x8_audioRequest;
-  rstl::single_ptr< uchar > xc_buffer;
+  rstl::single_ptr< uchar[] > xc_buffer;
   int x10_state;
 
   SIndexLoad()
@@ -340,7 +340,7 @@ void CMoviePlayer::InitializeTextures() {
 
 void CMoviePlayer::PostDVDReadRequestIfNeeded() {
   if (xc0_curLoadFrame < x28_header.mNumFrames) {
-    x90_requestBuffer = rstl::auto_ptr< uchar >(rs_new uchar[(xb0_nextReadSize + 31) & ~31]);
+    x90_requestBuffer = rstl::auto_ptr< uchar[] >(rs_new uchar[(xb0_nextReadSize + 31) & ~31]);
     x98_request = x0_dvdFile.AsyncSeekRead(x90_requestBuffer.get(), xb0_nextReadSize, kSO_Begin,
                                            xb4_nextReadOff);
   }
@@ -532,7 +532,7 @@ void CMoviePlayer::Rewind() {
     x98_request = nullptr;
   }
 
-  x90_requestBuffer = rstl::auto_ptr< uchar >(nullptr);
+  x90_requestBuffer = rstl::auto_ptr< uchar[] >(nullptr);
   xb0_nextReadSize = x28_header.mFirstFrameSize;
   xb4_nextReadOff = x28_header.mMovieDataOffsets;
   xb8_readSizeWrapped = x28_header.mFirstFrameSize;

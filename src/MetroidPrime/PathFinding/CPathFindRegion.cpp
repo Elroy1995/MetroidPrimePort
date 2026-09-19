@@ -29,8 +29,24 @@ CPFRegionData::CPFRegionData()
 , x2c_parentLink(0) {}
 
 void CPFRegion::Fixup(CPFArea& area, int& numNodes) {
+  const uintptr_t node = reinterpret_cast<uintptr_t>(x4_startNode);
+  const uintptr_t link = reinterpret_cast<uintptr_t>(xc_startLink);
+  if (x0_numNodes <= 0 || x8_numLinks < 0 || x24_regionIdx < 0 || x24_regionIdx >= area.GetNumRegions() ||
+      node > static_cast<uintptr_t>(area.GetNumNodes()) ||
+      static_cast<uintptr_t>(x0_numNodes) > area.GetNumNodes() - node ||
+      (x8_numLinks != 0 && (link > static_cast<uintptr_t>(area.GetNumLinks()) ||
+       static_cast<uintptr_t>(x8_numLinks) > area.GetNumLinks() - link))) {
+    throw std::runtime_error("PATH region range is invalid");
+  }
   x4_startNode = x0_numNodes ? &area.GetNode(reinterpret_cast< intptr_t >(x4_startNode)) : nullptr;
   xc_startLink = x8_numLinks ? &area.GetLink(reinterpret_cast< intptr_t >(xc_startLink)) : nullptr;
+  for (int i = 0; i < x8_numLinks; ++i) {
+    const CPFLink& link = xc_startLink[i];
+    if (link.GetNode() < 0 || link.GetNode() >= x0_numNodes ||
+        link.GetRegion() < 0 || link.GetRegion() >= area.GetNumRegions()) {
+      throw std::runtime_error("PATH link index is out of range");
+    }
+  }
   x4c_data = &area.GetRegionData(x24_regionIdx);
   if (x0_numNodes > numNodes) {
     numNodes = x0_numNodes;

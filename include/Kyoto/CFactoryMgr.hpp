@@ -12,7 +12,7 @@ class SObjectTag;
 
 typedef const CFactoryFnReturn (*FFactoryFunc)(const SObjectTag&, CInputStream&,
                                                const CVParamTransfer&);
-typedef const CFactoryFnReturn (*FMemFactoryFunc)(const SObjectTag&, const rstl::auto_ptr< uchar >&,
+typedef const CFactoryFnReturn (*FMemFactoryFunc)(const SObjectTag&, const rstl::auto_ptr< uchar[] >&,
                                                   int, const CVParamTransfer&);
 
 class CFactoryMgr {

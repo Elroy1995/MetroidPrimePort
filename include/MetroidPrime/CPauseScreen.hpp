@@ -59,7 +59,7 @@ private:
   CGuiTextPane* x50_textpane_back;
   CAssetId x54_frmePauseScreenId;
   uint x58_frmePauseScreenBufSz;
-  rstl::single_ptr< char > x5c_frmePauseScreenBuf;
+  rstl::single_ptr< rstl::game_memory< char > > x5c_frmePauseScreenBuf;
   rstl::single_ptr< CDvdRequest > x60_loadTok;
   rstl::reserved_vector< rstl::auto_ptr< CGuiFrame >, 2 > x64_frameInsts;
   uint x78_activeIdx;

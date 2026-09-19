@@ -177,7 +177,7 @@ private:
   rstl::single_ptr< TCachedToken< CMapWorld > > x28_mapWorld;
   CRelayList x2c_relays;
   rstl::single_ptr< CDvdRequest > x3c_loadToken;
-  rstl::single_ptr< char > x40_loadBuf;
+  rstl::single_ptr< rstl::game_memory< char > > x40_loadBuf;
   uint x44_bufSz;
   rstl::reserved_vector< CGameArea*, 5 > x48_chainHeads;
   IObjectStore* x60_objectStore;
@@ -216,7 +216,7 @@ class CDummyWorld : public IWorld {
   CAssetId x28_mapWorldId;
   rstl::single_ptr< TCachedToken< CMapWorld > > x2c_mapWorld;
   rstl::single_ptr< CDvdRequest > x30_loadToken;
-  rstl::single_ptr< char > x34_loadBuf;
+  rstl::single_ptr< char[] > x34_loadBuf;
   uint x38_bufSz;
   TAreaId x3c_curAreaId;
 

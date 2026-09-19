@@ -5,6 +5,7 @@
 #include "dolphin/os/OSCache.h"
 
 #include "Kyoto/MemoryCopy.hpp"
+#include "Kyoto/Basics/CBasics.hpp"
 
 bool CMemoryCardSys::mIsInitialized;
 bool CMemoryCardSys::mIsCardSysExists;
@@ -16,13 +17,23 @@ ECardResult SMemoryCardFileInfo::FileRead() {
   saveData = rstl::vector< uchar >();
   const uint size = x24_saveFileData.size();
   const void* data = x24_saveFileData.data();
-  const uint crc = *reinterpret_cast< const uint* >(data);
-  if (crc == CCRC32::Calculate(static_cast< const uchar* >(data) + 4, size - 4)) {
+  if (size < 4) {
+    return kCR_BROKEN;
+  }
+  uint storedCrc;
+  memcpy(&storedCrc, data, sizeof(storedCrc));
+  const uint crc = CCRC32::Calculate(static_cast< const uchar* >(data) + 4, size - 4);
+  // Accept saves from the early little-endian port as well as retail saves.
+  // Every subsequent write uses the retail big-endian representation.
+  if (CBasics::SwapBytes(storedCrc) == crc || storedCrc == crc) {
     uint offset;
     ECardResult result = GetSaveDataOffset(offset);
     if (result != kCR_READY) {
       x24_saveFileData = rstl::vector< uchar, rstl::aligned_allocator >();
       return result;
+    }
+    if (offset > size) {
+      return kCR_BROKEN;
     }
     const uint saveSize = size - offset;
     saveData.assign(saveSize);
@@ -71,7 +82,7 @@ ECardResult SMemoryCardFileInfo::GetSaveDataOffset(uint& offOut) {
   bool palette = false;
   int idx = 0;
   int format = stat.GetIconFormat(idx);
-  while (format != CARD_STAT_ICON_NONE) {
+  while (idx < 8 && format != CARD_STAT_ICON_NONE) {
     if (format == CARD_STAT_ICON_C8) {
       palette = true;
       offOut += 1024;
@@ -79,7 +90,9 @@ ECardResult SMemoryCardFileInfo::GetSaveDataOffset(uint& offOut) {
       offOut += 2048;
     }
     ++idx;
-    format = stat.GetIconFormat(idx);
+    if (idx < 8) {
+      format = stat.GetIconFormat(idx);
+    }
   }
   if (palette) {
     offOut += 512;
@@ -132,8 +145,9 @@ void CMemoryCardSys::CCardFileInfo::BuildCardBuffer() {
     WriteIconData(out);
   }
   (memcpy)(x104_cardBuffer.data() + bannerSize, xf4_saveBuffer.data(), xf4_saveBuffer.size());
-  *static_cast< uint* >(data) =
-      CCRC32::Calculate(static_cast< const uchar* >(data) + 4, totalSize - 4);
+  const uint crc = CBasics::SwapBytes(
+      CCRC32::Calculate(static_cast< const uchar* >(data) + 4, totalSize - 4));
+  memcpy(data, &crc, sizeof(crc));
   xf4_saveBuffer = rstl::vector< uchar >();
 }
 

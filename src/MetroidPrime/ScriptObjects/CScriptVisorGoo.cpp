@@ -1,4 +1,6 @@
 #include "MetroidPrime/ScriptObjects/CScriptVisorGoo.hpp"
+#include "Kyoto/Particles/CGenDescription.hpp"
+#include "Kyoto/Particles/CElectricDescription.hpp"
 
 #include "MetroidPrime/CActorParameters.hpp"
 #include "MetroidPrime/CStateManager.hpp"

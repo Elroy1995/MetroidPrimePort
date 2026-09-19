@@ -1,4 +1,6 @@
 #include "Kyoto/Input/CDolphinController.hpp"
+#include "port_debug.h"
+#include <SDL3/SDL_keyboard.h>
 
 #include <Kyoto/Alloc/CMemory.hpp>
 
@@ -72,14 +74,17 @@ void CDolphinController::Poll() {
 void CDolphinController::ReadDevices() {
   PADStatus status[4];
   PADRead(status);
-  if (status[0].err == PAD_ERR_NONE) {
-    PADClamp(status);
-    memcpy(x4_status, status, sizeof(PADStatus) * 4);
-  } else {
-    for (int i = 0; i < 4; ++i) {
-      x4_status[i].err = status[i].err;
+  PADClamp(status);
+  for (int i = 0; i < 4; ++i) {
+    // One disconnected port must not prevent the other ports updating. Clear
+    // stale held buttons on disconnect and keep UI interaction out of gameplay.
+    if (status[i].err != PAD_ERR_NONE || PortDebug::Visible() || SDL_GetKeyboardFocus() == nullptr) {
+      const auto error = status[i].err;
+      status[i] = {};
+      status[i].err = error;
     }
   }
+  memcpy(x4_status, status, sizeof(status));
 
   for (int i = 0; i < 4; ++i) {
     uint controller = (PAD_CHAN0_BIT >> i);
@@ -120,13 +125,11 @@ void CDolphinController::ReadDevices() {
 
 void CDolphinController::ProcessInputData() {
   for (int i = 0; i < 4; ++i) {
-    if (x34_gamepadStates[i].DeviceIsPresent()) {
-      ProcessAxis(i, kJA_LeftX);
-      ProcessAxis(i, kJA_LeftY);
-      ProcessAxis(i, kJA_RightX);
-      ProcessAxis(i, kJA_RightY);
-      ProcessButtons(i);
-    }
+    ProcessAxis(i, kJA_LeftX);
+    ProcessAxis(i, kJA_LeftY);
+    ProcessAxis(i, kJA_RightX);
+    ProcessAxis(i, kJA_RightY);
+    ProcessButtons(i);
   }
 }
 

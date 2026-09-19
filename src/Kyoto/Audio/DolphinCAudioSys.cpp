@@ -13,6 +13,7 @@
 
 #include <rstl/math.hpp>
 #include <string.h>
+#include <vector>
 
 const ushort CAudioSys::kVolumeTable[] = {
     // pow(i / 127, 2) * 32768
@@ -218,10 +219,15 @@ CAudioSys::CAudioSys(const uchar numVoices, const uchar numMusic, const uchar nu
   mMaxAramUsage = aramSize;
 }
 
+// Keep every pushed group's backing resource alive, including when its name is
+// removed from the resource database. The MusyX group stack is bounded to 128.
+static std::vector< rstl::ncrc_ptr< CAudioGroupSet > > sPushedGroups;
+
 CAudioSys::~CAudioSys() {
   S3dFlushAllEmitters();
   S3dRemoveListener();
   sndQuit();
+  sPushedGroups.clear();
   delete mpGroupSetDB;
   mpGroupSetDB = nullptr;
   delete mpGroupSetResNameDB;
@@ -334,18 +340,26 @@ bool CAudioSys::SysPushGroupIntoARAM(const rstl::string& name, const uchar group
     void* samples = group->GetSampleBuffer();
     void* sampleDir = group->GetSDirBuffer();
     void* pool = group->GetPoolBuffer();
+    sPushedGroups.push_back(groupSet);
     uchar buffer[0x1020];
     mpSampleDataUploadBuffer =
         reinterpret_cast< void* >((reinterpret_cast< uintptr_t >(buffer) + 31) & ~31);
     sndSetSampleDataUploadCallback(SampleDataUploadCallback, 0x1000);
     const bool result = sndPushGroup(project, groupId, samples, sampleDir, pool);
     sndSetSampleDataUploadCallback(nullptr, 0);
+    if (!result) {
+      sPushedGroups.pop_back();
+    }
     return result;
   }
   return false;
 }
 
-void CAudioSys::SysPopGroupFromARAM() { sndPopGroup(); }
+void CAudioSys::SysPopGroupFromARAM() {
+  if (sndPopGroup() && !sPushedGroups.empty()) {
+    sPushedGroups.pop_back();
+  }
+}
 
 const rstl::string& CAudioSys::SysGetGroupSetName(const uint id) {
   rstl::map< uint, rstl::string >::const_iterator it = mpGroupSetResNameDB->find(id);

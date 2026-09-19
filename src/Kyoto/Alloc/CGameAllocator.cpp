@@ -68,8 +68,14 @@ CGameAllocator::~CGameAllocator() {
 }
 
 bool CGameAllocator::Initialize(COsContext& ctx) {
+  if (ctx.GetBaseFreeRam() <= 4 * sizeof(SGameMemInfo)) {
+    throw std::bad_alloc();
+  }
   x8_heapSize = ctx.GetBaseFreeRam() - 2 * sizeof(SGameMemInfo);
   xc_first = static_cast< SGameMemInfo* >(OSAllocFromArenaLo(x8_heapSize, sizeof(SGameMemInfo)));
+  if (xc_first == nullptr) {
+    throw std::bad_alloc();
+  }
   fprintf(stderr, "CGameAllocator: baseFreeRam=%u heapSize=0x%x first=%p arenaLo=%p arenaHi=%p\n",
           static_cast< unsigned >(ctx.GetBaseFreeRam()), static_cast< unsigned >(x8_heapSize),
           static_cast< void* >(xc_first), OSGetArenaLo(), OSGetArenaHi());
@@ -103,27 +109,28 @@ bool CGameAllocator::Initialize(COsContext& ctx) {
   xa8_ = 0;
   x4_ = 1;
 
-  x64_smallAllocMainData = Alloc(0xb0000, kHI_None, kSC_Unk1, kTP_Heap,
-                                 CCallStack(0xffffffff, "SmallAllocMainData   ", " - Ignore"));
-
-  x68_smallAllocBookKeeping = Alloc(0x16000, kHI_None, kSC_Unk1, kTP_Heap,
-                                    CCallStack(0xffffffff, "SmallAllocBookKeeping", " - Ignore"));
-
-  // Port: the original hardcoded 32-bit object size; use the host size so the
-  // placement-new cannot overflow the block on 64-bit.
-  x60_smallAllocPool =
-      new (Alloc(sizeof(CSmallAllocPool), kHI_None, kSC_Unk1, kTP_Heap,
-                 CCallStack(0xffffffff, "SmallAllocClass      ", " - Ignore")))
-          CSmallAllocPool(0x2c000, x64_smallAllocMainData, x68_smallAllocBookKeeping);
-
-  x74_mediumPool =
-      new (Alloc(sizeof(CMediumAllocPool), kHI_None, kSC_Unk1, kTP_Heap,
-                 CCallStack(0xffffffff, "MediumAllocClass      ", " - Ignore"))) CMediumAllocPool();
-
-  uint mediumSize = CMediumAllocPool::GetAllocMemoryRequired(0x1000);
-  mediumSize += CMediumAllocPool::GetBookKeepingMemoryRequired(0x1000);
-  x78_ = Alloc(mediumSize, kHI_None, kSC_Unk1, kTP_Heap,
-               CCallStack(0xffffffff, "MediumAllocMainData   ", " - Ignore"));
+  const auto requireAllocation = [&](size_t size, const char* label) {
+    void* ptr = Alloc(size, kHI_None, kSC_Unk1, kTP_Heap,
+                      CCallStack(0xffffffff, label, " - Ignore"));
+    if (ptr == nullptr) throw std::bad_alloc();
+    return ptr;
+  };
+  try {
+    x64_smallAllocMainData = requireAllocation(0xb0000, "SmallAllocMainData");
+    x68_smallAllocBookKeeping = requireAllocation(0x16000, "SmallAllocBookKeeping");
+    x60_smallAllocPool = new (requireAllocation(sizeof(CSmallAllocPool), "SmallAllocClass"))
+        CSmallAllocPool(0x2c000, x64_smallAllocMainData, x68_smallAllocBookKeeping);
+    x74_mediumPool = new (requireAllocation(sizeof(CMediumAllocPool), "MediumAllocClass"))
+        CMediumAllocPool();
+    uint mediumSize = CMediumAllocPool::GetAllocMemoryRequired(0x1000);
+    mediumSize += CMediumAllocPool::GetBookKeepingMemoryRequired(0x1000);
+    x78_ = requireAllocation(mediumSize, "MediumAllocMainData");
+  } catch (...) {
+    ReleaseAll();
+    x60_smallAllocPool = nullptr;
+    x4_ = 0;
+    throw;
+  }
   x84_ -= 4;
   xbc_ = 0xc6000;
   return true;
@@ -137,6 +144,9 @@ void CGameAllocator::Shutdown() {
 
 void* CGameAllocator::Alloc(size_t size, const EHint hint, const EScope scope, const EType type,
                             const CCallStack& callstack) {
+  if (size > static_cast<size_t>(UINT32_MAX) - 31) {
+    return nullptr;
+  }
   const OSTick startTick = OSGetTick();
 
   if (hint & kHI_RoundUpLen) {
@@ -183,6 +193,7 @@ void* CGameAllocator::Alloc(size_t size, const EHint hint, const EScope scope, c
                       CMediumAllocPool::GetBookKeepingMemoryRequired(0x1000),
                   kHI_None, kSC_Unk1, kTP_Heap,
                   CCallStack(-1, "MediumAllocMainData   ", " - Ignore"));
+      if (buf == nullptr) return nullptr;
       x74_mediumPool->AddPuddle(0x1000, buf, 1);
       buf = x74_mediumPool->Alloc(size);
     }

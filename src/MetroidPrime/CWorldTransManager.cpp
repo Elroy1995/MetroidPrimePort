@@ -44,7 +44,7 @@ struct CWorldTransManager::SModelDatas {
   rstl::optional_object< CToken > x164_suitSkin;
   CTransform4f x170_gunXf;
   rstl::vector< CLight > x1a0_lights;
-  rstl::single_ptr< uchar > x1b0_dissolveTextureBuffer;
+  rstl::single_ptr< uchar[] > x1b0_dissolveTextureBuffer;
   CVector2f x1b4_shakeResult;
   CVector2f x1bc_shakeDelta;
   float x1c4_randTimeout;
@@ -566,7 +566,7 @@ bool CWorldTransManager::WaitForModelsAndTextures() {
           TToken< CModel > modelToken = gpSimplePool->GetObj(*it);
           CModel* model = *modelToken;
           if (pass == 0) {
-            rstl::auto_ptr< uchar > data = model->GetData();
+            rstl::auto_ptr< uchar[] > data = model->GetData();
             const uint dataSize = OSRoundUp32B(model->GetDataSize());
             CARAMToken token(data.release(), dataSize, 1);
             token.LoadToARAM();

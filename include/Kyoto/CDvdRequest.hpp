@@ -17,6 +17,7 @@ inline CDvdRequest::~CDvdRequest() {}
 
 class CRealDvdRequest : public CDvdRequest {
 public:
+  CRealDvdRequest() : mFileInfo() {}
   ~CRealDvdRequest();
   void WaitUntilComplete();
   bool IsComplete();

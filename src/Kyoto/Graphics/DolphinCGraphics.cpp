@@ -10,12 +10,13 @@
 // before it runs; the first EndScene closes it.
 namespace {
 bool s_auroraFrameOpen = false;
-void AuroraFrameBegin() {
+bool AuroraFrameBegin() {
   if (!s_auroraFrameOpen && aurora_begin_frame()) {
     // Only mark open when Aurora actually begins a frame; otherwise a later
     // end_frame would desynchronise its frame-slot accounting.
     s_auroraFrameOpen = true;
   }
+  return s_auroraFrameOpen;
 }
 void AuroraFrameEnd() {
   if (s_auroraFrameOpen) {
@@ -770,10 +771,13 @@ void CGraphics::ClearBackAndDepthBuffers() {
   GXInvalidateVtxCache();
 }
 
-void CGraphics::BeginScene() {
+bool CGraphics::BeginScene() {
   // Port: a scene maps to one Aurora frame (covers init-time splash draws too).
-  AuroraFrameBegin();
+  if (!AuroraFrameBegin()) {
+    return false;
+  }
   ClearBackAndDepthBuffers();
+  return true;
 }
 
 void CGraphics::SwapBuffers() {
@@ -811,6 +815,9 @@ void CGraphics::VideoPostCallback(u32 retraceCount) {
 }
 
 void CGraphics::EndScene() {
+  if (!s_auroraFrameOpen) {
+    return;
+  }
   CGX::SetZMode(true, GX_LEQUAL, true);
   volatile int& numBreakPt = const_cast< volatile int& >(mNumBreakpointsWaiting);
   while (numBreakPt > 0) {

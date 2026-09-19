@@ -82,6 +82,7 @@ public:
   void DoPredrawMetrics();
   void DrawDebugMetrics(double dt, CStopwatch& stopWatch);
   bool CheckTerminate();
+  void SetFinished() { x160_24_finished = true; }
   bool CheckReset();
   void CheckTweakManagerDebugOptions();
   COsContext& OpenWindow();

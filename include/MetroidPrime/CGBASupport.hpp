@@ -23,7 +23,7 @@ public:
 private:
   CDvdFile x0_file;
   uint x28_fileSize;
-  rstl::single_ptr<uchar> x2c_buffer;
+  rstl::single_ptr< rstl::game_memory< uchar > > x2c_buffer;
   rstl::single_ptr<CDvdRequest> x30_dvdReq;
   EPhase x34_phase;
   float x38_timeout;

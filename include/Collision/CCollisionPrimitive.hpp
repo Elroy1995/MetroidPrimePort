@@ -149,9 +149,9 @@ private:
   static bool sCollidersAdded;
   static bool sCollidersAdding;
   static rstl::single_ptr< rstl::vector< Type > > sCollisionTypeList;
-  static rstl::single_ptr< ComparisonFunc > sTableOfCollidables;
-  static rstl::single_ptr< BooleanComparisonFunc > sTableOfBooleanCollidables;
-  static rstl::single_ptr< MovingComparisonFunc > sTableOfMovingCollidables;
+  static rstl::single_ptr< ComparisonFunc[] > sTableOfCollidables;
+  static rstl::single_ptr< BooleanComparisonFunc[] > sTableOfBooleanCollidables;
+  static rstl::single_ptr< MovingComparisonFunc[] > sTableOfMovingCollidables;
 
   static bool InternalCollide(const CInternalCollisionStructure&, CCollisionInfoList&);
   static bool InternalCollideMoving(const CInternalCollisionStructure&, const CVector3f&, double&,

@@ -59,7 +59,11 @@ void* CMemory::Alloc(size_t len, IAllocator::EHint hint, IAllocator::EScope scop
   volatile bool enabled = OSDisableInterrupts();
   void* ret = mpAllocator->Alloc(len, hint, scope, type, callstack);
   if (ret == nullptr) {
-    rs_debugger_printf("Alloc failed - Size: %d", len);
+    rs_debugger_printf("Alloc failed - Size: %zu", len);
+#ifdef TARGET_PC
+    OSRestoreInterrupts(enabled);
+    throw std::bad_alloc();
+#endif
   }
 
   OSRestoreInterrupts(enabled);

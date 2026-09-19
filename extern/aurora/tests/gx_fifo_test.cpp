@@ -105,6 +105,21 @@ TEST_F(GXFifoTest, FifoPublishesOnlyAtExplicitBoundary) {
   EXPECT_EQ(g_gxState.bpRegCache[0x41], 0x41123456u);
 }
 
+TEST_F(GXFifoTest, DrawSyncSurvivesConcurrentAppendAndBufferGrowth) {
+  aurora::gx::fifo::init();
+  aurora::gx::set_draw_sync_token(0);
+  aurora::gx::fifo::begin_frame();
+  // Keep the producer appending while the worker validates/consumes previous
+  // batches. This also forces reallocations beyond the initial 64 KiB buffer.
+  for (u16 token = 1; token <= 50000; ++token) {
+    GXSetDrawSync(token);
+  }
+  aurora::gx::fifo::drain();
+  EXPECT_EQ(GXReadDrawSync(), 50000);
+  aurora::gx::fifo::end_frame();
+  aurora::gx::fifo::shutdown();
+}
+
 TEST_F(GXFifoTest, AutoSizedDrawPublishesAfterLengthPatch) {
   aurora::gx::fifo::init();
   aurora::gx::fifo::begin_frame();

@@ -11,6 +11,7 @@
 #include "rstl/reserved_vector.hpp"
 #include "rstl/single_ptr.hpp"
 #include "rstl/vector.hpp"
+#include <stdexcept>
 
 class CPFOpenList {
 public:
@@ -65,6 +66,7 @@ class CPFAreaOctree {
 public:
   CPFAreaOctree(CInputStream& in);
   void Fixup(CPFArea& area);
+  void ValidateGraph(const CPFAreaOctree* base, uchar* marks, uint depth) const;
   uint GetChildIndex(const CVector3f& point) const;
   prereserved_vector< CPFRegion* >* GetRegionList(const CVector3f& point);
   void GetRegionListList(rstl::reserved_vector< prereserved_vector< CPFRegion* >*, 32 >& lists,
@@ -96,11 +98,15 @@ CHECK_SIZEOF(CPFAreaVersion, 1)
 
 class CPFArea {
 public:
-  CPFArea(const rstl::auto_ptr< uchar >& data, int size);
+  CPFArea(const rstl::auto_ptr< uchar[] >& data, int size);
   const CTransform4f& GetTransform() const { return x188_transform; }
   void SetTransform(const CTransform4f& transform) { x188_transform = transform; }
   CVector3f GetClosestPoint() const { return x4_closestPoint; }
   int GetNumRegions() const { return x150_regions.size(); }
+  int GetNumNodes() const { return x140_nodes.size(); }
+  int GetNumLinks() const { return x148_links.size(); }
+  int GetNumOctrees() const { return x158_octree.size(); }
+  int GetNumOctreeRegionPtrs() const { return x160_octreeRegions.size(); }
   CPFRegion& GetRegion(int index) { return x150_regions[index]; }
   const CPFNode& GetNode(int index) const { return x140_nodes[index]; }
   CPFLink& GetLink(int index) { return x148_links[index]; }
@@ -128,7 +134,7 @@ private:
   CPFBitSet x38_closedSet;
   CPFOpenList x78_openList;
   CPFAreaVersion x138_version;
-  rstl::single_ptr< uchar > x13c_data;
+  rstl::single_ptr< uchar[] > x13c_data;
   rstl::vector< CPFNode > x140_nodes;
   rstl::vector< CPFLink > x148_links;
   rstl::vector< CPFRegion > x150_regions;
@@ -144,6 +150,16 @@ CHECK_SIZEOF(CPFArea, 0x1b8)
 inline void CPFAreaOctree::Fixup(CPFArea& area) {
   x0_isLeaf = x0_isLeaf != 0;
   if (x0_isLeaf) {
+    if (x48_regions.size() == 0) {
+      // Empty lists may carry an unused sentinel offset on disc.
+      x48_regions.set_data(nullptr);
+      return;
+    }
+    const uintptr_t offset = reinterpret_cast<uintptr_t>(x48_regions.data());
+    if (x48_regions.size() < 0 || offset > static_cast<uintptr_t>(area.GetNumOctreeRegionPtrs()) ||
+        static_cast<uintptr_t>(x48_regions.size()) > area.GetNumOctreeRegionPtrs() - offset) {
+      throw std::runtime_error("PATH octree region range is invalid");
+    }
     if (x48_regions.size() != 0) {
       x48_regions.set_data(&area.GetOctreeRegionPtrs(
           reinterpret_cast< uintptr_t >(x48_regions.data())));
@@ -151,6 +167,9 @@ inline void CPFAreaOctree::Fixup(CPFArea& area) {
   } else {
     for (int i = 0; i < 8; ++i) {
       uintptr_t index = reinterpret_cast< uintptr_t >(x28_children[i]);
+      if ((index & 0x80000000) == 0 && index >= static_cast<uintptr_t>(area.GetNumOctrees())) {
+        throw std::runtime_error("PATH octree child is out of range");
+      }
       x28_children[i] = (index & 0x80000000) == 0 ? &area.GetOctree(index) : nullptr;
     }
   }

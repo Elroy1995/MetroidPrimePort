@@ -51,14 +51,14 @@ rstl::auto_ptr< IObj > CFactoryMgr::MakeObjectFromMemory(const SObjectTag& tag, 
       rstl::auto_ptr< CInputStream > in(
           rs_new CMemoryInStream(buffer, size, CMemoryInStream::kOS_Owned));
       const uint length = in->ReadLong();
-      rstl::auto_ptr< uchar > data(rs_new uchar[length]);
+      rstl::auto_ptr< uchar[] > data(rs_new uchar[length]);
       {
         CZipInputStream zip(in);
         zip.Get(data.get(), length);
       }
       return factory(tag, data, length, params).GetObjForTransfer();
     }
-    rstl::auto_ptr< uchar > data(static_cast< uchar* >(buffer));
+    rstl::auto_ptr< uchar[] > data(static_cast< uchar* >(buffer));
     return factory(tag, data, size, params).GetObjForTransfer();
   }
 

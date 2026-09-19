@@ -3,21 +3,26 @@
 #include "Kyoto/CARAMManager.hpp"
 
 #include "Kyoto/Alloc/CMemory.hpp"
+#include <dolphin/os.h>
+#include <stdexcept>
 
 CRealDvdRequest::~CRealDvdRequest() {
-  if (!IsComplete()) {
-    PostCancelRequest();
-    WaitUntilComplete();
-  }
+  // DVDClose drains the worker, including its callback. Do not call the
+  // throwing completion check while unwinding a failed resource load.
   DVDClose(&mFileInfo);
 }
 
 void CRealDvdRequest::WaitUntilComplete() {
-  while (!CRealDvdRequest::IsComplete()) {}
+  while (!CRealDvdRequest::IsComplete()) {
+    OSYieldThread();
+  }
 }
 
 bool CRealDvdRequest::IsComplete()  {
   s32 status = DVDGetCommandBlockStatus(&mFileInfo.cb);
+  if (status == DVD_STATE_FATAL_ERROR) {
+    throw std::runtime_error("Asynchronous disc read failed");
+  }
   bool ret = false;
   if (status == DVD_STATE_END || status == DVD_STATE_CANCELED) {
     ret = true;

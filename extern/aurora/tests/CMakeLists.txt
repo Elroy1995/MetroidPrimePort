@@ -106,6 +106,7 @@ if (AURORA_ENABLE_GX)
     ${AURORA_SDL3_TARGET}
   )
 
+  aurora_copy_runtime_dlls(gx_fifo_tests)
   gtest_discover_tests(gx_fifo_tests)
 
   add_executable(gx_texture_cache_tests
