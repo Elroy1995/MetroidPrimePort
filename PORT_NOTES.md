@@ -223,7 +223,9 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   previously had no output at all because the AI functions were no-ops. It runs on
   the main thread because the guest mixer is not thread-safe, and the port keeps
   the full 64-bit DMA pointer that the SDK's 32-bit `AIGetDMAStartAddr` truncates.
-  `MP_DISABLE_AI_AUDIO=1` isolates this path.
+  `CMoviePlayer::StaticMyAudioCallback` reads the previous DMA buffer through the
+  same 64-bit accessor; the truncated form resolved to unrelated memory whose
+  bytes were then mixed as audio. `MP_DISABLE_AI_AUDIO=1` isolates this path.
 - Skinned vertex generation advances its output cursor explicitly. On the console
   the write-gather pipe advances itself as data is written, so `BuildPoints`,
   `BuildNormals`, and `Calculate`'s padding pass all reused one `pipe` value; on PC

@@ -549,9 +549,13 @@ void CMoviePlayer::Rewind() {
   x80_textures.clear();
 }
 
+extern "C" uintptr_t AIPortGetDMAStartAddr(void);
+
 void CMoviePlayer::StaticMyAudioCallback() {
   if (sAudioPlayer != nullptr && sAudioPlayer->xf4_26_hasAudio) {
-    curAudioBuffer = static_cast< const short* >(OSPhysicalToCached(AIGetDMAStartAddr()));
+    // The SDK's AIGetDMAStartAddr truncates the port's 64-bit DMA pointer to
+    // u32; use the full pointer so MixAudio does not read from a bogus address.
+    curAudioBuffer = reinterpret_cast< const short* >(AIPortGetDMAStartAddr());
     soundBufferIndex ^= 1;
     short* buffer = soundBuffer[soundBufferIndex];
     AIInitDMA(reinterpret_cast< uintptr_t >(buffer), sizeof(soundBuffer[0]));
