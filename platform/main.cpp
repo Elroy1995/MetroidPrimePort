@@ -22,8 +22,6 @@
 extern "C" int metroid_main(int argc, char** argv);
 
 namespace {
-const char* kDefaultDisc = "/home/odran/rom/Metroid Prime (USA) (v1.00).iso";
-
 const char* ResolveDiscPath(int argc, char** argv) {
     if (argc > 1 && argv[1][0] != '-') {
         return argv[1];
@@ -31,7 +29,7 @@ const char* ResolveDiscPath(int argc, char** argv) {
     if (const char* env = std::getenv("MP_DISC")) {
         return env;
     }
-    return kDefaultDisc;
+    return nullptr;
 }
 } // namespace
 
@@ -72,6 +70,15 @@ int main(int argc, char** argv) {
     }
 
     const char* discPath = ResolveDiscPath(argc, argv);
+    if (discPath == nullptr) {
+        std::fprintf(stderr,
+                     "metroid_prime_port: no disc image given.\n"
+                     "  usage: %s <path to Metroid Prime (USA) (v1.00).iso>\n"
+                     "  or set MP_DISC to the image path.\n",
+                     argv[0]);
+        aurora_shutdown();
+        return 1;
+    }
     if (!aurora_dvd_open(discPath)) {
         std::fprintf(stderr, "metroid_prime_port: failed to open disc image: %s\n", discPath);
         aurora_shutdown();
