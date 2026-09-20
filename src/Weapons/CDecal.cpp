@@ -22,7 +22,8 @@ CDecal::CDecal(const TToken< CDecalDescription >& desc, const CTransform4f& xf)
 , x54_modelLifetime(0)
 , x58_frameIdx(0)
 , x5c_flags(0)
-, x60_rotation(CVector3f::Zero()) {
+, x60_rotation(CVector3f::Zero())
+, x6c_elapsedTime(0.f) {
   CGlobalRandom gr(sDecalRandom);
 
   InitQuad(x3c_quad1, x0_description->x0_quad1, 1);
@@ -259,6 +260,10 @@ void CDecal::Render() const {
 }
 
 void CDecal::Update(float dt) {
+  // Age by real time and map onto the 60 Hz frame units the tables use.
+  x6c_elapsedTime += dt;
+  x58_frameIdx = static_cast< int >(x6c_elapsedTime * 60.f);
+
   if (x58_frameIdx >= x3c_quad1.GetLifetime()) {
     x5c_flags |= 1;
   }
@@ -270,6 +275,4 @@ void CDecal::Update(float dt) {
   if (x58_frameIdx >= x54_modelLifetime) {
     x5c_flags |= 4;
   }
-
-  ++x58_frameIdx;
 }

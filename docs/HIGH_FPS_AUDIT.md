@@ -33,16 +33,16 @@ remaining 60 Hz assumption in the logic.
 | Script objects, layer manager, world/area | dt-scaled | none |
 | GUI (`GuiSys`), HUD timers | dt-scaled | none |
 | **Particle systems** (`CElementGen`, `CParticleElectric`, `CParticleSwoosh`) | time-driven, fixed 60 Hz substeps | none |
-| **Decals** (`Weapons/CDecal`) | **frame-counted lifetimes** | small (needs a struct member) |
+| **Decals** (`Weapons/CDecal`) | time-based (`x58_frameIdx = t * 60`) | done |
 | Scattered AI/player/HUD frame counters | mixed | low-medium |
 | Tick plumbing + projectile tick period | fixed 1/60 | done (experimental) |
 
 The important result is that the engine core is **already dt-scaled**, and the
 particle systems run by real time with fixed 60 Hz substeps, so they already
-scale. The remaining real work is decals and the scattered counters.
+scale. The remaining real work is the scattered per-frame counters.
 
-Status: the tick plumbing, the projectile tick period, and an experimental
-`sim_rate` setting are implemented (see "Implemented" below). Decals and the
+Status: the tick plumbing, the projectile tick period, decals, and an
+experimental `sim_rate` setting are implemented (see "Implemented" below). The
 per-frame counters are still outstanding.
 
 ## Findings
@@ -95,13 +95,20 @@ Caveat: `CParticleGlobals::SetEmitterTime()`/`GetValue()` and the `% PISY`
 spawn cadence are expressed in substeps (1/60 s), so they quantise to 60 Hz even
 when the outer tick is faster. That is a fidelity limit, not a speed error.
 
-### Decals (frame-counted)
+### Decals (converted)
 
-`src/Weapons/CDecal.cpp` ignores its `dt`:
+`CDecal` ignored its `dt` and advanced a frame counter per `Update`:
 
-- `CDecal.cpp:262,266,270` `x58_frameIdx >= <part>.GetLifetime()` lifetimes in frames
+- `src/Weapons/CDecal.cpp:262,266,270` `x58_frameIdx >= <part>.GetLifetime()`
 - `CDecal.cpp:274` `++x58_frameIdx;`
 - `CDecal.cpp:51` `clr->GetValue(x58_frameIdx, color)` table lookup by frame
+
+It now accumulates `float x6c_elapsedTime += dt` and derives
+`x58_frameIdx = int(x6c_elapsedTime * 60.f)`, so every existing frame-unit read
+and lifetime comparison keeps working while the decal ages in real time. The
+added member fits the existing padding, so `NESTED_CHECK_SIZEOF(CDecalManager,
+SDecal, 0x78)` is unchanged. `CDecalManager::Update(dt, ...)` already passed the
+real dt.
 
 ### Per-frame counters and cadences (scattered)
 
@@ -160,6 +167,8 @@ Scripts / misc:
   of `1/60`, so projectile velocities and gravity scale with the tick.
 - Camera presentation interpolation (`main.cpp:929`) becomes a no-op once the
   step matches the frame time, which is what "no interpolation" requires.
+- `CDecal` ages by real time (`x6c_elapsedTime += dt`) and derives its 60 Hz
+  frame index from it, so decals keep their authored duration above 60 Hz.
 
 Verified: with `MP_SIM_RATE=120` the timing trace reports `simulation=120.0
 ticks/s` with the render at 60 FPS, the mouse smoke still passes at the default
@@ -171,19 +180,18 @@ Known caveats:
 - `CBloodFlower.cpp:321` and `CTargetableProjectile.cpp:59` cache
   `GetTickPeriod()` in function-local statics; a mid-session rate change leaves
   those stale.
-- Decals still age per tick, so above 60 Hz they expire proportionally faster.
 - Tick-indexed particle seeding (`x8d8_updateFrameIdx`) makes particle randomness
   rate-dependent.
+- The scattered AI/HUD per-frame counters below still advance per tick.
 
 ## Conversion plan
 
-Phase 1 - decals (remaining blocker)
+Phase 1 - decals (done)
 
-- Make `CDecal` age by seconds: add a float accumulator, derive
-  `x58_frameIdx = int(time * 60)` so the existing `GetValue` table reads keep
-  working, and compare the (frame-unit) lifetimes against that derived index.
-  This changes the `CDecal` layout, so `NESTED_CHECK_SIZEOF(CDecalManager,
-  SDecal, 0x78)` has to be re-based.
+- `CDecal` now accumulates real time and derives `x58_frameIdx = int(t * 60)`,
+  so the existing table reads and frame-unit lifetimes are unchanged in meaning
+  while the decal ages in real time. The extra `float` fits the existing
+  padding, so no layout assert moved.
 - Particles need no conversion: the three systems already integrate real time in
   fixed 1/60 substeps (verified above). Only the substep granularity quantises
   effects to 60 Hz if sub-frame fidelity is ever wanted.

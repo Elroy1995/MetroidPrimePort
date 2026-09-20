@@ -57,6 +57,10 @@ private:
   int x58_frameIdx;
   int x5c_flags;
   mutable CVector3f x60_rotation;
+  // Port: real elapsed time. The description tables are authored per 60 Hz
+  // frame, so x58_frameIdx is derived from this rather than incremented per
+  // tick; at a raised simulation rate the decal keeps its authored duration.
+  float x6c_elapsedTime;
 
   void InitQuad(CQuadDecal& quad, const CDecalDescription::SQuadDescr& desc, int flag) {
     if (!desc.x14_TEX.null()) {
