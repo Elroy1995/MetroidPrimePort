@@ -484,6 +484,13 @@ CSamusHud::CSamusHud(const CStateManager& mgr)
   }
   x264_loadedFrmeHelmet = *x258_frmeHelmet;
   x274_loadedFrmeBaseHud = *x268_frmeBaseHud;
+  // In-game HUD frames opt into widescreen aspect matching (see CGuiCamera).
+  if (x264_loadedFrmeHelmet->GetFrameCamera() != nullptr) {
+    x264_loadedFrmeHelmet->GetFrameCamera()->SetAspectMatch(true);
+  }
+  if (x274_loadedFrmeBaseHud->GetFrameCamera() != nullptr) {
+    x274_loadedFrmeBaseHud->GetFrameCamera()->SetAspectMatch(true);
+  }
   x2a0_helmetIntf = rs_new CHudHelmetInterface(*x264_loadedFrmeHelmet);
   x2a4_visorMenu = rs_new CHudVisorBeamMenu(*x274_loadedFrmeBaseHud, CHudVisorBeamMenu::kVBM_Visor,
                                             BuildPlayerHasVisors(mgr));
@@ -1165,6 +1172,9 @@ void CSamusHud::UpdateStateTransition(float dt, const CStateManager& mgr) {
     if (x278_selectedHud.valid()) {
       if (x278_selectedHud->TryCache() && x278_selectedHud->GetObject()->GetIsFinishedLoading()) {
         x288_loadedSelectedHud = x278_selectedHud->GetObject();
+        if (x288_loadedSelectedHud->GetFrameCamera() != nullptr) {
+          x288_loadedSelectedHud->GetFrameCamera()->SetAspectMatch(true);
+        }
         x2b8_curState = x2bc_nextState;
         x2bc_nextState = x2c0_setState;
         InitializeFrameGlueMutable(mgr);
@@ -1185,6 +1195,20 @@ void CSamusHud::UpdateStateTransition(float dt, const CStateManager& mgr) {
     break;
   case kTS_NotTransitioning:
     break;
+  }
+
+  static bool sHudLog = std::getenv("MP_LOG_HUD") != nullptr;
+  static int sLastActive = -1, sLastNext = -1, sLastSet = -1;
+  if (sHudLog && (static_cast< int >(x2c4_activeTransState) != sLastActive ||
+                  static_cast< int >(x2bc_nextState) != sLastNext ||
+                  static_cast< int >(x2c0_setState) != sLastSet)) {
+    sLastActive = x2c4_activeTransState;
+    sLastNext = x2bc_nextState;
+    sLastSet = x2c0_setState;
+    std::fprintf(stderr, "[hud] next=%d set=%d active=%d transT=%.3f preload=%d loaded=%p\n",
+                 static_cast< int >(x2bc_nextState), static_cast< int >(x2c0_setState),
+                 static_cast< int >(x2c4_activeTransState), x2c8_transT, x2cc_preLoadCountdown,
+                 static_cast< const void* >(x288_loadedSelectedHud));
   }
 }
 

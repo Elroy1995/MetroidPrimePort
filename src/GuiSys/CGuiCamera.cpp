@@ -64,7 +64,7 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
   // current render aspect instead so UI keeps its proportions; 4:3 is left
   // exactly as authored.
   float renderAspect = 0.f;
-  if (PortDebug::AspectMode() != PortDebug::kAspect_4_3) {
+  if (xb9_aspectMatch && PortDebug::AspectMode() != PortDebug::kAspect_4_3) {
     const float vw = static_cast< float >(CGraphics::GetViewportWidth());
     const float vh = static_cast< float >(CGraphics::GetViewportHeight());
     if (vw > 0.f && vh > 0.f) {

@@ -36,6 +36,10 @@ public:
   void Draw(const CGuiWidgetDrawParms& parms) const override;
   UCameraParms GetParms() const { return mCameraParms; }
   void SetParms(UCameraParms parms) { mCameraParms = parms; }
+  // In-game HUD cameras opt in so their projection tracks the widescreen render
+  // aspect instead of stretching. Front-end/menu cameras keep their authored
+  // aspect so their layouts (and 3D backgrounds) are unaffected.
+  void SetAspectMatch(bool match) { xb9_aspectMatch = match; }
 
   FourCC GetWidgetTypeID() const override { return 'CAMR'; }
 
@@ -43,6 +47,7 @@ public:
 
 public:
   EProjection xb8_projection;
+  bool xb9_aspectMatch = false;
   UCameraParms mCameraParms;
 };
 

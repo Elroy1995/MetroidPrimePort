@@ -2082,15 +2082,12 @@ void CFrontEndUI::Draw() const {
     int vpHeight = CGraphics::GetViewport().mHeight;
 
     if (xcc_curMoviePtr != nullptr && xcc_curMoviePtr->CanDrawVideo()) {
-      uint vidWidth = xcc_curMoviePtr->GetWidth();
-      uint vidHeight = xcc_curMoviePtr->GetHeight();
-#if NONMATCHING
-      int centerX = (static_cast< int >(vidWidth) - vpWidth) / 2;
-      int centerY = (static_cast< int >(vidHeight) - vpHeight) / 2;
-#else
-      int centerX = (vidWidth - vpWidth) / 2;
-      int centerY = (vidHeight - vpHeight) / 2;
-#endif
+      const uint vidWidth = xcc_curMoviePtr->GetWidth();
+      const uint vidHeight = xcc_curMoviePtr->GetHeight();
+      // Signed arithmetic: the video is narrower than a widescreen viewport, so
+      // an unsigned subtraction would underflow and throw the quad off-screen.
+      const int centerX = (static_cast< int >(vidWidth) - vpWidth) / 2;
+      const int centerY = (static_cast< int >(vidHeight) - vpHeight) / 2;
       int vl = vpLeft - centerX;
       int vr = vpLeft + vpWidth + centerX;
       int vb = vpTop + vpHeight + centerY;
