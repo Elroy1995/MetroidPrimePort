@@ -520,6 +520,17 @@ CSamusHud::~CSamusHud() {
   if (x3a4_damageSfx) {
     CSfxManager::RemoveEmitter(x3a4_damageSfx);
   }
+  // The looping HUD sounds keep playing after the HUD is gone unless they are
+  // stopped here, which leaves them droning across area and game transitions.
+  if (x564_freeLookSfx) {
+    CSfxManager::SfxStop(x564_freeLookSfx);
+  }
+  if (x508_staticSfxHi) {
+    CSfxManager::SfxStop(x508_staticSfxHi);
+  }
+  if (x50c_staticSfxLo) {
+    CSfxManager::SfxStop(x50c_staticSfxLo);
+  }
   spSamusHud = nullptr;
 }
 
@@ -587,7 +598,12 @@ void CSamusHud::UpdateFreeLook(float dt, const CStateManager& mgr) {
     }
     x2e0_24_inFreeLook = inFreeLook;
   }
-  const float deltaFrames = 60.f * (0.99999f * dt);
+  // The rotation loop is gated on this dot threshold. It is a cosine, so it
+  // must stay within [-1, 1]: 60 * 0.99999 * dt exceeds 1 whenever the frame
+  // time is over 16.67 ms, which makes the still camera look like it is
+  // rotating and latches the loop on forever. Mouse aim pins the dot at 1, so
+  // an unclamped threshold leaves the loop stuck.
+  const float deltaFrames = rstl::min_val(1.f, 60.f * (0.99999f * dt));
   const float oldDot = x574_lookDeltaDot;
   const CVector3f direction = !fpCam ? x568_fpCamDir : fpCam->GetTransform().GetForward();
   bool adjusting = inFreeLook;
