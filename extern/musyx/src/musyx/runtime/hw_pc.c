@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "musyx/adsr.h"
 #include "musyx/assert.h"
@@ -15,6 +16,7 @@
 #include "musyx/musyx.h"
 #include "musyx/sal.h"
 #include "musyx/synth.h"
+#include "musyx/port_voices.h"
 #include "musyx/pc_audio_math.h"
 
 // Audio parameters
@@ -64,32 +66,63 @@ static SND_SOME_CALLBACK userCallback = NULL;
 
 extern float gPortListenerHeading[3];
 
-// Diagnostic: silence specific MusyX samples by id (comma-separated, e.g.
-// MP_MUTE_SMP=65535,93) so a persistent voice can be identified by ear.
-static int salVoiceMuted(u16 smpId) {
-  static int sParsed = -1;
-  static u16 sIds[16];
-  static int sCount = 0;
-  if (sParsed < 0) {
-    sParsed = 0;
-    const char* env = getenv("MP_MUTE_SMP");
-    if (env != NULL) {
-      char buf[256];
-      strncpy(buf, env, sizeof(buf) - 1);
-      buf[sizeof(buf) - 1] = '\0';
-      char* tok = strtok(buf, ",");
-      while (tok != NULL && sCount < 16) {
-        sIds[sCount++] = (u16)strtoul(tok, NULL, 0);
-        tok = strtok(NULL, ",");
-      }
-    }
+// Sample ids the user has muted from the debug overlay (seeded from
+// MP_MUTE_SMP=65535,93). Muting silences the voice but keeps it running so its
+// lifetime and timing are unchanged.
+#define SAL_MAX_MUTED_SAMPLES 64
+static u16 sMutedSamples[SAL_MAX_MUTED_SAMPLES];
+static int sMutedSampleCount = 0;
+static int sMuteListInitialized = 0;
+
+static void salInitMuteList(void) {
+  if (sMuteListInitialized) {
+    return;
   }
-  for (int i = 0; i < sCount; ++i) {
-    if (sIds[i] == smpId)
+  sMuteListInitialized = 1;
+  const char* env = getenv("MP_MUTE_SMP");
+  if (env == NULL) {
+    return;
+  }
+  char buf[256];
+  strncpy(buf, env, sizeof(buf) - 1);
+  buf[sizeof(buf) - 1] = '\0';
+  char* tok = strtok(buf, ",");
+  while (tok != NULL && sMutedSampleCount < SAL_MAX_MUTED_SAMPLES) {
+    sMutedSamples[sMutedSampleCount++] = (u16)strtoul(tok, NULL, 0);
+    tok = strtok(NULL, ",");
+  }
+}
+
+int MusyxPortIsSampleMuted(unsigned smpId) {
+  salInitMuteList();
+  for (int i = 0; i < sMutedSampleCount; ++i) {
+    if (sMutedSamples[i] == (u16)smpId) {
       return 1;
+    }
   }
   return 0;
 }
+
+void MusyxPortSetSampleMuted(unsigned smpId, int muted) {
+  salInitMuteList();
+  const u16 id = (u16)smpId;
+  int idx = -1;
+  for (int i = 0; i < sMutedSampleCount; ++i) {
+    if (sMutedSamples[i] == id) {
+      idx = i;
+      break;
+    }
+  }
+  if (muted && idx < 0) {
+    if (sMutedSampleCount < SAL_MAX_MUTED_SAMPLES) {
+      sMutedSamples[sMutedSampleCount++] = id;
+    }
+  } else if (!muted && idx >= 0) {
+    sMutedSamples[idx] = sMutedSamples[--sMutedSampleCount];
+  }
+}
+
+void MusyxPortClearSampleMutes(void) { sMutedSampleCount = 0; }
 
 // ADPCM decode state per voice
 static s16 adpcmYn1[SYNTH_MAX_VOICES];
@@ -108,6 +141,8 @@ typedef struct VoiceResamplerState {
 } VoiceResamplerState;
 
 static VoiceResamplerState voiceResampler[SYNTH_MAX_VOICES];
+static u32 voiceEffPitch[SYNTH_MAX_VOICES];
+static s32 voiceRms[SYNTH_MAX_VOICES];
 static s16 polyphaseTable[POLYPHASE_PHASES][POLYPHASE_TAPS];
 static s16 sincTable[SINC_PHASES][SINC_TAPS];
 static u8 resampleTablesInitialized = 0;
@@ -518,7 +553,14 @@ static int renderVoiceSegment(DSPvoice* vp, s32* mainL, s32* mainR, s32* mainS, 
   VoiceResamplerState* state = &voiceResampler[voiceIdx];
   fillSourceBuffer(vp, voiceIdx, frameSamples, pitch);
   int nSamples = resampleVoice(voiceIdx, voiceDecodeBuf, frameSamples, pitch);
-  if (salVoiceMuted(vp->smp_id)) {
+  voiceEffPitch[voiceIdx] = pitch;
+  {
+    long long sum = 0;
+    for (int i = 0; i < nSamples; ++i)
+      sum += (long long)voiceDecodeBuf[i] * voiceDecodeBuf[i];
+    voiceRms[voiceIdx] = nSamples > 0 ? (s32)sqrt((double)sum / nSamples) : 0;
+  }
+  if (MusyxPortIsSampleMuted(vp->smp_id)) {
     memset(voiceDecodeBuf, 0, (size_t)nSamples * sizeof(s32));
   }
   vp->playInfo.posHi = state->srcPosHi;
@@ -845,10 +887,11 @@ void salCtrlDsp(s16* dest) {
           ++active;
           fprintf(stderr,
                   "[voice] v=%d st=%u smp=%u info=%08X addr=%p len=%u loop=%u loopLen=%u comp=%u "
-                  "pitch=%u volL=%u volR=%u\n",
+                  "pitch=%u eff=%u rms=%d volL=%u volR=%u\n",
                   v, vp->state, vp->smp_id, vp->smp_info.info, vp->smp_info.addr,
                   vp->smp_info.length, vp->smp_info.loop, vp->smp_info.loopLength,
-                  vp->smp_info.compType, vp->playInfo.pitch, vp->volL, vp->volR);
+                  vp->smp_info.compType, vp->playInfo.pitch, voiceEffPitch[v], voiceRms[v],
+                  vp->volL, vp->volR);
         }
         fprintf(stderr, "[voice] active=%d heading=(%.3f,%.3f,%.3f)\n", active,
                 gPortListenerHeading[0], gPortListenerHeading[1], gPortListenerHeading[2]);
@@ -1023,3 +1066,28 @@ void hwDisableIrq() { SDL_LockMutex(globalMutex); }
 void hwIRQEnterCritical() { SDL_LockMutex(globalMutex); }
 
 void hwIRQLeaveCritical() { SDL_UnlockMutex(globalMutex); }
+
+// Snapshot of the active voices for the debug overlay. Reads guest state from
+// the UI thread; a torn read only affects a diagnostic display.
+int MusyxPortCopyVoices(PortMusyxVoice* out, int maxVoices) {
+  if (dspVoice == NULL || out == NULL || maxVoices <= 0) {
+    return 0;
+  }
+  int count = 0;
+  for (int v = 0; v < salNumVoices && count < maxVoices; ++v) {
+    const DSPvoice* vp = &dspVoice[v];
+    if (vp->state == 0) {
+      continue;
+    }
+    out[count].smpId = vp->smp_id;
+    out[count].compType = vp->smp_info.compType;
+    out[count].looped = vp->smp_info.loopLength != 0;
+    out[count].length = vp->smp_info.length;
+    out[count].pitch = vp->playInfo.pitch != 0 ? vp->playInfo.pitch : vp->pitch[0];
+    out[count].rms = voiceRms[v];
+    out[count].volL = vp->volL;
+    out[count].volR = vp->volR;
+    ++count;
+  }
+  return count;
+}

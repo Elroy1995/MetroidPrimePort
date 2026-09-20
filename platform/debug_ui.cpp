@@ -16,10 +16,12 @@
 #include <aurora/gfx.h>
 #include <dolphin/vi.h>
 #include <imgui.h>
+#include <musyx/port_voices.h>
 
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -623,6 +625,56 @@ void DrawAudioTab() {
   }
 }
 
+void DrawVoicesTab() {
+  PortMusyxVoice voices[64];
+  const int count = MusyxPortCopyVoices(voices, 64);
+  if (count == 0) {
+    ImGui::TextUnformatted("No active MusyX voices.");
+    return;
+  }
+
+  struct Agg {
+    PortMusyxVoice voice;
+    int instances;
+  };
+  std::vector< Agg > aggs;
+  for (int i = 0; i < count; ++i) {
+    bool found = false;
+    for (Agg& agg : aggs) {
+      if (agg.voice.smpId == voices[i].smpId) {
+        ++agg.instances;
+        if (voices[i].rms > agg.voice.rms) {
+          agg.voice = voices[i];
+        }
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      aggs.push_back(Agg{voices[i], 1});
+    }
+  }
+  std::sort(aggs.begin(), aggs.end(),
+            [](const Agg& a, const Agg& b) { return a.voice.rms > b.voice.rms; });
+
+  ImGui::TextUnformatted("Active samples, loudest first. Mute one to isolate it.");
+  for (const Agg& agg : aggs) {
+    ImGui::PushID(static_cast< int >(agg.voice.smpId));
+    bool muted = MusyxPortIsSampleMuted(agg.voice.smpId) != 0;
+    if (ImGui::Checkbox("##mute", &muted)) {
+      MusyxPortSetSampleMuted(agg.voice.smpId, muted ? 1 : 0);
+    }
+    ImGui::SameLine();
+    ImGui::Text("smp %u  %s  len %u  pitch %u  rms %d  vol %u/%u  x%d", agg.voice.smpId,
+                agg.voice.looped ? "loop" : "one-shot", agg.voice.length, agg.voice.pitch,
+                agg.voice.rms, agg.voice.volL, agg.voice.volR, agg.instances);
+    ImGui::PopID();
+  }
+  if (ImGui::Button("Unmute all")) {
+    MusyxPortClearSampleMutes();
+  }
+}
+
 void DrawSessionTab() {
   if (ImGui::Button("Restart to menu")) {
     RequestReset();
@@ -845,6 +897,10 @@ void DrawUI() {
       }
       if (ImGui::BeginTabItem("Audio")) {
         DrawAudioTab();
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Voices")) {
+        DrawVoicesTab();
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Debug")) {
