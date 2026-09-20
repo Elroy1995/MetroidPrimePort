@@ -154,11 +154,11 @@ CPFArea::CPFArea(const rstl::auto_ptr< uchar[] >& data, int size)
   int numRegionPtrs = readCount(4);
   x160_octreeRegions.reserve(numRegionPtrs);
   for (i = 0; i < numRegionPtrs; ++i) {
-    if (reinterpret_cast<uintptr_t>(x160_octreeRegions[i]) >= static_cast<uintptr_t>(numRegions)) {
+    const uintptr_t regionIndex = static_cast< uintptr_t >(stream.ReadLong());
+    if (regionIndex >= static_cast<uintptr_t>(numRegions)) {
       throw std::runtime_error("PATH region index is out of range");
     }
-    x160_octreeRegions.push_back(
-        reinterpret_cast< CPFRegion* >(static_cast< uintptr_t >(stream.ReadLong())));
+    x160_octreeRegions.push_back(reinterpret_cast< CPFRegion* >(regionIndex));
   }
   for (i = 0; i < numRegionPtrs; ++i) {
     x160_octreeRegions[i] =
