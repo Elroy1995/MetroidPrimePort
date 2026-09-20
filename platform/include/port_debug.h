@@ -34,6 +34,11 @@ unsigned SimRate();
 void SetSimRate(unsigned hz);
 // The current simulation step in seconds (1 / SimRate()).
 float SimPeriod();
+// When enabled the simulation step follows the measured frame time (clamped to
+// a sane range) instead of SimRate(), so a variable frame rate is matched
+// tick-for-tick. Experimental.
+bool SimAdaptive();
+void SetSimAdaptive(bool enabled);
 
 // Presentation
 bool FrameLimitEnabled();

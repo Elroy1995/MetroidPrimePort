@@ -35,7 +35,7 @@ remaining 60 Hz assumption in the logic.
 | **Particle systems** (`CElementGen`, `CParticleElectric`, `CParticleSwoosh`) | time-driven, fixed 60 Hz substeps | none |
 | **Decals** (`Weapons/CDecal`) | time-based (`x58_frameIdx = t * 60`) | done |
 | Scattered AI/player/HUD frame counters | mixed | low-medium |
-| Tick plumbing + projectile tick period | fixed 1/60 | done (experimental) |
+| Tick plumbing + projectile tick period | fixed or adaptive (`sim_rate`, `sim_adaptive`) | done |
 
 The important result is that the engine core is **already dt-scaled**, and the
 particle systems run by real time with fixed 60 Hz substeps, so they already
@@ -156,6 +156,14 @@ Scripts / misc:
 
 - `PortDebug::SimRate()/SetSimRate()/SimPeriod()` (env `MP_SIM_RATE`, settings
   key `sim_rate`, slider in the F1 Performance tab, range 30..480, default 60).
+- `PortDebug::SimAdaptive()/SetSimAdaptive()` (env `MP_SIM_ADAPTIVE`, settings
+  key `sim_adaptive`, checkbox in the same tab). When set, `UpdateTicks` uses
+  `period = clamp(frameTime, 1/480, 1/30)` instead of `1/SimRate()`, i.e. one
+  step per frame with `dt` equal to the measured frame time, so a variable
+  frame rate is matched tick-for-tick and the fixed-step accumulator only
+  subdivides when a frame exceeds 1/30 s.
+- `CGameArchitectureSupport::GetTickPeriod()` exposes the step actually used so
+  `RsMain` feeds the same `dt` to `CSfxManager::Update` and streamed audio.
 - `PortTiming::FixedStepClock` gained `SetPeriod()`/`Period()`; the step is now
   runtime rather than `constexpr`.
 - `CGameArchitectureSupport::UpdateTicks` sets the clock period from `SimRate()`
@@ -165,24 +173,29 @@ Scripts / misc:
   audio stays wall-clock (ticks x period == elapsed).
 - `CProjectileWeapon::GetTickPeriod()` returns `PortDebug::SimPeriod()` instead
   of `1/60`, so projectile velocities and gravity scale with the tick.
+  `CBloodFlower` and `CTargetableProjectile` now read it per call instead of
+  caching it in a function-local static, so an adaptive or mid-session rate
+  stays correct.
 - Camera presentation interpolation (`main.cpp:929`) becomes a no-op once the
   step matches the frame time, which is what "no interpolation" requires.
 - `CDecal` ages by real time (`x6c_elapsedTime += dt`) and derives its 60 Hz
   frame index from it, so decals keep their authored duration above 60 Hz.
 
 Verified: with `MP_SIM_RATE=120` the timing trace reports `simulation=120.0
-ticks/s` with the render at 60 FPS, the mouse smoke still passes at the default
-60, and all port tests pass. For real high-refresh gameplay, turn the F10 frame
-cap off so both the renderer and the tick run at the display rate.
+ticks/s` with the render at 60 FPS; with `MP_SIM_ADAPTIVE=1` and the cap on it
+reports `render=60.0 simulation=60.0` (exactly one step per frame), and with the
+cap off it follows the render rate up to the 480 Hz clamp (`render=1678
+simulation=476`). The mouse smoke still passes at the default 60 and all port
+tests pass. For real high-refresh gameplay, turn the F10 frame cap off (or set
+adaptive) so both the renderer and the tick run at the display rate.
 
 Known caveats:
 
-- `CBloodFlower.cpp:321` and `CTargetableProjectile.cpp:59` cache
-  `GetTickPeriod()` in function-local statics; a mid-session rate change leaves
-  those stale.
 - Tick-indexed particle seeding (`x8d8_updateFrameIdx`) makes particle randomness
   rate-dependent.
 - The scattered AI/HUD per-frame counters below still advance per tick.
+- Adaptive mode gives the game a variable `dt`, so physics results vary with the
+  frame time; the fixed rates keep a constant step.
 
 ## Conversion plan
 
@@ -205,8 +218,9 @@ Phase 2 - scattered counters (list above)
 
 Phase 3 - tick plumbing (done)
 
-- Implemented as the `sim_rate` setting; see "Implemented" above. Input is
-  sampled once per tick, which at a display-matched rate is once per frame.
+- Implemented as the `sim_rate` / `sim_adaptive` settings; see "Implemented"
+  above. Input is stepped once per tick, which at a display-matched rate is once
+  per frame.
 
 Phase 4 - verification
 

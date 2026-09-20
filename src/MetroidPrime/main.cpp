@@ -464,7 +464,20 @@ bool CGameArchitectureSupport::UpdateTicks() {
   OSRestoreInterrupts(interrupts);
   sInfiniteLoopTime = 0.f;
 
-  const double period = 1.0 / static_cast< double >(PortDebug::SimRate());
+  // Adaptive mode steps once per frame with dt = the measured frame time (so a
+  // variable frame rate is matched exactly); otherwise a fixed 1/SimRate() step
+  // catches up with whole ticks.
+  double period;
+  if (PortDebug::SimAdaptive()) {
+    period = static_cast< double >(elapsed);
+    if (period < 1.0 / 480.0) {
+      period = 1.0 / 480.0;
+    } else if (period > 1.0 / 30.0) {
+      period = 1.0 / 30.0;
+    }
+  } else {
+    period = 1.0 / static_cast< double >(PortDebug::SimRate());
+  }
   x7c_tickClock.SetPeriod(period);
   const unsigned ticks = x7c_tickClock.Advance(elapsed, gpMain->GetScreenFading(),
                                              PortDebug::FrameLimitEnabled());
@@ -827,8 +840,6 @@ int CMain::RsMain(int argc, const char* const* argv) {
     while (!x160_24_finished) {
       const uint64_t loopStartNs = SDL_GetTicksNS();
       bool presented = false;
-      // Track the configured simulation step (may change from the debug overlay).
-      dt = PortDebug::SimPeriod();
       if ((s_frameLog++ % 60) == 0) {
         fprintf(stderr, "MP frame %u\n", s_frameLog);
       }
@@ -916,6 +927,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
       if (!archSupport->UpdateTicks()) {
         x160_24_finished = true;
       }
+      // Track the step UpdateTicks actually used (fixed or adaptive).
+      dt = archSupport->GetTickPeriod();
       // Advance the animation clock with simulation ticks so draw-time
       // animations stay real-time at any presentation frame rate.
       CGraphics::TickRenderTimings(sTicksAdvanced);
@@ -971,7 +984,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
       archSupport->Update();
       for (uint i = 0; i < sTicksAdvanced; ++i) {
         CSfxManager::Update(dt);
-        UpdateStreamedAudio();
+        UpdateStreamedAudio(dt);
       }
 
       if (CheckTerminate())
@@ -1151,4 +1164,4 @@ void CMain::ResetGameState() {
 
 void CMain::RegisterResourceTweaks() { x70_tweaks.RegisterResourceTweaks(); }
 
-void CMain::UpdateStreamedAudio() { CStreamAudioManager::Update(PortDebug::SimPeriod()); }
+void CMain::UpdateStreamedAudio(float dt) { CStreamAudioManager::Update(dt); }

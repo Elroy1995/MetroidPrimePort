@@ -67,7 +67,7 @@ public:
   ~CMain();
 
   bool LoadAudio();
-  void UpdateStreamedAudio();
+  void UpdateStreamedAudio(float dt);
   void RegisterResourceTweaks();
   void ResetGameState();
   void StreamNewGameState(CInputStream& in, int saveIdx);

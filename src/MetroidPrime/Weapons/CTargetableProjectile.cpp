@@ -56,7 +56,7 @@ const bool CTargetableProjectile::Explode(const CVector3f& pos, const CVector3f&
 }
 
 CVector3f CTargetableProjectile::GetAimPosition(const CStateManager& mgr, const float dt) const {
-  static float tickRecip = 1.f / CProjectileWeapon::GetTickPeriod();
+  const float tickRecip = 1.f / CProjectileWeapon::GetTickPeriod();
   CVector3f translation = GetTranslation();
   CVector3f velocity = tickRecip * GetProjectile().GetVelocity();
   CVector3f gravity = tickRecip * GetProjectile().GetGravity();

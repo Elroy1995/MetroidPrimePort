@@ -46,6 +46,7 @@ bool sFastBoot = false;
 bool sSkipCutscenes = false;
 float sCutsceneSpeed = 8.f;
 unsigned sSimRate = 60;
+bool sSimAdaptive = false;
 bool sFrameLimitEnabled = true;
 bool sTraceTiming = false;
 uint64_t sTimingNs = 0;
@@ -162,6 +163,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     if (rate >= 30 && rate <= 480) {
       sSimRate = static_cast< unsigned >(rate);
     }
+  } else if (key == "sim_adaptive") {
+    sSimAdaptive = ParseBool(value);
   } else if (key == "ai_audio") {
     sAiAudioEnabled = ParseBool(value);
   } else if (key == "musyx_audio") {
@@ -231,6 +234,7 @@ void SaveSettings() {
   file << "skip_cutscenes=" << (sSkipCutscenes ? 1 : 0) << '\n';
   file << "cutscene_speed=" << sCutsceneSpeed << '\n';
   file << "sim_rate=" << sSimRate << '\n';
+  file << "sim_adaptive=" << (sSimAdaptive ? 1 : 0) << '\n';
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "mouse_invert_x=" << (sMouseInvertX ? 1 : 0) << '\n';
   file << "mouse_invert_y=" << (sMouseInvertY ? 1 : 0) << '\n';
@@ -320,6 +324,9 @@ void EnsureInitialized() {
       sSimRate = static_cast< unsigned >(value);
     }
   }
+  if (std::getenv("MP_SIM_ADAPTIVE") != nullptr) {
+    sSimAdaptive = true;
+  }
 
   std::atexit(SaveSettings);
 }
@@ -357,6 +364,17 @@ void SetSimRate(unsigned hz) {
 }
 
 float SimPeriod() { return 1.f / static_cast< float >(SimRate()); }
+
+bool SimAdaptive() {
+  EnsureInitialized();
+  return sSimAdaptive;
+}
+
+void SetSimAdaptive(bool enabled) {
+  EnsureInitialized();
+  sSimAdaptive = enabled;
+  MarkDirty();
+}
 
 bool FrameLimitEnabled() {
   EnsureInitialized();
@@ -593,20 +611,34 @@ void DrawPerformanceTab() {
     MarkDirty();
   }
   ImGui::Text("Measured render rate: %.1f FPS", sActualFps);
-  ImGui::Text("Measured simulation: %.1f ticks/s (target %u)", sActualTps, sSimRate);
+  if (sSimAdaptive) {
+    ImGui::Text("Measured simulation: %.1f ticks/s (adaptive)", sActualTps);
+  } else {
+    ImGui::Text("Measured simulation: %.1f ticks/s (target %u)", sActualTps, sSimRate);
+  }
   ImGui::Text("Frame time: %.2f ms", static_cast< double >(ImGui::GetIO().DeltaTime) * 1000.0);
 
   ImGui::Separator();
   ImGui::TextUnformatted("Experimental: simulation rate");
+  bool adaptive = sSimAdaptive;
+  if (ImGui::Checkbox("Adaptive (follow frame rate)", &adaptive)) {
+    PortDebug::SetSimAdaptive(adaptive);
+  }
+  ImGui::BeginDisabled(adaptive);
   int simRate = static_cast< int >(sSimRate);
   if (ImGui::SliderInt("Sim Hz", &simRate, 30, 480)) {
     PortDebug::SetSimRate(static_cast< unsigned >(simRate));
   }
-  if (simRate != 60) {
+  ImGui::EndDisabled();
+  if (adaptive) {
+    ImGui::TextWrapped(
+        "One step per frame with dt = the measured frame time (clamped 30-480 Hz), "
+        "so a variable frame rate is matched exactly. Leave the FPS cap off.");
+  } else if (simRate != 60) {
     ImGui::TextWrapped(
         "60 Hz is console-accurate. Higher values step the game logic at the display "
         "rate instead of interpolating the camera; leave the FPS cap off for it to "
-        "matter. Decals and a few AI cadences are not yet rate-independent.");
+        "matter.");
   }
 }
 

@@ -37,6 +37,7 @@ public:
   inline CIOWinManager& GetIOWinManager() { return x58_ioWinMgr; }
   inline int& GetFramesDrawn() { return x78_gameFrameCount; }
   float GetTickInterpolation() const { return x7c_tickClock.Interpolation(); }
+  float GetTickPeriod() const { return static_cast< float >(x7c_tickClock.Period()); }
   bool IsInfiniteLoopAlarmSet() const { return xc8_infiniteLoopAlarmSet; }
   OSAlarm& GetInfiniteLoopAlarm() { return xa0_infiniteLoopAlarm; }
   void SetInfiniteLoopAlarmSet(bool set) { xc8_infiniteLoopAlarmSet = set; }

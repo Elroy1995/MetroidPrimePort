@@ -121,8 +121,11 @@ override these.
 - `MP_VALIDATE_SAMPLES=1`: log MusyX sample-directory validation.
 - `MP_SIM_RATE=<hz>`: experimental simulation tick rate (30–480, default 60).
   60 is console-accurate; higher values step the game logic at the display rate
-  instead of interpolating the camera. See `docs/HIGH_FPS_AUDIT.md` for what
-  still assumes 60 Hz. Also settable from the F1 Performance tab and persisted.
+  instead of interpolating the camera. `MP_SIM_ADAPTIVE=1` instead takes one
+  step per frame with `dt` = the measured frame time (clamped 30–480 Hz), so a
+  variable frame rate is matched exactly. Both are also settable from the F1
+  Performance tab and persisted. See `docs/HIGH_FPS_AUDIT.md` for what still
+  assumes 60 Hz.
 
 The simulation uses a fixed-step accumulator (60 Hz by default) independently of
 the presentation cap. Ordinary slow frames catch up; pauses/debugger stalls are

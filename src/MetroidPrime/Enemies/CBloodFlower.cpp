@@ -318,7 +318,7 @@ void CBloodFlower::TurnEffectsOff(const int effectIndex, CStateManager& mgr) {
 void CBloodFlower::Touch(CActor&, CStateManager&) {}
 void CBloodFlower::LaunchPollenProjectile(const CTransform4f& xf, CStateManager& mgr, float height,
                                           int maxProjectiles) {
-  static float sProjectileTickPeriod = CProjectileWeapon::GetTickPeriod();
+  const float projectileTickPeriod = CProjectileWeapon::GetTickPeriod();
   CProjectileInfo* projInfo = ProjectileInfo();
 
   if (!projInfo->Token().TryCache()) {
@@ -351,7 +351,7 @@ void CBloodFlower::LaunchPollenProjectile(const CTransform4f& xf, CStateManager&
     return;
   }
   CProjectileWeapon& wp = proj->ProjectileWeapon();
-  wp.SetVelocity(sProjectileTickPeriod * velocity);
-  wp.SetGravity(sProjectileTickPeriod * CVector3f(0.f, 0.f, -4.905f));
+  wp.SetVelocity(projectileTickPeriod * velocity);
+  wp.SetGravity(projectileTickPeriod * CVector3f(0.f, 0.f, -4.905f));
   mgr.AddObject(*proj);
 }
