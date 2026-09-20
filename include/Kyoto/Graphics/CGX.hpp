@@ -200,11 +200,17 @@ private:
 #endif
 
 #define RSWrite(T, n) (*(T*)GXFIFO_ADDR) = n
+#ifdef TARGET_PC
+// The GameCube writes direct vertices to the memory-mapped FIFO at
+// GXFIFO_ADDR, which is not mapped on PC. Route through the Aurora GX FIFO.
+#define RSPosition3f32(x, y, z) GXPosition3f32((x), (y), (z))
+#else
 #define RSPosition3f32(x, y, z)                                                                    \
   {                                                                                                \
     RSWrite(f32, x);                                                                               \
     RSWrite(f32, y);                                                                               \
     RSWrite(f32, z);                                                                               \
   }
+#endif
 
 #endif // _CGX
