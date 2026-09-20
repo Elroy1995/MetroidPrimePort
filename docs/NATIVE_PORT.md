@@ -217,10 +217,12 @@ front-end name and jumps to it on click.
 `MP_SMOKE_VISOR=1` grants and switches to the thermal visor after gameplay
 starts and reports `[visor-smoke] passed` once it has stayed up. It reproduces
 the FIFO-worker crash where the game binds a texture whose source pointer is an
-unmapped value (an ARAM address or stale reference), which the content hash then
-dereferences. Aurora now skips such a source instead of hashing it; set
-`MP_LOG_TEX_INVALID=1` to log each rejected texture's pointer, format, size and
-object id.
+unmapped value, which the content hash then dereferences. The thermal cold blend
+was passing a deliberately fake random address as its noise texture (the console
+reads raw memory for noise); the port now fills a real scratch noise buffer.
+Aurora also skips any texture whose source page is not mapped instead of hashing
+it; set `MP_LOG_TEX_INVALID=1` to log each rejected texture's pointer, format,
+size and object id.
 
 For audio reports, `MP_AUDIO_STATS=1` logs MusyX's generated samples/second, queued
 audio, peak output and clipping. Nominal output is 32,000 stereo frames/second;

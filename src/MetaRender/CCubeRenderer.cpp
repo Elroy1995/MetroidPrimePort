@@ -51,6 +51,7 @@
 
 #include <string.h>
 #include <type_traits>
+#include <vector>
 
 CCubeRenderer* CCubeRenderer::sRenderer = nullptr;
 static CModelFlags skNormalFlag = CModelFlags::Normal();
@@ -1417,6 +1418,28 @@ static void draw_box_or_model(const CAABox& aabb, const CModel* model, const CTr
   }
 }
 
+namespace {
+// The thermal blend samples a random main-memory address on GameCube to produce
+// noise. The port's renderer dereferences the texture source, so hand it a real
+// scratch buffer of noise instead of a fake address.
+void* ThermalNoiseTextureData(uint seed, int width, int height) {
+  const size_t bytes =
+      static_cast< size_t >(((width + 7) & ~7) * ((height + 3) & ~3));
+  static std::vector< uchar > sNoise;
+  if (sNoise.size() < bytes) {
+    sNoise.resize(bytes);
+  }
+  uint state = seed | 1u;
+  for (size_t i = 0; i < bytes; ++i) {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    sNoise[i] = static_cast< uchar >(state);
+  }
+  return sNoise.data();
+}
+} // namespace
+
 void CCubeRenderer::DoThermalBlendCold() {
   const float coldScale = 0.003921569f * static_cast< float >(x2f8_thermalColdScale);
   x318_26_requestRGBA6 = true;
@@ -1439,7 +1462,7 @@ void CCubeRenderer::DoThermalBlendCold() {
   CGraphics::LoadDolphinSpareTexture(width, height, GX_TF_I4, 0, CGraphics::kSpareBufferTexMapID);
 
   const uint rand = x2a8_thermalRand.Next();
-  void* randTexData = reinterpret_cast< void* >(((rand + 0x1f) & ~0x1f) + 0x8000);
+  void* randTexData = ThermalNoiseTextureData(rand, width, height);
   CGraphics::LoadDolphinSpareTexture(width, height, GX_TF_IA4, randTexData, GX_TEXMAP0);
   CGraphics::LoadDolphinSpareTexture(width, height, GX_TF_IA4, randTexData, GX_TEXMAP1);
 

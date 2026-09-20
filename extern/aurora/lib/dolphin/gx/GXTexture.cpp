@@ -5,6 +5,12 @@
 #include "dolphin/gx/GXAurora.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <execinfo.h>
+#endif
 
 #include "tracy/Tracy.hpp"
 
@@ -78,6 +84,16 @@ void init_texobj_common(GXTexObj_& obj, const void* data, u16 width, u16 height,
 }
 
 void emit_loaded_texobj_metadata(const GXTexObj_& obj, GXTexMapID id) {
+#if defined(__linux__) && !defined(__ANDROID__)
+  if (std::getenv("MP_LOG_TEX_INVALID") != nullptr &&
+      reinterpret_cast<uintptr_t>(obj.data) < 0x100000) {
+    std::fprintf(stderr, "[tex-bt] load id=%u data=%p fmt=%u %ux%u\n", obj.texObjId, obj.data,
+                 obj.format(), obj.width(), obj.height());
+    void* frames[32];
+    const int count = backtrace(frames, 32);
+    backtrace_symbols_fd(frames, count, 2);
+  }
+#endif
   GX_WRITE_AURORA(GX_AURORA_LOAD_TEXOBJ);
   GX_WRITE_U8(static_cast<u8>(id));
   GX_WRITE_U64(reinterpret_cast<u64>(obj.data));
