@@ -13,6 +13,9 @@
 #include "musyx/sal.h"
 #include "musyx/seq.h"
 #include "musyx/snd.h"
+
+#include <stdio.h>
+#include <stdlib.h>
 #include "musyx/stream.h"
 #include "musyx/synth.h"
 
@@ -189,6 +192,15 @@ void hwInitSamplePlayback(u32 v, u16 smpID, void* newsmp, u32 set_defadsr, u32 p
   dspVoice[v].flags = 0;
   dspVoice[v].smp_id = smpID;
   dspVoice[v].smp_info = *(SAMPLE_INFO*)newsmp;
+  {
+    static int sVoiceStartTrace = -1;
+    if (sVoiceStartTrace < 0) {
+      sVoiceStartTrace = getenv("MP_LOG_VOICES") != NULL;
+    }
+    if (sVoiceStartTrace) {
+      fprintf(stderr, "[voicestart] v=%u smp=%u soundId=%u\n", v, smpID, callbackUserValue);
+    }
+  }
 
   if (set_defadsr != 0) {
     dspVoice[v].adsr.mode = 0;

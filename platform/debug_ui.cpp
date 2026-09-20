@@ -160,6 +160,21 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sAiAudioEnabled = ParseBool(value);
   } else if (key == "musyx_audio") {
     sMusyxAudioEnabled = ParseBool(value);
+  } else if (key == "voices_muted") {
+    MusyxPortClearSampleMutes();
+    const char* cursor = value.c_str();
+    while (*cursor != '\0') {
+      char* end = nullptr;
+      const unsigned long id = std::strtoul(cursor, &end, 10);
+      if (end == cursor) {
+        break;
+      }
+      MusyxPortSetSampleMuted(static_cast< unsigned >(id), 1);
+      cursor = end;
+      while (*cursor == ',' || *cursor == ' ') {
+        ++cursor;
+      }
+    }
   }
 }
 
@@ -217,6 +232,15 @@ void SaveSettings() {
   file << "mouse_sensitivity=" << sMouseSensitivity << '\n';
   file << "ai_audio=" << (sAiAudioEnabled ? 1 : 0) << '\n';
   file << "musyx_audio=" << (sMusyxAudioEnabled ? 1 : 0) << '\n';
+  unsigned muted[64];
+  const int mutedCount = MusyxPortGetMutedSamples(muted, 64);
+  if (mutedCount > 0) {
+    file << "voices_muted=";
+    for (int i = 0; i < mutedCount; ++i) {
+      file << (i == 0 ? "" : ",") << muted[i];
+    }
+    file << '\n';
+  }
   file.flush();
   std::fprintf(stderr, "metroid_prime_port: saved settings to %s\n", path.c_str());
   sSettingsDirty = false;
@@ -663,6 +687,7 @@ void DrawVoicesTab() {
     bool muted = MusyxPortIsSampleMuted(agg.voice.smpId) != 0;
     if (ImGui::Checkbox("##mute", &muted)) {
       MusyxPortSetSampleMuted(agg.voice.smpId, muted ? 1 : 0);
+      MarkDirty();
     }
     ImGui::SameLine();
     ImGui::Text("smp %u  %s  len %u  pitch %u  rms %d  vol %u/%u  x%d", agg.voice.smpId,
@@ -672,6 +697,7 @@ void DrawVoicesTab() {
   }
   if (ImGui::Button("Unmute all")) {
     MusyxPortClearSampleMutes();
+    MarkDirty();
   }
 }
 

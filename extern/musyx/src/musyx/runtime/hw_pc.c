@@ -124,6 +124,15 @@ void MusyxPortSetSampleMuted(unsigned smpId, int muted) {
 
 void MusyxPortClearSampleMutes(void) { sMutedSampleCount = 0; }
 
+int MusyxPortGetMutedSamples(unsigned* out, int maxIds) {
+  salInitMuteList();
+  const int count = sMutedSampleCount < maxIds ? sMutedSampleCount : maxIds;
+  for (int i = 0; i < count; ++i) {
+    out[i] = sMutedSamples[i];
+  }
+  return count;
+}
+
 // ADPCM decode state per voice
 static s16 adpcmYn1[SYNTH_MAX_VOICES];
 static s16 adpcmYn2[SYNTH_MAX_VOICES];

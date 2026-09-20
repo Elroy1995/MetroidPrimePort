@@ -237,7 +237,8 @@ listener heading) about three times a second, and `MP_MUTE_SMP=65535,93` silence
 voices by sample id so a persistent one can be identified by ear. Streamed
 voices report sample id 65535. `MP_LOG_3D=1` logs any 3D emitter whose Doppler
 factor is not 1. The overlay's **Voices** tab lists the live voices (loudest
-first) with a per-sample mute checkbox and an "Unmute all" button.
+first) with a per-sample mute checkbox and an "Unmute all" button; the muted ids
+are saved to `voices_muted` in the settings file.
 
 For AddressSanitizer, use a separate Clang build with
 `-DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer"` and the same

@@ -29,6 +29,8 @@ int MusyxPortCopyVoices(PortMusyxVoice* out, int maxVoices);
 int MusyxPortIsSampleMuted(unsigned smpId);
 void MusyxPortSetSampleMuted(unsigned smpId, int muted);
 void MusyxPortClearSampleMutes(void);
+// Copies the muted sample ids (up to maxIds) and returns the count.
+int MusyxPortGetMutedSamples(unsigned* out, int maxIds);
 
 #ifdef __cplusplus
 }
