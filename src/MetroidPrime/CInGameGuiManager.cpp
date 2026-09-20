@@ -800,6 +800,12 @@ void CInGameGuiManager::DestroyAreaTextures(const CStateManager& mgr) {
   }
 
   int memoryFreed = 0;
+#ifndef TARGET_PC
+  // The console reclaims the always-resident in-game GUI/HUD textures here and
+  // reloads them asynchronously on the next transition. On PC this reclaim is
+  // unnecessary, and any transition that leaves a texture dumped makes the HUD
+  // energy/missile bars and scan-visor art bind null bitmap data (they vanish
+  // intermittently). Keep these textures resident instead.
   for (AUTO(it, xd8_inGameTextureIDs.begin()); it != xd8_inGameTextureIDs.end(); ++it) {
     CAssetId id = *it;
     if (!IsTextureInPauseScreen(id)) {
@@ -818,6 +824,7 @@ void CInGameGuiManager::DestroyAreaTextures(const CStateManager& mgr) {
       }
     }
   }
+#endif
 
   rstl::sort(candidates.begin(), candidates.end(), CTextureScoreGreaterThan());
   CFrameDelayedKiller::StallAndFlushAllAllocations();
