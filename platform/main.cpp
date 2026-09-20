@@ -72,9 +72,9 @@ int main(int argc, char** argv) {
     };
 
     aurora_initialize(argc, argv, &config);
-    // Apply persisted presentation settings (loaded from port_settings.ini).
+    // Apply the persisted render scale. Vsync is applied on the first drawn
+    // frame (once the swapchain surface exists) so it uses real capabilities.
     VISetFrameBufferScale(PortDebug::RenderScale());
-    aurora_enable_vsync(PortDebug::VsyncEnabled());
     // Fit the internal EFB to the game's render-mode aspect rather than the
     // window aspect, so fixed 4:3/16:9 modes are never stretched when the window
     // shape differs; the present letterboxes instead.

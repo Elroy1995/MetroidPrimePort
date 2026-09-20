@@ -62,6 +62,7 @@ bool sResetRequested = false;
 bool sVisible = false;
 bool sSettingsDirty = false;
 bool sAudioSettingsApplied = false;
+bool sPresentationSettingsApplied = false;
 
 std::string SettingsFilePath() {
   std::string dir;
@@ -325,9 +326,9 @@ bool VsyncEnabled() {
 
 void SetVsyncEnabled(bool enabled) {
   EnsureInitialized();
-  if (sVsyncEnabled == enabled) {
-    return;
-  }
+  // Always re-apply: the stored value can match while the surface still has the
+  // previous present mode (e.g. the persisted value applied before the first
+  // frame), which made the first toggle a no-op.
   sVsyncEnabled = enabled;
   aurora_enable_vsync(enabled);
 }
@@ -609,6 +610,12 @@ void DrawUI() {
     sAudioSettingsApplied = true;
     SetAiAudioEnabled(sAiAudioEnabled);
     SetMusyxAudioEnabled(sMusyxAudioEnabled);
+  }
+  if (!sPresentationSettingsApplied) {
+    // Apply persisted vsync once the swapchain surface exists (first drawn
+    // frame), so the present mode is chosen from real surface capabilities.
+    sPresentationSettingsApplied = true;
+    aurora_enable_vsync(sVsyncEnabled);
   }
   if (!sVisible) {
     return;
