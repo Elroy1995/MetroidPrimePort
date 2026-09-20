@@ -755,7 +755,11 @@ gx::DrawData* get_last_draw_command() {
 }
 
 Vec2<uint32_t> get_render_target_size() noexcept {
-  if (g_recorder.currentRenderPass < current_render_passes().size()) {
+  // The GX FIFO worker can process a viewport command after the frame's
+  // recording session has ended (e.g. during a world transition that waits on
+  // the FIFO). frame() would then dereference a null packet; fall back to the
+  // window size instead.
+  if (g_recorder.active() && g_recorder.currentRenderPass < current_render_passes().size()) {
     const auto& size =
         current_render_passes()[g_recorder.currentRenderPass].colorAttachments[SceneColorAttachmentIndex].size;
     return {size.width, size.height};
