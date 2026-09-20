@@ -76,6 +76,13 @@ the working directory. `MP_TEXTURES` points to an optional replacement pack.
   Start, arrows for D-pad, Q/E for L/R, and F for Z. Existing mappings take
   precedence. SDL controllers are supported.
 - F1: debug overlay. F10: 60 FPS cap/unlimited presentation. F12: screenshot.
+- Settings changed in the F1 overlay (aspect, vsync, render scale, frame limit,
+  cutscene options, mouse aim/inversion/sensitivity, audio mutes) are saved to
+  `port_settings.ini` in the user directory (`MP_USER_PATH`, else Aurora's SDL
+  preference path) and restored on the next launch. The Session tab shows the
+  path and has a **Save settings now** button. Environment variables still
+  override the file for that run, and are written back into it if any setting is
+  changed during that run.
 - `MP_ASPECT=4:3|16:9|window`; the legacy `MP_WIDESCREEN` selects 16:9.
 - `MP_MOUSE_AIM=1`, `MP_MOUSE_SENS=0.0035`: relative mouse aim. Motion is ignored
   while the overlay is visible or relative capture/focus is absent. Mouse mode
