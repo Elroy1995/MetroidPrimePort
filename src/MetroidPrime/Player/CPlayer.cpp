@@ -777,7 +777,13 @@ CPlayer::~CPlayer() { PortDebug::ResetMouseAim(); }
 
 bool CPlayer::MouseControlsAllowed(const CStateManager& mgr) const {
   const CCameraManager* cameras = mgr.GetCameraManager();
-  return PortDebug::MouseAim() && mgr.GetGameState() == CStateManager::kGS_Running &&
+  // kGS_SoftPaused is the scan-freeze state: the game is frozen while the scan
+  // text is shown, but input must keep flowing so the held lock is not dropped
+  // (dropping it would immediately cancel the scan). Aim stays locked to the
+  // scanned object, so free-look is unaffected.
+  const bool inputState = mgr.GetGameState() == CStateManager::kGS_Running ||
+                          mgr.GetGameState() == CStateManager::kGS_SoftPaused;
+  return PortDebug::MouseAim() && inputState &&
          !GetDisableInput() && mgr.GetPlayerState()->IsAlive() &&
          x2f8_morphBallState == kMS_Unmorphed && x2f4_cameraState == kCS_FirstPerson &&
          cameras != nullptr && cameras->GetFirstPersonCamera() != nullptr && cameras->IsInFPCamera() &&
