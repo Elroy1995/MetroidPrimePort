@@ -1106,6 +1106,7 @@ void CStateManager::Update(float dt) {
 #ifdef MP_ENABLE_SMOKE_DRIVER
   PortSmokeAreaReload(*this);
   PortSmokeWorldTeleport(*this);
+  PortSmokeVisor(*this);
   PortSmokeMouseBeforeUpdate(*this);
 #endif
 

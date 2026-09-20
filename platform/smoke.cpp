@@ -11,6 +11,7 @@
 #include "MetroidPrime/Cameras/CFirstPersonCamera.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/Player/CPlayerGun.hpp"
+#include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
@@ -167,6 +168,34 @@ void PortSmokeWorldTeleport(CStateManager& mgr) {
   sPassed = true;
   std::fprintf(stderr, "[world-smoke] passed: world %08X area %d\n", targetWorld,
                mgr.World()->GetCurrentAreaId().Value());
+}
+
+void PortSmokeVisor(CStateManager& mgr) {
+  static const bool enabled = std::getenv("MP_SMOKE_VISOR") != nullptr;
+  if (!enabled) return;
+  static unsigned sTicks = 0;
+  static bool sRequested = false;
+  static bool sPassed = false;
+  if (sPassed) return;
+  if (mgr.GetGameState() != CStateManager::kGS_Running ||
+      !mgr.GetCameraManager()->IsInFPCamera() || mgr.GetCameraManager()->IsInCinematicCamera()) {
+    return;
+  }
+  CPlayerState* ps = mgr.PlayerState();
+  if (ps == nullptr) return;
+  if (!sRequested) {
+    if (++sTicks < 120) return;
+    ps->SetPowerUp(CPlayerState::kIT_ThermalVisor, 1);
+    ps->SetPickup(CPlayerState::kIT_ThermalVisor, 1);
+    std::fputs("[visor-smoke] switching to the thermal visor\n", stderr);
+    ps->StartTransitionToVisor(CPlayerState::kPV_Thermal);
+    sRequested = true;
+    return;
+  }
+  if (++sTicks > 900) {
+    sPassed = true;
+    std::fputs("[visor-smoke] passed: thermal visor stable\n", stderr);
+  }
 }
 
 bool PortSmokeMouseEnabled() {

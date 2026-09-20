@@ -214,6 +214,14 @@ reports `[world-smoke] passed: world <id> area <n>` once a freshly constructed
 world is running. The F1 debug overlay's Debug tab lists every world by its
 front-end name and jumps to it on click.
 
+`MP_SMOKE_VISOR=1` grants and switches to the thermal visor after gameplay
+starts and reports `[visor-smoke] passed` once it has stayed up. It reproduces
+the FIFO-worker crash where the game binds a texture whose source pointer is an
+unmapped value (an ARAM address or stale reference), which the content hash then
+dereferences. Aurora now skips such a source instead of hashing it; set
+`MP_LOG_TEX_INVALID=1` to log each rejected texture's pointer, format, size and
+object id.
+
 For audio reports, `MP_AUDIO_STATS=1` logs MusyX's generated samples/second, queued
 audio, peak output and clipping. Nominal output is 32,000 stereo frames/second;
 short windows vary with the device's buffering. Static ADPCM loops must wrap at

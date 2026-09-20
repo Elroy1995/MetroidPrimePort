@@ -15,10 +15,17 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <list>
 #include <optional>
 #include <utility>
+
+#if defined(__linux__) || defined(__ANDROID__)
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 namespace aurora::gx {
 namespace {
@@ -277,6 +284,40 @@ struct TextureKeys {
   TextureContentKey contentKey;
   std::optional<aurora::texture::TextureSourceKey> sourceKey;
 };
+
+// The game can bind a texture whose backing store has already been released,
+// for example a dumped bitmap reloaded after its area was evicted. The console
+// reads whatever is in MEM1; natively that can be an unmapped page, and hashing
+// it faults in the FIFO worker. Skip the source instead of crashing and log the
+// pointer so the offending texture can be identified (MP_LOG_TEX_INVALID=1).
+bool texture_source_is_mapped(const GXTexObj_& obj) noexcept {
+#if defined(__linux__) || defined(__ANDROID__)
+  const long pageSize = sysconf(_SC_PAGESIZE);
+  if (pageSize <= 0) {
+    return true;
+  }
+  const uintptr_t addr = reinterpret_cast<uintptr_t>(obj.data);
+  const uintptr_t page = addr & ~static_cast<uintptr_t>(pageSize - 1);
+  unsigned char resident = 0;
+  return mincore(reinterpret_cast<void*>(page), 1, &resident) == 0;
+#else
+  return true;
+#endif
+}
+
+void log_invalid_texture_source(const GXTexObj_& obj, const char* where) noexcept {
+  static const bool enabled = std::getenv("MP_LOG_TEX_INVALID") != nullptr;
+  if (!enabled) {
+    return;
+  }
+  const auto copyIt = g_gxState.copyTextures.find(obj.data);
+  std::fprintf(stderr,
+               "[tex] %s: unmapped data=%p userData=%p rawfmt=%u fmt=%u %ux%u mips=%u id=%u "
+               "image0=%08X image3=%08X mode0=%08X flags=%02X copyTex=%d\n",
+               where, obj.data, obj.userData, obj.raw_format(), obj.format(), obj.width(),
+               obj.height(), obj.mip_count(), obj.texObjId, obj.image0, obj.image3, obj.mode0,
+               obj.flags, copyIt != g_gxState.copyTextures.end() ? 1 : 0);
+}
 
 TextureKeys hash_texture_source(const GXTexObj_& obj, const GXTlutObj_* tlut, bool buildSourceKey) {
   ZoneScoped;
@@ -600,6 +641,10 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   if (!obj.has_data()) {
     return {};
   }
+  if (!texture_source_is_mapped(obj)) {
+    log_invalid_texture_source(obj, "resolve_static_texture");
+    return {};
+  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -652,6 +697,10 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
   ZoneScoped;
 
   if (!obj.has_data()) {
+    return {};
+  }
+  if (!texture_source_is_mapped(obj)) {
+    log_invalid_texture_source(obj, "resolve_static_palette_texture");
     return {};
   }
 
