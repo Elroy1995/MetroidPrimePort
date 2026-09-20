@@ -141,6 +141,13 @@ bool CGuiFrame::GetIsFinishedLoading() const {
   }
   x58_24_loaded = true;
   for (AUTO(it, x2c_widgets.begin()); it != x2c_widgets.end(); ++it) {
+    // Models stream in asynchronously and CGuiModel::Draw already skips itself
+    // until ready. Blocking the whole frame on them meant a single slow/stuck
+    // model texture kept the entire HUD (including the energy/missile bars)
+    // hidden, e.g. after a morph-ball round trip.
+    if ((*it)->GetWidgetTypeID() == 'MODL') {
+      continue;
+    }
     if (!(*it)->GetIsFinishedLoading()) {
       x58_24_loaded = false;
       if (std::getenv("MP_LOG_HUD") != nullptr) {
