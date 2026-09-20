@@ -205,6 +205,9 @@ void CTexture::UnloadBitmapData(CAssetId textureId) const {
     mARAMToken = CARAMToken();
     mBitmapReloader = rs_new CDumpedBitmapDataReloader(textureId, mMemoryAllocated, complete);
   }
+  // The texobj may still be bound with the now-freed bitmap pointer; clear it
+  // so a draw skips the texture instead of hashing freed memory.
+  GXInitTexObjData(&mTexObj, nullptr);
 }
 
 bool CTexture::TryReloadBitmapData(CResFactory& factory) const {
