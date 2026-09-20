@@ -595,6 +595,12 @@ void invalidate_replacement(uint64_t replacementId) noexcept {
 gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   ZoneScoped;
 
+  // A texture whose bitmap data has not been uploaded (or was unloaded) has no
+  // valid source; hashing/uploading it would read invalid memory.
+  if (!obj.has_data()) {
+    return {};
+  }
+
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
       auto& entry = it->second;
@@ -644,6 +650,10 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
 
 gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GXTlutObj_& tlut) {
   ZoneScoped;
+
+  if (!obj.has_data()) {
+    return {};
+  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
