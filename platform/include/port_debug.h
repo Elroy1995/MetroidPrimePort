@@ -18,6 +18,11 @@ CStateManager* StateManager();
 // not run from the render/UI path.
 void RequestTeleport(int areaId);
 bool ConsumeTeleportRequest(int& areaId);
+// Requests a jump to a different world (MLVL). areaAssetId is a MREA asset id,
+// or 0 to land in the world's default area. The game update runs the same
+// restart the in-game world teleporters use, so the world is fully reloaded.
+void RequestWorldTeleport(uint32_t worldId, uint32_t areaAssetId);
+bool ConsumeWorldTeleportRequest(uint32_t& worldId, uint32_t& areaAssetId);
 
 // Fast iteration
 bool FastBoot();

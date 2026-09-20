@@ -207,6 +207,13 @@ cycles. It reproduced the material-flags crash seen when opening a door before
 the one-time native surface-header conversion fix. It can be combined with the
 mouse scenario and reports `[area-smoke] passed`.
 
+`MP_SMOKE_WORLD=<hex MLVL id>`, or `MP_SMOKE_WORLD=auto` to pick the first world
+other than the current one, jumps to another world through the same restart path
+the in-game world teleporters use. It waits for gameplay, requests the jump, and
+reports `[world-smoke] passed: world <id> area <n>` once a freshly constructed
+world is running. The F1 debug overlay's Debug tab lists every world by its
+front-end name and jumps to it on click.
+
 For audio reports, `MP_AUDIO_STATS=1` logs MusyX's generated samples/second, queued
 audio, peak output and clipping. Nominal output is 32,000 stereo frames/second;
 short windows vary with the device's buffering. Static ADPCM loops must wrap at

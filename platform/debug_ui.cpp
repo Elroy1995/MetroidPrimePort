@@ -7,8 +7,10 @@
 #include "port_build_info.h"
 
 #include "MetroidPrime/CHealthInfo.hpp"
+#include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
+#include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 
 #include <aurora/gfx.h>
@@ -24,6 +26,8 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace aurora {
 void request_screenshot() noexcept;
@@ -70,6 +74,9 @@ bool sAudioSettingsApplied = false;
 bool sPresentationSettingsApplied = false;
 CStateManager* sStateManager = nullptr;
 int sPendingTeleport = -1;
+bool sHasWorldTeleport = false;
+uint32_t sWorldTeleportWorld = 0;
+uint32_t sWorldTeleportArea = 0;
 
 std::string SettingsFilePath() {
   std::string dir;
@@ -497,6 +504,20 @@ bool ConsumeTeleportRequest(int& areaId) {
   sPendingTeleport = -1;
   return true;
 }
+void RequestWorldTeleport(uint32_t worldId, uint32_t areaAssetId) {
+  sWorldTeleportWorld = worldId;
+  sWorldTeleportArea = areaAssetId;
+  sHasWorldTeleport = true;
+}
+bool ConsumeWorldTeleportRequest(uint32_t& worldId, uint32_t& areaAssetId) {
+  if (!sHasWorldTeleport) {
+    return false;
+  }
+  worldId = sWorldTeleportWorld;
+  areaAssetId = sWorldTeleportArea;
+  sHasWorldTeleport = false;
+  return true;
+}
 
 bool Visible() {
   EnsureInitialized();
@@ -730,6 +751,50 @@ void DrawDebugTab() {
     }
     ImGui::SameLine();
     ImGui::Text("Area %d", i);
+    ImGui::PopID();
+  }
+
+  ImGui::Separator();
+  ImGui::TextUnformatted("Worlds");
+  if (gpMemoryCard == nullptr) {
+    ImGui::TextUnformatted("(memory card not ready)");
+    return;
+  }
+  static bool sWorldListBuilt = false;
+  static std::vector< std::pair< uint32_t, std::string > > sWorldList;
+  if (!sWorldListBuilt && !gpMemoryCard->GetMemoryWorlds().empty()) {
+    sWorldListBuilt = true;
+    const rstl::vector< CMemoryCard::MemoryWorld >& worlds = gpMemoryCard->GetMemoryWorlds();
+    for (int i = 0; i < worlds.size(); ++i) {
+      const uint32_t id = static_cast< uint32_t >(worlds[i].first);
+      std::string name;
+      const wchar_t* wide = worlds[i].second.GetFrontEndName();
+      if (wide != nullptr) {
+        for (const wchar_t* p = wide; *p != 0; ++p) {
+          name.push_back(static_cast< char >(*p));
+        }
+      }
+      if (name.empty()) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "MLVL %08X", static_cast< unsigned >(id));
+        name = buf;
+      }
+      sWorldList.emplace_back(id, name);
+    }
+  }
+  if (!sWorldListBuilt) {
+    ImGui::TextUnformatted("(loading worlds...)");
+    return;
+  }
+  for (const std::pair< uint32_t, std::string >& entry : sWorldList) {
+    ImGui::PushID(static_cast< int >(entry.first));
+    const bool isCurrent =
+        gpGameState != nullptr && gpGameState->CurrentWorldAssetId() == entry.first;
+    if (ImGui::Button(isCurrent ? "Here" : "Go")) {
+      PortDebug::RequestWorldTeleport(entry.first, 0u);
+    }
+    ImGui::SameLine();
+    ImGui::TextUnformatted(entry.second.c_str());
     ImGui::PopID();
   }
 }

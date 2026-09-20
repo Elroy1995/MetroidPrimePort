@@ -23,6 +23,7 @@
 #include "MetroidPrime/CProjectedShadow.hpp"
 #include "MetroidPrime/CRipple.hpp"
 #include "MetroidPrime/CRumbleManager.hpp"
+#include "MetroidPrime/CMain.hpp"
 #include "MetroidPrime/CScriptMailbox.hpp"
 #include "MetroidPrime/CSimpleShadow.hpp"
 #include "MetroidPrime/CStateManagerContainer.hpp"
@@ -1104,6 +1105,7 @@ void CStateManager::Update(float dt) {
   UpdateGameState();
 #ifdef MP_ENABLE_SMOKE_DRIVER
   PortSmokeAreaReload(*this);
+  PortSmokeWorldTeleport(*this);
   PortSmokeMouseBeforeUpdate(*this);
 #endif
 
@@ -1133,6 +1135,23 @@ void CStateManager::Update(float dt) {
       }
       x84c_player->AsyncLoadSuit(*this);
       x870_cameraManager->ResetCameras(*this);
+    }
+  }
+
+  uint32_t debugWorldId = 0;
+  uint32_t debugWorldArea = 0;
+  if (PortDebug::ConsumeWorldTeleportRequest(debugWorldId, debugWorldArea)) {
+    if (gpGameState != nullptr && debugWorldId != 0) {
+      if (x850_world.get() != nullptr) {
+        x850_world->SetLoadPauseState(true);
+      }
+      gpGameState->SetCurrentWorldId(debugWorldId);
+      CWorldState& worldState = gpGameState->CurrentWorldState();
+      worldState.SetAreaId(TAreaId(0));
+      worldState.SetDesiredAreaAssetId(debugWorldArea != 0 ? static_cast< CAssetId >(debugWorldArea)
+                                                           : kInvalidAssetId);
+      gpMain->SetRestartMode(CMain::kRM_None);
+      QuitGame();
     }
   }
 

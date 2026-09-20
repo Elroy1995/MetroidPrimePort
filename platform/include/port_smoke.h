@@ -7,6 +7,7 @@ class CTransform4f;
 // Linked only with MP_ENABLE_SMOKE_DRIVER. Never grabs the user's real pointer.
 bool PortSmokeMouseEnabled();
 void PortSmokeAreaReload(CStateManager& mgr);
+void PortSmokeWorldTeleport(CStateManager& mgr);
 unsigned PortSmokeMouseButtons(unsigned realButtons);
 void PortSmokeMouseBeforeUpdate(CStateManager& mgr);
 void PortSmokeMouseAfterUpdate(CStateManager& mgr);

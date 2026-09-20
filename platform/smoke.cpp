@@ -11,11 +11,14 @@
 #include "MetroidPrime/Cameras/CFirstPersonCamera.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/Player/CPlayerGun.hpp"
+#include "MetroidPrime/Player/CGameState.hpp"
+#include "MetroidPrime/CMemoryCard.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include <dolphin/pad.h>
 #include <SDL3/SDL.h>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 
 namespace aurora {
 void request_screenshot() noexcept;
@@ -99,6 +102,71 @@ void PortSmokeAreaReload(CStateManager& mgr) {
   area->SetOcclusionState(CGameArea::kOS_Visible);
   ++sAreaReloads;
   if (sAreaReloads == 3) std::fputs("[area-smoke] passed: three geometry eviction/reload cycles\n", stderr);
+}
+
+void PortSmokeWorldTeleport(CStateManager& mgr) {
+  static uint32_t sTargetWorld = 0;
+  static bool sTargetResolved = false;
+  if (!sTargetResolved) {
+    const char* value = std::getenv("MP_SMOKE_WORLD");
+    if (value == nullptr) {
+      sTargetResolved = true;
+      return;
+    }
+    if (std::strcmp(value, "auto") == 0) {
+      if (gpGameState == nullptr || gpMemoryCard == nullptr) return;
+      const rstl::vector< CMemoryCard::MemoryWorld >& worlds = gpMemoryCard->GetMemoryWorlds();
+      const uint32_t current = gpGameState->CurrentWorldAssetId();
+      for (int i = 0; i < worlds.size(); ++i) {
+        if (worlds[i].first != current) {
+          sTargetWorld = static_cast< uint32_t >(worlds[i].first);
+          break;
+        }
+      }
+      if (sTargetWorld == 0) return;
+    } else {
+      sTargetWorld = static_cast< uint32_t >(std::strtoul(value, nullptr, 16));
+    }
+    sTargetResolved = true;
+  }
+  if (sTargetWorld == 0) return;
+  const uint32_t targetWorld = sTargetWorld;
+
+  static CStateManager* sRequestMgr = nullptr;
+  static CWorld* sRequestWorld = nullptr;
+  static unsigned sWarmupTicks = 0;
+  static bool sPassed = false;
+
+  if (sRequestMgr == nullptr) {
+    if (mgr.GetGameState() != CStateManager::kGS_Running ||
+        !mgr.GetCameraManager()->IsInFPCamera() ||
+        mgr.GetCameraManager()->IsInCinematicCamera()) {
+      return;
+    }
+    if (++sWarmupTicks < 120) return;
+    std::fprintf(stderr, "[world-smoke] requesting world %08X\n", targetWorld);
+    PortDebug::RequestWorldTeleport(targetWorld, 0u);
+    sRequestMgr = &mgr;
+    sRequestWorld = mgr.World();
+    return;
+  }
+
+  if (sPassed) return;
+  static uint32_t sLastWorld = 0;
+  if (gpGameState != nullptr && gpGameState->CurrentWorldAssetId() != sLastWorld) {
+    sLastWorld = gpGameState->CurrentWorldAssetId();
+    std::fprintf(stderr, "[world-smoke] current world %08X (mgr=%p world=%p loaded=%08X)\n",
+                 sLastWorld, static_cast< void* >(&mgr), static_cast< void* >(mgr.World()),
+                 mgr.World() != nullptr ? static_cast< uint32_t >(mgr.World()->IGetWorldAssetId())
+                                        : 0u);
+  }
+  if (mgr.World() == sRequestWorld) return;
+  if (gpGameState == nullptr || gpGameState->CurrentWorldAssetId() != targetWorld) return;
+  if (mgr.GetGameState() != CStateManager::kGS_Running || mgr.World() == nullptr) return;
+  if (mgr.World()->IGetWorldAssetId() != targetWorld) return;
+  sPassed = true;
+  std::fprintf(stderr, "[world-smoke] passed: world %08X area %d\n", targetWorld,
+               mgr.World()->GetCurrentAreaId().Value());
 }
 
 bool PortSmokeMouseEnabled() {
