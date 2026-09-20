@@ -47,6 +47,7 @@ bool sSkipCutscenes = false;
 float sCutsceneSpeed = 8.f;
 unsigned sSimRate = 60;
 bool sSimAdaptive = false;
+float sTickPeriod = 1.f / 60.f;
 bool sFrameLimitEnabled = true;
 bool sTraceTiming = false;
 uint64_t sTimingNs = 0;
@@ -374,6 +375,17 @@ void SetSimAdaptive(bool enabled) {
   EnsureInitialized();
   sSimAdaptive = enabled;
   MarkDirty();
+}
+
+float TickPeriod() {
+  EnsureInitialized();
+  return sTickPeriod;
+}
+
+void SetTickPeriod(float dt) {
+  if (std::isfinite(dt) && dt > 0.f) {
+    sTickPeriod = dt;
+  }
 }
 
 bool FrameLimitEnabled() {

@@ -9,6 +9,7 @@ bool PortSmokeMouseEnabled();
 void PortSmokeAreaReload(CStateManager& mgr);
 void PortSmokeWorldTeleport(CStateManager& mgr);
 void PortSmokeVisor(CStateManager& mgr);
+void PortSmokeWalk(CStateManager& mgr);
 unsigned PortSmokeMouseButtons(unsigned realButtons);
 void PortSmokeMouseBeforeUpdate(CStateManager& mgr);
 void PortSmokeMouseAfterUpdate(CStateManager& mgr);

@@ -38,6 +38,7 @@
 #include "MetroidPrime/TGameTypes.hpp"
 
 #include "Kyoto/Math/CMath.hpp"
+#include "port_debug.h"
 #include "Kyoto/Math/CPlane.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
@@ -1807,6 +1808,8 @@ bool CMorphBall::UpdateMarbleDynamics(CStateManager&, float dt, const CVector3f&
 }
 
 void CMorphBall::ApplyFriction(float friction) {
+  // The tweak friction is authored per 60 Hz tick; scale it to the actual step.
+  friction *= PortDebug::TickPeriod() * 60.f;
   CVector3f vel = x0_player.GetVelocityWR();
   if (friction < vel.Magnitude()) {
     vel = vel.AsNormalized() * (vel.Magnitude() - friction);
@@ -1817,12 +1820,14 @@ void CMorphBall::ApplyFriction(float friction) {
 }
 
 void CMorphBall::DampLinearAndAngularVelocities(float linDamp, float angDamp) {
+  // Per-tick decay factors; raise them to the step (in 60 Hz ticks) to match.
+  const float ticks = PortDebug::TickPeriod() * 60.f;
   CVector3f vel = x0_player.GetVelocityWR();
-  vel *= 1.f - linDamp;
+  vel *= CMath::PowF(1.f - linDamp, ticks);
   x0_player.SetVelocityWR(vel);
 
   CAxisAngle angVel = x0_player.GetAngularVelocityWR();
-  float damp = 1.f - angDamp;
+  const float damp = CMath::PowF(1.f - angDamp, ticks);
   angVel *= damp;
   x0_player.SetAngularVelocityWR(angVel);
 }

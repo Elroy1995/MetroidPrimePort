@@ -50,6 +50,11 @@ per-frame counters are still outstanding.
 Line numbers were collected by an automated pass and spot-checked against the
 source; treat them as pointers for the follow-up, not as verified targets.
 
+Coverage note: `CPlayerDynamics.cpp` (and the morph-ball friction) were missed by
+the first pass - its scope was `CPlayer.cpp` - and were found from a report that
+walking slowed at a raised rate. That file is now audited and fixed; the per-tick
+friction below was the cause.
+
 ### Tick plumbing (must change)
 
 - `platform/include/port_timing.h:9` `FixedStepClock::kPeriod = 1.0 / 60.0`
@@ -180,6 +185,20 @@ Scripts / misc:
   step matches the frame time, which is what "no interpolation" requires.
 - `CDecal` ages by real time (`x6c_elapsedTime += dt`) and derives its 60 Hz
   frame index from it, so decals keep their authored duration above 60 Hz.
+- `PortDebug::TickPeriod()/SetTickPeriod()` (set by `UpdateTicks`) exposes the
+  step being simulated so per-tick constants can scale. Used to make the player
+  and morph-ball friction real-time:
+  - `CPlayerDynamics.cpp:55` `GetDampedClampedVelocityWR` subtracted a fixed
+    `friction` from the local velocity every tick, so a raised rate decelerated
+    proportionally faster — walking slowed down while the friction-free jump did
+    not. Now scaled by `TickPeriod() * 60`.
+  - `CPlayerDynamics.cpp:311` the rotation friction multiplies angular velocity
+    per tick; now `powf(friction, TickPeriod() * 60)`.
+  - `CMorphBall.cpp:1809` `ApplyFriction` and `:1819`
+    `DampLinearAndAngularVelocities` have the same per-tick forms and are scaled
+    the same way.
+- `MP_SMOKE_WALK=<ticks>` holds the stick forward and reports distance, peak
+  flat speed and speed over the walk, so the two rates can be compared directly.
 
 Verified: with `MP_SIM_RATE=120` the timing trace reports `simulation=120.0
 ticks/s` with the render at 60 FPS; with `MP_SIM_ADAPTIVE=1` and the cap on it

@@ -52,7 +52,11 @@ CVector3f CPlayer::GetDampedClampedVelocityWR() const {
   if ((x258_movementState != NPlayer::kMS_ApplyJump ||
        (x258_movementState == NPlayer::kMS_ApplyJump && GetSurfaceRestraint() != kSR_Air)) &&
       x304_orbitState == kOS_NoOrbit) {
-    const float friction = gpTweakPlayer->GetPlayerTranslationFriction(GetSurfaceRestraint());
+    // The tweak friction is authored per 60 Hz tick. Scale it by the actual
+    // simulation step or higher rates decelerate proportionally faster (which
+    // is why walking, but not the friction-free jump, slowed down).
+    const float friction = gpTweakPlayer->GetPlayerTranslationFriction(GetSurfaceRestraint()) *
+                           (PortDebug::TickPeriod() * 60.f);
     if (localVelocity.GetY() > 0.f) {
       localVelocity.SetY(CMath::Max(0.f, localVelocity.GetY() - friction));
     } else {
@@ -309,8 +313,11 @@ void CPlayer::ComputeMovement(const CFinalInput& input, CStateManager& mgr, floa
        x304_orbitState != kOS_Grapple)) {
     if (close_enough(turnInput, 0.f)) {
       const float friction = gpTweakPlayer->GetPlayerRotationFriction(GetSurfaceRestraint());
+      // Per-tick decay factor; raise it to the step (in 60 Hz ticks) to match.
+      const float damped =
+          CMath::PowF(friction, PortDebug::TickPeriod() * 60.f);
       SetAngularVelocityOR(
-          CAxisAngle(CVector3f(0.f, 0.f, friction * GetAngularVelocityOR().GetVector().GetZ())));
+          CAxisAngle(CVector3f(0.f, 0.f, damped * GetAngularVelocityOR().GetVector().GetZ())));
     }
     if (GetAngularVelocityOR().GetVector().GetZ() >
         turnSpeedMultiplier * gpTweakPlayer->GetPlayerRotationMaxSpeed(GetSurfaceRestraint())) {

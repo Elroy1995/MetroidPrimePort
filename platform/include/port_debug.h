@@ -39,6 +39,11 @@ float SimPeriod();
 // tick-for-tick. Experimental.
 bool SimAdaptive();
 void SetSimAdaptive(bool enabled);
+// The dt of the simulation tick currently being processed, set by
+// CGameArchitectureSupport::UpdateTicks. Game constants authored per 60 Hz tick
+// (friction, damping) scale by this so they stay real-time at any rate.
+float TickPeriod();
+void SetTickPeriod(float dt);
 
 // Presentation
 bool FrameLimitEnabled();

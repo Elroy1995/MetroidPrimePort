@@ -483,6 +483,7 @@ bool CGameArchitectureSupport::UpdateTicks() {
                                              PortDebug::FrameLimitEnabled());
 
   const float tickPeriod = static_cast< float >(period);
+  PortDebug::SetTickPeriod(tickPeriod);
   sTicksAdvanced = 0;
   x4_archQueue.Push(MakeMsg::CreateFrameBegin(kAMT_Game, x78_gameFrameCount));
   for (unsigned tick = 0; tick < ticks; ++tick) {

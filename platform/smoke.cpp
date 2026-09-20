@@ -170,8 +170,7 @@ void PortSmokeWorldTeleport(CStateManager& mgr) {
                mgr.World()->GetCurrentAreaId().Value());
 }
 
-void PortSmokeVisor(CStateManager& mgr) {
-  static const bool enabled = std::getenv("MP_SMOKE_VISOR") != nullptr;
+void PortSmokeVisor(CStateManager& mgr) {  static const bool enabled = std::getenv("MP_SMOKE_VISOR") != nullptr;
   if (!enabled) return;
   static unsigned sTicks = 0;
   static bool sRequested = false;
@@ -400,4 +399,47 @@ bool PortSmokeFrame(unsigned frame) {
       (AreaReloadEnabled() && sAreaReloads < 3)) return false;
   std::fputs("[smoke] clean exit requested\n", stderr);
   return true;
+}
+
+// MP_SMOKE_WALK=<ticks>: hold the stick full forward and report the ground
+// speed, so a tick-rate change can be checked to stay real-time.
+void PortSmokeWalk(CStateManager& mgr) {
+  static const unsigned walkTicks = [] {
+    const char* value = std::getenv("MP_SMOKE_WALK");
+    return value != nullptr ? static_cast< unsigned >(std::strtoul(value, nullptr, 10)) : 0u;
+  }();
+  if (walkTicks == 0) return;
+  static unsigned sTicks = 0;
+  static bool sStarted = false;
+  static CVector3f sStart;
+  static bool sDone = false;
+  static float sMaxSpeed = 0.f;
+  if (sDone || mgr.GetGameState() != CStateManager::kGS_Running ||
+      !mgr.GetCameraManager()->IsInFPCamera() || mgr.GetCameraManager()->IsInCinematicCamera()) {
+    return;
+  }
+  const CPlayer* player = mgr.GetPlayer();
+  if (player == nullptr) return;
+  if (!sStarted) {
+    sStarted = true;
+    sStart = player->GetTranslation();
+    std::fprintf(stderr, "[walk-smoke] begin\n");
+  }
+  {
+    const CVector3f vel = player->GetVelocityWR();
+    const CVector3f flat(vel.GetX(), vel.GetY(), 0.f);
+    sMaxSpeed = rstl::max_val(sMaxSpeed, flat.Magnitude());
+  }
+  PADStatus status{};
+  status.err = PAD_ERR_NONE;
+  status.stickY = 127;
+  PADSetVirtualStatus(0, &status);
+  if (++sTicks < walkTicks) return;
+  PADClearVirtualStatus(0);
+  sDone = true;
+  const float dist = (player->GetTranslation() - sStart).Magnitude();
+  const double seconds = static_cast< double >(sTicks) * PortDebug::TickPeriod();
+  std::fprintf(stderr,
+               "[walk-smoke] passed: ticks=%u seconds=%.3f dist=%.3f maxFlatSpeed=%.4f speed=%.4f/s\n",
+               sTicks, seconds, dist, sMaxSpeed, seconds > 0.0 ? dist / seconds : 0.0);
 }

@@ -232,6 +232,11 @@ Aurora also skips any texture whose source page is not mapped instead of hashing
 it; set `MP_LOG_TEX_INVALID=1` to log each rejected texture's pointer, format,
 size and object id.
 
+`MP_SMOKE_WALK=<ticks>` holds the stick fully forward after gameplay starts and
+reports `[walk-smoke] passed: ticks=... dist=... maxFlatSpeed=... speed=.../s`.
+Run it with the same real duration at two simulation rates (for example 60 ticks
+at 60 Hz and 120 ticks at 120 Hz) to confirm ground movement stays real-time.
+
 For audio reports, `MP_AUDIO_STATS=1` logs MusyX's generated samples/second, queued
 audio, peak output and clipping. Nominal output is 32,000 stereo frames/second;
 short windows vary with the device's buffering. Static ADPCM loops must wrap at
