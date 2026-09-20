@@ -36,7 +36,7 @@ public:
 template < typename T >
 class TCachedToken : public TToken< T > {
 public:
-  TCachedToken() {}
+  TCachedToken() : x8_item(nullptr) {}
   TCachedToken(const CToken& token) : TToken< T >(token), x8_item(nullptr) {}
   // __ct__23TCachedToken<8CTexture>FRC23TCachedToken<8CTexture>
   // __as__21TCachedToken<6CModel>FRC21TCachedToken<6CModel>
@@ -79,7 +79,7 @@ private:
 template < typename T >
 class TLockedToken : public TToken< T > {
 public:
-  TLockedToken() {}
+  TLockedToken() : x8_item(nullptr) {}
   TLockedToken(T* item) : TToken< T >(item), x8_item(item) { CToken::Lock(); }
   TLockedToken(const CToken& token) : TToken< T >(token), x8_item(TToken< T >::GetT()) {}
   TLockedToken(const TLockedToken< T >& token) : TToken< T >(token), x8_item(*token) {

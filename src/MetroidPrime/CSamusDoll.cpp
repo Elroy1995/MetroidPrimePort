@@ -341,11 +341,25 @@ void CSamusDoll::Draw(const CStateManager& mgr, float alpha) {
   if (!IsLoaded()) {
     return;
   }
+  // IsLoaded() short-circuits on x270_31_loaded, so the individual accessory
+  // models may still be uncached (or have been unloaded) when we get here.
+  // Refresh them and bail out rather than dereferencing a null/stale model.
+  x1f4_invBeam.TryCache();
+  x200_invVisor.TryCache();
+  x20c_invGrappleBeam.TryCache();
+  x1d4_spiderBallGlass.TryCache();
+  x218_invFins.TryCache();
   CModel* const beam = x1f4_invBeam.GetObject();
   CModel* const visor = x200_invVisor.GetObject();
   CModel* const grapple = x20c_invGrappleBeam.GetObject();
   CModel* const glass = x1d4_spiderBallGlass.GetObject();
   CModel* const fins = x218_invFins.GetObject();
+  if (beam == nullptr || visor == nullptr || glass == nullptr ||
+      (x270_25_hasGrappleBeam && grapple == nullptr) ||
+      (!x270_25_hasGrappleBeam && x44_suit >= CPlayerState::kPS_FusionPower &&
+       fins == nullptr)) {
+    return;
+  }
   const float drawAlpha = alpha * x40_alphaIn;
   float itemPulse =
       CMath::Clamp(0.f, 0.5f * (1.f + CMath::FastSinR(5.f * CGraphics::GetSecondsMod900())), 1.f);
