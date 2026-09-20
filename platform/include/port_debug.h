@@ -28,6 +28,12 @@ bool ConsumeWorldTeleportRequest(uint32_t& worldId, uint32_t& areaAssetId);
 bool FastBoot();
 bool SkipCutscenes();
 float CutsceneSpeed();
+// Simulation tick rate. 60 is console-accurate; higher values run the tick at
+// the display rate instead of interpolating presentation. Experimental.
+unsigned SimRate();
+void SetSimRate(unsigned hz);
+// The current simulation step in seconds (1 / SimRate()).
+float SimPeriod();
 
 // Presentation
 bool FrameLimitEnabled();

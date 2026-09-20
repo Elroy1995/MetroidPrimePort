@@ -32,14 +32,18 @@ remaining 60 Hz assumption in the logic.
 | Input generator | dt parameter passed through | none |
 | Script objects, layer manager, world/area | dt-scaled | none |
 | GUI (`GuiSys`), HUD timers | dt-scaled | none |
-| **Particle systems** (`CElementGen`, `CParticleElectric`, `CParticleSwoosh`) | **frame-stepped at 1/60** | high |
-| **Decals** (`Weapons/CDecal`) | **frame-counted lifetimes** | medium |
+| **Particle systems** (`CElementGen`, `CParticleElectric`, `CParticleSwoosh`) | time-driven, fixed 60 Hz substeps | none |
+| **Decals** (`Weapons/CDecal`) | **frame-counted lifetimes** | small (needs a struct member) |
 | Scattered AI/player/HUD frame counters | mixed | low-medium |
-| Tick plumbing + RNG seeding | fixed 1/60 | low |
+| Tick plumbing + projectile tick period | fixed 1/60 | done (experimental) |
 
-The important result is that the engine core is **already dt-scaled**; the hard
-part is the particle/decal subsystems, which are indexed by 60 Hz frame number
-rather than time.
+The important result is that the engine core is **already dt-scaled**, and the
+particle systems run by real time with fixed 60 Hz substeps, so they already
+scale. The remaining real work is decals and the scattered counters.
+
+Status: the tick plumbing, the projectile tick period, and an experimental
+`sim_rate` setting are implemented (see "Implemented" below). Decals and the
+per-frame counters are still outstanding.
 
 ## Findings
 
@@ -57,33 +61,39 @@ source; treat them as pointers for the follow-up, not as verified targets.
 - `src/Kyoto/Audio/CSfxManager.cpp` voice wrappers advance volume ramps per call
   (audio itself is wall-clock via the AI/MusyX backends, so this is cosmetic)
 
-### Particles (frame-based, largest job)
+### Particles (already rate-independent)
 
-`CElementGen` is a 60 Hz stepper:
+All three particle systems accumulate **real time** and then step the simulation
+in fixed `1/60` substeps until they catch up, exactly like a fixed-timestep
+integrator. The frame counter they index their tables with follows that
+accumulated time, so the tables resolve correctly at any tick rate.
 
-- `src/Kyoto/Particles/CElementGen.cpp:59` `kTickTime = 1 / 60.0`
+`CElementGen`:
+
+- `src/Kyoto/Particles/CElementGen.cpp:59` `kTickTime = 1 / 60.0` (the substep)
 - `CElementGen.cpp:424` `double t = x74_curFrame * kTickTime;`
 - `CElementGen.cpp:425` `dt1 = close_enough(dt, kTickTime) ? kTickTime : dt;`
-  (already tolerates a non-60 dt, but the loop below still steps in kTickTime)
-- `CElementGen.cpp:453` `x74_curFrame < x268_PSLT` lifetime in frames
-- `CElementGen.cpp:480` `UpdateChildParticleSystems(kTickTime)`
-- `CElementGen.cpp:483-484` `t += kTickTime; ++x74_curFrame;`
-- `CElementGen.cpp:818` child spawn `((x74_curFrame - x2a4_SISY) % x2a8_PISY) == 0`
-- `CElementGen.cpp:145` RNG seed fed from `x74_curFrame`
+- `CElementGen.cpp:436` `x78_curSeconds += dt1;` (driven by real dt)
+- `CElementGen.cpp:444` `while (t < x78_curSeconds && !close_enough(t, x78_curSeconds))`
+- `CElementGen.cpp:483-484` `t += kTickTime; ++x74_curFrame;` (substep, bounded by real time)
 
 `CParticleElectric`:
 
 - `src/Kyoto/Particles/CParticleElectric.cpp:271` `x28_currentFrame * (1.0 / 60.0)`
+- `CParticleElectric.cpp:302` `while (evalTime < x30_curTime)` where `x30_curTime += dt`
 - `CParticleElectric.cpp:330-331` `evalTime += 1.0 / 60.0; ++x28_currentFrame;`
-- `CParticleElectric.cpp:270,310,320,645` lifetime gates in frames
-- `CParticleElectric.cpp:439` `x15c_genRem += rate;` emission accumulator not dt-scaled
-- `CParticleElectric.cpp:143`/`SetGlobalSeed` from the frame index
+- `CParticleElectric.cpp:439` `x15c_genRem += rate;` is per substep, which is fixed
 
 `CParticleSwoosh`:
 
-- `src/Kyoto/Particles/CParticleSwoosh.cpp:20` `kFrameTime = 1.f / 60.f`
-- `CParticleSwoosh.cpp:142` `evalTime = x28_curFrame * kFrameTime`
+- `src/Kyoto/Particles/CParticleSwoosh.cpp:20` `kFrameTime = 1.f / 60.f` (the substep)
+- `CParticleSwoosh.cpp:147,151` `advance = dt * timeScale; x30_curTime += advance;`
+- `CParticleSwoosh.cpp:152` `while (x1d0_26_forceOneUpdate || evalTime < x30_curTime)`
 - `CParticleSwoosh.cpp:195-196` `evalTime += kFrameTime; ++x28_curFrame;`
+
+Caveat: `CParticleGlobals::SetEmitterTime()`/`GetValue()` and the `% PISY`
+spawn cadence are expressed in substeps (1/60 s), so they quantise to 60 Hz even
+when the outer tick is faster. That is a fidelity limit, not a speed error.
 
 ### Decals (frame-counted)
 
@@ -135,32 +145,60 @@ Scripts / misc:
 - `CInGameGuiManager`, `CSamusHud` dt methods, `GuiSys` panes/sliders
 - `Kyoto/Animation` animation readers (`CAnimSourceReader`, `CAnimTree*`)
 
+## Implemented: experimental `sim_rate`
+
+- `PortDebug::SimRate()/SetSimRate()/SimPeriod()` (env `MP_SIM_RATE`, settings
+  key `sim_rate`, slider in the F1 Performance tab, range 30..480, default 60).
+- `PortTiming::FixedStepClock` gained `SetPeriod()`/`Period()`; the step is now
+  runtime rather than `constexpr`.
+- `CGameArchitectureSupport::UpdateTicks` sets the clock period from `SimRate()`
+  and uses it for `CreateTimerTick` and `CInputGenerator::Update`.
+- `CMain::RsMain` recomputes `dt` per frame and passes it to
+  `CSfxManager::Update`; `CMain::UpdateStreamedAudio` uses the same period, so
+  audio stays wall-clock (ticks x period == elapsed).
+- `CProjectileWeapon::GetTickPeriod()` returns `PortDebug::SimPeriod()` instead
+  of `1/60`, so projectile velocities and gravity scale with the tick.
+- Camera presentation interpolation (`main.cpp:929`) becomes a no-op once the
+  step matches the frame time, which is what "no interpolation" requires.
+
+Verified: with `MP_SIM_RATE=120` the timing trace reports `simulation=120.0
+ticks/s` with the render at 60 FPS, the mouse smoke still passes at the default
+60, and all port tests pass. For real high-refresh gameplay, turn the F10 frame
+cap off so both the renderer and the tick run at the display rate.
+
+Known caveats:
+
+- `CBloodFlower.cpp:321` and `CTargetableProjectile.cpp:59` cache
+  `GetTickPeriod()` in function-local statics; a mid-session rate change leaves
+  those stale.
+- Decals still age per tick, so above 60 Hz they expire proportionally faster.
+- Tick-indexed particle seeding (`x8d8_updateFrameIdx`) makes particle randomness
+  rate-dependent.
+
 ## Conversion plan
 
-Phase 1 - decals and particles (the blockers)
+Phase 1 - decals (remaining blocker)
 
-- Make `CDecal` age by seconds: store an accumulated time, derive the frame index
-  as `int(time * 60)` for the `GetValue` tables, and compare lifetimes in seconds.
-- `CElementGen`: keep an accumulated `double t`, set `x74_curFrame = int(t * 60)`
-  for the frame-indexed tables, and step the internal advance by the caller's dt
-  (the `close_enough` workaround then goes away). Same for the RNG seed so it
-  stays a pure function of time, not of tick count.
-- `CParticleElectric`, `CParticleSwoosh`: same treatment (`evalTime += dt`,
-  `curFrame = int(evalTime * 60)`); scale the electric emission accumulator by dt.
+- Make `CDecal` age by seconds: add a float accumulator, derive
+  `x58_frameIdx = int(time * 60)` so the existing `GetValue` table reads keep
+  working, and compare the (frame-unit) lifetimes against that derived index.
+  This changes the `CDecal` layout, so `NESTED_CHECK_SIZEOF(CDecalManager,
+  SDecal, 0x78)` has to be re-based.
+- Particles need no conversion: the three systems already integrate real time in
+  fixed 1/60 substeps (verified above). Only the substep granularity quantises
+  effects to 60 Hz if sub-frame fidelity is ever wanted.
 
-Phase 2 - scattered counters
+Phase 2 - scattered counters (list above)
 
-- Convert each counter in the list above to seconds (`+= dt`) or to a one-shot
-  guarded by a time threshold. The `x2b0_outOfWaterTicks`/`rapidFireShots` style
-  counters are short debounces and can become `dt`-based.
+- Convert each counter to seconds (`+= dt`) or to a one-shot guarded by a time
+  threshold. The `x2b0_outOfWaterTicks`/`rapidFireShots` style counters are short
+  debounces and can become `dt`-based. Make the particle RNG seed a function of
+  accumulated time rather than `x8d8_updateFrameIdx`.
 
-Phase 3 - tick plumbing
+Phase 3 - tick plumbing (done)
 
-- Drive `FixedStepClock` from the display refresh (or a configurable rate) with a
-  cap on ticks-per-frame, set `tickPeriod`/`CreateTimerTick`/`CInputGenerator` to
-  the same period, and decide whether input stays per-tick (sample once per
-  rendered frame) or is accumulated.
-- Audio stays wall-clock; only the `1/60` volume-ramp cadence is cosmetic.
+- Implemented as the `sim_rate` setting; see "Implemented" above. Input is
+  sampled once per tick, which at a display-matched rate is once per frame.
 
 Phase 4 - verification
 

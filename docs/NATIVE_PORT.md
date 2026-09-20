@@ -119,10 +119,15 @@ override these.
   `MP_SHOW_DEBUG_UI=1`: development controls. Presence flags are enabled by
   being set; unset them to disable them. Cutscene speed is restricted to 1–32.
 - `MP_VALIDATE_SAMPLES=1`: log MusyX sample-directory validation.
+- `MP_SIM_RATE=<hz>`: experimental simulation tick rate (30–480, default 60).
+  60 is console-accurate; higher values step the game logic at the display rate
+  instead of interpolating the camera. See `docs/HIGH_FPS_AUDIT.md` for what
+  still assumes 60 Hz. Also settable from the F1 Performance tab and persisted.
 
-The simulation uses a 60 Hz accumulator independently of the presentation cap.
-Ordinary slow frames catch up; pauses/debugger stalls are capped to 250 ms of
-simulation work per iteration. Audio runs on wall-clock/device consumption.
+The simulation uses a fixed-step accumulator (60 Hz by default) independently of
+the presentation cap. Ordinary slow frames catch up; pauses/debugger stalls are
+capped to 250 ms of simulation work per iteration. Audio runs on
+wall-clock/device consumption.
 Fractional simulation time is retained through frame jitter. The capped scheduler
 can borrow at most 0.25 ms near a tick boundary and carries that debt forward, so
 it does not alternate zero/two ticks merely due to microsecond sleep jitter.

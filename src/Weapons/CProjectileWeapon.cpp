@@ -2,6 +2,7 @@
 #include "Kyoto/Graphics/CLight.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
 #include "Weapons/IWeaponRenderer.hpp"
+#include "port_debug.h"
 #include "rstl/optional_object.hpp"
 
 #include <Kyoto/Alloc/CMemory.hpp>
@@ -21,7 +22,7 @@
 
 uint CProjectileWeapon::skGlobalSeed = 99;
 
-float CProjectileWeapon::GetTickPeriod() { return 1 / 60.f; }
+float CProjectileWeapon::GetTickPeriod() { return PortDebug::SimPeriod(); }
 
 CProjectileWeapon::CProjectileWeapon(const TToken< CWeaponDescription >& description,
                                      const CVector3f& worldOffset, const CTransform4f& localToWorld,

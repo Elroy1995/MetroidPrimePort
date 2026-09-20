@@ -463,15 +463,18 @@ bool CGameArchitectureSupport::UpdateTicks() {
   x20_tickStopwatch.Reset();
   OSRestoreInterrupts(interrupts);
   sInfiniteLoopTime = 0.f;
+
+  const double period = 1.0 / static_cast< double >(PortDebug::SimRate());
+  x7c_tickClock.SetPeriod(period);
   const unsigned ticks = x7c_tickClock.Advance(elapsed, gpMain->GetScreenFading(),
                                              PortDebug::FrameLimitEnabled());
 
-  static const float tickPeriod = 1.f / 60.f;
+  const float tickPeriod = static_cast< float >(period);
   sTicksAdvanced = 0;
   x4_archQueue.Push(MakeMsg::CreateFrameBegin(kAMT_Game, x78_gameFrameCount));
   for (unsigned tick = 0; tick < ticks; ++tick) {
     PortDebug::BeginFrameMouse();
-    if (!x30_inputGenerator.Update(1.f / 60.f, x4_archQueue)) {
+    if (!x30_inputGenerator.Update(tickPeriod, x4_archQueue)) {
       terminate = true;
     }
     x4_archQueue.Push(MakeMsg::CreateTimerTick(kAMT_Game, tickPeriod));
@@ -817,13 +820,15 @@ int CMain::RsMain(int argc, const char* const* argv) {
       lbl_805A6BC0 = stream.ReadBits(1);
     }
 
-    const double dt = 1.f / 60.f;
+    double dt = 1.0 / 60.0;
     constexpr uint64_t framePeriodNs = 1000000000ull / 60;
     uint64_t nextFrameDeadline = SDL_GetTicksNS();
     unsigned s_frameLog = 0;
     while (!x160_24_finished) {
       const uint64_t loopStartNs = SDL_GetTicksNS();
       bool presented = false;
+      // Track the configured simulation step (may change from the debug overlay).
+      dt = PortDebug::SimPeriod();
       if ((s_frameLog++ % 60) == 0) {
         fprintf(stderr, "MP frame %u\n", s_frameLog);
       }
@@ -1146,4 +1151,4 @@ void CMain::ResetGameState() {
 
 void CMain::RegisterResourceTweaks() { x70_tweaks.RegisterResourceTweaks(); }
 
-void CMain::UpdateStreamedAudio() { CStreamAudioManager::Update(1.f / 60.f); }
+void CMain::UpdateStreamedAudio() { CStreamAudioManager::Update(PortDebug::SimPeriod()); }

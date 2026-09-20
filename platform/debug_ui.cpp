@@ -45,6 +45,7 @@ bool sInitialized = false;
 bool sFastBoot = false;
 bool sSkipCutscenes = false;
 float sCutsceneSpeed = 8.f;
+unsigned sSimRate = 60;
 bool sFrameLimitEnabled = true;
 bool sTraceTiming = false;
 uint64_t sTimingNs = 0;
@@ -156,6 +157,11 @@ void ApplySetting(const std::string& key, const std::string& value) {
     if (std::isfinite(f) && f >= 1.f && f <= 32.f) {
       sCutsceneSpeed = f;
     }
+  } else if (key == "sim_rate") {
+    const long rate = std::strtol(value.c_str(), nullptr, 10);
+    if (rate >= 30 && rate <= 480) {
+      sSimRate = static_cast< unsigned >(rate);
+    }
   } else if (key == "ai_audio") {
     sAiAudioEnabled = ParseBool(value);
   } else if (key == "musyx_audio") {
@@ -224,6 +230,7 @@ void SaveSettings() {
   file << "frame_limit=" << (sFrameLimitEnabled ? 1 : 0) << '\n';
   file << "skip_cutscenes=" << (sSkipCutscenes ? 1 : 0) << '\n';
   file << "cutscene_speed=" << sCutsceneSpeed << '\n';
+  file << "sim_rate=" << sSimRate << '\n';
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "mouse_invert_x=" << (sMouseInvertX ? 1 : 0) << '\n';
   file << "mouse_invert_y=" << (sMouseInvertY ? 1 : 0) << '\n';
@@ -307,6 +314,12 @@ void EnsureInitialized() {
       sCutsceneSpeed = value;
     }
   }
+  if (const char* rate = std::getenv("MP_SIM_RATE")) {
+    const long value = std::strtol(rate, nullptr, 10);
+    if (value >= 30 && value <= 480) {
+      sSimRate = static_cast< unsigned >(value);
+    }
+  }
 
   std::atexit(SaveSettings);
 }
@@ -328,6 +341,22 @@ float CutsceneSpeed() {
   EnsureInitialized();
   return sCutsceneSpeed;
 }
+
+unsigned SimRate() {
+  EnsureInitialized();
+  return sSimRate;
+}
+
+void SetSimRate(unsigned hz) {
+  EnsureInitialized();
+  if (hz < 30u || hz > 480u) {
+    return;
+  }
+  sSimRate = hz;
+  MarkDirty();
+}
+
+float SimPeriod() { return 1.f / static_cast< float >(SimRate()); }
 
 bool FrameLimitEnabled() {
   EnsureInitialized();
@@ -564,8 +593,21 @@ void DrawPerformanceTab() {
     MarkDirty();
   }
   ImGui::Text("Measured render rate: %.1f FPS", sActualFps);
-  ImGui::Text("Measured simulation: %.1f ticks/s (target 60)", sActualTps);
+  ImGui::Text("Measured simulation: %.1f ticks/s (target %u)", sActualTps, sSimRate);
   ImGui::Text("Frame time: %.2f ms", static_cast< double >(ImGui::GetIO().DeltaTime) * 1000.0);
+
+  ImGui::Separator();
+  ImGui::TextUnformatted("Experimental: simulation rate");
+  int simRate = static_cast< int >(sSimRate);
+  if (ImGui::SliderInt("Sim Hz", &simRate, 30, 480)) {
+    PortDebug::SetSimRate(static_cast< unsigned >(simRate));
+  }
+  if (simRate != 60) {
+    ImGui::TextWrapped(
+        "60 Hz is console-accurate. Higher values step the game logic at the display "
+        "rate instead of interpolating the camera; leave the FPS cap off for it to "
+        "matter. Decals and a few AI cadences are not yet rate-independent.");
+  }
 }
 
 void DrawCutscenesTab() {
