@@ -6,6 +6,9 @@
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Graphics/CModel.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+
 CGuiModel* CGuiModel::Create(CGuiFrame* frame, CInputStream& in, CSimplePool* sp) {
   CGuiWidgetParms parms = ReadWidgetHeader(frame, in);
 
@@ -119,9 +122,24 @@ bool CGuiModel::GetIsFinishedLoadingWidgetSpecific() const {
 
   if (const CModel* model = xb8_model->GetObject()) {
     model->Touch(0);
-    return model->IsLoaded(0);
+    const bool loaded = model->IsLoaded(0);
+    if (!loaded && std::getenv("MP_LOG_HUD") != nullptr) {
+      static int sLogCount = 0;
+      if (sLogCount < 80) {
+        ++sLogCount;
+        std::fprintf(stderr, "[hud] model %08x not loaded\n", xc8_modelId);
+      }
+    }
+    return loaded;
   }
 
+  if (std::getenv("MP_LOG_HUD") != nullptr) {
+    static int sLogCount = 0;
+    if (sLogCount < 80) {
+      ++sLogCount;
+      std::fprintf(stderr, "[hud] model %08x has no object\n", xc8_modelId);
+    }
+  }
   return false;
 }
 

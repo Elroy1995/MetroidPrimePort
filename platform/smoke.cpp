@@ -17,6 +17,10 @@
 #include <cstdlib>
 #include <cstdio>
 
+namespace aurora {
+void request_screenshot() noexcept;
+}
+
 namespace {
 unsigned sMouseTicks = 0;
 unsigned sMouseShots = 0, sMouseChargedShots = 0, sMouseMissiles = 0, sMouseLocks = 0;
@@ -43,6 +47,28 @@ void MouseCheck(bool valid, const char* message) {
 }
 
 void PortSmokeAreaReload(CStateManager& mgr) {
+  static const bool morphEnabled = std::getenv("MP_SMOKE_MORPH") != nullptr;
+  static unsigned sMorphTicks = 0;
+  static bool sMorphDone = false;
+  if (morphEnabled && !sMorphDone && mgr.GetGameState() == CStateManager::kGS_Running &&
+      mgr.GetCameraManager()->IsInFPCamera() &&
+      !mgr.GetCameraManager()->IsInCinematicCamera()) {
+    ++sMorphTicks;
+    PADStatus status{};
+    status.err = PAD_ERR_NONE;
+    if ((sMorphTicks >= 120 && sMorphTicks < 126) || (sMorphTicks >= 360 && sMorphTicks < 366)) {
+      status.button = PAD_BUTTON_X;
+    }
+    PADSetVirtualStatus(0, &status);
+    if (sMorphTicks == 1) {
+      std::fputs("[morph-smoke] begin\n", stderr);
+    }
+    if (sMorphTicks > 480) {
+      sMorphDone = true;
+      PADClearVirtualStatus(0);
+      std::fputs("[morph-smoke] done\n", stderr);
+    }
+  }
   if (!AreaReloadEnabled() || sAreaReloads >= 3 || mgr.GetGameState() != CStateManager::kGS_Running ||
       mgr.GetCameraManager()->IsInCinematicCamera() || !mgr.GetCameraManager()->IsInFPCamera()) return;
   CWorld* world = mgr.World();
@@ -204,6 +230,21 @@ bool PortSmokeFrame(unsigned frame) {
     const char* value = std::getenv("MP_SMOKE_FRAMES");
     return value != nullptr ? static_cast<unsigned>(std::strtoul(value, nullptr, 10)) : 0;
   }();
+  static const char* shotList = std::getenv("MP_SMOKE_SHOT");
+  if (shotList != nullptr) {
+    for (const char* p = shotList; *p != '\0';) {
+      char* end = nullptr;
+      const unsigned shotFrame = static_cast<unsigned>(std::strtoul(p, &end, 10));
+      if (end == p) {
+        break;
+      }
+      if (frame == shotFrame) {
+        aurora::request_screenshot();
+        std::fprintf(stderr, "[smoke] screenshot requested at frame %u\n", frame);
+      }
+      p = *end == ',' ? end + 1 : end;
+    }
+  }
   if (limit == 0) return false;
   static SDL_Window* window = nullptr;
   if (window == nullptr) {

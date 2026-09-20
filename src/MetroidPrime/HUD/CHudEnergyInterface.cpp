@@ -16,6 +16,7 @@
 
 #include "rstl/math.hpp"
 #include <stdio.h>
+#include <stdlib.h>
 
 static const char skEnergyGroupWidgetName[] = "basewidget_energystuff";
 static const char skEnergyDigitsWidgetName[] = "textpane_energydigits";
@@ -161,6 +162,16 @@ void CHudEnergyInterface::SetEnergyLow(bool low) {
 }
 
 void CHudEnergyInterface::Update(float dt, float energyLowPulse) {
+  if (std::getenv("MP_LOG_HUD") != nullptr && x2c_energybart01_energybar != nullptr) {
+    static int sLastKey = -1;
+    const bool visible = x2c_energybart01_energybar->GetIsVisible();
+    const int alpha = x2c_energybart01_energybar->GetModifiedColor().GetAlphau8();
+    const int key = (visible ? 1 : 0) | (alpha << 1);
+    if (key != sLastKey) {
+      sLastKey = key;
+      std::fprintf(stderr, "[hud] energy bar widget visible=%d alpha=%d\n", visible ? 1 : 0, alpha);
+    }
+  }
   if (x28_textpane_energywarning) {
     if (x1c_27_energyLow) {
       x4_energyLowFader = rstl::min_val(1.f, x4_energyLowFader + 2.f * dt);

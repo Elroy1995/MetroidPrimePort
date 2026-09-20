@@ -287,6 +287,19 @@ void CInGameGuiManager::Draw(const CStateManager& mgr) const {
   }
   const bool notInCine = !mgr.GetCameraManager()->IsInCinematicCamera();
   const bool drawVisor = notInCine && IsInOrTransitioningToOrFromState(kIGGS_InGame);
+  {
+    static int sLastKey = -1;
+    const int key = static_cast< int >(x1e0_helmetVisMode) | (x1f0_enablePlayerVisor << 8) |
+                    (x1ec_hudVisMode << 16) | (drawVisor ? 1 << 24 : 0) |
+                    (notInCine ? 1 << 25 : 0);
+    if (std::getenv("MP_LOG_HUD") != nullptr && key != sLastKey) {
+      sLastKey = key;
+      std::fprintf(stderr,
+                   "[hud] drawVisor=%d notInCine=%d helmetVis=%u enableVisor=%d hudVisMode=%d\n",
+                   drawVisor ? 1 : 0, notInCine ? 1 : 0, x1e0_helmetVisMode, x1f0_enablePlayerVisor,
+                   x1ec_hudVisMode);
+    }
+  }
   if (x3c_pauseScreenBlur->IsGameDraw()) {
     x34_samusHud->GetTargetingManager().Draw(mgr, true);
     CGraphics::SetDepthRange(1.f / 64.f, 1.f / 32.f);

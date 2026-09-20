@@ -10,6 +10,14 @@
 #include "rstl/math.hpp"
 #include "rstl/pair.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+
+static bool HudLogEnabled() {
+  static const bool enabled = std::getenv("MP_LOG_HUD") != nullptr;
+  return enabled;
+}
+
 CGuiWidget* CAuiEnergyBarT01::Create(CGuiFrame* frame, CInputStream& in, IObjectStore* sp) {
   CGuiWidgetParms parms = ReadWidgetHeader(frame, in);
   CAssetId tex = in.Get< CAssetId >();
@@ -120,15 +128,29 @@ rstl::pair< CVector3f, CVector3f > CAuiEnergyBarT01::DownloadBarCoordFunc(float 
 }
 
 void CAuiEnergyBarT01::Draw(const CGuiWidgetDrawParms& parms) const {
+  static bool sMissing = false;
+  const auto logMissing = [](const char* reason) {
+    if (HudLogEnabled() && !sMissing) {
+      sMissing = true;
+      std::fprintf(stderr, "[hud] energy bar hidden: %s\n", reason);
+    }
+  };
   CGraphics::SetModelMatrix(GetWorldTransform());
   if (!mTexture) {
+    logMissing("no texture token");
     return;
   }
   if (!mTexture->IsLoaded() || !mCoordFunc) {
+    logMissing(mCoordFunc ? "texture not loaded" : "no coord func");
     return;
   };
   if (!mTexture->GetObject()) {
+    logMissing("no texture object");
     return;
+  }
+  if (HudLogEnabled() && sMissing) {
+    sMissing = false;
+    std::fprintf(stderr, "[hud] energy bar visible again (alpha=%.2f)\n", parms.GetAlpha());
   }
   CTexture* tex = mTexture->GetObject();
   CGraphics::SetDepthWriteMode(true, kE_LEqual, false);

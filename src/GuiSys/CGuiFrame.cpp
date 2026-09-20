@@ -10,6 +10,9 @@
 #include "Kyoto/Input/CFinalInput.hpp"
 #include "rstl/algorithm.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+
 namespace rstl {
 class CWidgetFartherFromCamera {
 public:
@@ -140,6 +143,17 @@ bool CGuiFrame::GetIsFinishedLoading() const {
   for (AUTO(it, x2c_widgets.begin()); it != x2c_widgets.end(); ++it) {
     if (!(*it)->GetIsFinishedLoading()) {
       x58_24_loaded = false;
+      if (std::getenv("MP_LOG_HUD") != nullptr) {
+        static int sLogCount = 0;
+        if (sLogCount < 80) {
+          ++sLogCount;
+          const FourCC type = (*it)->GetWidgetTypeID();
+          std::fprintf(stderr, "[hud] frame blocked by %c%c%c%c id=%u\n",
+                       static_cast< char >(type >> 24), static_cast< char >(type >> 16),
+                       static_cast< char >(type >> 8), static_cast< char >(type),
+                       (*it)->GetWidgetID());
+        }
+      }
       return false;
     }
   }
