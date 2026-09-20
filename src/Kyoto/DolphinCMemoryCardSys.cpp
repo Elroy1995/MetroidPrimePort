@@ -429,6 +429,12 @@ ECardResult CMemoryCardSys::GetStatus(EMemoryCardPort port, int fileNo, CardStat
   CARDStat stat;
   ECardResult result = static_cast< ECardResult >(CARDGetStatus(port, fileNo, &stat));
   memcpy(&statOut.x0_stat, &stat, sizeof(stat));
+  // Port: GCI-folder files carry no comment address (UINT32_MAX), but the game
+  // treats a -1 comment address as a corrupt file (CMemoryCardDriver::IndexFiles).
+  // The save comment always lives at offset 4 of the file.
+  if (statOut.GetCommentAddr() == -1) {
+    statOut.SetCommentAddr(4);
+  }
   return result;
 }
 
