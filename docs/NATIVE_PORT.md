@@ -68,7 +68,13 @@ Aurora selects user/cache directories through its SDL platform paths and logs
 them at initialization. `MP_USER_PATH` and `MP_CACHE_PATH` override these with
 explicit directories; use separate directories for automated testing so runs do
 not share normal saves/settings. Screenshots are written to `screenshots/` in
-the working directory. `MP_TEXTURES` points to an optional replacement pack.
+the working directory.
+
+A copied build is self-contained by default: the memory card is written to
+`<executable dir>/<region>/Card A`, the disc image is auto-detected next to the
+executable (or one level below it), and texture replacements are loaded from
+`<executable dir>/textures` when present. `MP_DISC` and `MP_TEXTURES` still
+override these.
 
 ### Controls and settings
 

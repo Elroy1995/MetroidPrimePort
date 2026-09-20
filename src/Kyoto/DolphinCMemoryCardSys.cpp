@@ -4,6 +4,9 @@
 #include "Kyoto/Graphics/CTexture.hpp"
 #include "dolphin/os/OSCache.h"
 
+#include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_stdinc.h>
+
 #include "Kyoto/MemoryCopy.hpp"
 #include "Kyoto/Basics/CBasics.hpp"
 
@@ -213,7 +216,12 @@ CMemoryCardSys::CMemoryCardSys() {
 
 void CMemoryCardSys::Initialize() {
   if (!mIsInitialized) {
-    // Port: Aurora's CARDInit takes the game id and maker code.
+    // Port: keep the memory card next to the executable so a copied build is
+    // self-contained. CARDSetBasePath must run before CARDInit.
+    if (const char* base = SDL_GetBasePath()) {
+      CARDSetBasePath(base, 2);
+    }
+    // Aurora's CARDInit takes the game id and maker code.
     CARDInit("GM8E", "01");
     mIsInitialized = true;
   }

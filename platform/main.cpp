@@ -17,15 +17,66 @@
 #include "port_debug.h"
 #include "port_build_info.h"
 
+#include <SDL3/SDL_filesystem.h>
+
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
+#include <string>
+#include <vector>
 
 extern "C" int metroid_main(int argc, char** argv);
 extern "C" void AIPortShutdown(void);
 
 namespace {
+std::string LowerExtension(const std::filesystem::path& path) {
+    std::string ext = path.extension().string();
+    for (char& c : ext) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return ext;
+}
+
+bool IsDiscImage(const std::filesystem::path& path) {
+    static const char* const kExtensions[] = {".iso", ".gcm", ".rvz", ".wbfs", ".ciso", ".nkit"};
+    const std::string ext = LowerExtension(path);
+    for (const char* candidate : kExtensions) {
+        if (ext == candidate) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Looks for a disc image next to the executable (and in its immediate
+// subdirectories) so a copied build is self-contained.
+std::string FindDiscNextToExecutable() {
+    const char* base = SDL_GetBasePath();
+    if (base == nullptr) {
+        return {};
+    }
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path baseDir(base);
+    std::vector<fs::path> dirs{baseDir};
+    for (fs::directory_iterator it(baseDir, ec), end; !ec && it != end; it.increment(ec)) {
+        if (it->is_directory(ec)) {
+            dirs.push_back(it->path());
+        }
+    }
+    for (const fs::path& dir : dirs) {
+        for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+            if (it->is_regular_file(ec) && IsDiscImage(it->path())) {
+                return it->path().string();
+            }
+        }
+    }
+    return {};
+}
+
 const char* ResolveDiscPath(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (argv[i][0] != '-' && argv[i][0] != '\0') {
@@ -35,7 +86,22 @@ const char* ResolveDiscPath(int argc, char** argv) {
     if (const char* env = std::getenv("MP_DISC"); env != nullptr && env[0] != '\0') {
         return env;
     }
-    return nullptr;
+    static const std::string sFound = FindDiscNextToExecutable();
+    return sFound.empty() ? nullptr : sFound.c_str();
+}
+
+// Default texture-replacement folder next to the executable.
+const char* DefaultTexturesPath() {
+    static const std::string sPath = [] {
+        const char* base = SDL_GetBasePath();
+        if (base == nullptr) {
+            return std::string();
+        }
+        const std::string dir = std::string(base) + "textures";
+        std::error_code ec;
+        return std::filesystem::is_directory(dir, ec) ? dir : std::string();
+    }();
+    return sPath.empty() ? nullptr : sPath.c_str();
 }
 } // namespace
 
@@ -50,7 +116,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr,
                      "metroid_prime_port: no disc image given.\n"
                      "  usage: %s <path to Metroid Prime (USA) (v1.00).iso>\n"
-                     "  or set MP_DISC to the image path.\n", argv[0]);
+                     "  or set MP_DISC, or place the image next to the executable.\n", argv[0]);
         return 1;
     }
     // A 16:9 window when widescreen is requested; the game's render mode is
@@ -84,7 +150,11 @@ int main(int argc, char** argv) {
     // (tex1_<w>x<h>_<texhash>[_<tluthash>]_<format>.dds/.png). Loaded once;
     // Aurora also accepts Dolphin format names such as CMPR and RGBA8.
     static aurora::texture::ReplacementGroup sTextureReplacements;
-    if (const char* textures = std::getenv("MP_TEXTURES")) {
+    const char* textures = std::getenv("MP_TEXTURES");
+    if (textures == nullptr || textures[0] == '\0') {
+        textures = DefaultTexturesPath();
+    }
+    if (textures != nullptr) {
         sTextureReplacements = aurora::texture::load_replacement_directory(textures);
         std::fprintf(stderr, "metroid_prime_port: loaded %zu texture replacements from %s\n",
                      sTextureReplacements.registrations.size(), textures);
