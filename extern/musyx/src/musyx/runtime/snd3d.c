@@ -4,6 +4,9 @@
 #include "musyx/sal.h"
 #include "musyx/synth.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+
 static u8 s3dCallCnt;
 static SND_EMITTER* s3dEmitterRoot;
 static SND_LISTENER* s3dListenerRoot;
@@ -15,6 +18,10 @@ static u32 snd_used_studios;
 static u8 snd_base_studio;
 static u8 snd_max_studios;
 static u8 s3dUseMaxVoices;
+
+// Diagnostic: latest listener heading (encodes the camera orientation).
+float gPortListenerHeading[3];
+float gPortListenerUp[3];
 
 #if MUSY_VERSION <= MUSY_VERSION_CHECK(2, 0, 0)
 static void UpdateRoomDistances() {
@@ -519,11 +526,23 @@ static void CalcEmitter(SND_EMITTER* em, f32* vol, f32* doppler, f32* xPan, f32*
             *doppler = li->soundSpeed / (li->soundSpeed + relspeed);
           }
         }
+        {
+          static int s3dTrace = -1;
+          if (s3dTrace < 0) {
+            s3dTrace = getenv("MP_LOG_3D") != NULL;
+          }
+          if (s3dTrace && *doppler != 1.f) {
+            fprintf(stderr,
+                    "[3d] doppler=%.4f relspeed=%.4f liDir=(%.3f,%.3f,%.3f) "
+                    "emDir=(%.3f,%.3f,%.3f) emPos=(%.1f,%.1f,%.1f)\n",
+                    *doppler, relspeed, li->dir.x, li->dir.y, li->dir.z, em->dir.x, em->dir.y,
+                    em->dir.z, em->pos.x, em->pos.y, em->pos.z);
+          }
+        }
       }
 
       if (distance != 0.f) {
         salApplyMatrix(&li->mat, &em->pos, &p);
-
         if (p.z <= 0.f) {
           pan.z += -li->surroundDisFront < p.z ? -p.z / li->surroundDisFront : 1.f;
         } else {
@@ -982,6 +1001,12 @@ bool sndUpdateListener(SND_LISTENER* li, SND_FVECTOR* pos, SND_FVECTOR* dir, SND
     li->dir = *dir;
     li->heading = *heading;
     li->up = *up;
+    gPortListenerHeading[0] = heading->x;
+    gPortListenerHeading[1] = heading->y;
+    gPortListenerHeading[2] = heading->z;
+    gPortListenerUp[0] = up->x;
+    gPortListenerUp[1] = up->y;
+    gPortListenerUp[2] = up->z;
 
     MakeListenerMatrix(li);
     li->vol = vol / 127.f;
@@ -1029,8 +1054,7 @@ bool sndAddListenerEx(SND_LISTENER* li, SND_FVECTOR* pos, SND_FVECTOR* dir, SND_
     li->dir = *dir;
     li->heading = *heading;
     li->up = *up;
-    li->surroundDisFront = front_sur;
-    li->surroundDisBack = back_sur;
+    li->surroundDisFront = front_sur;    li->surroundDisBack = back_sur;
     li->soundSpeed = soundSpeed;
     li->volPosOff = volPosOffset;
     MakeListenerMatrix(li);

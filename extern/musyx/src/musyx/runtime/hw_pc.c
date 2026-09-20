@@ -62,6 +62,35 @@ void salSetMuted(int muted) { SDL_SetAtomicInt(&salMuted, muted != 0); }
 
 static SND_SOME_CALLBACK userCallback = NULL;
 
+extern float gPortListenerHeading[3];
+
+// Diagnostic: silence specific MusyX samples by id (comma-separated, e.g.
+// MP_MUTE_SMP=65535,93) so a persistent voice can be identified by ear.
+static int salVoiceMuted(u16 smpId) {
+  static int sParsed = -1;
+  static u16 sIds[16];
+  static int sCount = 0;
+  if (sParsed < 0) {
+    sParsed = 0;
+    const char* env = getenv("MP_MUTE_SMP");
+    if (env != NULL) {
+      char buf[256];
+      strncpy(buf, env, sizeof(buf) - 1);
+      buf[sizeof(buf) - 1] = '\0';
+      char* tok = strtok(buf, ",");
+      while (tok != NULL && sCount < 16) {
+        sIds[sCount++] = (u16)strtoul(tok, NULL, 0);
+        tok = strtok(NULL, ",");
+      }
+    }
+  }
+  for (int i = 0; i < sCount; ++i) {
+    if (sIds[i] == smpId)
+      return 1;
+  }
+  return 0;
+}
+
 // ADPCM decode state per voice
 static s16 adpcmYn1[SYNTH_MAX_VOICES];
 static s16 adpcmYn2[SYNTH_MAX_VOICES];
@@ -489,6 +518,9 @@ static int renderVoiceSegment(DSPvoice* vp, s32* mainL, s32* mainR, s32* mainS, 
   VoiceResamplerState* state = &voiceResampler[voiceIdx];
   fillSourceBuffer(vp, voiceIdx, frameSamples, pitch);
   int nSamples = resampleVoice(voiceIdx, voiceDecodeBuf, frameSamples, pitch);
+  if (salVoiceMuted(vp->smp_id)) {
+    memset(voiceDecodeBuf, 0, (size_t)nSamples * sizeof(s32));
+  }
   vp->playInfo.posHi = state->srcPosHi;
   vp->playInfo.posLo = state->curPos;
   int voiceDone = state->ended && state->srcConsumed >= state->srcCount;
@@ -794,6 +826,32 @@ void salCtrlDsp(s16* dest) {
           s32* auxBS2 = auxBProcessed + SAL_SAMPLES_PER_FRAME * 2;
           downmixStudioToStereo(auxBL2, auxBR2, auxBS2);
         }
+      }
+    }
+  }
+
+  {
+    static int sVoiceTrace = -1;
+    if (sVoiceTrace < 0)
+      sVoiceTrace = getenv("MP_LOG_VOICES") != NULL;
+    if (sVoiceTrace) {
+      static u32 sVoiceTraceCount = 0;
+      if (++sVoiceTraceCount % 60 == 0) {
+        int active = 0;
+        for (int v = 0; v < salNumVoices; ++v) {
+          DSPvoice* vp = &dspVoice[v];
+          if (vp->state == 0)
+            continue;
+          ++active;
+          fprintf(stderr,
+                  "[voice] v=%d st=%u smp=%u info=%08X addr=%p len=%u loop=%u loopLen=%u comp=%u "
+                  "pitch=%u volL=%u volR=%u\n",
+                  v, vp->state, vp->smp_id, vp->smp_info.info, vp->smp_info.addr,
+                  vp->smp_info.length, vp->smp_info.loop, vp->smp_info.loopLength,
+                  vp->smp_info.compType, vp->playInfo.pitch, vp->volL, vp->volR);
+        }
+        fprintf(stderr, "[voice] active=%d heading=(%.3f,%.3f,%.3f)\n", active,
+                gPortListenerHeading[0], gPortListenerHeading[1], gPortListenerHeading[2]);
       }
     }
   }
