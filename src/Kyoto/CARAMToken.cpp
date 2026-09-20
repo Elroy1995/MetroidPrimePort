@@ -2,11 +2,29 @@
 
 #include "Kyoto/Alloc/CMemorySys.hpp"
 #include "Kyoto/CARAMManager.hpp"
+#ifdef TARGET_PC
+#include "Kyoto/CFrameDelayedKiller.hpp"
+#endif
 
 #include "rstl/construct.hpp"
 
 #include "dolphin/ar.h"
 #include "dolphin/os/OSCache.h"
+
+namespace {
+void ReleaseMRAM(void* ptr) {
+#ifdef TARGET_PC
+  // GX commands retain raw MRAM pointers until Aurora's FIFO worker consumes
+  // them. EndScene drains that worker before flushing delayed allocations.
+  // Cover both token destruction/reassignment and completed ARAM eviction.
+  if (ptr != nullptr) {
+    CFrameDelayedKiller::ScheduleDeletion(CFrameDelayedKiller::kWhichFrame_NextFrame, ptr);
+  }
+#else
+  CMemory::Free(ptr);
+#endif
+}
+} // namespace
 
 CARAMToken* CARAMToken::sLists[7];
 CARAMToken::CARAMToken() {
@@ -61,7 +79,7 @@ CARAMToken::~CARAMToken() {
   }
 
   RemoveFromList();
-  CMemory::Free(x4_mramPtr);
+  ReleaseMRAM(x4_mramPtr);
   CARAMManager::Free(x8_aramPtr);
 }
 
@@ -175,7 +193,7 @@ bool CARAMToken::RefreshStatus() {
   }
   case kS_Two:
   case kS_Five: {
-    CMemory::Free(x4_mramPtr);
+    ReleaseMRAM(x4_mramPtr);
     x4_mramPtr = nullptr;
     MoveToList(kS_Zero);
     break;
