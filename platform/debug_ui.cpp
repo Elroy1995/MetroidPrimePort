@@ -6,6 +6,11 @@
 #include "port_mouse.h"
 #include "port_build_info.h"
 
+#include "MetroidPrime/CHealthInfo.hpp"
+#include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/CWorld.hpp"
+#include "MetroidPrime/Player/CPlayerState.hpp"
+
 #include <aurora/gfx.h>
 #include <dolphin/vi.h>
 #include <imgui.h>
@@ -63,6 +68,8 @@ bool sVisible = false;
 bool sSettingsDirty = false;
 bool sAudioSettingsApplied = false;
 bool sPresentationSettingsApplied = false;
+CStateManager* sStateManager = nullptr;
+int sPendingTeleport = -1;
 
 std::string SettingsFilePath() {
   std::string dir;
@@ -479,6 +486,18 @@ bool ConsumeResetRequest() {
   return requested;
 }
 
+void SetStateManager(CStateManager* mgr) { sStateManager = mgr; }
+CStateManager* StateManager() { return sStateManager; }
+void RequestTeleport(int areaId) { sPendingTeleport = areaId; }
+bool ConsumeTeleportRequest(int& areaId) {
+  if (sPendingTeleport < 0) {
+    return false;
+  }
+  areaId = sPendingTeleport;
+  sPendingTeleport = -1;
+  return true;
+}
+
 bool Visible() {
   EnsureInitialized();
   return sVisible;
@@ -603,6 +622,118 @@ void DrawSessionTab() {
   ImGui::TextUnformatted(sSettingsDirty ? "Unsaved changes" : "Saved");
 }
 
+void GrantItem(CPlayerState& ps, CPlayerState::EItemType type, int amount, int capacity) {
+  ps.SetPowerUp(type, capacity);
+  ps.SetPickup(type, amount);
+}
+
+void DrawDebugTab() {
+  CStateManager* mgr = sStateManager;
+  if (mgr == nullptr) {
+    ImGui::TextUnformatted("Waiting for gameplay...");
+    return;
+  }
+  CPlayerState* ps = mgr->PlayerState();
+  if (ps == nullptr) {
+    ImGui::TextUnformatted("No player state.");
+    return;
+  }
+
+  ImGui::Text("Health: %.0f / %.0f", ps->HealthInfo()->GetHP(), ps->CalculateHealth());
+  if (ImGui::Button("Full health")) {
+    ps->HealthInfo()->SetHP(ps->CalculateHealth());
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Grant everything")) {
+    for (int i = CPlayerState::kIT_PowerBeam; i < CPlayerState::kIT_Max; ++i) {
+      GrantItem(*ps, static_cast< CPlayerState::EItemType >(i), 1, 1);
+    }
+    GrantItem(*ps, CPlayerState::kIT_Missiles, 250, 250);
+    GrantItem(*ps, CPlayerState::kIT_PowerBombs, 8, 8);
+    GrantItem(*ps, CPlayerState::kIT_EnergyTanks, 14, 14);
+    ps->HealthInfo()->SetHP(ps->CalculateHealth());
+  }
+
+  ImGui::Separator();
+  ImGui::TextUnformatted("Abilities");
+  struct SItemToggle {
+    const char* name;
+    CPlayerState::EItemType type;
+  };
+  static const SItemToggle kItems[] = {
+      {"Power Beam", CPlayerState::kIT_PowerBeam},
+      {"Ice Beam", CPlayerState::kIT_IceBeam},
+      {"Wave Beam", CPlayerState::kIT_WaveBeam},
+      {"Plasma Beam", CPlayerState::kIT_PlasmaBeam},
+      {"Charge Beam", CPlayerState::kIT_ChargeBeam},
+      {"Super Missile", CPlayerState::kIT_SuperMissile},
+      {"Ice Spreader", CPlayerState::kIT_IceSpreader},
+      {"Wavebuster", CPlayerState::kIT_Wavebuster},
+      {"Flamethrower", CPlayerState::kIT_Flamethrower},
+      {"Combat Visor", CPlayerState::kIT_CombatVisor},
+      {"Scan Visor", CPlayerState::kIT_ScanVisor},
+      {"Thermal Visor", CPlayerState::kIT_ThermalVisor},
+      {"X-Ray Visor", CPlayerState::kIT_XRayVisor},
+      {"Morph Ball", CPlayerState::kIT_MorphBall},
+      {"Morph Ball Bombs", CPlayerState::kIT_MorphBallBombs},
+      {"Boost Ball", CPlayerState::kIT_BoostBall},
+      {"Spider Ball", CPlayerState::kIT_SpiderBall},
+      {"Space Jump Boots", CPlayerState::kIT_SpaceJumpBoots},
+      {"Grapple Beam", CPlayerState::kIT_GrappleBeam},
+      {"Gravity Suit", CPlayerState::kIT_GravitySuit},
+      {"Varia Suit", CPlayerState::kIT_VariaSuit},
+      {"Phazon Suit", CPlayerState::kIT_PhazonSuit},
+  };
+  for (const SItemToggle& item : kItems) {
+    bool owned = ps->HasPowerUp(item.type);
+    if (ImGui::Checkbox(item.name, &owned)) {
+      if (owned) {
+        GrantItem(*ps, item.type, 1, 1);
+      } else {
+        ps->SetPowerUp(item.type, 0);
+        ps->SetPickup(item.type, 0);
+      }
+    }
+  }
+
+  int missiles = ps->GetItemAmount(CPlayerState::kIT_Missiles);
+  if (ImGui::SliderInt("Missiles", &missiles, 0, 250)) {
+    GrantItem(*ps, CPlayerState::kIT_Missiles, missiles, 250);
+  }
+  int powerBombs = ps->GetItemAmount(CPlayerState::kIT_PowerBombs);
+  if (ImGui::SliderInt("Power Bombs", &powerBombs, 0, 8)) {
+    GrantItem(*ps, CPlayerState::kIT_PowerBombs, powerBombs, 8);
+  }
+  int tanks = ps->GetItemAmount(CPlayerState::kIT_EnergyTanks);
+  if (ImGui::SliderInt("Energy Tanks", &tanks, 0, 14)) {
+    GrantItem(*ps, CPlayerState::kIT_EnergyTanks, tanks, 14);
+    ps->HealthInfo()->SetHP(ps->CalculateHealth());
+  }
+
+  ImGui::Separator();
+  ImGui::TextUnformatted("Teleport");
+  CWorld* world = mgr->World();
+  if (world == nullptr) {
+    ImGui::TextUnformatted("No world.");
+    return;
+  }
+  if (mgr->GetGameState() != CStateManager::kGS_Running) {
+    ImGui::TextUnformatted("(waiting for gameplay)");
+  }
+  const int areaCount = world->IGetAreaCount();
+  const int current = world->GetCurrentAreaId().Value();
+  ImGui::Text("Current area: %d of %d", current, areaCount);
+  for (int i = 0; i < areaCount; ++i) {
+    ImGui::PushID(i);
+    if (ImGui::Button(i == current ? "Reload" : "Go")) {
+      PortDebug::RequestTeleport(i);
+    }
+    ImGui::SameLine();
+    ImGui::Text("Area %d", i);
+    ImGui::PopID();
+  }
+}
+
 void DrawUI() {
   EnsureInitialized();
   if (!sAudioSettingsApplied) {
@@ -649,6 +780,10 @@ void DrawUI() {
       }
       if (ImGui::BeginTabItem("Audio")) {
         DrawAudioTab();
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Debug")) {
+        DrawDebugTab();
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Session")) {

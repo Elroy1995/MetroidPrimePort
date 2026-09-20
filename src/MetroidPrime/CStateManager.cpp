@@ -1,5 +1,6 @@
 #define CSTATEMANAGER_OUT_OF_LINE_GETPLAYER
 #include "MetroidPrime/CStateManager.hpp"
+#include "port_debug.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 #endif
@@ -1105,6 +1106,35 @@ void CStateManager::Update(float dt) {
   PortSmokeAreaReload(*this);
   PortSmokeMouseBeforeUpdate(*this);
 #endif
+
+  PortDebug::SetStateManager(this);
+  int debugTeleportArea = -1;
+  if (PortDebug::ConsumeTeleportRequest(debugTeleportArea)) {
+    const TAreaId aid(debugTeleportArea);
+    if (x850_world.get() != nullptr && x850_world->DoesAreaExist(aid) &&
+        x850_world->GetArea(aid)->IsPostConstructed()) {
+      GXDrawDone();
+      SetCurrentAreaId(aid);
+      gpGameState->CurrentWorldState().SetAreaId(aid);
+      x850_world->TravelToArea(aid, *this, CWorld::kATT_SkipAdjacent);
+      CObjectList* allList = x808_objectLists[kOL_All].get();
+      for (int i = allList->GetFirstObjectIndex(); i != -1; i = allList->GetNextObjectIndex(i)) {
+        CScriptSpawnPoint* const spawn = TCastToPtr< CScriptSpawnPoint >((*allList)[i]);
+        if (spawn != nullptr && spawn->GetActive() && spawn->FirstSpawn()) {
+          const CVector3f pos = spawn->GetTransform().GetTranslation();
+          CVector3f look = spawn->GetTransform().GetForward();
+          look.SetZ(0.f);
+          if (look.CanBeNormalized()) {
+            x84c_player->Teleport(CTransform4f::LookAt(pos, pos + look, CVector3f::Up()), *this,
+                                  true);
+          }
+          break;
+        }
+      }
+      x84c_player->AsyncLoadSuit(*this);
+      x870_cameraManager->ResetCameras(*this);
+    }
+  }
 
   const float deathTime = x84c_player->GetDeathTime();
   const bool isDead = deathTime > 0.f;

@@ -243,6 +243,20 @@ bool PortSmokeFrame(unsigned frame) {
     const char* value = std::getenv("MP_SMOKE_FRAMES");
     return value != nullptr ? static_cast<unsigned>(std::strtoul(value, nullptr, 10)) : 0;
   }();
+  static const char* resizeSpec = std::getenv("MP_SMOKE_RESIZE");
+  if (resizeSpec != nullptr && frame == 300) {
+    int rw = 0;
+    int rh = 0;
+    if (std::sscanf(resizeSpec, "%dx%d", &rw, &rh) == 2 && rw > 0 && rh > 0) {
+      int count = 0;
+      SDL_Window** windows = SDL_GetWindows(&count);
+      if (windows != nullptr && count > 0) {
+        SDL_SetWindowSize(windows[0], rw, rh);
+        std::fprintf(stderr, "[smoke] resized window to %dx%d\n", rw, rh);
+      }
+      SDL_free(windows);
+    }
+  }
   static const char* shotList = std::getenv("MP_SMOKE_SHOT");
   if (shotList != nullptr) {
     for (const char* p = shotList; *p != '\0';) {

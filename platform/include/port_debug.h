@@ -6,7 +6,18 @@
 // Defaults come from environment variables so existing workflows keep working,
 // and the in-game debug window can toggle them live.
 
+class CStateManager;
+
 namespace PortDebug {
+
+// Live game state for the debug menu (set every simulation tick by
+// CStateManager::Update). Null before gameplay starts.
+void SetStateManager(CStateManager* mgr);
+CStateManager* StateManager();
+// Requests an area change; consumed and executed by the game update so it does
+// not run from the render/UI path.
+void RequestTeleport(int areaId);
+bool ConsumeTeleportRequest(int& areaId);
 
 // Fast iteration
 bool FastBoot();
