@@ -6,6 +6,7 @@
 
 #include <aurora/aurora.h>
 #include <aurora/dvd.h>
+#include <aurora/gfx.h>
 #include <aurora/event.h>
 #include <aurora/main.h>
 #include <dolphin/gx.h>
@@ -71,7 +72,9 @@ int main(int argc, char** argv) {
     };
 
     aurora_initialize(argc, argv, &config);
-    VISetFrameBufferScale(1.f);
+    // Apply persisted presentation settings (loaded from port_settings.ini).
+    VISetFrameBufferScale(PortDebug::RenderScale());
+    aurora_enable_vsync(PortDebug::VsyncEnabled());
     // Fit the internal EFB to the game's render-mode aspect rather than the
     // window aspect, so fixed 4:3/16:9 modes are never stretched when the window
     // shape differs; the present letterboxes instead.
