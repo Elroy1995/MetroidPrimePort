@@ -16,7 +16,12 @@ Vec4<float> texture_size_bias(const gfx::TextureBind& tex) {
   auto width = static_cast<float>(tex.texObj.width());
   auto height = static_cast<float>(tex.texObj.height());
   float vpBias = 0.f;
-  if (tex.ref && tex.ref->hasArbitraryMips) {
+  // The viewport-scale LOD bias compensates for texture *replacements* whose
+  // mip chain no longer matches the original resolution. Applying it to the
+  // game's own textures (which arb_mip_check can also flag) makes LOD
+  // fractional at non-integer EFB scales and samples the wrong mip, so restrict
+  // it to actual replacements and otherwise keep the console's LOD behaviour.
+  if (tex.ref && tex.ref->isReplacement) {
     const float viewportScale =
         std::min(g_gxState.renderViewport.width / std::max(g_gxState.logicalViewport.width, 1.f),
                  g_gxState.renderViewport.height / std::max(g_gxState.logicalViewport.height, 1.f));

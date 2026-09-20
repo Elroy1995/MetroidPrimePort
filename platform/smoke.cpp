@@ -47,6 +47,19 @@ void MouseCheck(bool valid, const char* message) {
 }
 
 void PortSmokeAreaReload(CStateManager& mgr) {
+  static const unsigned pauseAfterTicks = [] {
+    const char* value = std::getenv("MP_SMOKE_PAUSE");
+    return value != nullptr ? static_cast<unsigned>(std::strtoul(value, nullptr, 10)) : 0;
+  }();
+  static unsigned sPauseTicks = 0;
+  if (pauseAfterTicks != 0 && mgr.GetGameState() == CStateManager::kGS_Running &&
+      mgr.GetCameraManager()->IsInFPCamera() &&
+      !mgr.GetCameraManager()->IsInCinematicCamera()) {
+    if (++sPauseTicks == pauseAfterTicks) {
+      std::fputs("[smoke] entering pause screen\n", stderr);
+      mgr.EnterPauseScreen();
+    }
+  }
   static const bool morphEnabled = std::getenv("MP_SMOKE_MORPH") != nullptr;
   static unsigned sMorphTicks = 0;
   static bool sMorphDone = false;
