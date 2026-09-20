@@ -508,7 +508,6 @@ bool CCubeRenderer::BeginScene() {
 #endif
   CGraphics::SetPerspective(75.f, aspect, 1.f, 4096.f);
   CGraphics::SetModelMatrix(CTransform4f::Identity());
-  CGraphics::TickRenderTimings();
   if (x310_phazonSuitMaskCountdown != 0) {
     --x310_phazonSuitMaskCountdown;
     if (x310_phazonSuitMaskCountdown == 0) {

@@ -317,7 +317,9 @@ public:
                                       GXTexMapID texId);
   static void LoadDolphinSpareTexture(int width, int height, GXCITexFmt fmt, GXTlut tlut,
                                       void* data, GXTexMapID texId);
-  static void TickRenderTimings();
+  // Advances the animation clock by simulation ticks (not rendered frames), so
+  // animations stay real-time when the frame rate is uncapped.
+  static void TickRenderTimings(uint ticks = 1);
   static const CProjectionState& GetProjectionState();
   static void SetProjectionState(const CProjectionState& proj);
   static CClippedScreenRect ClipScreenRectFromVS(const CVector3f& p1, const CVector3f& p2,

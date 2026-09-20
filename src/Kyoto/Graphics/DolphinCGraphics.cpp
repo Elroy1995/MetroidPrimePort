@@ -1397,8 +1397,8 @@ void CGraphics::LoadDolphinSpareTexture(int width, int height, GXCITexFmt fmt, G
   }
 }
 
-void CGraphics::TickRenderTimings() {
-  mRenderTimings = (mRenderTimings + 1) % (900 * 60);
+void CGraphics::TickRenderTimings(uint ticks) {
+  mRenderTimings = (mRenderTimings + ticks) % (900 * 60);
   mSecondsMod900 = static_cast< float >(mRenderTimings) / 60.f;
 }
 

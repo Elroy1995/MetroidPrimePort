@@ -911,6 +911,9 @@ int CMain::RsMain(int argc, const char* const* argv) {
       if (!archSupport->UpdateTicks()) {
         x160_24_finished = true;
       }
+      // Advance the animation clock with simulation ticks so draw-time
+      // animations stay real-time at any presentation frame rate.
+      CGraphics::TickRenderTimings(sTicksAdvanced);
       double t1 = archSupport->GetStopwatch2().GetElapsedTime();
       AddFrameTime(xf0_tickTimes, t1 / dt);
       x118_averageTickTime = xf0_tickTimes.GetAverage().data();
