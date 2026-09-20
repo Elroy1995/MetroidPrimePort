@@ -13,6 +13,7 @@
 #include "MetroidPrime/CAnimData.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/TCastTo.hpp"
+#include "port_debug.h"
 
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Graphics/CModelFlags.hpp"
@@ -479,7 +480,7 @@ void CFishCloud::Think(float dt, CStateManager& mgr) {
         const float inverseSpeed = 1.f / speed;
         velocity *= inverseSpeed;
       }
-      velocity.SetZ(0.99f * velocity.GetZ());
+      velocity.SetZ(CMath::PowF(0.99f, PortDebug::TickPeriod() * 60.f) * velocity.GetZ());
     }
   }
   if (x12c_randomMovementTimer > 0.f) {
@@ -766,6 +767,11 @@ static inline CVector3f FishCloudCross(const CVector3f& lhs, const CVector3f& rh
   return CVector3f(x, y, z);
 }
 
+// The boid steering constants are authored per 60 Hz tick and accumulated into a
+// velocity that the position later integrates by dt, so scale the per-tick
+// acceleration to the actual simulation step. 1.0 at 60 Hz.
+static float FishCloudSteerScale() { return PortDebug::TickPeriod() * 60.f; }
+
 void CFishCloud::ApplyRotation(CBoid& boid, float magnitude, const CVector3f& point, float radius,
                                bool clockwise) {
   CVector3f delta = boid.x0_pos - point;
@@ -777,7 +783,7 @@ void CFishCloud::ApplyRotation(CBoid& boid, float magnitude, const CVector3f& po
   const float weight = distance > radius ? 0.f : 1.f - distance / radius;
   const float angle = CVector3f::GetAngleDiff(velocity, align) / M_PIF;
   const float weightedAngle = angle * weight;
-  boid.xc_vel += weightedAngle * (magnitude * align);
+  boid.xc_vel += FishCloudSteerScale() * (weightedAngle * (magnitude * align));
 }
 
 void CFishCloud::ApplyAlignment(CBoid& boid, const rstl::reserved_vector< CBoid*, 25 >& nearList) {
@@ -789,7 +795,7 @@ void CFishCloud::ApplyAlignment(CBoid& boid, const rstl::reserved_vector< CBoid*
     average = average / float(nearList.size());
     const CVector3f velocity = boid.xc_vel;
     const float angle = CVector3f::GetAngleDiff(velocity, average) / M_PIF;
-    boid.xc_vel += angle * (x140_alignmentWeight * average);
+    boid.xc_vel += FishCloudSteerScale() * (angle * (x140_alignmentWeight * average));
   }
 }
 
@@ -799,7 +805,7 @@ void CFishCloud::ApplyWander(CStateManager& mgr, CBoid& boid) {
   const float angle = x154_maxScatterAngle * (M_PIF * (mgr.Random()->Float() - 0.5f));
   const CVector3f scatter(x * CMath::FastCosR(angle) - y * CMath::FastSinR(angle),
                           x * CMath::FastSinR(angle) + y * CMath::FastCosR(angle), 0.f);
-  boid.xc_vel += x150_scatterVel * scatter;
+  boid.xc_vel += FishCloudSteerScale() * (x150_scatterVel * scatter);
 }
 
 void CFishCloud::ApplyCohesion(CBoid& boid, const rstl::reserved_vector< CBoid*, 25 >& nearList) {
@@ -818,7 +824,7 @@ void CFishCloud::ApplyCohesion(CBoid& boid, const CVector3f& point, float radius
   if (delta.CanBeNormalized()) {
     const float distanceSquared = delta.MagSquared();
     const float weight = distanceSquared > radius ? 1.f : distanceSquared / radius;
-    boid.xc_vel += weight * delta.AsNormalized() * magnitude;
+    boid.xc_vel += FishCloudSteerScale() * (weight * delta.AsNormalized() * magnitude);
   }
 }
 
@@ -846,7 +852,7 @@ void CFishCloud::ApplySeparation(CBoid& boid, const CVector3f& point, float radi
     const float radiusSquared = radius * radius;
     if (distanceSquared < radiusSquared) {
       const float weight = 1.f - distanceSquared / radiusSquared;
-      boid.xc_vel += weight * delta.AsNormalized() * magnitude;
+      boid.xc_vel += FishCloudSteerScale() * (weight * delta.AsNormalized() * magnitude);
     }
   }
 }
@@ -859,7 +865,7 @@ void CFishCloud::ApplyAttraction(CBoid& boid, const CVector3f& point, float radi
     const float radiusSquared = radius * radius;
     if (distanceSquared < radiusSquared) {
       const float weight = 1.f - distanceSquared / radiusSquared;
-      boid.xc_vel += weight * delta.AsNormalized() * magnitude;
+      boid.xc_vel += FishCloudSteerScale() * (weight * delta.AsNormalized() * magnitude);
     }
   }
 }

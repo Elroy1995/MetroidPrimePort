@@ -199,6 +199,16 @@ Scripts / misc:
     the same way.
 - `MP_SMOKE_WALK=<ticks>` holds the stick forward and reports distance, peak
   flat speed and speed over the walk, so the two rates can be compared directly.
+- `CFishCloud` boid steering (`ApplyRotation`/`ApplyAlignment`/`ApplyWander`/
+  `ApplyCohesion`/`ApplySeparation`/`ApplyAttraction`, `CFishCloud.cpp:786-868`)
+  added a per-tick acceleration to `xc_vel`, which the position then integrates
+  by dt, so the flock's turn rate scaled with the tick rate. Scaled by
+  `TickPeriod() * 60`, as is the per-tick vertical damping at `CFishCloud.cpp:481`.
+- Also checked and confirmed dt-scaled: `CGroundMovement` (the collision
+  response sub-steps by `remainingDt`), the first-person camera gun-follow
+  (`angularStep` starts as `dt`), and the bomb-jump velocity factors (applied
+  once per jump). A second targeted sweep over all of `src/` for the
+  per-tick-physics-constant class found nothing else.
 
 Verified: with `MP_SIM_RATE=120` the timing trace reports `simulation=120.0
 ticks/s` with the render at 60 FPS; with `MP_SIM_ADAPTIVE=1` and the cap on it
@@ -215,6 +225,12 @@ Known caveats:
 - The scattered AI/HUD per-frame counters below still advance per tick.
 - Adaptive mode gives the game a variable `dt`, so physics results vary with the
   frame time; the fixed rates keep a constant step.
+- Open item: `CGroundMovement.cpp:765` applies
+  `velocity *= 1.f - x14_waterLandingVelocityReduction` inside the collision
+  sub-step loop. It is probably a one-time landing response, but if it re-applies
+  every tick while skimming water it is rate-dependent; left unchanged because
+  scaling a collision response by dt may over-correct. Verify against a real
+  water surface before touching it.
 
 ## Conversion plan
 
