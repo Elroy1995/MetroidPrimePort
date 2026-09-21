@@ -713,12 +713,12 @@ void UpdateControllerNav() {
   io.AddKeyEvent(ImGuiKey_GamepadL1, held(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
   io.AddKeyEvent(ImGuiKey_GamepadR1, held(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
 
-  static bool sBackHeld = false;
-  const bool back = held(SDL_GAMEPAD_BUTTON_BACK);
-  if (back && !sBackHeld) {
+  static bool sChordHeld = false;
+  const bool chord = held(SDL_GAMEPAD_BUTTON_START) && held(SDL_GAMEPAD_BUTTON_BACK);
+  if (chord && !sChordHeld) {
     Toggle();
   }
-  sBackHeld = back;
+  sChordHeld = chord;
 }
 
 void Toggle() {

@@ -113,7 +113,8 @@ override these.
   stretched.
 - The mouse cursor is hidden while the game has focus and is shown only over the
   F1 overlay. The overlay is also openable and navigable with a controller: the
-  Back/Select button toggles it, the D-pad or left stick moves, A activates, B
+  Start+Back chord toggles it (Start is suppressed for the game while Back is
+  held, so it does not also pause), the D-pad or left stick moves, A activates, B
   cancels and the shoulder buttons switch tabs (ImGui gamepad navigation).
 - `MP_MOUSE_AIM=1`, `MP_MOUSE_SENS=0.0035`: relative mouse aim. Motion is ignored
   while the overlay is visible or relative capture/focus is absent. Mouse mode

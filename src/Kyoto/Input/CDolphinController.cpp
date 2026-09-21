@@ -1,5 +1,6 @@
 #include "Kyoto/Input/CDolphinController.hpp"
 #include "port_debug.h"
+#include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
 #ifdef MP_ENABLE_SMOKE_DRIVER
@@ -117,6 +118,13 @@ void CDolphinController::ReadDevices() {
     PortDebug::AddStickAim(sx, sy, PortDebug::TickPeriod());
     x4_status[0].substickX = 0;
     x4_status[0].substickY = 0;
+  }
+
+  // Start+Back is the debug overlay chord; do not also pause the game with it.
+  if (SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0)) {
+    if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_BACK)) {
+      x4_status[0].button &= ~PAD_BUTTON_START;
+    }
   }
 
   for (int i = 0; i < 4; ++i) {
