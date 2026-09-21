@@ -87,8 +87,10 @@ playable; it exists to isolate link/packaging problems from a reproducible
 
 ## Current limitations
 
-- No touch overlay yet. A physical controller (USB or BLE) is required; touch
-  input is not yet mapped.
+- The first touch overlay provides digital movement and camera sticks plus the
+  GameCube face, shoulder, Start and D-pad controls. `HIDE` collapses it to a
+  small `SHOW` tab. Its sizing and ergonomics still need device testing;
+  physical USB and BLE controllers remain supported.
 - On-device behavior is not yet fully exercised: the Vulkan renderer, activity
   lifecycle, audio, controller, and SAF/disc-access paths have been wired up but
   still need device verification.

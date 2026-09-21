@@ -20,6 +20,7 @@ import java.io.InputStream;
 
 public final class MetroidPrimeActivity extends SDLActivity {
     private static final String TAG = "MetroidPrimePort";
+    private TouchControlsView touchControls;
 
     @Override
     protected String[] getLibraries() {
@@ -40,6 +41,20 @@ public final class MetroidPrimeActivity extends SDLActivity {
             Log.e(TAG, "Failed to prepare native resources", e);
         }
         super.onCreate(savedInstanceState);
+        if (mLayout != null) {
+            touchControls = new TouchControlsView(this);
+            mLayout.addView(touchControls, new android.widget.RelativeLayout.LayoutParams(
+                android.widget.RelativeLayout.LayoutParams.MATCH_PARENT,
+                android.widget.RelativeLayout.LayoutParams.MATCH_PARENT));
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        if (touchControls != null) {
+            touchControls.releaseAll();
+        }
+        super.onPause();
     }
 
     @Override
