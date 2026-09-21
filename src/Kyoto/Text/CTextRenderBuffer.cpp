@@ -148,18 +148,24 @@ void CTextRenderBuffer::AddImage(const CVector2i& offset, const CFontImageDef& i
 void CTextRenderBuffer::Render(const CColor& color, float time) const {
   x4c_activeFont = -1;
   x4d_activePalette = -1;
+  // The queued font/palette are set by a command earlier in this pass. Leaving
+  // them from a previous pass (of a different buffer) indexes x4_fonts or
+  // x50_palettes out of range when a buffer starts mid-text, which yields a
+  // garbage token and faults in CObjectReference::AddReference.
+  x4e_queuedFont = -1;
+  x4f_queuedPalette = -1;
   CMemoryInStream in(x34_bytecode.data(), x44_blobSize, CMemoryInStream::kOS_NotOwned);
   while (in.GetReadPosition() < x44_blobSize) {
     switch (static_cast< ECmd >(in.Get< uchar >())) {
     case kC_CharacterRender: {
-      if (x4e_queuedFont != -1) {
+      if (x4e_queuedFont >= 0 && x4e_queuedFont < static_cast< int >(x4_fonts.size())) {
         TToken< CRasterFont > font = x4_fonts[x4e_queuedFont];
         if (font.IsLoaded()) {
           font->SetupRenderState();
           x4e_queuedFont = -1;
         }
       }
-      if (x4f_queuedPalette != -1) {
+      if (x4f_queuedPalette >= 0 && x4f_queuedPalette < static_cast< int >(x50_palettes.size())) {
         x50_palettes[x4f_queuedPalette]->Load();
         x4f_queuedPalette = -1;
       }
