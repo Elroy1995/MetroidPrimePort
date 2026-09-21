@@ -148,11 +148,17 @@ GXRenderModeObj GXMpal480IntDf = {
 };
 
 void GXAdjustForOverscan(GXRenderModeObj* rmin, GXRenderModeObj* rmout, u16 hor, u16 ver) {
+  // Overscan only insets the visible VI area; the EFB and XFB keep the game's
+  // logical size, because they drive GXSetViewport and GXSetScissor. The GX
+  // scissor is an 11-bit field biased by 342, so copying the OS window's pixel
+  // size into fbWidth (2351, or 1878 once the port widens it to 16:9) wraps the
+  // scissor to zero width and clips every draw away. Aurora scales the logical
+  // framebuffer up to the window when it presents instead.
   *rmout = *rmin;
-  const auto size = aurora::window::get_window_size();
-  rmout->fbWidth = size.fb_width;
-  rmout->efbHeight = size.fb_height;
-  rmout->xfbHeight = size.fb_height;
+  rmout->viXOrigin = static_cast< u16 >(rmin->viXOrigin + hor);
+  rmout->viYOrigin = static_cast< u16 >(rmin->viYOrigin + ver);
+  rmout->viWidth = static_cast< u16 >(rmin->viWidth - 2 * hor);
+  rmout->viHeight = static_cast< u16 >(rmin->viHeight - 2 * ver);
 }
 
 void GXSetDispCopySrc(u16 left, u16 top, u16 wd, u16 ht) {}
