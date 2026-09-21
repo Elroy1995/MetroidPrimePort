@@ -46,6 +46,8 @@ constexpr PromptKey kKeys[] = {
     {PAD_TRIGGER_L, 32, 32, 0x06ad76760dcad506ull, "5"},
     {PAD_TRIGGER_R, 32, 32, 0x45ccec4d3cda3f1bull, "5"},
     {PAD_TRIGGER_Z, 64, 32, 0x0f4cb495c960bcfaull, "14"},
+    // HUD hint memos.
+    {PAD_TRIGGER_R, 32, 32, 0xc39b2f9c2eac777bull, "5"},
     // Stick prompts. Not a button, so there is no binding to follow; the icon
     // is the device's own stick (or the direction keys for a keyboard).
     {PAD_AXIS_CSTICK, 32, 32, 0x1ff9d2b310c0b706ull, "14"},
