@@ -118,6 +118,29 @@ void CDolphinController::ReadDevices() {
     PortDebug::AddStickAim(sx, sy, PortDebug::TickPeriod());
     x4_status[0].substickX = 0;
     x4_status[0].substickY = 0;
+
+    // Beams are selected from the C-stick, which twin-stick just consumed, so
+    // holding a modifier lets the D-pad stand in for it: the four directions
+    // select beams instead of switching visors. The L trigger works on a pad;
+    // the Android overlay's RB sends left shift, which also gives a keyboard
+    // binding on desktop. Directions must match the C-stick's (positive X is
+    // right, positive Y is up) so each D-pad direction picks the same beam that
+    // direction on the C-stick would.
+    const bool* keys = SDL_GetKeyboardState(nullptr);
+    SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0);
+    const bool beamModifier =
+        (x4_status[0].button & PAD_TRIGGER_L) != 0 ||
+        (keys != nullptr && keys[SDL_SCANCODE_LSHIFT] != 0) ||
+        (pad != nullptr && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
+    if (beamModifier) {
+      const int x = ((x4_status[0].button & PAD_BUTTON_RIGHT) != 0 ? 127 : 0) -
+                    ((x4_status[0].button & PAD_BUTTON_LEFT) != 0 ? 127 : 0);
+      const int y = ((x4_status[0].button & PAD_BUTTON_UP) != 0 ? 127 : 0) -
+                    ((x4_status[0].button & PAD_BUTTON_DOWN) != 0 ? 127 : 0);
+      x4_status[0].substickX = static_cast< s8 >(x);
+      x4_status[0].substickY = static_cast< s8 >(y);
+      x4_status[0].button &= ~(PAD_BUTTON_UP | PAD_BUTTON_DOWN | PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT);
+    }
   }
 
   // Start+Back is the debug overlay chord; do not also pause the game with it.

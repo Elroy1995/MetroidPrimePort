@@ -31,6 +31,8 @@
 
 #if defined(__ANDROID__)
 #include <jni.h>
+#include <android/log.h>
+#include <SDL3/SDL_joystick.h>
 #endif
 
 #include <algorithm>
@@ -93,6 +95,9 @@ std::atomic< bool > sToggleRequested{false};
 // Mirrors sVisible for readers on other threads, so they never touch the lazy
 // initialization or the ImGui state owned by the game thread.
 std::atomic< bool > sOverlayVisible{false};
+// Same idea for the twin-stick setting, which the Android touch overlay uses to
+// pick a controller layout.
+std::atomic< bool > sTwinStickFlag{false};
 bool sVisible = false;
 bool sSettingsDirty = false;
 bool sAudioSettingsApplied = false;
@@ -713,6 +718,8 @@ bool Visible() {
 
 bool OverlayVisible() { return sOverlayVisible.load(std::memory_order_acquire); }
 
+bool TwinStickFlag() { return sTwinStickFlag.load(std::memory_order_acquire); }
+
 void SaveSettingsNow() {
   EnsureInitialized();
   SaveSettings();
@@ -774,6 +781,7 @@ void UpdateControllerNav() {
     Toggle();
   }
   sOverlayVisible.store(sVisible, std::memory_order_release);
+  sTwinStickFlag.store(sTwinStick, std::memory_order_release);
 
   ImGuiIO& io = ImGui::GetIO();
   io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
@@ -1583,9 +1591,76 @@ void SetDiscPath(const char* path) {
 // The touch overlay covers the display and consumes every touch before SDL
 // sees it. While the debug overlay is open the game is paused and those touches
 // belong to ImGui, so the Java side asks this and stops claiming them.
+#if defined(__ANDROID__)
+namespace {
+// The touch overlay acts as a real gamepad rather than synthesising keyboard
+// keys, so the game's own controller mapping, prompts and rebinding apply to it
+// unchanged, and its sticks are sticks rather than four keys pretending to be
+// one.
+SDL_Joystick* g_virtualPad = nullptr;
+
+SDL_Joystick* VirtualPad() {
+  if (g_virtualPad != nullptr) {
+    return g_virtualPad;
+  }
+  SDL_VirtualJoystickDesc desc;
+  SDL_INIT_INTERFACE(&desc);
+  desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+  desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+  desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+  // Identify as a common Xbox pad so SDL's built-in mapping matches it.
+  desc.vendor_id = 0x045e;
+  desc.product_id = 0x02ea;
+  desc.name = "Metroid Prime touch gamepad";
+  const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+  if (id == 0) {
+    __android_log_print(ANDROID_LOG_ERROR, "touchpad", "attach failed: %s", SDL_GetError());
+    return nullptr;
+  }
+  if (!SDL_IsGamepad(id)) {
+    // No built-in mapping matched after all, so supply the standard layout.
+    char guid[64];
+    SDL_GUIDToString(SDL_GetJoystickGUIDForID(id), guid, sizeof(guid));
+    char mapping[512];
+    SDL_snprintf(mapping, sizeof(mapping),
+                 "%s,Metroid Prime touch gamepad,a:b0,b:b1,x:b2,y:b3,back:b4,start:b6,"
+                 "leftshoulder:b9,rightshoulder:b10,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,"
+                 "leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:a4,righttrigger:a5,",
+                 guid);
+    SDL_AddGamepadMapping(mapping);
+  }
+  g_virtualPad = SDL_OpenJoystick(id);
+  __android_log_print(ANDROID_LOG_INFO, "touchpad", "attached id=%d gamepad=%d open=%d", id,
+                      SDL_IsGamepad(id) ? 1 : 0, g_virtualPad != nullptr ? 1 : 0);
+  return g_virtualPad;
+}
+} // namespace
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_metroidprime_port_TouchControlsView_nativeVirtualButton(JNIEnv*, jclass, jint button,
+                                                                 jboolean down) {
+  if (SDL_Joystick* pad = VirtualPad()) {
+    SDL_SetJoystickVirtualButton(pad, static_cast< int >(button), down == JNI_TRUE);
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_metroidprime_port_TouchControlsView_nativeVirtualAxis(JNIEnv*, jclass, jint axis,
+                                                               jfloat value) {
+  if (SDL_Joystick* pad = VirtualPad()) {
+    SDL_SetJoystickVirtualAxis(pad, static_cast< int >(axis), static_cast< float >(value));
+  }
+}
+#endif
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_metroidprime_port_TouchControlsView_nativeDebugOverlayVisible(JNIEnv*, jclass) {
   return PortDebug::OverlayVisible() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_metroidprime_port_TouchControlsView_nativeTwinStick(JNIEnv*, jclass) {
+  return PortDebug::TwinStickFlag() ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL

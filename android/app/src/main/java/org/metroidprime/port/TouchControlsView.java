@@ -5,54 +5,131 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.RelativeLayout;
 
-import org.libsdl.app.SDLActivity;
-
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * On-screen controller drawn over the game surface.
+ *
+ * It feeds an SDL virtual gamepad rather than synthesising keyboard keys, so the
+ * game's own controller mapping, prompts and rebinding treat it as a real pad,
+ * and its sticks are sticks rather than four keys pretending to be one.
+ *
+ * Two layouts: the GameCube pad's face layout while twin-stick is off, and the
+ * Xbox arrangement while it is on, because that mode plays like a modern
+ * shooter. Only arrangement and labels change; the game assigns the actions.
+ */
 final class TouchControlsView extends View {
     private static final int LEFT_STICK = 1;
     private static final int RIGHT_STICK = 2;
     private static final int BUTTON = 3;
     private static final int HIDE = 4;
+
+    // Port-only actions, not game inputs.
     private static final int TOGGLE_DEBUG_OVERLAY = -1;
+    private static final int HIDE_KEY = -2;
+    // Axis-held controls are tracked with ids above this, to share one press map.
+    private static final int AXIS_ID_BASE = 100;
 
-    private static final int[] LEFT_KEYS = {
-        KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_D, KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_S
-    };
-    private static final int[] RIGHT_KEYS = {
-        KeyEvent.KEYCODE_J, KeyEvent.KEYCODE_L, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_K
+    // SDL gamepad ids. The port maps these onto the GameCube pad itself: SOUTH is
+    // A, EAST is B, WEST is X, NORTH is Y, Start is Start, the right shoulder is
+    // Z, the D-pad is the D-pad, the left stick is the main stick, the right
+    // stick is the C-stick and the triggers are L and R.
+    private static final int BTN_SOUTH = 0;
+    private static final int BTN_EAST = 1;
+    private static final int BTN_WEST = 2;
+    private static final int BTN_NORTH = 3;
+    private static final int BTN_START = 6;
+    private static final int BTN_LEFT_SHOULDER = 9;
+    private static final int BTN_RIGHT_SHOULDER = 10;
+    private static final int BTN_DPAD_UP = 11;
+    private static final int BTN_DPAD_DOWN = 12;
+    private static final int BTN_DPAD_LEFT = 13;
+    private static final int BTN_DPAD_RIGHT = 14;
+
+    private static final int AXIS_LEFTX = 0;
+    private static final int AXIS_LEFTY = 1;
+    private static final int AXIS_RIGHTX = 2;
+    private static final int AXIS_RIGHTY = 3;
+    private static final int AXIS_TRIGGER_L = 4;
+    private static final int AXIS_TRIGGER_R = 5;
+
+    // Sticks are drawn and read through these, so the two cannot disagree.
+    private static final float STICK_LEFT_X = 0.18f;
+    private static final float STICK_RIGHT_X = 0.58f;
+    private static final float STICK_Y = 0.73f;
+    private static final float STICK_RADIUS = 0.16f;
+    private static final float STICK_DEAD_ZONE = 0.12f;
+
+    // The GameCube pad's face layout, with its larger A, kept while twin-stick is
+    // off so the overlay matches the pad the game was authored for.
+    private static final ControlButton[] GAMECUBE_FACE = {
+        new ControlButton("A", BTN_SOUTH, 0.925f, 0.700f, 0.070f),
+        new ControlButton("B", BTN_EAST, 0.850f, 0.775f, 0.058f),
+        new ControlButton("X", BTN_WEST, 0.850f, 0.625f, 0.058f),
+        new ControlButton("Y", BTN_NORTH, 0.775f, 0.700f, 0.058f),
     };
 
-    private static final ControlButton[] BUTTONS = {
-        new ControlButton("A", KeyEvent.KEYCODE_X, 0.92f, 0.70f, 0.070f),
-        new ControlButton("B", KeyEvent.KEYCODE_Z, 0.84f, 0.82f, 0.060f),
-        new ControlButton("X", KeyEvent.KEYCODE_C, 0.84f, 0.58f, 0.060f),
-        new ControlButton("Y", KeyEvent.KEYCODE_V, 0.76f, 0.70f, 0.060f),
-        new ControlButton("L", KeyEvent.KEYCODE_Q, 0.17f, 0.10f, 0.065f),
-        new ControlButton("R", KeyEvent.KEYCODE_E, 0.76f, 0.10f, 0.065f),
-        new ControlButton("Z", KeyEvent.KEYCODE_F, 0.86f, 0.16f, 0.052f),
-        new ControlButton("START", KeyEvent.KEYCODE_ENTER, 0.50f, 0.11f, 0.050f),
-        new ControlButton("MENU", TOGGLE_DEBUG_OVERLAY, 0.64f, 0.11f, 0.050f),
-        new ControlButton("UP", KeyEvent.KEYCODE_DPAD_UP, 0.08f, 0.25f, 0.043f),
-        new ControlButton("DOWN", KeyEvent.KEYCODE_DPAD_DOWN, 0.08f, 0.41f, 0.043f),
-        new ControlButton("LEFT", KeyEvent.KEYCODE_DPAD_LEFT, 0.04f, 0.33f, 0.043f),
-        new ControlButton("RIGHT", KeyEvent.KEYCODE_DPAD_RIGHT, 0.12f, 0.33f, 0.043f),
+    // Twin-stick reads like a modern shooter pad: the Xbox diamond, all four the
+    // same size, because a bigger A is a GameCube trait rather than an Xbox one.
+    private static final ControlButton[] XBOX_FACE = {
+        new ControlButton("A", BTN_SOUTH, 0.875f, 0.795f, 0.055f),
+        new ControlButton("B", BTN_EAST, 0.950f, 0.720f, 0.055f),
+        new ControlButton("X", BTN_WEST, 0.800f, 0.720f, 0.055f),
+        new ControlButton("Y", BTN_NORTH, 0.875f, 0.645f, 0.055f),
     };
+
+    // A square cross: equal spacing both ways, equal sizes.
+    private static final ControlButton[] DPAD = {
+        new ControlButton("\u25B2", BTN_DPAD_UP, 0.115f, 0.245f, 0.042f),
+        new ControlButton("\u25BC", BTN_DPAD_DOWN, 0.115f, 0.395f, 0.042f),
+        new ControlButton("\u25C0", BTN_DPAD_LEFT, 0.040f, 0.320f, 0.042f),
+        new ControlButton("\u25B6", BTN_DPAD_RIGHT, 0.190f, 0.320f, 0.042f),
+    };
+
+    // Shoulders stack vertically: the trigger above the bumper, both sides.
+    // L and R are the pad's analog triggers; Z is its digital shoulder. In Xbox
+    // mode they read LT/RT and LB/RB, and RB carries Z while LB carries the
+    // twin-stick beam modifier, which is what the port reads the left shoulder
+    // for. X-Box mode has no Z label because the pad has no Z button.
+    private static final PillButton[] GAMECUBE_PILLS = {
+        new PillButton("L", AXIS_TRIGGER_L, -1, 0.020f, 0.030f, 0.150f, 0.100f),
+        new PillButton("Z", -1, BTN_RIGHT_SHOULDER, 0.020f, 0.115f, 0.150f, 0.185f),
+        new PillButton("R", AXIS_TRIGGER_R, -1, 0.850f, 0.030f, 0.980f, 0.100f),
+        new PillButton("START", -1, BTN_START, 0.400f, 0.030f, 0.490f, 0.100f),
+        new PillButton("MENU", TOGGLE_DEBUG_OVERLAY, -1, 0.510f, 0.030f, 0.600f, 0.100f),
+        new PillButton("HIDE", HIDE_KEY, -1, 0.620f, 0.030f, 0.710f, 0.100f),
+    };
+
+    private static final PillButton[] XBOX_PILLS = {
+        new PillButton("LT", AXIS_TRIGGER_L, -1, 0.020f, 0.030f, 0.150f, 0.100f),
+        new PillButton("LB", -1, BTN_LEFT_SHOULDER, 0.020f, 0.115f, 0.150f, 0.185f),
+        new PillButton("RT", AXIS_TRIGGER_R, -1, 0.850f, 0.030f, 0.980f, 0.100f),
+        new PillButton("RB", -1, BTN_RIGHT_SHOULDER, 0.850f, 0.115f, 0.980f, 0.185f),
+        new PillButton("START", -1, BTN_START, 0.400f, 0.030f, 0.490f, 0.100f),
+        new PillButton("MENU", TOGGLE_DEBUG_OVERLAY, -1, 0.510f, 0.030f, 0.600f, 0.100f),
+        new PillButton("HIDE", HIDE_KEY, -1, 0.620f, 0.030f, 0.710f, 0.100f),
+    };
+
+    private ControlButton[] face = GAMECUBE_FACE;
+    private PillButton[] pills = GAMECUBE_PILLS;
+    private boolean twinStickMode;
 
     private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, TouchTarget> targets = new HashMap<>();
-    private final Map<Integer, Integer> heldKeys = new HashMap<>();
+    private final Map<Integer, Integer> held = new HashMap<>();
     private final RectF hideBounds = new RectF();
     private static native boolean nativeDebugOverlayVisible();
+    private static native boolean nativeTwinStick();
     private static native void nativeToggleDebugOverlay();
+    private static native void nativeVirtualButton(int button, boolean down);
+    private static native void nativeVirtualAxis(int axis, float value);
     private int leftPointer = -1;
     private int rightPointer = -1;
     private boolean hidden;
@@ -83,17 +160,33 @@ final class TouchControlsView extends View {
 
         float width = getWidth();
         float height = getHeight();
-        float stickRadius = height * 0.16f;
-        drawStick(canvas, "MOVE", width * 0.18f, height * 0.73f, stickRadius, leftPointer);
-        drawStick(canvas, "LOOK", width * 0.58f, height * 0.73f, stickRadius, rightPointer);
+        // The layout follows the twin-stick setting, which the player can change
+        // mid-session, so re-check it every draw.
+        if (nativeTwinStick() != twinStickMode) {
+            twinStickMode = !twinStickMode;
+            face = twinStickMode ? XBOX_FACE : GAMECUBE_FACE;
+            pills = twinStickMode ? XBOX_PILLS : GAMECUBE_PILLS;
+        }
+        for (PillButton pill : pills) {
+            if (pill.id() == HIDE_KEY) {
+                hideBounds.set(pill.left * width, pill.top * height,
+                               pill.right * width, pill.bottom * height);
+            }
+        }
+        drawStick(canvas, width * STICK_LEFT_X, height * STICK_Y, height * STICK_RADIUS,
+                  leftPointer);
+        drawStick(canvas, width * STICK_RIGHT_X, height * STICK_Y, height * STICK_RADIUS,
+                  rightPointer);
 
-        for (ControlButton button : BUTTONS) {
+        for (PillButton pill : pills) {
+            drawPillButton(canvas, pill, width, height);
+        }
+        for (ControlButton button : face) {
             drawButton(canvas, button, width, height);
         }
-
-        hideBounds.set(width - dp(94), dp(10), width - dp(10), dp(50));
-        drawPill(canvas, "HIDE", hideBounds.left, hideBounds.top,
-                 hideBounds.right, hideBounds.bottom, false);
+        for (ControlButton button : DPAD) {
+            drawButton(canvas, button, width, height);
+        }
     }
 
     @Override
@@ -152,7 +245,7 @@ final class TouchControlsView extends View {
             releaseTarget(target);
         }
         targets.clear();
-        heldKeys.clear();
+        held.clear();
         leftPointer = -1;
         rightPointer = -1;
         invalidate();
@@ -161,14 +254,29 @@ final class TouchControlsView extends View {
     private void assignPointer(int pointerId, float x, float y) {
         float width = getWidth();
         float height = getHeight();
-        for (ControlButton button : BUTTONS) {
-            float radius = button.radius * height;
-            float dx = x - button.x * width;
-            float dy = y - button.y * height;
-            if (dx * dx + dy * dy <= radius * radius) {
-                TouchTarget target = new TouchTarget(BUTTON, button.keyCode);
-                targets.put(pointerId, target);
-                pressKey(button.keyCode);
+        for (PillButton pill : pills) {
+            if (x >= pill.left * width && x <= pill.right * width &&
+                y >= pill.top * height && y <= pill.bottom * height) {
+                if (pill.id() == HIDE_KEY) {
+                    targets.put(pointerId, new TouchTarget(HIDE, 0));
+                    return;
+                }
+                targets.put(pointerId, new TouchTarget(BUTTON, pill.id()));
+                pressControl(pill.id());
+                return;
+            }
+        }
+        for (ControlButton button : face) {
+            if (hitCircle(button, x, y, width, height)) {
+                targets.put(pointerId, new TouchTarget(BUTTON, button.button));
+                pressControl(button.button);
+                return;
+            }
+        }
+        for (ControlButton button : DPAD) {
+            if (hitCircle(button, x, y, width, height)) {
+                targets.put(pointerId, new TouchTarget(BUTTON, button.button));
+                pressControl(button.button);
                 return;
             }
         }
@@ -190,26 +298,25 @@ final class TouchControlsView extends View {
     private void updateStick(TouchTarget target, float x, float y) {
         target.x = x;
         target.y = y;
-        float centerX = getWidth() * (target.type == LEFT_STICK ? 0.18f : 0.58f);
-        float centerY = getHeight() * 0.73f;
-        float threshold = getHeight() * 0.045f;
-        int[] keys = target.type == LEFT_STICK ? LEFT_KEYS : RIGHT_KEYS;
-        setTargetKey(target, 0, keys[0], x < centerX - threshold);
-        setTargetKey(target, 1, keys[1], x > centerX + threshold);
-        setTargetKey(target, 2, keys[2], y < centerY - threshold);
-        setTargetKey(target, 3, keys[3], y > centerY + threshold);
-    }
-
-    private void setTargetKey(TouchTarget target, int index, int keyCode, boolean down) {
-        if (target.directions[index] == down) {
-            return;
+        final boolean left = target.type == LEFT_STICK;
+        float centreX = getWidth() * (left ? STICK_LEFT_X : STICK_RIGHT_X);
+        float centreY = getHeight() * STICK_Y;
+        float radius = getHeight() * STICK_RADIUS;
+        // Screen y grows downward, SDL's stick +Y is up, hence the negated y.
+        float dx = (x - centreX) / radius;
+        float dy = (centreY - y) / radius;
+        float length = (float) Math.hypot(dx, dy);
+        if (length > 1f) {
+            dx /= length;
+            dy /= length;
+            length = 1f;
         }
-        target.directions[index] = down;
-        if (down) {
-            pressKey(keyCode);
-        } else {
-            releaseKey(keyCode);
+        if (length < STICK_DEAD_ZONE) {
+            dx = 0f;
+            dy = 0f;
         }
+        nativeVirtualAxis(left ? AXIS_LEFTX : AXIS_RIGHTX, dx);
+        nativeVirtualAxis(left ? AXIS_LEFTY : AXIS_RIGHTY, dy);
     }
 
     private void releasePointer(int pointerId) {
@@ -236,24 +343,20 @@ final class TouchControlsView extends View {
             return;
         }
         if (target.type == BUTTON) {
-            releaseKey(target.keyCode);
+            releaseControl(target.id);
             return;
         }
-        int[] keys = target.type == LEFT_STICK ? LEFT_KEYS : RIGHT_KEYS;
-        for (int i = 0; i < target.directions.length; ++i) {
-            if (target.directions[i]) {
-                target.directions[i] = false;
-                releaseKey(keys[i]);
-            }
-        }
+        final boolean left = target.type == LEFT_STICK;
+        nativeVirtualAxis(left ? AXIS_LEFTX : AXIS_RIGHTX, 0f);
+        nativeVirtualAxis(left ? AXIS_LEFTY : AXIS_RIGHTY, 0f);
     }
 
-    private void pressKey(int keyCode) {
-        if (keyCode == TOGGLE_DEBUG_OVERLAY) {
+    private void pressControl(int id) {
+        if (id == TOGGLE_DEBUG_OVERLAY) {
             // Drive the overlay directly; polling a synthetic F1 key press is
             // unreliable and depends on SDL having keyboard focus.
-            if (!heldKeys.containsKey(keyCode)) {
-                heldKeys.put(keyCode, 1);
+            if (!held.containsKey(id)) {
+                held.put(id, 1);
                 nativeToggleDebugOverlay();
                 // The toggle lands on the next game frame; redraw after it so
                 // the controls get out of the overlay's way.
@@ -266,27 +369,35 @@ final class TouchControlsView extends View {
             }
             return;
         }
-        int count = heldKeys.containsKey(keyCode) ? heldKeys.get(keyCode) : 0;
+        int count = held.containsKey(id) ? held.get(id) : 0;
         if (count == 0) {
-            SDLActivity.onNativeKeyDown(keyCode);
+            if (id >= AXIS_ID_BASE) {
+                nativeVirtualAxis(id - AXIS_ID_BASE, 1f);
+            } else {
+                nativeVirtualButton(id, true);
+            }
         }
-        heldKeys.put(keyCode, count + 1);
+        held.put(id, count + 1);
     }
 
-    private void releaseKey(int keyCode) {
-        Integer current = heldKeys.get(keyCode);
+    private void releaseControl(int id) {
+        Integer current = held.get(id);
         if (current == null) {
             return;
         }
-        if (keyCode == TOGGLE_DEBUG_OVERLAY) {
-            heldKeys.remove(keyCode);
+        if (id == TOGGLE_DEBUG_OVERLAY) {
+            held.remove(id);
             return;
         }
         if (current <= 1) {
-            heldKeys.remove(keyCode);
-            SDLActivity.onNativeKeyUp(keyCode);
+            held.remove(id);
+            if (id >= AXIS_ID_BASE) {
+                nativeVirtualAxis(id - AXIS_ID_BASE, 0f);
+            } else {
+                nativeVirtualButton(id, false);
+            }
         } else {
-            heldKeys.put(keyCode, current - 1);
+            held.put(id, current - 1);
         }
     }
 
@@ -308,8 +419,7 @@ final class TouchControlsView extends View {
         invalidate();
     }
 
-    private void drawStick(Canvas canvas, String label, float x, float y,
-                           float radius, int pointerId) {
+    private void drawStick(Canvas canvas, float x, float y, float radius, int pointerId) {
         boolean active = pointerId != -1;
         fillPaint.setColor(active ? 0x8848C8E8 : 0x66081218);
         strokePaint.setColor(active ? 0xFFE1F8FF : 0xAAFFFFFF);
@@ -331,14 +441,36 @@ final class TouchControlsView extends View {
             knobY += dy;
         }
         canvas.drawCircle(knobX, knobY, radius * 0.42f, strokePaint);
-        drawLabel(canvas, label, x, y + radius + dp(18), dp(13));
+    }
+
+    private boolean hitCircle(ControlButton button, float x, float y, float width, float height) {
+        float radius = button.radius * height;
+        float dx = x - button.x * width;
+        float dy = y - button.y * height;
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    private void drawPillButton(Canvas canvas, PillButton pill, float width, float height) {
+        float left = pill.left * width;
+        float top = pill.top * height;
+        float right = pill.right * width;
+        float bottom = pill.bottom * height;
+        boolean active = held.containsKey(pill.id());
+        fillPaint.setColor(active ? 0xCC48C8E8 : 0x99081218);
+        strokePaint.setColor(active ? 0xFFE1F8FF : 0xCCFFFFFF);
+        RectF bounds = new RectF(left, top, right, bottom);
+        float radius = Math.min(bounds.width(), bounds.height()) * 0.28f;
+        canvas.drawRoundRect(bounds, radius, radius, fillPaint);
+        canvas.drawRoundRect(bounds, radius, radius, strokePaint);
+        drawCenteredLabel(canvas, pill.label, bounds.centerX(), bounds.centerY(),
+                          pill.label.length() > 2 ? dp(11) : dp(13));
     }
 
     private void drawButton(Canvas canvas, ControlButton button, float width, float height) {
         float x = button.x * width;
         float y = button.y * height;
         float radius = button.radius * height;
-        boolean active = heldKeys.containsKey(button.keyCode);
+        boolean active = held.containsKey(button.button);
         fillPaint.setColor(active ? 0xCC48C8E8 : 0x77081218);
         strokePaint.setColor(active ? 0xFFE1F8FF : 0xBBFFFFFF);
         canvas.drawCircle(x, y, radius, fillPaint);
@@ -358,11 +490,6 @@ final class TouchControlsView extends View {
         drawCenteredLabel(canvas, label, bounds.centerX(), bounds.centerY(), dp(11));
     }
 
-    private void drawLabel(Canvas canvas, String label, float x, float y, float size) {
-        textPaint.setTextSize(size);
-        canvas.drawText(label, x, y, textPaint);
-    }
-
     private void drawCenteredLabel(Canvas canvas, String label, float x, float y, float size) {
         textPaint.setTextSize(size);
         canvas.drawText(label, x, y - (textPaint.ascent() + textPaint.descent()) / 2, textPaint);
@@ -374,30 +501,56 @@ final class TouchControlsView extends View {
 
     private static final class ControlButton {
         final String label;
-        final int keyCode;
+        final int button;
         final float x;
         final float y;
         final float radius;
 
-        ControlButton(String label, int keyCode, float x, float y, float radius) {
+        ControlButton(String label, int button, float x, float y, float radius) {
             this.label = label;
-            this.keyCode = keyCode;
+            this.button = button;
             this.x = x;
             this.y = y;
             this.radius = radius;
         }
     }
 
+    private static final class PillButton {
+        final String label;
+        final int axis;
+        final int button;
+        final float left;
+        final float top;
+        final float right;
+        final float bottom;
+
+        PillButton(String label, int axis, int button, float left, float top, float right,
+                   float bottom) {
+            this.label = label;
+            this.axis = axis;
+            this.button = button;
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+        }
+
+        // One identity for the press map and the held-highlight, whether this is
+        // a button or an analog trigger sent as an axis.
+        int id() {
+            return axis >= 0 ? AXIS_ID_BASE + axis : button;
+        }
+    }
+
     private static final class TouchTarget {
         final int type;
-        final int keyCode;
-        final boolean[] directions = new boolean[4];
+        final int id;
         float x;
         float y;
 
-        TouchTarget(int type, int keyCode) {
+        TouchTarget(int type, int id) {
             this.type = type;
-            this.keyCode = keyCode;
+            this.id = id;
         }
     }
 }
