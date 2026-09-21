@@ -315,10 +315,20 @@ bool begin_frame() noexcept {
   {
     const bool invalidated = window::consume_surface_invalidated();
     if (!window::is_presentable() || (invalidated && webgpu::surface_window_changed())) {
+      static int sNotPresentable = 0;
+      if (sNotPresentable++ < 3) {
+        Log.warn("begin_frame: not presentable - surfaceReady={} backgrounded={} invalidated={}",
+                 window::is_surface_ready(), window::is_backgrounded(), invalidated);
+      }
       webgpu::release_surface();
       return false;
     }
     if (window::is_paused()) {
+      static int sPaused = 0;
+      if (sPaused++ < 3) {
+        Log.warn("begin_frame: paused - surfaceReady={} backgrounded={}", window::is_surface_ready(),
+                 window::is_backgrounded());
+      }
       return false;
     }
     if (!g_surface) {

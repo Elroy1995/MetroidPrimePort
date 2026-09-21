@@ -20,6 +20,7 @@ final class TouchControlsView extends View {
     private static final int RIGHT_STICK = 2;
     private static final int BUTTON = 3;
     private static final int HIDE = 4;
+    private static final int TOGGLE_DEBUG_OVERLAY = -1;
 
     private static final int[] LEFT_KEYS = {
         KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_D, KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_S
@@ -37,7 +38,7 @@ final class TouchControlsView extends View {
         new ControlButton("R", KeyEvent.KEYCODE_E, 0.76f, 0.10f, 0.065f),
         new ControlButton("Z", KeyEvent.KEYCODE_F, 0.86f, 0.16f, 0.052f),
         new ControlButton("START", KeyEvent.KEYCODE_ENTER, 0.50f, 0.11f, 0.050f),
-        new ControlButton("MENU", KeyEvent.KEYCODE_F1, 0.64f, 0.11f, 0.050f),
+        new ControlButton("MENU", TOGGLE_DEBUG_OVERLAY, 0.64f, 0.11f, 0.050f),
         new ControlButton("UP", KeyEvent.KEYCODE_DPAD_UP, 0.08f, 0.25f, 0.043f),
         new ControlButton("DOWN", KeyEvent.KEYCODE_DPAD_DOWN, 0.08f, 0.41f, 0.043f),
         new ControlButton("LEFT", KeyEvent.KEYCODE_DPAD_LEFT, 0.04f, 0.33f, 0.043f),
@@ -51,6 +52,7 @@ final class TouchControlsView extends View {
     private final Map<Integer, Integer> heldKeys = new HashMap<>();
     private final RectF hideBounds = new RectF();
     private static native boolean nativeDebugOverlayVisible();
+    private static native void nativeToggleDebugOverlay();
     private int leftPointer = -1;
     private int rightPointer = -1;
     private boolean hidden;
@@ -247,6 +249,23 @@ final class TouchControlsView extends View {
     }
 
     private void pressKey(int keyCode) {
+        if (keyCode == TOGGLE_DEBUG_OVERLAY) {
+            // Drive the overlay directly; polling a synthetic F1 key press is
+            // unreliable and depends on SDL having keyboard focus.
+            if (!heldKeys.containsKey(keyCode)) {
+                heldKeys.put(keyCode, 1);
+                nativeToggleDebugOverlay();
+                // The toggle lands on the next game frame; redraw after it so
+                // the controls get out of the overlay's way.
+                postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        invalidate();
+                    }
+                }, 150);
+            }
+            return;
+        }
         int count = heldKeys.containsKey(keyCode) ? heldKeys.get(keyCode) : 0;
         if (count == 0) {
             SDLActivity.onNativeKeyDown(keyCode);
@@ -257,6 +276,10 @@ final class TouchControlsView extends View {
     private void releaseKey(int keyCode) {
         Integer current = heldKeys.get(keyCode);
         if (current == null) {
+            return;
+        }
+        if (keyCode == TOGGLE_DEBUG_OVERLAY) {
+            heldKeys.remove(keyCode);
             return;
         }
         if (current <= 1) {

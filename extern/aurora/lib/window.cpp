@@ -543,6 +543,10 @@ bool is_presentable() noexcept {
          g_surfaceReady.load(std::memory_order_acquire);
 }
 
+bool is_backgrounded() noexcept { return g_backgrounded.load(std::memory_order_acquire); }
+
+bool is_surface_ready() noexcept { return g_surfaceReady.load(std::memory_order_acquire); }
+
 void set_surface_ready(bool ready) noexcept {
   const bool wasReady = g_surfaceReady.exchange(ready, std::memory_order_acq_rel);
   time::internal::set_pause_reason(time::internal::PauseReason::Surface, !ready);

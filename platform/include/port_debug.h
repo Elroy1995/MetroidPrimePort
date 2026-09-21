@@ -131,9 +131,19 @@ void RequestReset();
 bool ConsumeResetRequest();
 
 bool Visible();
+// Writes the settings file now instead of waiting for the next overlay frame,
+// so a disc chosen during startup is remembered even if no frame is drawn yet.
+void SaveSettingsNow();
+// Thread-safe snapshot of the overlay's visibility, for the Android touch
+// controls. Unlike Visible() it performs no lazy initialization, so it is safe
+// to call from the UI thread.
+bool OverlayVisible();
 void Toggle();
-// Feeds the pad into ImGui's gamepad navigation and toggles the overlay with the
-// Back/Select button. Call once per frame before the frame is built.
+// Asks for the overlay to be toggled on the next frame. Safe to call from any
+// thread, unlike Toggle(), which touches ImGui state.
+void RequestToggle();
+// Feeds the pad into ImGui's gamepad navigation, applies any requested toggle,
+// and handles F1. Call once per frame before the frame is built.
 void UpdateControllerNav();
 
 // Builds the debug windows for the current ImGui frame. Call once per presented

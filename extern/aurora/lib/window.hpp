@@ -41,6 +41,8 @@ SDL_Renderer* get_sdl_renderer();
 const void* get_native_window_handle() noexcept;
 bool is_paused() noexcept;
 bool is_presentable() noexcept;
+bool is_backgrounded() noexcept;
+bool is_surface_ready() noexcept;
 bool consume_surface_invalidated() noexcept;
 void set_surface_ready(bool ready) noexcept;
 void set_title(const char* title);

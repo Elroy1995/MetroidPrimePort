@@ -25,6 +25,7 @@
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_scancode.h>
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 
@@ -33,6 +34,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -87,6 +89,10 @@ float sMouseFrameY = 0.f;
 bool sAiAudioEnabled = true;
 bool sMusyxAudioEnabled = true;
 bool sResetRequested = false;
+std::atomic< bool > sToggleRequested{false};
+// Mirrors sVisible for readers on other threads, so they never touch the lazy
+// initialization or the ImGui state owned by the game thread.
+std::atomic< bool > sOverlayVisible{false};
 bool sVisible = false;
 bool sSettingsDirty = false;
 bool sAudioSettingsApplied = false;
@@ -288,6 +294,16 @@ void SaveSettings() {
   file.flush();
   std::fprintf(stderr, "metroid_prime_port: saved settings to %s\n", path.c_str());
   sSettingsDirty = false;
+}
+
+bool SDLCALL debug_event_watch(void*, SDL_Event* event) {
+  // F1 toggles the overlay. Watch the event rather than polling the key state:
+  // a short tap can begin and end between two frames, so polling misses it.
+  if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat &&
+      event->key.scancode == SDL_SCANCODE_F1) {
+    PortDebug::RequestToggle();
+  }
+  return true;
 }
 
 void EnsureInitialized() {
@@ -695,48 +711,69 @@ bool Visible() {
   return sVisible;
 }
 
+bool OverlayVisible() { return sOverlayVisible.load(std::memory_order_acquire); }
+
+void SaveSettingsNow() {
+  EnsureInitialized();
+  SaveSettings();
+}
+
 // Phones report a density of roughly 3, which leaves ImGui's default 13px font
-// unreadably small, so scale the overlay to match the display once.
+// unreadably small, so scale the overlay to match the display. The scale is not
+// known on the first frame, so keep watching for it instead of latching once.
 void UpdateUiScale() {
   if (ImGui::GetCurrentContext() == nullptr) {
     return;
   }
-  static bool sApplied = false;
-  if (sApplied) {
+  static bool sInitialized = false;
+  static float sAppliedScale = 1.f;
+  static SDL_Window* sWindow = nullptr;
+  if (!sInitialized) {
+    sInitialized = true;
+    // The overlay has to size itself to the scaled font, so do not restore a
+    // window size remembered from a previous, smaller run.
+    ImGui::GetIO().IniFilename = nullptr;
+  }
+  if (sWindow == nullptr) {
+    int windowCount = 0;
+    if (SDL_Window** windows = SDL_GetWindows(&windowCount)) {
+      if (windowCount > 0) {
+        sWindow = windows[0];
+      }
+      SDL_free(windows);
+    }
+    if (sWindow == nullptr) {
+      return;
+    }
+  }
+  const float displayScale = SDL_GetWindowDisplayScale(sWindow);
+  const float uiScale = std::clamp(displayScale, 1.f, 4.f);
+  if (uiScale == sAppliedScale) {
     return;
   }
-  sApplied = true;
-  float displayScale = 1.f;
-  int windowCount = 0;
-  if (SDL_Window** windows = SDL_GetWindows(&windowCount)) {
-    if (windowCount > 0) {
-      const float scale = SDL_GetWindowDisplayScale(windows[0]);
-      if (scale > 0.f) {
-        displayScale = scale;
-      }
-    }
-    SDL_free(windows);
-  }
-  const float uiScale = std::clamp(displayScale, 1.f, 4.f);
-  if (uiScale > 1.f) {
-    ImGui::GetStyle().ScaleAllSizes(uiScale);
-    ImGui::GetIO().FontGlobalScale = uiScale;
-  }
+  const float ratio = uiScale / sAppliedScale;
+  sAppliedScale = uiScale;
+  ImGui::GetStyle().ScaleAllSizes(ratio);
+  ImGui::GetIO().FontGlobalScale *= ratio;
 }
+
+void RequestToggle() { sToggleRequested.store(true, std::memory_order_release); }
 
 void UpdateControllerNav() {
   EnsureInitialized();
+  // Registered here rather than in EnsureInitialized so the event system is only
+  // touched from the game thread; the Java visibility query can reach that
+  // initialization from the UI thread.
+  static bool sEventWatchRegistered = false;
+  if (!sEventWatchRegistered) {
+    sEventWatchRegistered = true;
+    SDL_AddEventWatch(debug_event_watch, nullptr);
+  }
   UpdateUiScale();
-  // F1 toggles the overlay as well. This has to run before the controller
-  // early-out below, because the touch controls send F1 and a device with no
-  // gamepad has no other way to open it.
-  static bool sF1Held = false;
-  const bool* keys = SDL_GetKeyboardState(nullptr);
-  const bool f1 = keys != nullptr && keys[SDL_SCANCODE_F1] != 0;
-  if (f1 && !sF1Held) {
+  if (sToggleRequested.exchange(false, std::memory_order_acq_rel)) {
     Toggle();
   }
-  sF1Held = f1;
+  sOverlayVisible.store(sVisible, std::memory_order_release);
 
   ImGuiIO& io = ImGui::GetIO();
   io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
@@ -1548,6 +1585,11 @@ void SetDiscPath(const char* path) {
 // belong to ImGui, so the Java side asks this and stops claiming them.
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_metroidprime_port_TouchControlsView_nativeDebugOverlayVisible(JNIEnv*, jclass) {
-  return PortDebug::Visible() ? JNI_TRUE : JNI_FALSE;
+  return PortDebug::OverlayVisible() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_metroidprime_port_TouchControlsView_nativeToggleDebugOverlay(JNIEnv*, jclass) {
+  PortDebug::RequestToggle();
 }
 #endif

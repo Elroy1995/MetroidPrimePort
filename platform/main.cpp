@@ -186,6 +186,9 @@ std::string AskForDiscImage() {
     }
     if (!chosen.empty()) {
         PortDebug::SetDiscPath(chosen.c_str());
+        // Persist immediately: the settings are otherwise only written from the
+        // overlay's draw path, which never runs if the game cannot frame.
+        PortDebug::SaveSettingsNow();
         std::fprintf(stderr, "metroid_prime_port: disc image set to %s\n", chosen.c_str());
     }
     return chosen;
