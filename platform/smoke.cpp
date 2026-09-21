@@ -188,6 +188,34 @@ void PortSmokeWorldTeleport(CStateManager& mgr) {
                mgr.World()->GetCurrentAreaId().Value());
 }
 
+// MP_SMOKE_STICK=1: hold the right stick and report the aim yaw change, to
+// verify twin-stick aiming (run with MP_TWIN_STICK=1).
+void PortSmokeStick(CStateManager& mgr) {
+  static const bool enabled = std::getenv("MP_SMOKE_STICK") != nullptr;
+  if (!enabled) return;
+  static unsigned sTicks = 0;
+  static float sStartYaw = 0.f;
+  static bool sDone = false;
+  if (sDone || mgr.GetGameState() != CStateManager::kGS_Running ||
+      !mgr.GetCameraManager()->IsInFPCamera() || mgr.GetCameraManager()->IsInCinematicCamera()) {
+    return;
+  }
+  ++sTicks;
+  if (sTicks == 120) {
+    sStartYaw = PortDebug::AimYaw();
+  }
+  if (sTicks >= 120 && sTicks < 240) {
+    PADStatus status{};
+    status.err = PAD_ERR_NONE;
+    status.substickX = 127;
+    PADSetVirtualStatus(0, &status);
+    return;
+  }
+  PADClearVirtualStatus(0);
+  sDone = true;
+  std::fprintf(stderr, "[stick-smoke] passed: yaw %.4f -> %.4f\n", sStartYaw, PortDebug::AimYaw());
+}
+
 void PortSmokeVisor(CStateManager& mgr) {  static const bool enabled = std::getenv("MP_SMOKE_VISOR") != nullptr;
   if (!enabled) return;
   static unsigned sTicks = 0;

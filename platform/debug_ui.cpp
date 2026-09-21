@@ -62,6 +62,8 @@ float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
 bool sHudWide = false;
 bool sMouseAim = false;
+bool sTwinStick = false;
+float sStickAimRate = 900.f;
 bool sMouseCaptured = false;
 bool sMouseGameplayActive = false;
 bool sMouseInvertX = false;
@@ -146,6 +148,13 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sHudWide = ParseBool(value);
   } else if (key == "mouse_aim") {
     sMouseAim = ParseBool(value);
+  } else if (key == "twin_stick") {
+    sTwinStick = ParseBool(value);
+  } else if (key == "stick_aim_rate") {
+    const float f = static_cast< float >(std::atof(value.c_str()));
+    if (std::isfinite(f) && f >= 50.f && f <= 4000.f) {
+      sStickAimRate = f;
+    }
   } else if (key == "mouse_invert_x") {
     sMouseInvertX = ParseBool(value);
   } else if (key == "mouse_invert_y") {
@@ -245,6 +254,8 @@ void SaveSettings() {
   file << "sim_rate=" << sSimRate << '\n';
   file << "sim_adaptive=" << (sSimAdaptive ? 1 : 0) << '\n';
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
+  file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
+  file << "stick_aim_rate=" << sStickAimRate << '\n';
   file << "mouse_invert_x=" << (sMouseInvertX ? 1 : 0) << '\n';
   file << "mouse_invert_y=" << (sMouseInvertY ? 1 : 0) << '\n';
   file << "mouse_buttons=" << (sMouseButtons ? 1 : 0) << '\n';
@@ -302,6 +313,9 @@ void EnsureInitialized() {
   }
   if (std::getenv("MP_MOUSE_AIM") != nullptr) {
     sMouseAim = true;
+  }
+  if (std::getenv("MP_TWIN_STICK") != nullptr) {
+    sTwinStick = true;
   }
   if (std::getenv("MP_MOUSE_INVERT_X") != nullptr) {
     sMouseInvertX = true;
@@ -489,6 +503,41 @@ void SetMouseAim(bool enabled) {
   EnsureInitialized();
   sMouseAim = enabled;
   ResetMouseAim();
+}
+
+bool TwinStick() {
+  EnsureInitialized();
+  return sTwinStick;
+}
+
+void SetTwinStick(bool enabled) {
+  EnsureInitialized();
+  sTwinStick = enabled;
+  MarkDirty();
+}
+
+float StickAimRate() {
+  EnsureInitialized();
+  return sStickAimRate;
+}
+
+void SetStickAimRate(float pixelsPerSecond) {
+  EnsureInitialized();
+  if (std::isfinite(pixelsPerSecond) && pixelsPerSecond >= 50.f && pixelsPerSecond <= 4000.f) {
+    sStickAimRate = pixelsPerSecond;
+    MarkDirty();
+  }
+}
+
+void AddStickAim(float x, float y, float dt) {
+  EnsureInitialized();
+  if (!sTwinStick || Visible() || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(dt) ||
+      dt <= 0.f) {
+    return;
+  }
+  // x right / y up; the aim state expects SDL-style right/down positive.
+  sMouseFrameX += x * sStickAimRate * dt;
+  sMouseFrameY -= y * sStickAimRate * dt;
 }
 
 void ResetMouseAim() {
@@ -734,6 +783,22 @@ void DrawInputTab() {
     SetMouseAim(mouseAim);
     MarkDirty();
   }
+  bool twinStick = sTwinStick;
+  if (ImGui::Checkbox("Twin stick (right stick aims)", &twinStick)) {
+    SetTwinStick(twinStick);
+    MarkDirty();
+  }
+  ImGui::BeginDisabled(!sTwinStick);
+  float stickRate = sStickAimRate;
+  if (ImGui::SliderFloat("Stick aim speed", &stickRate, 100.f, 3000.f, "%.0f px/s",
+                         ImGuiSliderFlags_Logarithmic)) {
+    SetStickAimRate(stickRate);
+  }
+  ImGui::EndDisabled();
+  ImGui::TextWrapped(
+      "Twin stick uses the right stick as a direct camera aim (the same path as "
+      "the mouse) and consumes it, so it no longer free-looks. Fire stays on "
+      "whatever is bound to A; remap it in the Controls tab.");
   if (ImGui::Checkbox("Invert mouse X", &sMouseInvertX)) {
     MarkDirty();
   }

@@ -109,6 +109,16 @@ void CDolphinController::ReadDevices() {
   }
   memcpy(x4_status, status, sizeof(status));
 
+  // Twin-stick: feed the right stick into the first-person aim and consume it,
+  // so it does not also drive the game's own free-look.
+  if (PortDebug::TwinStick() && x4_status[0].err == PAD_ERR_NONE) {
+    const float sx = static_cast< float >(x4_status[0].substickX) / 127.f;
+    const float sy = static_cast< float >(x4_status[0].substickY) / 127.f;
+    PortDebug::AddStickAim(sx, sy, PortDebug::TickPeriod());
+    x4_status[0].substickX = 0;
+    x4_status[0].substickY = 0;
+  }
+
   for (int i = 0; i < 4; ++i) {
     uint controller = (PAD_CHAN0_BIT >> i);
     if (x4_status[i].err != PAD_ERR_NOT_READY) {

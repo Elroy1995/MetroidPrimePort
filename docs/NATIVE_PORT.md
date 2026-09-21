@@ -90,6 +90,11 @@ override these.
   override the file for that run, and are written back into it if any setting is
   changed during that run.
 - `MP_ASPECT=4:3|16:9|window`; the legacy `MP_WIDESCREEN` selects 16:9.
+- `MP_TWIN_STICK=1` (Input tab, persisted as `twin_stick`): twin-stick aiming. The
+  right stick feeds the first-person aim through the same path as the mouse (so
+  the same sensitivity/invert apply, tuned by `stick_aim_rate`, default 900 px/s)
+  and is consumed, so it no longer drives the game's free-look. Fire stays on
+  whatever is bound to A; remap it in the Controls tab.
 - The overlay's **Controls** tab rebinds pad 1: click Bind, then press the input.
   "Keyboard & mouse" assigns a key or mouse button to each pad button and stick
   axis; "Controller" assigns a physical controller button or axis. Bindings are
@@ -252,6 +257,9 @@ size and object id.
 reports `[walk-smoke] passed: ticks=... dist=... maxFlatSpeed=... speed=.../s`.
 Run it with the same real duration at two simulation rates (for example 60 ticks
 at 60 Hz and 120 ticks at 120 Hz) to confirm ground movement stays real-time.
+
+`MP_SMOKE_STICK=1` holds the right stick and reports the aim yaw change, to
+verify twin-stick aiming (run with `MP_TWIN_STICK=1`).
 
 `MP_SMOKE_PAUSE=<ticks>` enters the pause screen after gameplay starts;
 `MP_SMOKE_MAP=<ticks>` additionally presses Z that many ticks later to open the

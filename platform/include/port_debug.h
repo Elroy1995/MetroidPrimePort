@@ -78,7 +78,17 @@ void SetHudWide(bool enabled);
 // Motion/buttons are accepted only while SDL owns relative capture.
 bool MouseAim();
 void SetMouseAim(bool enabled);
-void SetMouseCaptured(bool captured);
+// Twin-stick: the right stick aims the first-person camera directly (through the
+// same aim state as the mouse) and is consumed, so it no longer drives the
+// game's free-look. Works with or without mouse aim.
+bool TwinStick();
+void SetTwinStick(bool enabled);
+// Aim travel in pixels per second at full stick deflection (scaled by the mouse
+// sensitivity, so both share the same feel).
+float StickAimRate();
+void SetStickAimRate(float pixelsPerSecond);
+// Feeds a normalised right-stick vector (-1..1, x right, y up) for this tick.
+void AddStickAim(float x, float y, float dt);void SetMouseCaptured(bool captured);
 bool MouseCaptured();
 bool MouseGameplayActive();
 void SetMouseGameplayActive(bool active);

@@ -783,7 +783,7 @@ bool CPlayer::MouseControlsAllowed(const CStateManager& mgr) const {
   // scanned object, so free-look is unaffected.
   const bool inputState = mgr.GetGameState() == CStateManager::kGS_Running ||
                           mgr.GetGameState() == CStateManager::kGS_SoftPaused;
-  return PortDebug::MouseAim() && inputState &&
+  return (PortDebug::MouseAim() || PortDebug::TwinStick()) && inputState &&
          !GetDisableInput() && mgr.GetPlayerState()->IsAlive() &&
          x2f8_morphBallState == kMS_Unmorphed && x2f4_cameraState == kCS_FirstPerson &&
          cameras != nullptr && cameras->GetFirstPersonCamera() != nullptr && cameras->IsInFPCamera() &&
