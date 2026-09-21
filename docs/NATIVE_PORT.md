@@ -94,12 +94,14 @@ In-game button prompts are ordinary textures (`CFontImageDef` holds one texture
 per glyph), so they can be swapped the same way. To re-author them: dump the
 textures from a screen that shows the prompt, find the glyph by its size and
 contents, then write a replacement with the same stem into the device folder.
-`tools/make_prompt_glyphs.py <dir>` draws a starting set for the A and B prompts
-(xbox, playstation, switch, keyboard) into `<dir>/<device>/`; the keyboard set
-labels the keys the port binds by default. Two details matter: the icon must
-keep the game's inset (the glyph is only about 22px on screen, and a full-bleed
-circle reads as a square), and DDS is used rather than PNG because Aurora's DDS
-path preserves the texture's alpha.
+`tools/make_prompt_glyphs.py <dir>` builds a set for the A and B prompts (xbox,
+playstation, switch, keyboard) into `<dir>/<device>/`, compositing the CC0 icons
+vendored in `tools/prompt_icons/` (Kenney's Input Prompts pack); the keyboard
+set labels the keys the port binds by default. The build copies `textures/` next
+to the executable, so a built binary picks the replacements up without a manual
+copy. Two details matter: the icon must keep the game's inset (the glyph is only
+about 22px on screen, and a full-bleed icon reads as a square), and DDS is used
+rather than PNG because Aurora's DDS path preserves the texture's alpha.
 
 ### Controls and settings
 
