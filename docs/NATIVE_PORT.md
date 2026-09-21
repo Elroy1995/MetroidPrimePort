@@ -55,8 +55,12 @@ path. Preserve the accompanying dependency licenses/notices.
 ./build/native/metroid_prime_port "/path/to/Metroid Prime (USA) (v1.00).iso"
 ```
 
-Alternatively set `MP_DISC`. The disc must identify as **GM8E01, disc 0, revision
-0**; other revisions/regions are rejected. Nod/Aurora supports additional image
+Alternatively set `MP_DISC`, keep the image beside the executable, or let the
+port ask for it: when no disc is found it opens the platform's file dialog and
+remembers the answer as `disc_path` in the settings file. There is no prompt
+when the port has no window to show one on, as on a build runner. The disc must
+identify as **GM8E01, disc 0, revision 0**; other revisions/regions are
+rejected. Nod/Aurora supports additional image
 containers, but the same retail content is required.
 
 `metroid_prime_port --version` prints the source revision without initializing
