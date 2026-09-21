@@ -9,6 +9,7 @@
 
 #include "port_debug.h"
 #include "port_disc.h"
+#include "port_textures.h"
 
 #include "stdint.h"
 #include "stdio.h"
@@ -926,6 +927,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
       // Port: feed the pad into ImGui's gamepad navigation (and toggle the
       // overlay with Back/Select) before the frame is built.
       PortDebug::UpdateControllerNav();
+      // Port: swap the HD texture set if the active controller changed.
+      PortTextures::Poll();
       // Port: run ARAM transfer callbacks completed by Aurora's ARQ.
       ARQPoll();
       // Port: service the streamed-audio AI DMA callback on the main thread.

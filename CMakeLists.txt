@@ -68,6 +68,7 @@ add_executable(metroid_prime_port
     platform/disc.cpp
     platform/shims.cpp
     platform/sdk_stubs.cpp
+    platform/port_textures.cpp
     platform/ai_dma.cpp)
 add_custom_target(port_build_info
     COMMAND ${CMAKE_COMMAND}

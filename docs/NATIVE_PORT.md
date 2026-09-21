@@ -76,6 +76,20 @@ executable (or one level below it), and texture replacements are loaded from
 `<executable dir>/textures` when present. `MP_DISC` and `MP_TEXTURES` still
 override these.
 
+### HD texture replacements
+
+`MP_TEXTURES` (default `<executable dir>/textures`) points at a folder of
+Aurora-format replacements (`tex1_<w>x<h>_<texhash>[_<tluthash>]_<fmt>.dds` or
+`.png`). The folder may hold per-device subfolders — `xbox`, `playstation`,
+`switch`, `gamecube`, `standard`, `keyboard` — selected from the connected
+controller (keyboard when no pad is connected) so in-game button prompts match
+the pad in use. The set is swapped automatically when the active device changes,
+and `MP_TEXTURE_DEVICE` forces the name. A folder with no subfolders is used as a
+single device-agnostic pack; a folder that has device subfolders but not the one
+selected loads nothing rather than mixing packs. `MP_DUMP_TEXTURES=1` writes
+every source texture to `<cachePath>/texture_dumps` as DDS, for authoring
+replacements.
+
 ### Controls and settings
 
 - Keyboard defaults: WASD / IJKL for sticks, X/Z/C/V for A/B/X/Y, Return for

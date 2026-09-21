@@ -4,6 +4,7 @@
 
 #include "port_debug.h"
 #include "port_mouse.h"
+#include "port_textures.h"
 #include "port_build_info.h"
 
 #include "MetroidPrime/CHealthInfo.hpp"
@@ -814,6 +815,11 @@ void DrawRenderTab() {
     }
     ImGui::TextUnformatted("Scales the internal EFB; higher values use more GPU memory.");
   }
+
+  ImGui::Text("HD texture set: %s", PortTextures::DeviceName());
+  ImGui::TextWrapped(
+      "Selected from the connected controller (xbox, playstation, switch, "
+      "gamecube, standard, keyboard); set MP_TEXTURE_DEVICE to override.");
 }
 
 void DrawInputTab() {

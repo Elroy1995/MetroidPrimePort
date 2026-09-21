@@ -10,11 +10,11 @@
 #include <aurora/event.h>
 #include <aurora/main.h>
 #include <dolphin/gx.h>
-#include <aurora/texture.hpp>
 #include <dolphin/vi.h>
 #include <dolphin/dvd.h>
 
 #include "port_debug.h"
+#include "port_textures.h"
 #include "port_build_info.h"
 
 #include <SDL3/SDL_filesystem.h>
@@ -122,6 +122,10 @@ int main(int argc, char** argv) {
     // A 16:9 window when widescreen is requested; the game's render mode is
     // widened to match. Values are the default window size only.
     const bool widescreen = PortDebug::AspectMode() != PortDebug::kAspect_4_3;
+    // MP_DUMP_TEXTURES=1 writes every source texture to
+    // <cachePath>/texture_dumps as DDS, so replacement packs can be authored.
+    const char* dumpEnv = std::getenv("MP_DUMP_TEXTURES");
+    const bool dumpTextures = dumpEnv != nullptr && dumpEnv[0] != '\0' && std::strcmp(dumpEnv, "0") != 0;
     const AuroraConfig config = {
         .appName = "Metroid Prime",
         .userPath = std::getenv("MP_USER_PATH"),
@@ -129,6 +133,7 @@ int main(int argc, char** argv) {
         .resourcesPath = nullptr,
         .desiredBackend = BACKEND_AUTO,
         .vsync = false,
+        .allowTextureDumps = dumpTextures,
         // Keep the internal framebuffer at the game's logical size so its two
         // framebuffer allocations fit in MEM1; Aurora upscales to the window.
         .windowWidth = static_cast<uint32_t>(widescreen ? 854 : 640),
@@ -147,18 +152,14 @@ int main(int argc, char** argv) {
     AuroraSetViewportPolicy(AURORA_VIEWPORT_FIT);
 
     // Optional HD texture replacements, in Aurora's naming convention
-    // (tex1_<w>x<h>_<texhash>[_<tluthash>]_<format>.dds/.png). Loaded once;
-    // Aurora also accepts Dolphin format names such as CMPR and RGBA8.
-    static aurora::texture::ReplacementGroup sTextureReplacements;
+    // (tex1_<w>x<h>_<texhash>[_<tluthash>]_<format>.dds/.png); a per-device
+    // subfolder is selected from the connected controller. Aurora also accepts
+    // Dolphin format names such as CMPR and RGBA8.
     const char* textures = std::getenv("MP_TEXTURES");
     if (textures == nullptr || textures[0] == '\0') {
         textures = DefaultTexturesPath();
     }
-    if (textures != nullptr) {
-        sTextureReplacements = aurora::texture::load_replacement_directory(textures);
-        std::fprintf(stderr, "metroid_prime_port: loaded %zu texture replacements from %s\n",
-                     sTextureReplacements.registrations.size(), textures);
-    }
+    PortTextures::Initialize(textures);
 
     if (!aurora_dvd_open(discPath)) {
         std::fprintf(stderr, "metroid_prime_port: failed to open disc image: %s\n", discPath);
