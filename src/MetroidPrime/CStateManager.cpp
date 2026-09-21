@@ -179,7 +179,7 @@ CStateManager::CStateManager(const rstl::ncrc_ptr< CScriptMailbox >& mailbox,
 , x8cc_nextAreaId(0)
 , x8d0_prevAreaId(kInvalidAreaId)
 , x8d4_inputFrameIdx(0)
-, x8d8_updateFrameIdx(0)
+, x8d8_updateFrameIdx(0.f)
 , x8dc_objectDrawToken(0)
 
 , x8f0_shadowTex(gpSimplePool->GetObj("DefaultShadow"))
@@ -1090,7 +1090,7 @@ void CStateManager::Update(float dt) {
   CElementGen::SetGlobalSeed(static_cast< ushort >(x8d8_updateFrameIdx));
   CParticleElectric::SetGlobalSeed(static_cast< ushort >(x8d8_updateFrameIdx));
   CDecal::SetGlobalSeed(static_cast< ushort >(x8d8_updateFrameIdx));
-  CProjectileWeapon::SetGlobalSeed(x8d8_updateFrameIdx);
+  CProjectileWeapon::SetGlobalSeed(static_cast< uint >(x8d8_updateFrameIdx));
 
   xf14_curTimeMod900 += dt;
   if (xf14_curTimeMod900 > 900.f) {
@@ -1274,7 +1274,9 @@ void CStateManager::Update(float dt) {
   x850_world->TravelToArea(x8cc_nextAreaId, *this, CWorld::kATT_LoadAdjacent);
 
   ClearGraveyard();
-  ++x8d8_updateFrameIdx;
+  // Advance the randomness index in 60 Hz frame units so the same real time
+  // yields the same particle/projectile seeds at any simulation rate.
+  x8d8_updateFrameIdx += PortDebug::TickPeriod() * 60.f;
 }
 
 void CStateManager::ProcessInput(const CFinalInput& input) {

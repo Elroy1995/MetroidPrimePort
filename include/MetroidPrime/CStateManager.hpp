@@ -242,7 +242,7 @@ public:
   CRandom16* Random() const { return x900_random; }
   rstl::list< TUniqueId >& ActiveParasites() { return xf54_activeParasites; }
   void SetRandomAvailable(bool available) { x900_random = available ? &x8fc_random : nullptr; }
-  uint GetUpdateFrameIndex() const { return x8d8_updateFrameIdx; }
+  uint GetUpdateFrameIndex() const { return static_cast< uint >(x8d8_updateFrameIdx); }
 
   CObjectList& ObjectListById(EGameObjectList id) { return *x808_objectLists[id]; }
   const CObjectList& GetObjectListById(EGameObjectList id) const { return *x808_objectLists[id]; }
@@ -416,7 +416,9 @@ private:
   TAreaId x8cc_nextAreaId;
   TAreaId x8d0_prevAreaId;
   uint x8d4_inputFrameIdx;
-  uint x8d8_updateFrameIdx;
+  // Port: accumulated 60 Hz frame units, not a tick count, so the seeds derived
+  // from it advance with real time rather than with the simulation rate.
+  float x8d8_updateFrameIdx;
   mutable uint x8dc_objectDrawToken;
 
   rstl::vector< CLight > x8e0_dynamicLights;

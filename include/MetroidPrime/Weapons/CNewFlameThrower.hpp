@@ -44,7 +44,8 @@ public:
 private:
   struct SSortedListEntry {
     float x0_position;
-    int x4_remainingTime;
+    // Port: 60 Hz frame units, counted down by real time (TickFrames()).
+    float x4_remainingTime;
     SSortedListEntry(float position, int remainingTime)
     : x0_position(position), x4_remainingTime(remainingTime) {}
     bool operator<(const SSortedListEntry& other) const { return x0_position < other.x0_position; }

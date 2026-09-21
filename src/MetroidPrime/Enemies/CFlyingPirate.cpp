@@ -23,6 +23,7 @@
 #include "MetroidPrime/Enemies/CSpacePirate.hpp"
 #include "MetroidPrime/Enemies/CTeamAiMgr.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
+#include "port_debug.h"
 #include "MetroidPrime/ScriptObjects/CScriptCoverPoint.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptWater.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptWaypoint.hpp"
@@ -1826,7 +1827,7 @@ void CFlyingPirate::Think(const float dt, CStateManager& mgr) {
                 const CSpacePirate* pirate = PATTERNED_CAST_TO(CSpacePirate, const_cast< CEntity* >(list[i]));
                 if (pirate != nullptr && pirate->GetEnableAim() &&
                     pirate->GetCurrentAreaId() == GetCurrentAreaId()) {
-                  x7e4_ += 0.2f;
+                  x7e4_ += 0.2f * PortDebug::TickFrames();
                 }
               }
             }

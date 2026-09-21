@@ -25,6 +25,7 @@
 #include "MetroidPrime/Enemies/CPatternedInfo.hpp"
 #include "MetroidPrime/Enemies/CTeamAiMgr.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
+#include "port_debug.h"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptAiJumpPoint.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptCoverPoint.hpp"
@@ -712,7 +713,7 @@ void CSpacePirate::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId sender, C
     x637_30_jumpVelSet = false;
     if (x635_27_shadowPirate && GetVelocityWR().GetZ() < -1.f) {
       x3e8_alphaDelta = 1.f;
-      x8a8_cloakDelayTimer += -0.05f * GetVelocityWR().GetZ();
+      x8a8_cloakDelayTimer += -0.05f * GetVelocityWR().GetZ() * PortDebug::TickFrames();
       x8a8_cloakDelayTimer = CMath::Clamp(0.f, x8a8_cloakDelayTimer, 1.f);
       x8bc_maxCloakAlpha = 0.5f;
       if (x400_25_alive) {
@@ -1114,7 +1115,7 @@ void CSpacePirate::KnockBack(const CVector3f& dir, CStateManager& mgr, const CDa
       if (x400_25_alive) {
         if (magnitude >= 4.f && !BodyCtrl()->IsFrozen()) {
           x3e8_alphaDelta = 1.f;
-          x8a8_cloakDelayTimer += 0.1f * magnitude;
+          x8a8_cloakDelayTimer += 0.1f * magnitude * PortDebug::TickFrames();
           x8a8_cloakDelayTimer = CMath::Clamp(0.f, x8a8_cloakDelayTimer, 1.f);
           x8bc_maxCloakAlpha = 0.5f;
           mgr.ActorModelParticles()->StartElectric(*this);
@@ -2800,7 +2801,7 @@ void CSpacePirate::UpdateAttacks(float dt, CStateManager& mgr) {
                   if (CSpacePirate* pirate = PATTERNED_CAST_TO(CSpacePirate, const_cast< CEntity* >(list[i]))) {
                     if (pirate != this && pirate->x637_25_enableAim &&
                         pirate->GetCurrentAreaId() == GetCurrentAreaId()) {
-                      x7bc_attackRemTime += 0.2f;
+                      x7bc_attackRemTime += 0.2f * PortDebug::TickFrames();
                     }
                   }
                 }

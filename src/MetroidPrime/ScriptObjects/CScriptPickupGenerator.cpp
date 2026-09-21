@@ -1,6 +1,7 @@
 #include "MetroidPrime/ScriptObjects/CScriptPickupGenerator.hpp"
 
 #include "MetroidPrime/CStateManager.hpp"
+#include "port_debug.h"
 #include "MetroidPrime/Enemies/CWallCrawlerSwarm.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptPickup.hpp"
@@ -155,7 +156,7 @@ void CScriptPickupGenerator::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId
   switch (msg) {
   case kSM_SetToZero:
     if (GetActive() && x40_frequency != 100.f) {
-      x44_delayTimer -= 1.f;
+      x44_delayTimer -= PortDebug::TickFrames();
       if (x44_delayTimer < 0.00001f) {
         ResetSpawnNothingCounter();
       } else {

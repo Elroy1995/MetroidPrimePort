@@ -6,6 +6,7 @@
 #include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/TCastTo.hpp"
+#include "port_debug.h"
 
 #include "Collision/CCollisionPrimitive.hpp"
 #include "Collision/CInternalCollisionStructure.hpp"
@@ -197,8 +198,11 @@ void CIceAttackProjectile::Think(float dt, CStateManager& mgr) {
     if (x178_moveTime > 3.f || hasWall || !hasFloor) {
       x190_finishedMoving = true;
     }
-    ++x180_frameCount;
-    if (x180_frameCount % 4 == 0 && hasFloor) {
+    // Trail spawn cadence is authored in 60 Hz frames; accumulate real time so
+    // the trail spacing does not double at a raised simulation rate.
+    x180_frameCount += PortDebug::TickFrames();
+    if (x180_frameCount >= 4.f && hasFloor) {
+      x180_frameCount -= 4.f;
       CreateTrailObject(mgr, floorResult.GetPlane().GetNormal(), dt);
     }
   }

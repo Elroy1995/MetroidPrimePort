@@ -1,5 +1,6 @@
 #include "MetroidPrime/Weapons/CNewFlameThrower.hpp"
 #include "MetroidPrime/Weapons/CWeaponAssetInfo.hpp"
+#include "port_debug.h"
 
 #include "Collision/CCollidableAABox.hpp"
 #include "Collision/CCollidableSphere.hpp"
@@ -619,8 +620,8 @@ void CNewFlameThrower::RemoveDeadEntriesFromSortedLists() {
     rstl::vector< SSortedListEntry >& entries = x380_flameContactPoints[i];
     int last = entries.size() - 1;
     for (int j = 0; j < entries.size(); ++j) {
-      --entries[j].x4_remainingTime;
-      if (entries[j].x4_remainingTime == 0) {
+      entries[j].x4_remainingTime -= PortDebug::TickFrames();
+      if (entries[j].x4_remainingTime <= 0.f) {
         entries[j] = entries[last];
         entries.pop_back();
         --last;

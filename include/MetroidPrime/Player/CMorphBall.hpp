@@ -334,7 +334,7 @@ private:
   CSfxHandle x1e30_spiderSfxHandle;
   ushort x1e34_rollSfx;
   ushort x1e36_landSfx;
-  uint x1e38_wallSparkFrameCountdown;
+  float x1e38_wallSparkFrameCountdown;
   EBallBoostState x1e3c_boostState;
   EBombJumpState x1e40_bombJumpState;
   float x1e44_damageEffect;

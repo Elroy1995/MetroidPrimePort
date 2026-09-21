@@ -18,6 +18,7 @@
 #include "MetroidPrime/Enemies/CTeamAiMgr.hpp"
 #include "MetroidPrime/Player/CMorphBall.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
+#include "port_debug.h"
 #include "MetroidPrime/Player/CPlayerGun.hpp"
 #include "MetroidPrime/TCastTo.hpp"
 #include "MetroidPrime/Weapons/CGameProjectile.hpp"
@@ -992,7 +993,7 @@ void CMetroidBeta::UpdateParticleEffects(float dt, CStateManager& mgr) {
     }
     x820_->SetParticleEmission(false);
     x820_->Update(dt);
-    x834_particlePhase += 0.17f;
+    x834_particlePhase += 0.17f * PortDebug::TickFrames();
     UpdateHitTargetParticleEffect(dt, mgr, target);
   }
 }

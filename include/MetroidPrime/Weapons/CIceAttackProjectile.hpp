@@ -77,7 +77,7 @@ private:
   float x174_turnSpeed;
   float x178_moveTime;
   float x17c_explosionTimer;
-  int x180_frameCount;
+  float x180_frameCount;
   CAssetId x184_steamTexture;
   ushort x188_freezeSfx;
   ushort x18a_explosionSfx;

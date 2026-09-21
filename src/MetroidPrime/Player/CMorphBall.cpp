@@ -1431,9 +1431,11 @@ void CMorphBall::UpdateEffects(float dt, CStateManager& mgr) {
     x1bc8_wakeEffectGens[x1c0c_wakeEffectIdx]->Update(dt);
   }
 
-  if (static_cast< int >(x1e38_wallSparkFrameCountdown) > 0) {
-    x1e38_wallSparkFrameCountdown -= 1;
-    if (static_cast< int >(x1e38_wallSparkFrameCountdown) <= 0) {
+  if (x1e38_wallSparkFrameCountdown > 0.f) {
+    // Authored in 60 Hz frames; count down real time so the effect keeps its
+    // duration at a raised simulation rate.
+    x1e38_wallSparkFrameCountdown -= PortDebug::TickFrames();
+    if (x1e38_wallSparkFrameCountdown <= 0.f) {
       x19cc_wallSparkGen->SetParticleEmission(false);
     }
   }

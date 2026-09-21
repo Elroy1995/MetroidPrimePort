@@ -209,6 +209,22 @@ Scripts / misc:
   (`angularStep` starts as `dt`), and the bomb-jump velocity factors (applied
   once per jump). A second targeted sweep over all of `src/` for the
   per-tick-physics-constant class found nothing else.
+- Randomness index `CStateManager::x8d8_updateFrameIdx` now accumulates 60 Hz
+  frame units (`TickFrames()`) instead of counting ticks, so the particle,
+  decal and projectile seeds (`SetGlobalSeed`) and `GetUpdateFrameIndex()` give
+  the same sequence for the same real time at any rate. It became a `float`.
+- Per-tick *rate* accumulators scaled by `TickFrames()`: `CSpacePirate`
+  cloak-delay (715, 1117) and `x7bc_attackRemTime` (2803), `CFlyingPirate`
+  `x7e4_` (1829), `CMetroidBeta` `x834_particlePhase` (995),
+  `CScriptPickupGenerator` `x44_delayTimer` (158).
+- Per-tick cadence/duration counters converted to 60 Hz frame units:
+  `CIceProjectile` trail spawn (`x180_frameCount`, now a `float`, was `% 4`),
+  `CMorphBall` wall-spark countdown (`x1e38_wallSparkFrameCountdown`, now a
+  `float`), `CNewFlameThrower` flame-contact lifetime
+  (`SSortedListEntry::x4_remainingTime`, now a `float`).
+- Confirmed *not* needing changes: `CPlayerGun::x30c_rapidFireShots` decays via
+  a dt-based 0.2 s timer; `CWallCrawlerSwarm::x368_boidGenCooldownTimer` is a
+  duration set to `1/rate` and decremented by dt.
 
 Verified: with `MP_SIM_RATE=120` the timing trace reports `simulation=120.0
 ticks/s` with the render at 60 FPS; with `MP_SIM_ADAPTIVE=1` and the cap on it
@@ -220,17 +236,29 @@ adaptive) so both the renderer and the tick run at the display rate.
 
 Known caveats:
 
-- Tick-indexed particle seeding (`x8d8_updateFrameIdx`) makes particle randomness
-  rate-dependent.
-- The scattered AI/HUD per-frame counters below still advance per tick.
-- Adaptive mode gives the game a variable `dt`, so physics results vary with the
-  frame time; the fixed rates keep a constant step.
+- Tick-indexed particle seeding is fixed (see above).
 - Open item: `CGroundMovement.cpp:765` applies
   `velocity *= 1.f - x14_waterLandingVelocityReduction` inside the collision
   sub-step loop. It is probably a one-time landing response, but if it re-applies
   every tick while skimming water it is rate-dependent; left unchanged because
   scaling a collision response by dt may over-correct. Verify against a real
   water surface before touching it.
+- Remaining per-tick counters, deliberately left as-is:
+  - Short debounces of a few frames (`CPlayer::x2b0_outOfWaterTicks` and
+    `xa2c_damageLoopSfxDelayTicks`, `CSpacePirate::x63c_frenzyFrames`,
+    `CMorphBall` spider-electric `x8_curFrame`/`x4_lifetime`): the timing error
+    is a few frames at a doubled rate, and converting them needs new fractional
+    state for no visible gain.
+  - `CWallCrawlerSwarm` boid `x7c_6_remainingLaunchNotOnSurfaceFrames` /
+    `x7c_24_framesNotOnSurface` are packed bitfields; changing them to time
+    units would disturb the layout, so they are left.
+  - Throttle counters (`CParasite`/`CSeedling` `x5d4_thinkCounter`,
+    `CSpacePirate`/`CFlyingPirate` `% 7` cadences, `CFishCloud::x118_thinkCounter`,
+    `CBallCamera::x478_shortMoveCount`): these exist to skip expensive work
+    between frames, so at a raised rate they simply run more often. That is
+    benign (slightly more responsive AI, a little more CPU), not a speed error.
+- Adaptive mode gives the game a variable `dt`, so physics results vary with the
+  frame time; the fixed rates keep a constant step.
 
 ## Conversion plan
 
