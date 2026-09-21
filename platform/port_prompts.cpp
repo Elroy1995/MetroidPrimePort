@@ -19,19 +19,35 @@
 #include <vector>
 
 namespace {
-// The prompts the port can re-icon, with the game action each one stands for.
-// The hash identifies the game's own texture, as it appears in a dump.
-struct PromptAction {
+// The prompt textures the port can re-icon. Each names the game action it
+// stands for, and the hash identifies the game's own texture as it appears in
+// a dump. One action usually has several, since each screen draws its own art.
+struct PromptKey {
   PADButton button;
-  const char* label;
   uint32_t width;
   uint32_t height;
   uint64_t hash;
   const char* format;
 };
+constexpr PromptKey kKeys[] = {
+    // Front end.
+    {PAD_BUTTON_A, 32, 32, 0xbb21e8755f36b2f0ull, "5"},
+    {PAD_BUTTON_B, 32, 32, 0xe6dbfd18d4666ee7ull, "5"},
+    // Pause / inventory.
+    {PAD_BUTTON_A, 32, 32, 0x281ae5aa517797edull, "5"},
+    {PAD_BUTTON_B, 32, 32, 0x178b7311fda3f949ull, "5"},
+};
+constexpr size_t kKeyCount = sizeof(kKeys) / sizeof(kKeys[0]);
+
+// The actions to resolve bindings for, resolved once per action rather than
+// once per texture.
+struct PromptAction {
+  PADButton button;
+  const char* label;
+};
 constexpr PromptAction kActions[] = {
-    {PAD_BUTTON_A, "A", 32, 32, 0xbb21e8755f36b2f0ull, "5"},
-    {PAD_BUTTON_B, "B", 32, 32, 0xe6dbfd18d4666ee7ull, "5"},
+    {PAD_BUTTON_A, "A"},
+    {PAD_BUTTON_B, "B"},
 };
 constexpr size_t kActionCount = sizeof(kActions) / sizeof(kActions[0]);
 
@@ -87,7 +103,7 @@ struct Registration {
   aurora::texture::ReplacementRegistration handle{};
   bool registered = false;
 };
-Registration sRegistrations[kActionCount];
+Registration sRegistrations[kKeyCount];
 std::string sBindingsDir;
 bool sEnabled = false;
 
@@ -146,20 +162,26 @@ void Apply(size_t index, const char* stem) {
   }
   reg.activeStem = stem != nullptr ? stem : "";
   if (stem == nullptr) {
-    std::fprintf(stderr, "metroid_prime_port: prompt %s uses the static icon\n", kActions[index].label);
     return;
   }
 
-  const PromptAction& action = kActions[index];
+  const PromptKey& key = kKeys[index];
   char keyName[80];
-  std::snprintf(keyName, sizeof(keyName), "tex1_%ux%u_%016llx_%s.dds", action.width, action.height,
-                static_cast<unsigned long long>(action.hash), action.format);
+  std::snprintf(keyName, sizeof(keyName), "tex1_%ux%u_%016llx_%s.dds", key.width, key.height,
+                static_cast<unsigned long long>(key.hash), key.format);
   reg.iconPath = (std::filesystem::path(sBindingsDir) / (std::string(stem) + ".dds")).string();
   reg.handle = aurora::texture::register_virtual_replacement(
       keyName, aurora::texture::VirtualFileSource{&ReadIconBytes, &reg.iconPath});
   reg.registered = reg.handle.id != 0;
-  std::fprintf(stderr, "metroid_prime_port: prompt %s shows %s%s\n", action.label, stem,
-               reg.registered ? "" : " (registration failed, static icon stays)");
+}
+
+const char* LabelForButton(PADButton button) {
+  for (const PromptAction& action : kActions) {
+    if (action.button == button) {
+      return action.label;
+    }
+  }
+  return "?";
 }
 } // namespace
 
@@ -184,16 +206,27 @@ void Poll() {
   }
   // A pad's own labels already match the static per-device set.
   const bool useBindings = std::strcmp(PortTextures::DeviceName(), "keyboard") == 0;
-  for (size_t i = 0; i < kActionCount; ++i) {
-    const char* stem = useBindings ? IconStemForButton(kActions[i].button) : nullptr;
-    const std::string& current = sRegistrations[i].activeStem;
-    if (stem == nullptr && current.empty()) {
-      continue;
+  for (const PromptAction& action : kActions) {
+    const char* stem = useBindings ? IconStemForButton(action.button) : nullptr;
+    size_t applied = 0;
+    for (size_t i = 0; i < kKeyCount; ++i) {
+      if (kKeys[i].button != action.button) {
+        continue;
+      }
+      const std::string& current = sRegistrations[i].activeStem;
+      if (stem == nullptr && current.empty()) {
+        continue;
+      }
+      if (stem != nullptr && stem == current) {
+        continue;
+      }
+      Apply(i, stem);
+      ++applied;
     }
-    if (stem != nullptr && stem == current) {
-      continue;
+    if (applied != 0) {
+      std::fprintf(stderr, "metroid_prime_port: prompt %s %s\n", LabelForButton(action.button),
+                   stem != nullptr ? stem : "(back to the static icon)");
     }
-    Apply(i, stem);
   }
 }
 } // namespace PortPrompts
