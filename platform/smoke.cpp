@@ -414,6 +414,21 @@ bool PortSmokeFrame(unsigned frame) {
       p = *end == ',' ? end + 1 : end;
     }
   }
+  // MP_SMOKE_FRONTEND=<frame>: tap Start every 300 frames from that frame so
+  // the front-end screens (and their button prompts) are reached without a
+  // player. Start alone leaves dialogs such as the save check on screen.
+  static const unsigned frontEndFrame = [] {
+    const char* value = std::getenv("MP_SMOKE_FRONTEND");
+    return value != nullptr ? static_cast<unsigned>(std::strtoul(value, nullptr, 10)) : 0;
+  }();
+  if (frontEndFrame != 0 && frame >= frontEndFrame) {
+    PADStatus status{};
+    status.err = PAD_ERR_NONE;
+    if ((frame - frontEndFrame) % 300 < 8) {
+      status.button = PAD_BUTTON_START;
+    }
+    PADSetVirtualStatus(0, &status);
+  }
   if (limit == 0) return false;
   static SDL_Window* window = nullptr;
   if (window == nullptr) {

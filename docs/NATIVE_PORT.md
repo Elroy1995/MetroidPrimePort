@@ -90,6 +90,17 @@ selected loads nothing rather than mixing packs. `MP_DUMP_TEXTURES=1` writes
 every source texture to `<cachePath>/texture_dumps` as DDS, for authoring
 replacements.
 
+In-game button prompts are ordinary textures (`CFontImageDef` holds one texture
+per glyph), so they can be swapped the same way. To re-author them: dump the
+textures from a screen that shows the prompt, find the glyph by its size and
+contents, then write a replacement with the same stem into the device folder.
+`tools/make_prompt_glyphs.py <dir>` draws a starting set for the A and B prompts
+(xbox, playstation, switch, keyboard) into `<dir>/<device>/`; the keyboard set
+labels the keys the port binds by default. Two details matter: the icon must
+keep the game's inset (the glyph is only about 22px on screen, and a full-bleed
+circle reads as a square), and DDS is used rather than PNG because Aurora's DDS
+path preserves the texture's alpha.
+
 ### Controls and settings
 
 - Keyboard defaults: WASD / IJKL for sticks, X/Z/C/V for A/B/X/Y, Return for
@@ -283,6 +294,9 @@ verify twin-stick aiming (run with `MP_TWIN_STICK=1`).
 `MP_SMOKE_PAUSE=<ticks>` enters the pause screen after gameplay starts;
 `MP_SMOKE_MAP=<ticks>` additionally presses Z that many ticks later to open the
 map screen. Combine with `MP_SMOKE_SHOT` to capture them.
+`MP_SMOKE_FRONTEND=<frame>` taps Start every 300 frames from that frame, so the
+front-end screens (title, save dialogs, main menu) are reached without a player;
+Start alone leaves dialogs on screen rather than dismissing them.
 
 For audio reports, `MP_AUDIO_STATS=1` logs MusyX's generated samples/second, queued
 audio, peak output and clipping. Nominal output is 32,000 stereo frames/second;
