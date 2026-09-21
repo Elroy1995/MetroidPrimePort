@@ -24,6 +24,12 @@ bool ConsumeTeleportRequest(int& areaId);
 void RequestWorldTeleport(uint32_t worldId, uint32_t areaAssetId);
 bool ConsumeWorldTeleportRequest(uint32_t& worldId, uint32_t& areaAssetId);
 
+// Disc image chosen on a previous launch, from the settings file. SetDiscPath
+// marks the settings dirty so the choice is written back out on exit.
+void LoadDiscPath();
+const char* DiscPath();
+void SetDiscPath(const char* path);
+
 // Fast iteration
 bool FastBoot();
 bool SkipCutscenes();

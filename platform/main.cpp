@@ -18,8 +18,12 @@
 #include "port_prompts.h"
 #include "port_build_info.h"
 
+#include <SDL3/SDL_dialog.h>
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_timer.h>
 
+#include <atomic>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -87,8 +91,52 @@ const char* ResolveDiscPath(int argc, char** argv) {
     if (const char* env = std::getenv("MP_DISC"); env != nullptr && env[0] != '\0') {
         return env;
     }
+    if (const char* saved = PortDebug::DiscPath();
+        saved != nullptr && std::filesystem::exists(saved)) {
+        return saved;
+    }
     static const std::string sFound = FindDiscNextToExecutable();
     return sFound.empty() ? nullptr : sFound.c_str();
+}
+
+// Asks for the disc image with the platform's file dialog and remembers the
+// choice. SDL delivers the result on another thread, so this pumps events until
+// it arrives; the callback also fires with an empty list if the dialog fails.
+std::string AskForDiscImage() {
+    static std::atomic< bool > answered{false};
+    static std::string chosen;
+    const SDL_DialogFileFilter filters[] = {
+        {"GameCube disc image", "iso;gcm;rvz;wbfs;ciso;nkit"},
+        {"All files", "*"},
+    };
+    int windowCount = 0;
+    SDL_Window** windows = SDL_GetWindows(&windowCount);
+    SDL_Window* window = windows != nullptr && windowCount > 0 ? windows[0] : nullptr;
+    std::fprintf(stderr, "metroid_prime_port: no disc image found; asking for one\n");
+    SDL_ShowOpenFileDialog(
+        [](void*, const char* const* files, int) {
+            if (files != nullptr && files[0] != nullptr) {
+                chosen = files[0];
+            }
+            answered.store(true);
+        },
+        nullptr, window, filters, 2, nullptr, false);
+    SDL_free(windows);
+    while (!answered.load()) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                std::fprintf(stderr, "metroid_prime_port: disc selection cancelled\n");
+                return {};
+            }
+        }
+        SDL_Delay(10);
+    }
+    if (!chosen.empty()) {
+        PortDebug::SetDiscPath(chosen.c_str());
+        std::fprintf(stderr, "metroid_prime_port: disc image set to %s\n", chosen.c_str());
+    }
+    return chosen;
 }
 
 // Default texture-replacement folder next to the executable.
@@ -112,14 +160,6 @@ int main(int argc, char** argv) {
         return 0;
     }
     std::fprintf(stderr, "metroid_prime_port: build %s\n", MP_BUILD_REVISION);
-    const char* discPath = ResolveDiscPath(argc, argv);
-    if (discPath == nullptr) {
-        std::fprintf(stderr,
-                     "metroid_prime_port: no disc image given.\n"
-                     "  usage: %s <path to Metroid Prime (USA) (v1.00).iso>\n"
-                     "  or set MP_DISC, or place the image next to the executable.\n", argv[0]);
-        return 1;
-    }
     // A 16:9 window when widescreen is requested; the game's render mode is
     // widened to match. Values are the default window size only.
     const bool widescreen = PortDebug::AspectMode() != PortDebug::kAspect_4_3;
@@ -163,6 +203,25 @@ int main(int argc, char** argv) {
     PortTextures::Initialize(textures);
     // Binding-aware prompt icons, served from <textures>/bindings.
     PortPrompts::Initialize(textures);
+
+    // Disc image: an explicit argument or MP_DISC, else the path saved on a
+    // previous launch, else a copy beside the executable, else ask for one.
+    PortDebug::LoadDiscPath();
+    std::string discImage;
+    if (const char* resolved = ResolveDiscPath(argc, argv); resolved != nullptr) {
+        discImage = resolved;
+    } else {
+        discImage = AskForDiscImage();
+    }
+    if (discImage.empty()) {
+        std::fprintf(stderr,
+                     "metroid_prime_port: no disc image given.\n"
+                     "  usage: %s <path to Metroid Prime (USA) (v1.00).iso>\n"
+                     "  or set MP_DISC, or place the image next to the executable.\n", argv[0]);
+        aurora_shutdown();
+        return 1;
+    }
+    const char* discPath = discImage.c_str();
 
     if (!aurora_dvd_open(discPath)) {
         std::fprintf(stderr, "metroid_prime_port: failed to open disc image: %s\n", discPath);

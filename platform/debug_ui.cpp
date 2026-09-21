@@ -89,6 +89,7 @@ bool sPresentationSettingsApplied = false;
 CStateManager* sStateManager = nullptr;
 int sPendingTeleport = -1;
 bool sHasWorldTeleport = false;
+std::string sDiscPath;
 uint32_t sWorldTeleportWorld = 0;
 uint32_t sWorldTeleportArea = 0;
 
@@ -133,6 +134,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sFrameLimitEnabled = ParseBool(value);
   } else if (key == "vsync") {
     sVsyncEnabled = ParseBool(value);
+  } else if (key == "disc_path") {
+    sDiscPath = value;
   } else if (key == "render_scale") {
     const float f = static_cast< float >(std::atof(value.c_str()));
     if (std::isfinite(f) && f >= 0.f && f <= 4.f) {
@@ -263,6 +266,9 @@ void SaveSettings() {
   file << "mouse_buttons=" << (sMouseButtons ? 1 : 0) << '\n';
   file << "mouse_crosshair=" << (sMouseCrosshair ? 1 : 0) << '\n';
   file << "mouse_sensitivity=" << sMouseSensitivity << '\n';
+  if (!sDiscPath.empty()) {
+    file << "disc_path=" << sDiscPath << '\n';
+  }
   file << "ai_audio=" << (sAiAudioEnabled ? 1 : 0) << '\n';
   file << "musyx_audio=" << (sMusyxAudioEnabled ? 1 : 0) << '\n';
   unsigned muted[64];
@@ -1459,6 +1465,33 @@ void DrawUI() {
   if (sSettingsDirty) {
     SaveSettings();
   }
+}
+
+void LoadDiscPath() {
+  const std::string path = SettingsFilePath();
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    return;
+  }
+  std::string line;
+  while (std::getline(file, line)) {
+    const size_t separator = line.find('=');
+    if (separator == std::string::npos || Trim(line.substr(0, separator)) != "disc_path") {
+      continue;
+    }
+    sDiscPath = Trim(line.substr(separator + 1));
+    std::fprintf(stderr, "metroid_prime_port: saved disc image %s\n", sDiscPath.c_str());
+    return;
+  }
+}
+
+const char* DiscPath() {
+  return sDiscPath.empty() ? nullptr : sDiscPath.c_str();
+}
+
+void SetDiscPath(const char* path) {
+  sDiscPath = path != nullptr ? path : "";
+  sSettingsDirty = true;
 }
 
 } // namespace PortDebug

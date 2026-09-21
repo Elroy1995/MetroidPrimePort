@@ -122,6 +122,15 @@ for checking this without going through the Controls tab, and
 `MP_FAST_BOOT=1 MP_SKIP_CUTSCENES=1 MP_SMOKE_PAUSE=<ticks>` reaches the pause
 screen quickly to see the result.
 
+### Distribution
+
+`tools/make_appimage.sh [build-dir] [output-dir]` packages the executable and
+its texture replacements as an AppImage, fetching appimagetool on first use.
+The disc image is deliberately not included, so the port asks for it with the
+platform's file dialog on first launch and remembers the answer as `disc_path`
+in the settings file. A path given as an argument or in `MP_DISC` still wins,
+then the saved path, then a copy beside the executable.
+
 ### Controls and settings
 
 - Keyboard defaults: WASD / IJKL for sticks, X/Z/C/V for A/B/X/Y, Return for
