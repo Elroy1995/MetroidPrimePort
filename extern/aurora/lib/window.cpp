@@ -55,6 +55,9 @@ std::atomic_bool g_surfaceReady = false;
 #else
 std::atomic_bool g_surfaceReady = true;
 #endif
+// Set when the platform surface is destroyed. The swapchain still refers to the
+// old native window and must be rebuilt before it can be configured again.
+std::atomic_bool g_surfaceInvalidated = false;
 bool g_lastPaused = false;
 bool g_gotFocus = false;
 
@@ -124,6 +127,14 @@ void resize_swapchain() noexcept {
     SDL_SetRenderScale(g_renderer, size.scale, size.scale);
   }
 #ifdef AURORA_ENABLE_GX
+  if (!is_presentable() || consume_surface_invalidated()) {
+    // The surface was destroyed since the swapchain was created, so configuring
+    // it would target a native window that no longer exists (and can take the
+    // whole device down). Drop it; the next frame rebuilds it against the new
+    // surface. This also matters when a blocking dialog outlives the surface.
+    webgpu::release_surface();
+    return;
+  }
   webgpu::resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height);
 #endif
 }
@@ -516,8 +527,15 @@ bool is_presentable() noexcept {
 }
 
 void set_surface_ready(bool ready) noexcept {
-  g_surfaceReady.store(ready, std::memory_order_release);
+  const bool wasReady = g_surfaceReady.exchange(ready, std::memory_order_acq_rel);
   time::internal::set_pause_reason(time::internal::PauseReason::Surface, !ready);
+  if (wasReady && !ready) {
+    g_surfaceInvalidated.store(true, std::memory_order_release);
+  }
+}
+
+bool consume_surface_invalidated() noexcept {
+  return g_surfaceInvalidated.exchange(false, std::memory_order_acq_rel);
 }
 
 SurfaceLock::SurfaceLock() noexcept {

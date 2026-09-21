@@ -40,6 +40,7 @@ SDL_Window* get_sdl_window();
 SDL_Renderer* get_sdl_renderer();
 bool is_paused() noexcept;
 bool is_presentable() noexcept;
+bool consume_surface_invalidated() noexcept;
 void set_surface_ready(bool ready) noexcept;
 void set_title(const char* title);
 void set_fullscreen(bool fullscreen);

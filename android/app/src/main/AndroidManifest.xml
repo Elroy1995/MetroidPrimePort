@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- SDL's Android haptics call Vibrator.cancel() unconditionally, which
+         throws without this and poisons the next JNI call. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <application
         android:allowBackup="false"
         android:hasFragileUserData="true"
