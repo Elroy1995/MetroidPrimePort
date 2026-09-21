@@ -98,6 +98,9 @@ override these.
 - The in-game pause and map screens (`FRME_PauseScreen`, `FRME_PauseScreenInstructions`,
   `FRME_MapScreen`) are aspect-matched like the HUD, so they keep their
   proportions and spread across a wide viewport instead of stretching.
+- The front end (`FRME_FrontEndPL` title/menu, `FRME_NewFileSelect`, the GBA
+  screens) is aspect-matched too, so the title screen is pillarboxed rather than
+  stretched.
 - `MP_MOUSE_AIM=1`, `MP_MOUSE_SENS=0.0035`: relative mouse aim. Motion is ignored
   while the overlay is visible or relative capture/focus is absent. Mouse mode
   uses immediate yaw/pitch with an approximately ±87° pitch range. Up moves aim

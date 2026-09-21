@@ -36,9 +36,9 @@ public:
   void Draw(const CGuiWidgetDrawParms& parms) const override;
   UCameraParms GetParms() const { return mCameraParms; }
   void SetParms(UCameraParms parms) { mCameraParms = parms; }
-  // In-game HUD cameras opt in so their projection tracks the widescreen render
-  // aspect instead of stretching. Front-end/menu cameras keep their authored
-  // aspect so their layouts (and 3D backgrounds) are unaffected.
+  // GUI cameras opt in so their projection tracks the widescreen render aspect
+  // instead of stretching. Set for the in-game HUD, the pause/map screens and
+  // the front end; anything left unset keeps its authored aspect.
   void SetAspectMatch(bool match) { xb9_aspectMatch = match; }
   // Widescreen HUD spread for this frame's widgets: 1.0 when inactive.
   float GetAspectSpread() const { return mSpread; }
