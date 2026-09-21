@@ -64,18 +64,20 @@ void PortSmokeAreaReload(CStateManager& mgr) {
       mgr.EnterPauseScreen();
     }
   }
-  // MP_SMOKE_MAP=<ticks after pausing>: press Z to open the map screen.
+  // MP_SMOKE_MAP=<ticks>: press Z to open the map screen. Z opens the map from
+  // gameplay; in the pause screen it does nothing.
   static const unsigned mapAfterTicks = [] {
     const char* value = std::getenv("MP_SMOKE_MAP");
     return value != nullptr ? static_cast<unsigned>(std::strtoul(value, nullptr, 10)) : 0;
   }();
-  if (pauseAfterTicks != 0 && sPauseTicks >= pauseAfterTicks && mapAfterTicks != 0) {
-    static unsigned sPostPauseTicks = 0;
-    if (sPostPauseTicks == mapAfterTicks) {
+  if (mapAfterTicks != 0 && mgr.GetGameState() == CStateManager::kGS_Running &&
+      mgr.GetCameraManager()->IsInFPCamera() &&
+      !mgr.GetCameraManager()->IsInCinematicCamera()) {
+    static unsigned sMapTicks = 0;
+    if (++sMapTicks == mapAfterTicks) {
       std::fputs("[smoke] pressing Z for the map screen\n", stderr);
     }
-    ++sPostPauseTicks;
-    if (sPostPauseTicks >= mapAfterTicks && sPostPauseTicks < mapAfterTicks + 20) {
+    if (sMapTicks >= mapAfterTicks && sMapTicks < mapAfterTicks + 20) {
       PADStatus status{};
       status.err = PAD_ERR_NONE;
       status.button = PAD_TRIGGER_Z;

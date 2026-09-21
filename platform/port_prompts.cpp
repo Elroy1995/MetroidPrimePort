@@ -38,6 +38,10 @@ constexpr PromptKey kKeys[] = {
     {PAD_BUTTON_A, 32, 32, 0x281ae5aa517797edull, "5"},
     {PAD_TRIGGER_L, 32, 32, 0x3f419d4a7ba3cff3ull, "5"},
     {PAD_TRIGGER_R, 32, 32, 0x178b7311fda3f949ull, "5"},
+    // Map screen.
+    {PAD_TRIGGER_L, 32, 32, 0x06ad76760dcad506ull, "5"},
+    {PAD_TRIGGER_R, 32, 32, 0x45ccec4d3cda3f1bull, "5"},
+    {PAD_TRIGGER_Z, 64, 32, 0x0f4cb495c960bcfaull, "14"},
 };
 constexpr size_t kKeyCount = sizeof(kKeys) / sizeof(kKeys[0]);
 
@@ -52,6 +56,7 @@ constexpr PromptAction kActions[] = {
     {PAD_BUTTON_B, "B"},
     {PAD_TRIGGER_L, "L"},
     {PAD_TRIGGER_R, "R"},
+    {PAD_TRIGGER_Z, "Z"},
 };
 constexpr size_t kActionCount = sizeof(kActions) / sizeof(kActions[0]);
 

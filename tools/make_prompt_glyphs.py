@@ -45,7 +45,8 @@ DEVICE_ICONS = {
     "switch": {"a": "switch_button_a.png", "b": "switch_button_b.png",
                "l": "switch_button_l.png", "r": "switch_button_r.png"},
     "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png",
-                 "l": "keyboard_q.png", "r": "keyboard_e.png"},
+                 "l": "keyboard_q.png", "r": "keyboard_e.png",
+                 "z": "keyboard_f.png"},
 }
 
 # PAD_BUTTON_* / PAD_TRIGGER_* to the action name used above.
@@ -54,6 +55,7 @@ ACTION_FOR_BUTTON = {
     "PAD_BUTTON_B": "b",
     "PAD_TRIGGER_L": "l",
     "PAD_TRIGGER_R": "r",
+    "PAD_TRIGGER_Z": "z",
 }
 
 
@@ -72,7 +74,7 @@ def read_prompt_keys():
     missing = sorted({k[0] for k in keys} - set(ACTION_FOR_BUTTON))
     if missing:
         raise SystemExit(f"no icon mapping for: {', '.join(missing)}")
-    return [(ACTION_FOR_BUTTON[button], w, h, hsh, fmt) for button, w, h, hsh, fmt in keys]
+    return [(ACTION_FOR_BUTTON[button], int(w), int(h), hsh, fmt) for button, w, h, hsh, fmt in keys]
 
 
 def texture_name(w, h, hsh, fmt):
@@ -114,11 +116,14 @@ def write_dds(img, path):
         f.write(header + pf + caps + img.tobytes())
 
 
-def make_icon(name):
+def make_icon(name, width=SIZE, height=SIZE):
+    """Scale the icon to the game's inset for a texture of this size."""
+    scale = min(width, height) / SIZE
+    size = max(1, int(round(ICON_SIZE * scale)))
     icon = Image.open(os.path.join(ICONS_DIR, name)).convert("RGBA")
-    icon = icon.resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
-    tile = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    tile.alpha_composite(icon, (INSET, INSET))
+    icon = icon.resize((size, size), Image.LANCZOS)
+    tile = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    tile.alpha_composite(icon, ((width - size) // 2, (height - size) // 2))
     return tile
 
 
@@ -128,7 +133,9 @@ def main():
         d = os.path.join(OUT, device)
         os.makedirs(d, exist_ok=True)
         for action, w, h, hsh, fmt in keys:
-            write_dds(make_icon(icons[action]), os.path.join(d, texture_name(w, h, hsh, fmt)))
+            if action not in icons:
+                continue  # this device has no icon for that action
+            write_dds(make_icon(icons[action], w, h), os.path.join(d, texture_name(w, h, hsh, fmt)))
         print(f"{device}: {len(keys)} textures -> {d}")
 
     bindings = os.path.join(OUT, "bindings")
