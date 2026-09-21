@@ -4,6 +4,8 @@
 #include "GuiSys/CGuiWidgetDrawParms.hpp"
 #include "Kyoto/Alloc/CMemory.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
+#include "Kyoto/Math/CRelAngle.hpp"
+#include <cmath>
 #include <Kyoto/Graphics/CGraphics.hpp>
 
 #include <Kyoto/Streams/CInputStream.hpp>
@@ -112,6 +114,27 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
       CTransform4f::Translate(parms.GetCameraOffset()) * GetWorldTransform();
   CGraphics::SetViewPointMatrix(mSpreadView);
   CGuiWidget::Draw(parms);
+}
+
+CTransform4f CGuiCamera::GetAspectSpreadTransform(const CVector3f& worldAnchor) const {
+  if (mSpread == 1.f) {
+    return CTransform4f::Identity();
+  }
+  const CTransform4f invView = mSpreadView.GetInverse();
+  const CVector3f eyePos = invView * worldAnchor;
+  if (!mSpreadAboutEye) {
+    return CTransform4f::Translate(
+        mSpreadView.Rotate(CVector3f((mSpread - 1.f) * (eyePos.GetX() - mSpreadCenterX), 0.f, 0.f)));
+  }
+  // Camera +Y is forward; +Z is screen-up. Keep the anchor's depth unchanged.
+  if (eyePos.GetY() <= 0.f) {
+    return CTransform4f::Identity();
+  }
+  const float yaw = std::atan2(eyePos.GetX(), eyePos.GetY());
+  const float delta = std::atan2(mSpread * eyePos.GetX(), eyePos.GetY()) - yaw;
+  const CVector3f offset((mSpread - 1.f) * eyePos.GetX(), 0.f, 0.f);
+  return mSpreadView * CTransform4f::Translate(eyePos + offset) *
+         CTransform4f::RotateZ(CRelAngle(-delta)) * CTransform4f::Translate(-eyePos) * invView;
 }
 
 CVector3f CGuiCamera::ConvertToScreenSpace(const CVector3f& point) const {

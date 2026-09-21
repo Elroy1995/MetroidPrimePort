@@ -10,10 +10,8 @@
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Graphics/CModel.hpp"
 #include "Kyoto/Input/CFinalInput.hpp"
-#include "Kyoto/Math/CRelAngle.hpp"
 #include "rstl/algorithm.hpp"
 
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -111,7 +109,6 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
   // Widescreen HUD: spread compact elements rigidly, but stretch screen-spanning
   // decoration about the view axis. Restore each transform after drawing.
   const float spread = x14_camera->GetAspectSpread();
-  const float spreadCenterX = x14_camera->GetAspectSpreadCenterX();
   // Perspective elements move in their own plane and turn in place to face the
   // eye, preserving their depth ordering. Orthographic elements only slide.
   const bool aboutEye = spread != 1.f && x14_camera->GetAspectSpreadAboutEye();
@@ -119,7 +116,7 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
       aboutEye ? x14_camera->GetAspectSpreadView() : CTransform4f::Identity();
   const CTransform4f invView = aboutEye ? spreadView.GetInverse() : CTransform4f::Identity();
   const CTransform4f stretch =
-      aboutEye ? invView * CTransform4f::Scale(spread, 1.f, 1.f) * spreadView
+      aboutEye ? spreadView * CTransform4f::Scale(spread, 1.f, 1.f) * invView
                : CTransform4f::Identity();
   const CGraphics::CProjectionState& projection = CGraphics::GetProjectionState();
   const float authoredQuarterWidthPerDepth =
@@ -143,12 +140,16 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
       widget->Draw(parms);
       continue;
     }
-    if (aboutEye && widget->GetParent() != nullptr) {
-      const CTransform4f world = widget->GetWorldTransform();
+    const CTransform4f world = widget->GetWorldTransform();
+    CVector3f anchor = world.GetTranslation();
+    if (aboutEye) {
       if (widget->GetWidgetTypeID() == 'MODL' && widget->GetIsFinishedLoading()) {
         const auto& token = static_cast< const CGuiModel* >(widget)->GetModel();
         const CModel* model = token ? token->GetObject() : nullptr;
         if (model) {
+          // Some icons have their position baked into vertices while their widget
+          // origin is at the frame centre (notably threat and missile icons).
+          anchor = world * model->GetBoundingBox().GetCenterPoint();
           // SetViewPointMatrix takes a camera-to-world transform; camera-local
           // +Y is forward (the graphics layer maps it to projection-space -Z).
           const CAABox bounds = model->GetBoundingBox().GetTransformedAABox(invView * world);
@@ -163,49 +164,16 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
               bounds.GetMaxPoint().GetX() > quarterWidth) {
             // This intentionally widens vertical strokes too, but leaves view Y
             // and depth untouched; compact widgets retain the rigid path below.
-            widget->SetO2WTransform(stretch * world);
-            widget->Draw(parms);
-            widget->SetO2WTransform(world);
+            widget->DrawWithWorldTransform(parms, stretch * world);
             continue;
           }
         }
       }
-      // spreadView is camera-to-world; camera +Y is forward and +Z is screen-up.
-      const CVector3f eyePos = invView * world.GetTranslation();
-      const float across = eyePos.GetX();
-      const float depth = eyePos.GetY();
-      if (depth <= 1.f) {
-        // At or behind the eye plane: no sensible tangent to spread.
-        widget->Draw(parms);
-        continue;
-      }
-      const float yaw = std::atan2(across, depth);
-      // Spreading in tangent space maps the authored frustum exactly onto the
-      // wider one, so an element at the edge lands at the edge.
-      const float delta = std::atan(std::tan(yaw) * spread) - yaw;
-      // Move the element across the screen inside its own plane, then turn it in
-      // place so it still faces the eye. Rotating each element about the eye
-      // instead swings it closer to the eye, and the widest elements swing
-      // closest, which reorders HUD depths - the visor ends up drawn over the
-      // elements it should sit behind. Doing this in eye space keeps the move on
-      // the camera's own axes no matter which way the player faces.
-      const float dx = (spread - 1.f) * across;
-      const CVector3f pivot = eyePos + CVector3f(dx, 0.f, 0.f);
-      const CTransform4f move = CTransform4f::Translate(CVector3f(dx, 0.f, 0.f));
-      // Positive RotateZ turns +Y toward -X, opposite atan2(across, depth).
-      // Negate delta to turn outward without rolling about the view direction.
-      const CTransform4f turn = CTransform4f::Translate(pivot) *
-                                CTransform4f::RotateZ(CRelAngle(-delta)) * CTransform4f::Translate(-pivot);
-      widget->SetO2WTransform(spreadView * turn * move * invView * world);
-      widget->Draw(parms);
-      widget->SetO2WTransform(world);
-    } else {
-      const float x = widget->GetWorldPosition().GetX();
-      const float dx = (spreadCenterX + (x - spreadCenterX) * spread) - x;
-      widget->MoveInWorld(CVector3f(dx, 0.f, 0.f));
-      widget->Draw(parms);
-      widget->MoveInWorld(CVector3f(-dx, 0.f, 0.f));
     }
+    // Never round-trip through SetO2WTransform: its quick parent inverse assumes
+    // an orthonormal basis. Even slightly non-unit HUD-lag rotations would then
+    // compound scale errors every draw, eventually shrinking the helmet lights.
+    widget->DrawWithWorldTransform(parms, x14_camera->GetAspectSpreadTransform(anchor) * world);
   }
   CGraphics::SetCullMode(kCM_Front);
 #if VERSION >= VERSION_GM8P_00 && VERSION != VERSION_GM8E_02

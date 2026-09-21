@@ -13,6 +13,8 @@ public:
   virtual ~CGuiObject();
   virtual void Update(float dt);
   virtual void Draw(const CGuiWidgetDrawParms& parms) const;
+  // Draw one widget without changing its local layout or propagating to siblings/children.
+  void DrawWithWorldTransform(const CGuiWidgetDrawParms& parms, const CTransform4f& xf);
   virtual void Initialize() = 0;
   void MoveInWorld(const CVector3f& offset);
   CVector3f GetWorldPosition() const;

@@ -44,6 +44,13 @@ void CGuiObject::MoveInWorld(const CVector3f& offset) {
   RecalculateTransforms();
 }
 
+void CGuiObject::DrawWithWorldTransform(const CGuiWidgetDrawParms& parms, const CTransform4f& xf) {
+  const CTransform4f saved = x34_worldXF;
+  x34_worldXF = xf;
+  Draw(parms);
+  x34_worldXF = saved;
+}
+
 CVector3f CGuiObject::GetWorldPosition() const { return x34_worldXF.GetTranslation(); }
 
 CVector3f CGuiObject::GetLocalPosition() const { return x4_localXF.GetTranslation(); }

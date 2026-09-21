@@ -352,10 +352,19 @@ void CInGameGuiManager::Draw(const CStateManager& mgr) const {
     CGuiCamera* camera = x34_samusHud->GetBaseHudFrame()->GetFrameCamera();
     camera->Draw(CGuiWidgetDrawParms(0.f, CVector3f::Zero()));
     CGraphics::SetDepthRange(0.f, 1.f / 512.f);
+    // The minimap and its depth mask are drawn outside CGuiFrame. Spread both
+    // with one rigid transform so the contents stay registered with the mask.
+    // Its interpolated anchor approaches the view axis on entering the map screen.
+    const CTransform4f mapSpread =
+        x38_autoMapper->IsFullyOutOfMiniMapState()
+            ? CTransform4f::Identity()
+            : camera->GetAspectSpreadTransform(x18c_mapCamXf.GetTranslation());
     x148_model_automapper->SetIsVisible(true);
-    x148_model_automapper->Draw(CGuiWidgetDrawParms(1.f, CVector3f::Zero()));
+    x148_model_automapper->DrawWithWorldTransform(
+        CGuiWidgetDrawParms(1.f, CVector3f::Zero()),
+        mapSpread * x148_model_automapper->GetWorldTransform());
     CGraphics::SetDepthWriteMode(true, kE_GEqual, false);
-    x38_autoMapper->Draw(mgr, CTransform4f::Translate(0.f, 0.02f, 0.f) * x18c_mapCamXf,
+    x38_autoMapper->Draw(mgr, mapSpread * CTransform4f::Translate(0.f, 0.02f, 0.f) * x18c_mapCamXf,
                          mapAlpha * (x1f4_visorStaticAlpha * t));
     CGraphics::SetDepthWriteMode(true, kE_LEqual, true);
     x148_model_automapper->SetIsVisible(false);
