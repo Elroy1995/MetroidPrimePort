@@ -131,6 +131,12 @@ platform's file dialog on first launch and remembers the answer as `disc_path`
 in the settings file. A path given as an argument or in `MP_DISC` still wins,
 then the saved path, then a copy beside the executable.
 
+The AppImage embeds the statically linked type-2 runtime, so libfuse2 is not
+needed on the target system; check it with `--appimage-version`. Where FUSE
+itself is unavailable, such as in a container, run it with
+`APPIMAGE_EXTRACT_AND_RUN=1` (or `--appimage-extract-and-run`), which unpacks to
+a temporary directory instead of mounting.
+
 ### Controls and settings
 
 - Keyboard defaults: WASD / IJKL for sticks, X/Z/C/V for A/B/X/Y, Return for
