@@ -44,6 +44,9 @@ void SetSimAdaptive(bool enabled);
 // (friction, damping) scale by this so they stay real-time at any rate.
 float TickPeriod();
 void SetTickPeriod(float dt);
+// The same step expressed in 60 Hz frames (1.0 at 60 Hz). Per-tick counters and
+// cadences add this instead of 1 so their real-time timing is unchanged.
+float TickFrames();
 
 // Presentation
 bool FrameLimitEnabled();

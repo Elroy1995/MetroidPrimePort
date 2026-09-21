@@ -388,6 +388,8 @@ void SetTickPeriod(float dt) {
   }
 }
 
+float TickFrames() { return sTickPeriod * 60.f; }
+
 bool FrameLimitEnabled() {
   EnsureInitialized();
   return sFrameLimitEnabled;
