@@ -72,9 +72,18 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
     }
   }
 
+  mSpread = 1.f;
+  mSpreadCenterX = 0.f;
+
   if (xb8_projection == kProjection_Perspective) {
-    const float aspect =
-        renderAspect > 0.f ? renderAspect : mCameraParms.perspective.aspect;
+    const float authored = mCameraParms.perspective.aspect;
+    const float aspect = renderAspect > 0.f ? renderAspect : authored;
+    // Widening a fixed FOV keeps the projection uniform; the HUD elements stay
+    // correctly shaped but are pulled toward the centre, so spread their
+    // positions to reach the true corners.
+    if (renderAspect > 0.f && authored > 0.f && PortDebug::HudWide()) {
+      mSpread = renderAspect / authored;
+    }
     CGraphics::SetPerspective(mCameraParms.perspective.fov, aspect,
                               mCameraParms.perspective.znear, mCameraParms.perspective.zfar);
   } else {
@@ -87,6 +96,11 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
       const float halfWidth = 0.5f * (top - bottom) * renderAspect;
       left = center - halfWidth;
       right = center + halfWidth;
+      const float authoredWidth = mCameraParms.orthographic.right - mCameraParms.orthographic.left;
+      if (authoredWidth > 0.f && top > bottom && PortDebug::HudWide()) {
+        mSpread = renderAspect / (authoredWidth / (top - bottom));
+        mSpreadCenterX = center;
+      }
     }
     CGraphics::SetOrtho(left, right, top, bottom, mCameraParms.orthographic.znear,
                         mCameraParms.orthographic.zfar);

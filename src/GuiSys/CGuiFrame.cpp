@@ -104,9 +104,23 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
   x14_camera->Draw(parms);
   CGraphics::SetTevOp(kTS_Stage0, CGraphics::kEnvModulate);
   CGraphics::SetBlendMode(kBM_Blend, kBF_SrcAlpha, kBF_InvSrcAlpha, kLO_Clear);
+  // Widescreen HUD: shift each top-level element about the screen centre so
+  // edge elements reach the wide corners while keeping their shapes. Children
+  // follow through the transform hierarchy; the shift is undone after drawing.
+  const float spread = x14_camera->GetAspectSpread();
+  const float spreadCenterX = x14_camera->GetAspectSpreadCenterX();
   for (AUTO(it, x2c_widgets.begin()); it != x2c_widgets.end(); ++it) {
     CGuiWidget* widget = *it;
-    if (widget->GetIsVisible()) {
+    if (!widget->GetIsVisible()) {
+      continue;
+    }
+    if (spread != 1.f) {
+      const float x = widget->GetWorldPosition().GetX();
+      const float dx = (spreadCenterX + (x - spreadCenterX) * spread) - x;
+      widget->MoveInWorld(CVector3f(dx, 0.f, 0.f));
+      widget->Draw(parms);
+      widget->MoveInWorld(CVector3f(-dx, 0.f, 0.f));
+    } else {
       widget->Draw(parms);
     }
   }

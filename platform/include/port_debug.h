@@ -67,6 +67,11 @@ enum EAspectMode {
 };
 EAspectMode AspectMode();
 void SetAspectMode(EAspectMode mode);
+// Widescreen HUD: keep each HUD element's shape but spread its position about
+// the screen centre so edge elements reach the true wide corners. Only affects
+// the aspect-matched in-game HUD frames.
+bool HudWide();
+void SetHudWide(bool enabled);
 
 // Mouse FPS mode owns aim only in playable first person; target locks retain
 // their native camera and synchronize the mouse angles for a clean handoff.

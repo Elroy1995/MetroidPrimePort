@@ -56,6 +56,7 @@ double sActualFps = 0.0, sActualTps = 0.0;
 bool sVsyncEnabled = false;
 float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
+bool sHudWide = false;
 bool sMouseAim = false;
 bool sMouseCaptured = false;
 bool sMouseGameplayActive = false;
@@ -137,6 +138,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     } else if (value == "4:3") {
       sAspectMode = PortDebug::kAspect_4_3;
     }
+  } else if (key == "hud_wide") {
+    sHudWide = ParseBool(value);
   } else if (key == "mouse_aim") {
     sMouseAim = ParseBool(value);
   } else if (key == "mouse_invert_x") {
@@ -229,6 +232,7 @@ void SaveSettings() {
   file << "# Metroid Prime native port settings. Written by the F1 debug overlay.\n";
   file << "# Environment variables (MP_*) override these for a single run.\n";
   file << "aspect=" << aspect << '\n';
+  file << "hud_wide=" << (sHudWide ? 1 : 0) << '\n';
   file << "vsync=" << (sVsyncEnabled ? 1 : 0) << '\n';
   file << "render_scale=" << sRenderScale << '\n';
   file << "frame_limit=" << (sFrameLimitEnabled ? 1 : 0) << '\n';
@@ -288,6 +292,9 @@ void EnsureInitialized() {
     }
   } else if (std::getenv("MP_WIDESCREEN") != nullptr) {
     sAspectMode = PortDebug::kAspect_16_9;
+  }
+  if (std::getenv("MP_HUD_WIDE") != nullptr) {
+    sHudWide = true;
   }
   if (std::getenv("MP_MOUSE_AIM") != nullptr) {
     sMouseAim = true;
@@ -456,6 +463,17 @@ EAspectMode AspectMode() {
 void SetAspectMode(EAspectMode mode) {
   EnsureInitialized();
   sAspectMode = mode;
+}
+
+bool HudWide() {
+  EnsureInitialized();
+  return sHudWide;
+}
+
+void SetHudWide(bool enabled) {
+  EnsureInitialized();
+  sHudWide = enabled;
+  MarkDirty();
 }
 
 bool MouseAim() {
@@ -681,6 +699,15 @@ void DrawRenderTab() {
     SetAspectMode(static_cast< EAspectMode >(aspect));
     MarkDirty();
   }
+
+  bool hudWide = sHudWide;
+  if (ImGui::Checkbox("Widescreen HUD (spread to edges)", &hudWide)) {
+    SetHudWide(hudWide);
+    MarkDirty();
+  }
+  ImGui::TextWrapped(
+      "Keeps each HUD element's shape but spreads its position so edge elements "
+      "reach the wide corners. Only affects the in-game HUD, not menus.");
 
   bool autoScale = sRenderScale <= 0.f;
   if (ImGui::Checkbox("Auto render scale (native)", &autoScale)) {

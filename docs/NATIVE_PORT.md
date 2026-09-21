@@ -90,6 +90,11 @@ override these.
   override the file for that run, and are written back into it if any setting is
   changed during that run.
 - `MP_ASPECT=4:3|16:9|window`; the legacy `MP_WIDESCREEN` selects 16:9.
+- `MP_HUD_WIDE=1` (Render tab, persisted as `hud_wide`): widescreen HUD. The
+  aspect-matched in-game HUD frames keep each element's shape but spread its
+  position about the screen centre, so edge elements (scan panels, energy bar,
+  map) reach the true wide corners instead of being pulled inward. Menus, the
+  credits and other non-aspect-matched frames are unaffected.
 - `MP_MOUSE_AIM=1`, `MP_MOUSE_SENS=0.0035`: relative mouse aim. Motion is ignored
   while the overlay is visible or relative capture/focus is absent. Mouse mode
   uses immediate yaw/pitch with an approximately ±87° pitch range. Up moves aim

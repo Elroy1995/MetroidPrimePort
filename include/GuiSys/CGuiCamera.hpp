@@ -40,6 +40,9 @@ public:
   // aspect instead of stretching. Front-end/menu cameras keep their authored
   // aspect so their layouts (and 3D backgrounds) are unaffected.
   void SetAspectMatch(bool match) { xb9_aspectMatch = match; }
+  // Widescreen HUD spread for this frame's widgets: 1.0 when inactive.
+  float GetAspectSpread() const { return mSpread; }
+  float GetAspectSpreadCenterX() const { return mSpreadCenterX; }
 
   FourCC GetWidgetTypeID() const override { return 'CAMR'; }
 
@@ -49,6 +52,11 @@ public:
   EProjection xb8_projection;
   bool xb9_aspectMatch = false;
   UCameraParms mCameraParms;
+  // Port: horizontal spread applied to this frame's top-level widgets so the
+  // HUD reaches the wide viewport edges without distorting element shapes.
+  // Computed in the const Draw() and read immediately by CGuiFrame::Draw.
+  mutable float mSpread = 1.f;
+  mutable float mSpreadCenterX = 0.f;
 };
 
 #endif // _CGUICAMERA
