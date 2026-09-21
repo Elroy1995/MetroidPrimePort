@@ -218,9 +218,18 @@ void CMemoryCardSys::Initialize() {
   if (!mIsInitialized) {
     // Port: keep the memory card next to the executable so a copied build is
     // self-contained. CARDSetBasePath must run before CARDInit.
+#if defined(__ANDROID__)
+    // The card file is created under this path, and on Android the executable
+    // directory lives inside the read-only APK, so use the app's storage.
+    if (char* base = SDL_GetPrefPath(nullptr, "Metroid Prime")) {
+      CARDSetBasePath(base, 2);
+      SDL_free(base);
+    }
+#else
     if (const char* base = SDL_GetBasePath()) {
       CARDSetBasePath(base, 2);
     }
+#endif
     // Aurora's CARDInit takes the game id and maker code.
     CARDInit("GM8E", "01");
     mIsInitialized = true;

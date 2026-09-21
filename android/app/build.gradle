@@ -77,6 +77,10 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            // The debug variant builds the native code with -O0 and is far too
+            // slow to play. Sign release with the debug key so an optimized
+            // build can be installed locally; this is not a release identity.
+            signingConfig signingConfigs.debug
         }
     }
 }

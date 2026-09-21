@@ -58,12 +58,15 @@ include `dawn_prebuilt`, `aurora_nod` and `corrosion`, and also `sdl`,
 `abseil-cpp`, `xxhash`, `fmt`, `zlib`, `png`, `freetype`, `imgui`, `sqlite3`,
 `zstd` and `tracy`. Only directories that exist are used.
 
-The build outputs `android/app/build/outputs/apk/debug/app-debug.apk`.
+The build outputs `android/app/build/outputs/apk/debug/app-debug.apk`. Add
+`:app:assembleRelease` instead of `:app:assembleDebug` for the optimized APK at
+`android/app/build/outputs/apk/release/app-release.apk`; that is the variant to
+play.
 
 ## Install and run
 
 ```sh
-adb install android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/release/app-release.apk
 adb shell am start -W -n org.metroidprime.port/.MetroidPrimeActivity
 ```
 
@@ -94,8 +97,15 @@ playable; it exists to isolate link/packaging problems from a reproducible
 - On-device behavior is not yet fully exercised: the Vulkan renderer, activity
   lifecycle, audio, controller, and SAF/disc-access paths have been wired up but
   still need device verification.
-- Debug APK only. There is no release signing; the `release` build type is
-  present but unminified and unsigned in practice.
+- Build an optimized APK to play. The `debug` variant compiles the native code
+  with `-O0` and is far too slow; `:app:assembleRelease` builds `RelWithDebInfo`
+  and is signed with the debug key so it can be installed locally. That key is
+  not a release identity, and the release variant is not suitable for
+  distribution. Measured on a POCO F8 Ultra, the release build holds a steady
+  60 FPS where the debug build stutters badly.
+- The memory card lives in app storage, so saves survive reinstall of the same
+  data and need no storage permission. A fresh card still reports as
+  unidentified in the front end and needs further work.
 - Distribution obligations remain. Aurora and MusyX are MIT snapshots and the
   button prompt icons are Kenney CC0; if any GPL-covered code ends up in the
   final combined work, the required corresponding source and build material must
