@@ -122,6 +122,19 @@ for checking this without going through the Controls tab, and
 `MP_FAST_BOOT=1 MP_SKIP_CUTSCENES=1 MP_SMOKE_PAUSE=<ticks>` reaches the pause
 screen quickly to see the result.
 
+### Platforms
+
+The port is built and tested on Linux. Its own platform code is portable - SDL3
+and `std::filesystem` throughout, no POSIX-only calls - and the CMake keeps the
+MSVC linker paths from the template, but the Windows build has not been tried:
+there is no MSVC or mingw toolchain on the machine this was developed on.
+`platform/glibc_compat.c`, which lowers the glibc the Linux build needs, is
+guarded to Linux and takes no part elsewhere. The AppImage and Flatpak packaging
+are Linux-only.
+
+Note that `README.md` is inherited from the upstream decompilation project and
+describes building that, not this port.
+
 ### Distribution
 
 `tools/make_appimage.sh [build-dir] [output-dir]` packages the executable and

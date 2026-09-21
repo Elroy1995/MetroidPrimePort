@@ -20,6 +20,10 @@
 #include <string.h>
 #include <wchar.h>
 
+// glibc only; other libcs (and Windows) do not version these symbols, and the
+// double-precision names this relies on are glibc's too.
+#if defined(__linux__) && defined(__GLIBC__)
+
 // The double-precision functions keep their original symbol versions.
 float acosf(float x) { return (float)acos(x); }
 float acoshf(float x) { return (float)acosh(x); }
@@ -128,3 +132,5 @@ size_t wcslcat(wchar_t* dst, const wchar_t* src, size_t size) {
   dst[used + copy] = L'\0';
   return used + length;
 }
+
+#endif // __linux__ && __GLIBC__
