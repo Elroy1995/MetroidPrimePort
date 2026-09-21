@@ -21,6 +21,7 @@
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_timer.h>
 
 #include <atomic>
@@ -218,6 +219,12 @@ int main(int argc, char** argv) {
         .mem2Size = ARAM_DEFAULT_SIZE,
     };
 
+#if defined(__ANDROID__)
+    // SDL3 drops touch-derived mouse events by default, and ImGui's SDL3
+    // backend only understands mouse events. The touch overlay in Java claims
+    // gameplay touches, so whatever reaches SDL here is meant for ImGui.
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
+#endif
     aurora_initialize(argc, argv, &config);
     // Apply the persisted render scale. Vsync is applied on the first drawn
     // frame (once the swapchain surface exists) so it uses real capabilities.

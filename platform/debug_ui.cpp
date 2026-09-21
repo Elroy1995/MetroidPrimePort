@@ -26,6 +26,11 @@
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_video.h>
+
+#if defined(__ANDROID__)
+#include <jni.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -690,8 +695,38 @@ bool Visible() {
   return sVisible;
 }
 
+// Phones report a density of roughly 3, which leaves ImGui's default 13px font
+// unreadably small, so scale the overlay to match the display once.
+void UpdateUiScale() {
+  if (ImGui::GetCurrentContext() == nullptr) {
+    return;
+  }
+  static bool sApplied = false;
+  if (sApplied) {
+    return;
+  }
+  sApplied = true;
+  float displayScale = 1.f;
+  int windowCount = 0;
+  if (SDL_Window** windows = SDL_GetWindows(&windowCount)) {
+    if (windowCount > 0) {
+      const float scale = SDL_GetWindowDisplayScale(windows[0]);
+      if (scale > 0.f) {
+        displayScale = scale;
+      }
+    }
+    SDL_free(windows);
+  }
+  const float uiScale = std::clamp(displayScale, 1.f, 4.f);
+  if (uiScale > 1.f) {
+    ImGui::GetStyle().ScaleAllSizes(uiScale);
+    ImGui::GetIO().FontGlobalScale = uiScale;
+  }
+}
+
 void UpdateControllerNav() {
   EnsureInitialized();
+  UpdateUiScale();
   // F1 toggles the overlay as well. This has to run before the controller
   // early-out below, because the touch controls send F1 and a device with no
   // gamepad has no other way to open it.
@@ -1506,3 +1541,13 @@ void SetDiscPath(const char* path) {
 }
 
 } // namespace PortDebug
+
+#if defined(__ANDROID__)
+// The touch overlay covers the display and consumes every touch before SDL
+// sees it. While the debug overlay is open the game is paused and those touches
+// belong to ImGui, so the Java side asks this and stops claiming them.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_metroidprime_port_TouchControlsView_nativeDebugOverlayVisible(JNIEnv*, jclass) {
+  return PortDebug::Visible() ? JNI_TRUE : JNI_FALSE;
+}
+#endif

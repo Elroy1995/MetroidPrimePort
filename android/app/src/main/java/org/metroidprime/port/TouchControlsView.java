@@ -50,6 +50,7 @@ final class TouchControlsView extends View {
     private final Map<Integer, TouchTarget> targets = new HashMap<>();
     private final Map<Integer, Integer> heldKeys = new HashMap<>();
     private final RectF hideBounds = new RectF();
+    private static native boolean nativeDebugOverlayVisible();
     private int leftPointer = -1;
     private int rightPointer = -1;
     private boolean hidden;
@@ -69,6 +70,10 @@ final class TouchControlsView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        // The debug overlay is drawn into the surface below; stay out of its way.
+        if (nativeDebugOverlayVisible()) {
+            return;
+        }
         if (hidden) {
             drawPill(canvas, "SHOW", 0, 0, getWidth(), getHeight(), false);
             return;
@@ -93,6 +98,12 @@ final class TouchControlsView extends View {
     public boolean onTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
         int actionIndex = event.getActionIndex();
+
+        // While the debug overlay is open the game is paused and the touches
+        // are for it, so decline them and let the SDL surface below have them.
+        if (nativeDebugOverlayVisible()) {
+            return false;
+        }
 
         if (hidden) {
             if (action == MotionEvent.ACTION_UP) {
