@@ -111,6 +111,10 @@ override these.
 - The front end (`FRME_FrontEndPL` title/menu, `FRME_NewFileSelect`, the GBA
   screens) is aspect-matched too, so the title screen is pillarboxed rather than
   stretched.
+- The mouse cursor is hidden while the game has focus and is shown only over the
+  F1 overlay. The overlay is also openable and navigable with a controller: the
+  Back/Select button toggles it, the D-pad or left stick moves, A activates, B
+  cancels and the shoulder buttons switch tabs (ImGui gamepad navigation).
 - `MP_MOUSE_AIM=1`, `MP_MOUSE_SENS=0.0035`: relative mouse aim. Motion is ignored
   while the overlay is visible or relative capture/focus is absent. Mouse mode
   uses immediate yaw/pitch with an approximately ±87° pitch range. Up moves aim

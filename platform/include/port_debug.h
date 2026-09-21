@@ -126,6 +126,9 @@ bool ConsumeResetRequest();
 
 bool Visible();
 void Toggle();
+// Feeds the pad into ImGui's gamepad navigation and toggles the overlay with the
+// Back/Select button. Call once per frame before the frame is built.
+void UpdateControllerNav();
 
 // Builds the debug windows for the current ImGui frame. Call once per presented
 // frame, after Aurora begins the frame and before it ends it.

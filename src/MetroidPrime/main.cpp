@@ -909,11 +909,23 @@ int CMain::RsMain(int argc, const char* const* argv) {
             SDL_SetWindowRelativeMouseMode(sCaptureWindow, wantRelative);
           }
           PortDebug::SetMouseCaptured(wantRelative && SDL_GetWindowRelativeMouseMode(sCaptureWindow));
+          // Keep the cursor hidden during play; show it only over the overlay,
+          // which is navigated with the mouse (and the controller).
+          const bool wantCursor =
+              PortDebug::Visible() && SDL_GetKeyboardFocus() == sCaptureWindow;
+          if (wantCursor) {
+            SDL_ShowCursor();
+          } else {
+            SDL_HideCursor();
+          }
         }
       }
       // Port: apply the selected aspect ratio; no-op unless it changed (e.g. the
       // debug overlay's aspect combo).
       ApplyAspectMode();
+      // Port: feed the pad into ImGui's gamepad navigation (and toggle the
+      // overlay with Back/Select) before the frame is built.
+      PortDebug::UpdateControllerNav();
       // Port: run ARAM transfer callbacks completed by Aurora's ARQ.
       ARQPoll();
       // Port: service the streamed-audio AI DMA callback on the main thread.

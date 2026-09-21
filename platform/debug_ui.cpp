@@ -22,6 +22,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_stdinc.h>
 
@@ -680,6 +681,44 @@ bool ConsumeWorldTeleportRequest(uint32_t& worldId, uint32_t& areaAssetId) {
 bool Visible() {
   EnsureInitialized();
   return sVisible;
+}
+
+void UpdateControllerNav() {
+  EnsureInitialized();
+  ImGuiIO& io = ImGui::GetIO();
+  io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+
+  SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0);
+  if (pad == nullptr) {
+    return;
+  }
+  const auto held = [pad](SDL_GamepadButton button) {
+    return SDL_GetGamepadButton(pad, button);
+  };
+  const auto axis = [pad](SDL_GamepadAxis a) {
+    return SDL_GetGamepadAxis(pad, a);
+  };
+  constexpr Sint16 kStickThreshold = 16000;
+  io.AddKeyEvent(ImGuiKey_GamepadDpadUp,
+                 held(SDL_GAMEPAD_BUTTON_DPAD_UP) || axis(SDL_GAMEPAD_AXIS_LEFTY) < -kStickThreshold);
+  io.AddKeyEvent(ImGuiKey_GamepadDpadDown,
+                 held(SDL_GAMEPAD_BUTTON_DPAD_DOWN) || axis(SDL_GAMEPAD_AXIS_LEFTY) > kStickThreshold);
+  io.AddKeyEvent(ImGuiKey_GamepadDpadLeft,
+                 held(SDL_GAMEPAD_BUTTON_DPAD_LEFT) || axis(SDL_GAMEPAD_AXIS_LEFTX) < -kStickThreshold);
+  io.AddKeyEvent(ImGuiKey_GamepadDpadRight,
+                 held(SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || axis(SDL_GAMEPAD_AXIS_LEFTX) > kStickThreshold);
+  io.AddKeyEvent(ImGuiKey_GamepadFaceDown, held(SDL_GAMEPAD_BUTTON_SOUTH));
+  io.AddKeyEvent(ImGuiKey_GamepadFaceRight, held(SDL_GAMEPAD_BUTTON_EAST));
+  io.AddKeyEvent(ImGuiKey_GamepadL1, held(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
+  io.AddKeyEvent(ImGuiKey_GamepadR1, held(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
+
+  static bool sBackHeld = false;
+  const bool back = held(SDL_GAMEPAD_BUTTON_BACK);
+  if (back && !sBackHeld) {
+    Toggle();
+  }
+  sBackHeld = back;
 }
 
 void Toggle() {
