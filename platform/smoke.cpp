@@ -429,6 +429,21 @@ bool PortSmokeFrame(unsigned frame) {
     }
     PADSetVirtualStatus(0, &status);
   }
+  // MP_SMOKE_BIND_A=<scancode>: rebind the A action once, so the prompt's
+  // binding-aware icon can be checked without going through the Controls tab.
+  static const bool bindApplied = [] {
+    const char* value = std::getenv("MP_SMOKE_BIND_A");
+    if (value == nullptr || value[0] == '\0') {
+      return false;
+    }
+    PADKeyButtonBinding binding{};
+    binding.scancode = static_cast< s32 >(std::strtol(value, nullptr, 10));
+    binding.padButton = PAD_BUTTON_A;
+    const bool ok = PADSetKeyButtonBinding(PAD_CHAN0, binding) != FALSE;
+    std::fprintf(stderr, "[smoke] rebind A to scancode %d: %s\n", binding.scancode, ok ? "ok" : "failed");
+    return ok;
+  }();
+  (void)bindApplied;
   if (limit == 0) return false;
   static SDL_Window* window = nullptr;
   if (window == nullptr) {

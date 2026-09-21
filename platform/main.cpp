@@ -15,6 +15,7 @@
 
 #include "port_debug.h"
 #include "port_textures.h"
+#include "port_prompts.h"
 #include "port_build_info.h"
 
 #include <SDL3/SDL_filesystem.h>
@@ -160,6 +161,8 @@ int main(int argc, char** argv) {
         textures = DefaultTexturesPath();
     }
     PortTextures::Initialize(textures);
+    // Binding-aware prompt icons, served from <textures>/bindings.
+    PortPrompts::Initialize(textures);
 
     if (!aurora_dvd_open(discPath)) {
         std::fprintf(stderr, "metroid_prime_port: failed to open disc image: %s\n", discPath);

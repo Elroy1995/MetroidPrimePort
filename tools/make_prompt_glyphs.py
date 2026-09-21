@@ -46,6 +46,22 @@ SETS = {
     "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png"},
 }
 
+# One icon per input that can be bound, written to <out>/bindings/<stem>.dds.
+# The port registers the icon for whichever input is bound to a prompt's
+# action, so a rebound key or mouse button is reflected in game. Stems match
+# the tables in platform/port_prompts.cpp.
+BINDING_ICONS = [
+    *[f"keyboard_{c}" for c in "abcdefghijklmnopqrstuvwxyz"],
+    *[f"keyboard_{d}" for d in "0123456789"],
+    "keyboard_arrow_up", "keyboard_arrow_down", "keyboard_arrow_left", "keyboard_arrow_right",
+    *[f"keyboard_f{i}" for i in range(1, 13)],
+    "keyboard_space", "keyboard_enter", "keyboard_escape", "keyboard_tab",
+    "keyboard_backspace", "keyboard_delete", "keyboard_insert", "keyboard_home",
+    "keyboard_end", "keyboard_page_up", "keyboard_page_down",
+    "keyboard_shift", "keyboard_ctrl", "keyboard_alt",
+    "mouse_left", "mouse_right",
+]
+
 
 def write_dds(img, path):
     img = img.convert("RGBA").transpose(Image.FLIP_TOP_BOTTOM)
@@ -81,6 +97,19 @@ def main():
         for action, name in TARGETS.items():
             write_dds(make_icon(icons[action]), os.path.join(d, name))
         print(f"{device}: {len(icons)} icons -> {d}")
+
+    bindings = os.path.join(OUT, "bindings")
+    os.makedirs(bindings, exist_ok=True)
+    missing = []
+    for stem in BINDING_ICONS:
+        src = os.path.join(ICONS_DIR, stem + ".png")
+        if not os.path.exists(src):
+            missing.append(stem)
+            continue
+        write_dds(make_icon(stem + ".png"), os.path.join(bindings, stem + ".dds"))
+    print(f"bindings: {len(BINDING_ICONS) - len(missing)} icons -> {bindings}")
+    if missing:
+        print("  missing from tools/prompt_icons: " + ", ".join(missing))
 
 
 if __name__ == "__main__":
