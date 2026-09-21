@@ -12,14 +12,24 @@ anyway. The pack ships a `License.txt` alongside the download.
 
 Only the icons the port needs are copied here.
 
-The eight device icons label the A and B prompts for each controller family:
+The device icons label the A, B, L and R prompts for each controller family.
+The keyboard set doubles as the fallback used when a binding has no icon of its
+own, so it labels the port's default keys:
 
 | File | Used for |
 | --- | --- |
 | `xbox_button_color_a.png`, `xbox_button_color_b.png` | Xbox A / B prompts |
+| `xbox_lb.png`, `xbox_rb.png` | Xbox LB / RB shoulder prompts |
 | `playstation_button_color_cross.png`, `playstation_button_color_circle.png` | PlayStation Cross / Circle prompts |
+| `playstation_trigger_l1.png`, `playstation_trigger_r1.png` | PlayStation L1 / R1 shoulder prompts |
 | `switch_button_a.png`, `switch_button_b.png` | Switch A / B prompts |
-| `keyboard_x.png`, `keyboard_z.png` | keyboard prompts, matching the port's default A / B keys |
+| `switch_button_l.png`, `switch_button_r.png` | Switch L / R shoulder prompts |
+| `keyboard_x.png`, `keyboard_z.png` | keyboard A / B, matching the default keys |
+| `keyboard_q.png`, `keyboard_e.png` | keyboard L / R, matching the default keys |
+
+Which game textures they are written as comes from the prompt table in
+`platform/port_prompts.cpp`, which `tools/make_prompt_glyphs.py` parses, so a
+newly identified prompt texture only has to be added there.
 
 The rest are keyboard and mouse icons for the inputs that can be bound. They are
 written to `<textures>/bindings/<stem>.dds` and served per binding, so the prompt

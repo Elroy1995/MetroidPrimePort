@@ -21,6 +21,7 @@ is opaque only from (6,5) to (27,26): the glyph is about 22px on screen, so a
 full-bleed icon reads as a solid square.
 """
 import os
+import re
 import struct
 import sys
 from PIL import Image
@@ -29,22 +30,53 @@ SIZE = 32
 ICON_SIZE = 22
 INSET = (SIZE - ICON_SIZE) // 2
 ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompt_icons")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PORT_PROMPTS = os.path.join(ROOT, "platform", "port_prompts.cpp")
 OUT = sys.argv[1] if len(sys.argv) > 1 else "textures"
 
-# The two prompt textures to replace, as they are named in a dump:
-#   32x32 RGB5A3 ("_5"), GameCube A and B.
-TARGETS = {
-    "a": "tex1_32x32_bb21e8755f36b2f0_5.dds",
-    "b": "tex1_32x32_e6dbfd18d4666ee7_5.dds",
+# Icon per device and action. The keyboard set is the fallback used when a
+# binding has no icon of its own, so it labels the port's default keys.
+DEVICE_ICONS = {
+    "xbox": {"a": "xbox_button_color_a.png", "b": "xbox_button_color_b.png",
+             "l": "xbox_lb.png", "r": "xbox_rb.png"},
+    "playstation": {"a": "playstation_button_color_cross.png",
+                    "b": "playstation_button_color_circle.png",
+                    "l": "playstation_trigger_l1.png", "r": "playstation_trigger_r1.png"},
+    "switch": {"a": "switch_button_a.png", "b": "switch_button_b.png",
+               "l": "switch_button_l.png", "r": "switch_button_r.png"},
+    "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png",
+                 "l": "keyboard_q.png", "r": "keyboard_e.png"},
 }
 
-SETS = {
-    "xbox": {"a": "xbox_button_color_a.png", "b": "xbox_button_color_b.png"},
-    "playstation": {"a": "playstation_button_color_cross.png",
-                    "b": "playstation_button_color_circle.png"},
-    "switch": {"a": "switch_button_a.png", "b": "switch_button_b.png"},
-    "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png"},
+# PAD_BUTTON_* / PAD_TRIGGER_* to the action name used above.
+ACTION_FOR_BUTTON = {
+    "PAD_BUTTON_A": "a",
+    "PAD_BUTTON_B": "b",
+    "PAD_TRIGGER_L": "l",
+    "PAD_TRIGGER_R": "r",
 }
+
+
+def read_prompt_keys():
+    """Parse the prompt texture table out of platform/port_prompts.cpp.
+
+    Keeping the table in one place means a texture only has to be identified
+    once, in the C++ where it is used.
+    """
+    pattern = re.compile(
+        r"\{\s*(PAD_\w+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*0x([0-9a-fA-F]+)ull\s*,\s*\"(\w+)\"\s*\}")
+    with open(PORT_PROMPTS) as f:
+        keys = pattern.findall(f.read())
+    if not keys:
+        raise SystemExit(f"no prompt keys found in {PORT_PROMPTS}")
+    missing = sorted({k[0] for k in keys} - set(ACTION_FOR_BUTTON))
+    if missing:
+        raise SystemExit(f"no icon mapping for: {', '.join(missing)}")
+    return [(ACTION_FOR_BUTTON[button], w, h, hsh, fmt) for button, w, h, hsh, fmt in keys]
+
+
+def texture_name(w, h, hsh, fmt):
+    return f"tex1_{w}x{h}_{hsh}_{fmt}.dds"
 
 # One icon per input that can be bound, written to <out>/bindings/<stem>.dds.
 # The port registers the icon for whichever input is bound to a prompt's
@@ -91,12 +123,13 @@ def make_icon(name):
 
 
 def main():
-    for device, icons in SETS.items():
+    keys = read_prompt_keys()
+    for device, icons in DEVICE_ICONS.items():
         d = os.path.join(OUT, device)
         os.makedirs(d, exist_ok=True)
-        for action, name in TARGETS.items():
-            write_dds(make_icon(icons[action]), os.path.join(d, name))
-        print(f"{device}: {len(icons)} icons -> {d}")
+        for action, w, h, hsh, fmt in keys:
+            write_dds(make_icon(icons[action]), os.path.join(d, texture_name(w, h, hsh, fmt)))
+        print(f"{device}: {len(keys)} textures -> {d}")
 
     bindings = os.path.join(OUT, "bindings")
     os.makedirs(bindings, exist_ok=True)
