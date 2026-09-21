@@ -122,36 +122,14 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
   const CTransform4f spreadView =
       aboutEye ? x14_camera->GetAspectSpreadView() : CTransform4f::Identity();
   const CTransform4f invView = aboutEye ? spreadView.GetInverse() : CTransform4f::Identity();
-  // The spread is a static remap of the authored layout, so measure each
-  // element's angle across the HUD from the HUD's own centre, against one shared
-  // depth. An element's live eye-space position cannot be used: the HUD sways
-  // and lags, and firing adds effect elements, so every element's measured
-  // angle moves and the whole HUD swims with it. Taking the offset from the
-  // centre also makes the view axis convention irrelevant.
-  CVector3f hudCentre = CVector3f::Zero();
-  float hudDepth = 0.f;
-  if (aboutEye) {
-    float cx = 0.f;
-    float cy = 0.f;
-    float cz = 0.f;
-    int visible = 0;
-    for (AUTO(it, x2c_widgets.begin()); it != x2c_widgets.end(); ++it) {
-      CGuiWidget* widget = *it;
-      if (!widget->GetIsVisible() || widget->GetParent() == nullptr) {
-        continue;
-      }
-      const CVector3f p = spreadView * widget->GetWorldTransform().GetTranslation();
-      cx += p.GetX();
-      cy += p.GetY();
-      cz += p.GetZ();
-      ++visible;
-    }
-    if (visible > 0) {
-      const float invCount = 1.f / static_cast< float >(visible);
-      hudCentre = CVector3f(cx * invCount, cy * invCount, cz * invCount);
-      hudDepth = hudCentre.GetZ() < 0.f ? -hudCentre.GetZ() : hudCentre.GetZ();
-    }
-  }
+  // The spread is a remap of the authored layout, so it has to be a pure
+  // function of where the element was authored to sit. Measuring from a
+  // per-frame reference instead (the centroid of whichever widgets happen to be
+  // visible) makes the same screen position map differently in each HUD frame -
+  // and the HUD is several independent frames, so elements that belong together
+  // register differently. Spread about the view axis, which is the screen
+  // centre, using the element's own depth, so any two elements at the same place
+  // get the same answer whichever frame draws them.
   for (AUTO(it, x2c_widgets.begin()); it != x2c_widgets.end(); ++it) {
     CGuiWidget* widget = *it;
     if (!widget->GetIsVisible()) {
@@ -161,11 +139,17 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
       widget->Draw(parms);
       continue;
     }
-    if (aboutEye && widget->GetParent() != nullptr && hudDepth > 1.f) {
+    if (aboutEye && widget->GetParent() != nullptr) {
       const CTransform4f world = widget->GetWorldTransform();
       const CVector3f eyePos = spreadView * world.GetTranslation();
-      const float across = eyePos.GetX() - hudCentre.GetX();
-      const float yaw = std::atan2(across, hudDepth);
+      const float across = eyePos.GetX();
+      const float depth = eyePos.GetZ() < 0.f ? -eyePos.GetZ() : eyePos.GetZ();
+      if (depth <= 1.f) {
+        // At or behind the eye plane: no sensible tangent to spread.
+        widget->Draw(parms);
+        continue;
+      }
+      const float yaw = std::atan2(across, depth);
       // Spreading in tangent space maps the authored frustum exactly onto the
       // wider one, so an element at the edge lands at the edge.
       const float delta = std::atan(std::tan(yaw) * spread) - yaw;
