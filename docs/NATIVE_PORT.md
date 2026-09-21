@@ -95,6 +95,9 @@ override these.
   position about the screen centre, so edge elements (scan panels, energy bar,
   map) reach the true wide corners instead of being pulled inward. Menus, the
   credits and other non-aspect-matched frames are unaffected.
+- The in-game pause and map screens (`FRME_PauseScreen`, `FRME_PauseScreenInstructions`,
+  `FRME_MapScreen`) are aspect-matched like the HUD, so they keep their
+  proportions and spread across a wide viewport instead of stretching.
 - `MP_MOUSE_AIM=1`, `MP_MOUSE_SENS=0.0035`: relative mouse aim. Motion is ignored
   while the overlay is visible or relative capture/focus is absent. Mouse mode
   uses immediate yaw/pitch with an approximately ±87° pitch range. Up moves aim
@@ -241,6 +244,10 @@ size and object id.
 reports `[walk-smoke] passed: ticks=... dist=... maxFlatSpeed=... speed=.../s`.
 Run it with the same real duration at two simulation rates (for example 60 ticks
 at 60 Hz and 120 ticks at 120 Hz) to confirm ground movement stays real-time.
+
+`MP_SMOKE_PAUSE=<ticks>` enters the pause screen after gameplay starts;
+`MP_SMOKE_MAP=<ticks>` additionally presses Z that many ticks later to open the
+map screen. Combine with `MP_SMOKE_SHOT` to capture them.
 
 For audio reports, `MP_AUDIO_STATS=1` logs MusyX's generated samples/second, queued
 audio, peak output and clipping. Nominal output is 32,000 stereo frames/second;

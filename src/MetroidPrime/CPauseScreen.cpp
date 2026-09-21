@@ -5,6 +5,7 @@
 
 #include "GuiSys/CAuiImagePane.hpp"
 #include "GuiSys/CGuiFrame.hpp"
+#include "GuiSys/CGuiCamera.hpp"
 #include "GuiSys/CGuiModel.hpp"
 #include "GuiSys/CGuiSliderGroup.hpp"
 #include "GuiSys/CGuiSys.hpp"
@@ -135,19 +136,32 @@ bool CPauseScreen::CheckLoadComplete(const CStateManager& mgr) {
       return false;
     }
     x34_loadedPauseScreenInstructions = x28_pauseScreenInstructions.GetObject();
+    // Port: keep the pause screen's proportions in widescreen instead of
+    // stretching it across the wider viewport.
+    if (CGuiCamera* cam = x34_loadedPauseScreenInstructions->GetFrameCamera()) {
+      cam->SetAspectMatch(true);
+    }
     InitializeFrameGlue();
   }
   if (!x60_loadTok.null()) {
     if (x60_loadTok->IsComplete()) {
       {
         CMemoryInStream in(x5c_frmePauseScreenBuf.get(), x58_frmePauseScreenBufSz);
-        x64_frameInsts.push_back(
-            CGuiFrame::CreateFrame(x54_frmePauseScreenId, *gGuiSystem, in, gpSimplePool));
+        CGuiFrame* frame =
+            CGuiFrame::CreateFrame(x54_frmePauseScreenId, *gGuiSystem, in, gpSimplePool);
+        if (CGuiCamera* cam = frame->GetFrameCamera()) {
+          cam->SetAspectMatch(true);
+        }
+        x64_frameInsts.push_back(frame);
       }
       {
         CMemoryInStream in(x5c_frmePauseScreenBuf.get(), x58_frmePauseScreenBufSz);
-        x64_frameInsts.push_back(
-            CGuiFrame::CreateFrame(x54_frmePauseScreenId, *gGuiSystem, in, gpSimplePool));
+        CGuiFrame* frame =
+            CGuiFrame::CreateFrame(x54_frmePauseScreenId, *gGuiSystem, in, gpSimplePool);
+        if (CGuiCamera* cam = frame->GetFrameCamera()) {
+          cam->SetAspectMatch(true);
+        }
+        x64_frameInsts.push_back(frame);
       }
       x60_loadTok = nullptr;
       x5c_frmePauseScreenBuf = nullptr;

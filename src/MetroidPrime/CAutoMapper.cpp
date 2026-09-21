@@ -16,6 +16,7 @@
 #include "Kyoto/Text/CStringTable.hpp"
 
 #include "GuiSys/CGuiFrame.hpp"
+#include "GuiSys/CGuiCamera.hpp"
 #include "GuiSys/CGuiTextPane.hpp"
 #include "GuiSys/CGuiWidgetDrawParms.hpp"
 
@@ -1313,6 +1314,11 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
   if (x28_frmeMapScreen.get() != NULL && x2c_frmeInitialized == NULL) {
     if (x28_frmeMapScreen->TryCache()) {
       x2c_frmeInitialized = x28_frmeMapScreen->GetObject();
+      // Port: keep the map screen's proportions in widescreen instead of
+      // stretching it across the wider viewport.
+      if (CGuiCamera* cam = x2c_frmeInitialized->GetFrameCamera()) {
+        cam->SetAspectMatch(true);
+      }
 
       CGuiTextPane* leftPane =
           static_cast< CGuiTextPane* >(x2c_frmeInitialized->FindWidget("textpane_left"));
