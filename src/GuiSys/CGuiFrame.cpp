@@ -4,9 +4,11 @@
 #include "GuiSys/CGuiFeeHelper.hpp"
 #include "GuiSys/CGuiHeadWidget.hpp"
 #include "GuiSys/CGuiLight.hpp"
+#include "GuiSys/CGuiModel.hpp"
 #include "GuiSys/CGuiSys.hpp"
 #include "GuiSys/CGuiWidget.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
+#include "Kyoto/Graphics/CModel.hpp"
 #include "Kyoto/Input/CFinalInput.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "rstl/algorithm.hpp"
@@ -106,22 +108,24 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
   x14_camera->Draw(parms);
   CGraphics::SetTevOp(kTS_Stage0, CGraphics::kEnvModulate);
   CGraphics::SetBlendMode(kBM_Blend, kBF_SrcAlpha, kBF_InvSrcAlpha, kLO_Clear);
-  // Widescreen HUD: shift each top-level element about the screen centre so
-  // edge elements reach the wide corners while keeping their shapes. Children
-  // follow through the transform hierarchy; the shift is undone after drawing.
+  // Widescreen HUD: spread compact elements rigidly, but stretch screen-spanning
+  // decoration about the view axis. Restore each transform after drawing.
   const float spread = x14_camera->GetAspectSpread();
   const float spreadCenterX = x14_camera->GetAspectSpreadCenterX();
-  // A perspective HUD is placed in front of the eye, so moving an element away
-  // from the view axis also turns it away from the eye: translating it sideways
-  // shears its shape, and the further it moves the worse it gets, which is why
-  // wide screens looked stretched. Rotating it rigidly about the eye instead
-  // moves it across the frame while leaving everything the viewer sees of it
-  // unchanged. The angle comes from the same aspect ratio, so this holds at any
-  // aspect, not only 16:9.
+  // Perspective elements move in their own plane and turn in place to face the
+  // eye, preserving their depth ordering. Orthographic elements only slide.
   const bool aboutEye = spread != 1.f && x14_camera->GetAspectSpreadAboutEye();
   const CTransform4f spreadView =
       aboutEye ? x14_camera->GetAspectSpreadView() : CTransform4f::Identity();
   const CTransform4f invView = aboutEye ? spreadView.GetInverse() : CTransform4f::Identity();
+  const CTransform4f stretch =
+      aboutEye ? invView * CTransform4f::Scale(spread, 1.f, 1.f) * spreadView
+               : CTransform4f::Identity();
+  const CGraphics::CProjectionState& projection = CGraphics::GetProjectionState();
+  const float authoredQuarterWidthPerDepth =
+      aboutEye ? (projection.GetRight() - projection.GetLeft()) /
+                     (4.f * projection.GetNear() * spread)
+               : 0.f;
   // The spread is a remap of the authored layout, so it has to be a pure
   // function of where the element was authored to sit. Measuring from a
   // per-frame reference instead (the centroid of whichever widgets happen to be
@@ -141,6 +145,31 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
     }
     if (aboutEye && widget->GetParent() != nullptr) {
       const CTransform4f world = widget->GetWorldTransform();
+      if (widget->GetWidgetTypeID() == 'MODL' && widget->GetIsFinishedLoading()) {
+        const auto& token = static_cast< const CGuiModel* >(widget)->GetModel();
+        const CModel* model = token ? token->GetObject() : nullptr;
+        if (model) {
+          // SetViewPointMatrix takes a camera-to-world transform; camera-local
+          // +Y is forward (the graphics layer maps it to projection-space -Z).
+          const CAABox bounds = model->GetBoundingBox().GetTransformedAABox(invView * world);
+          // Require the mesh bounds to reach both outer quarters of the authored
+          // viewport, even at their farthest depth. Unlike extent / translation,
+          // this does not stretch small icons at the origin or under a translated
+          // parent. Only a fixed-size bounding box is examined, never vertices.
+          const float farDepth = bounds.GetMaxPoint().GetY();
+          const float quarterWidth = farDepth * authoredQuarterWidthPerDepth;
+          if (bounds.GetMinPoint().GetY() > projection.GetNear() && quarterWidth > 0.f &&
+              bounds.GetMinPoint().GetX() < -quarterWidth &&
+              bounds.GetMaxPoint().GetX() > quarterWidth) {
+            // This intentionally widens vertical strokes too, but leaves view Y
+            // and depth untouched; compact widgets retain the rigid path below.
+            widget->SetO2WTransform(stretch * world);
+            widget->Draw(parms);
+            widget->SetO2WTransform(world);
+            continue;
+          }
+        }
+      }
       const CVector3f eyePos = spreadView * world.GetTranslation();
       const float across = eyePos.GetX();
       const float depth = eyePos.GetZ() < 0.f ? -eyePos.GetZ() : eyePos.GetZ();
