@@ -119,8 +119,39 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
   // unchanged. The angle comes from the same aspect ratio, so this holds at any
   // aspect, not only 16:9.
   const bool aboutEye = spread != 1.f && x14_camera->GetAspectSpreadAboutEye();
-  const CTransform4f invView =
-      aboutEye ? x14_camera->GetAspectSpreadView().GetInverse() : CTransform4f::Identity();
+  const CTransform4f spreadView =
+      aboutEye ? x14_camera->GetAspectSpreadView() : CTransform4f::Identity();
+  const CTransform4f invView = aboutEye ? spreadView.GetInverse() : CTransform4f::Identity();
+  // The spread is a static remap of the authored layout, so measure each
+  // element's angle across the HUD from the HUD's own centre, against one shared
+  // depth. An element's live eye-space position cannot be used: the HUD sways
+  // and lags, and firing adds effect elements, so every element's measured
+  // angle moves and the whole HUD swims with it. Taking the offset from the
+  // centre also makes the view axis convention irrelevant.
+  CVector3f hudCentre = CVector3f::Zero();
+  float hudDepth = 0.f;
+  if (aboutEye) {
+    float cx = 0.f;
+    float cy = 0.f;
+    float cz = 0.f;
+    int visible = 0;
+    for (AUTO(it, x2c_widgets.begin()); it != x2c_widgets.end(); ++it) {
+      CGuiWidget* widget = *it;
+      if (!widget->GetIsVisible() || widget->GetParent() == nullptr) {
+        continue;
+      }
+      const CVector3f p = spreadView * widget->GetWorldTransform().GetTranslation();
+      cx += p.GetX();
+      cy += p.GetY();
+      cz += p.GetZ();
+      ++visible;
+    }
+    if (visible > 0) {
+      const float invCount = 1.f / static_cast< float >(visible);
+      hudCentre = CVector3f(cx * invCount, cy * invCount, cz * invCount);
+      hudDepth = hudCentre.GetZ() < 0.f ? -hudCentre.GetZ() : hudCentre.GetZ();
+    }
+  }
   for (AUTO(it, x2c_widgets.begin()); it != x2c_widgets.end(); ++it) {
     CGuiWidget* widget = *it;
     if (!widget->GetIsVisible()) {
@@ -130,17 +161,26 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
       widget->Draw(parms);
       continue;
     }
-    if (aboutEye && widget->GetParent() != nullptr) {
+    if (aboutEye && widget->GetParent() != nullptr && hudDepth > 1.f) {
       const CTransform4f world = widget->GetWorldTransform();
-      const CVector3f eyePos =
-          x14_camera->GetAspectSpreadView() * world.GetTranslation();
-      const float yaw = std::atan2(eyePos.GetX(), -eyePos.GetZ());
+      const CVector3f eyePos = spreadView * world.GetTranslation();
+      const float across = eyePos.GetX() - hudCentre.GetX();
+      const float yaw = std::atan2(across, hudDepth);
       // Spreading in tangent space maps the authored frustum exactly onto the
       // wider one, so an element at the edge lands at the edge.
       const float delta = std::atan(std::tan(yaw) * spread) - yaw;
-      const CTransform4f rotate =
-          invView * CTransform4f::RotateY(CRelAngle(delta)) * x14_camera->GetAspectSpreadView();
-      widget->SetO2WTransform(rotate * world);
+      // Move the element across the screen inside its own plane, then turn it in
+      // place so it still faces the eye. Rotating each element about the eye
+      // instead swings it closer to the eye, and the widest elements swing
+      // closest, which reorders HUD depths - the visor ends up drawn over the
+      // elements it should sit behind. Doing this in eye space keeps the move on
+      // the camera's own axes no matter which way the player faces.
+      const float dx = (spread - 1.f) * across;
+      const CVector3f pivot = eyePos + CVector3f(dx, 0.f, 0.f);
+      const CTransform4f move = CTransform4f::Translate(CVector3f(dx, 0.f, 0.f));
+      const CTransform4f turn = CTransform4f::Translate(pivot) *
+                                CTransform4f::RotateY(CRelAngle(delta)) * CTransform4f::Translate(-pivot);
+      widget->SetO2WTransform(invView * turn * move * spreadView * world);
       widget->Draw(parms);
       widget->SetO2WTransform(world);
     } else {
