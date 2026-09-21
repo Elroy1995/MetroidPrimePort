@@ -33,9 +33,11 @@ constexpr PromptKey kKeys[] = {
     // Front end.
     {PAD_BUTTON_A, 32, 32, 0xbb21e8755f36b2f0ull, "5"},
     {PAD_BUTTON_B, 32, 32, 0xe6dbfd18d4666ee7ull, "5"},
-    // Pause / inventory.
+    // Pause / inventory. The B prompt reuses the front end's texture; the two
+    // shoulder prompts have their own, one per side.
     {PAD_BUTTON_A, 32, 32, 0x281ae5aa517797edull, "5"},
-    {PAD_BUTTON_B, 32, 32, 0x178b7311fda3f949ull, "5"},
+    {PAD_TRIGGER_L, 32, 32, 0x3f419d4a7ba3cff3ull, "5"},
+    {PAD_TRIGGER_R, 32, 32, 0x178b7311fda3f949ull, "5"},
 };
 constexpr size_t kKeyCount = sizeof(kKeys) / sizeof(kKeys[0]);
 
@@ -48,6 +50,8 @@ struct PromptAction {
 constexpr PromptAction kActions[] = {
     {PAD_BUTTON_A, "A"},
     {PAD_BUTTON_B, "B"},
+    {PAD_TRIGGER_L, "L"},
+    {PAD_TRIGGER_R, "R"},
 };
 constexpr size_t kActionCount = sizeof(kActions) / sizeof(kActions[0]);
 
