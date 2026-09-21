@@ -127,11 +127,14 @@ void resize_swapchain() noexcept {
     SDL_SetRenderScale(g_renderer, size.scale, size.scale);
   }
 #ifdef AURORA_ENABLE_GX
-  if (!is_presentable() || consume_surface_invalidated()) {
+  const bool invalidated = consume_surface_invalidated();
+  if (!is_presentable() || (invalidated && webgpu::surface_window_changed())) {
     // The surface was destroyed since the swapchain was created, so configuring
     // it would target a native window that no longer exists (and can take the
     // whole device down). Drop it; the next frame rebuilds it against the new
     // surface. This also matters when a blocking dialog outlives the surface.
+    // Android can also rebuild the surface onto the same window, and asking for
+    // a second surface for one window fails, so only rebuild when it moved.
     webgpu::release_surface();
     return;
   }
@@ -502,6 +505,20 @@ AuroraWindowSize get_window_size() {
 }
 
 SDL_Window* get_sdl_window() { return g_window; }
+
+const void* get_native_window_handle() noexcept {
+  if (g_window == nullptr) {
+    return nullptr;
+  }
+#if defined(SDL_PLATFORM_ANDROID)
+  // Changes when Android tears the SurfaceView's surface down and rebuilds it.
+  return SDL_GetPointerProperty(SDL_GetWindowProperties(g_window),
+                                SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+#else
+  // The window itself is the identity everywhere else.
+  return g_window;
+#endif
+}
 
 SDL_Renderer* get_sdl_renderer() { return g_renderer; }
 

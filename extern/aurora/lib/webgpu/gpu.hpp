@@ -61,6 +61,9 @@ bool initialize(AuroraBackend backend, bool allowCpu);
 void shutdown();
 void release_surface() noexcept;
 bool refresh_surface(bool recreate = true);
+// True when the live surface is bound to a native window that no longer matches
+// the SDL window, so it has to be rebuilt instead of reconfigured.
+bool surface_window_changed();
 void resize_swapchain(uint32_t width, uint32_t height, uint32_t nativeWidth, uint32_t nativeHeight, bool force = false);
 TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled);
 const TextureWithSampler& present_source() noexcept;

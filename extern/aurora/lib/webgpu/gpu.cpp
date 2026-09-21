@@ -63,6 +63,11 @@ static TextureWithSampler g_resampledFrameBuffer;
 static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
 wgpu::AdapterInfo g_adapterInfo;
+// The native window the current surface was created from. Android can destroy
+// and recreate the surface under us; the window only needs a new VkSurfaceKHR
+// when this handle changes, and creating a second one for the same window fails
+// with VK_ERROR_NATIVE_WINDOW_IN_USE_KHR.
+static const void* g_surfaceWindow = nullptr;
 static wgpu::SurfaceCapabilities g_surfaceCapabilities;
 bool g_hasCoreFeatures = false;
 bool g_bcTexturesSupported = false;
@@ -742,7 +747,15 @@ static bool create_surface() {
     Log.error("Failed to create surface");
     return false;
   }
+  g_surfaceWindow = window::get_native_window_handle();
   return true;
+}
+
+bool surface_window_changed() {
+  if (!g_surface) {
+    return false;
+  }
+  return g_surfaceWindow != window::get_native_window_handle();
 }
 
 bool initialize(AuroraBackend auroraBackend, bool allowCpu) {

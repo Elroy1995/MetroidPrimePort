@@ -313,7 +313,8 @@ bool begin_frame() noexcept {
   ZoneScoped;
 #ifdef AURORA_ENABLE_GX
   {
-    if (!window::is_presentable() || window::consume_surface_invalidated()) {
+    const bool invalidated = window::consume_surface_invalidated();
+    if (!window::is_presentable() || (invalidated && webgpu::surface_window_changed())) {
       webgpu::release_surface();
       return false;
     }

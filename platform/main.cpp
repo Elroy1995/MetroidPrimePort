@@ -24,6 +24,10 @@
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_timer.h>
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
 #include <atomic>
 #include <cctype>
 #include <cstdio>
@@ -38,6 +42,34 @@ extern "C" int metroid_main(int argc, char** argv);
 extern "C" void AIPortShutdown(void);
 
 namespace {
+#if defined(__ANDROID__)
+// Aurora logs to stderr, which Android discards. Send it to logcat instead so
+// the Vulkan/audio/disc diagnostics are actually reachable on a device.
+void AndroidLogCallback(AuroraLogLevel level, const char* module, const char* message,
+                        unsigned int len) {
+    int priority = ANDROID_LOG_INFO;
+    switch (level) {
+    case LOG_DEBUG:
+        priority = ANDROID_LOG_DEBUG;
+        break;
+    case LOG_WARNING:
+        priority = ANDROID_LOG_WARN;
+        break;
+    case LOG_ERROR:
+        priority = ANDROID_LOG_ERROR;
+        break;
+    case LOG_FATAL:
+        priority = ANDROID_LOG_FATAL;
+        break;
+    case LOG_INFO:
+    default:
+        break;
+    }
+    __android_log_print(priority, "aurora", "[%s] %.*s", module != nullptr ? module : "",
+                        static_cast< int >(len), message);
+}
+#endif
+
 std::string LowerExtension(const std::filesystem::path& path) {
     std::string ext = path.extension().string();
     for (char& c : ext) {
@@ -203,7 +235,7 @@ int main(int argc, char** argv) {
         SDL_free(pref);
     }
 #endif
-    const AuroraConfig config = {
+    AuroraConfig config = {
         .appName = "Metroid Prime",
         .userPath = std::getenv("MP_USER_PATH"),
         .cachePath = std::getenv("MP_CACHE_PATH"),
@@ -224,6 +256,7 @@ int main(int argc, char** argv) {
     // backend only understands mouse events. The touch overlay in Java claims
     // gameplay touches, so whatever reaches SDL here is meant for ImGui.
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
+    config.logCallback = AndroidLogCallback;
 #endif
     aurora_initialize(argc, argv, &config);
     // Apply the persisted render scale. Vsync is applied on the first drawn

@@ -38,6 +38,7 @@ AuroraWindowSize get_window_size();
 const AuroraEvent* poll_events();
 SDL_Window* get_sdl_window();
 SDL_Renderer* get_sdl_renderer();
+const void* get_native_window_handle() noexcept;
 bool is_paused() noexcept;
 bool is_presentable() noexcept;
 bool consume_surface_invalidated() noexcept;
