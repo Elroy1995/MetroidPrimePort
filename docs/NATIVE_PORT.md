@@ -110,10 +110,11 @@ key or mouse button changes the prompt. The per-input icons live in
 served through Aurora's virtual-replacement callback rather than shipped as a
 fixed set. Each screen draws its own prompt art, so one action maps to several
 game textures; the front end, the pause/inventory screen and the map screen are
-covered, for the A, B, L, R and Z actions. Prompts for the sticks (the map
-screen's Move and the pause screen's Zoom, which are axes rather than buttons)
-and the HUD are not yet, and keep the static icon. A device set only carries the
-actions it has art for, so the pad sets have no Z. Only the keyboard/mouse set follows bindings;
+covered, for the A, B, L, R, Z and stick prompts. The stick prompts (the map
+screen's Move, the pause screen's Zoom) are axes rather than buttons, so they do
+not follow a binding; they get the device's own stick, or a direction-key icon
+on keyboard. The HUD prompts are not covered yet and keep the static icon. A
+device set only carries the actions it has art for, so the pad sets have no Z. Only the keyboard/mouse set follows bindings;
 with a pad the static per-device icons are used, since they already match the
 pad's own labels, and a remapped pad button is not reflected. The chosen icon is
 logged when it changes ("prompt A keyboard_x"). `MP_SMOKE_BIND_A=<scancode>` rebinds the A action once,

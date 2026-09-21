@@ -19,6 +19,10 @@
 #include <vector>
 
 namespace {
+// Stands in for the C-stick, which is an axis rather than a button, so the
+// table can name the prompts that show it.
+constexpr PADButton PAD_AXIS_CSTICK = 0;
+
 // The prompt textures the port can re-icon. Each names the game action it
 // stands for, and the hash identifies the game's own texture as it appears in
 // a dump. One action usually has several, since each screen draws its own art.
@@ -42,6 +46,10 @@ constexpr PromptKey kKeys[] = {
     {PAD_TRIGGER_L, 32, 32, 0x06ad76760dcad506ull, "5"},
     {PAD_TRIGGER_R, 32, 32, 0x45ccec4d3cda3f1bull, "5"},
     {PAD_TRIGGER_Z, 64, 32, 0x0f4cb495c960bcfaull, "14"},
+    // Stick prompts. Not a button, so there is no binding to follow; the icon
+    // is the device's own stick (or the direction keys for a keyboard).
+    {PAD_AXIS_CSTICK, 32, 32, 0x1ff9d2b310c0b706ull, "14"},
+    {PAD_AXIS_CSTICK, 64, 32, 0xe14dc493b5513d14ull, "5"},
 };
 constexpr size_t kKeyCount = sizeof(kKeys) / sizeof(kKeys[0]);
 
@@ -57,6 +65,7 @@ constexpr PromptAction kActions[] = {
     {PAD_TRIGGER_L, "L"},
     {PAD_TRIGGER_R, "R"},
     {PAD_TRIGGER_Z, "Z"},
+    {PAD_AXIS_CSTICK, "stick"},
 };
 constexpr size_t kActionCount = sizeof(kActions) / sizeof(kActions[0]);
 
@@ -143,6 +152,11 @@ bool ReadIconBytes(void* userData, const char* path, std::vector<uint8_t>& out) 
 // The icon stem for whatever is bound to `button`, or null when the port has no
 // icon for it (in which case the static set stays in place).
 const char* IconStemForButton(PADButton button) {
+  if (button == PAD_AXIS_CSTICK) {
+    // A stick is bound to several keys at once, so the icon says "direction
+    // keys" rather than naming one.
+    return "keyboard_arrows";
+  }
   u32 count = 0;
   PADKeyButtonBinding* bindings = PADGetKeyButtonBindings(PAD_CHAN0, &count);
   if (bindings == nullptr) {

@@ -38,15 +38,17 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "textures"
 # binding has no icon of its own, so it labels the port's default keys.
 DEVICE_ICONS = {
     "xbox": {"a": "xbox_button_color_a.png", "b": "xbox_button_color_b.png",
-             "l": "xbox_lb.png", "r": "xbox_rb.png"},
+             "l": "xbox_lb.png", "r": "xbox_rb.png", "stick": "xbox_stick_r.png"},
     "playstation": {"a": "playstation_button_color_cross.png",
                     "b": "playstation_button_color_circle.png",
-                    "l": "playstation_trigger_l1.png", "r": "playstation_trigger_r1.png"},
+                    "l": "playstation_trigger_l1.png", "r": "playstation_trigger_r1.png",
+                    "stick": "playstation_stick_r.png"},
     "switch": {"a": "switch_button_a.png", "b": "switch_button_b.png",
-               "l": "switch_button_l.png", "r": "switch_button_r.png"},
+               "l": "switch_button_l.png", "r": "switch_button_r.png",
+               "stick": "switch_stick_r.png"},
     "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png",
                  "l": "keyboard_q.png", "r": "keyboard_e.png",
-                 "z": "keyboard_f.png"},
+                 "z": "keyboard_f.png", "stick": "keyboard_arrows.png"},
 }
 
 # PAD_BUTTON_* / PAD_TRIGGER_* to the action name used above.
@@ -56,6 +58,7 @@ ACTION_FOR_BUTTON = {
     "PAD_TRIGGER_L": "l",
     "PAD_TRIGGER_R": "r",
     "PAD_TRIGGER_Z": "z",
+    "PAD_AXIS_CSTICK": "stick",
 }
 
 
@@ -94,6 +97,7 @@ BINDING_ICONS = [
     "keyboard_end", "keyboard_page_up", "keyboard_page_down",
     "keyboard_shift", "keyboard_ctrl", "keyboard_alt",
     "mouse_left", "mouse_right",
+    "keyboard_arrows",
 ]
 
 

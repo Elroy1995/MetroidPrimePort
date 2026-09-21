@@ -26,6 +26,9 @@ own, so it labels the port's default keys:
 | `switch_button_l.png`, `switch_button_r.png` | Switch L / R shoulder prompts |
 | `keyboard_x.png`, `keyboard_z.png` | keyboard A / B, matching the default keys |
 | `keyboard_q.png`, `keyboard_e.png` | keyboard L / R, matching the default keys |
+| `keyboard_f.png` | keyboard Z, matching the default key |
+| `keyboard_arrows.png` | keyboard stick prompts (the sticks are bound to key sets) |
+| `xbox_stick_r.png`, `playstation_stick_r.png`, `switch_stick_r.png` | pad stick prompts |
 
 Which game textures they are written as comes from the prompt table in
 `platform/port_prompts.cpp`, which `tools/make_prompt_glyphs.py` parses, so a
