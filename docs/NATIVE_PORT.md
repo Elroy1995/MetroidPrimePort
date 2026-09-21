@@ -137,11 +137,16 @@ may lack: freetype, libpng, zlib, bzip2 and brotli. It relies on the system for
 glibc, libstdc++, a Vulkan driver, X11 or Wayland, and DBus for the file dialog.
 
 glibc is deliberately not bundled, so the build is only as portable as the
-machine it was built on. This one is built against glibc 2.43 - the float math
-symbols (`acosf`, `sinhf`, ...) are versioned from there - so it needs a
-distribution at least that new. Building on an older base lowers that floor, and
-linking with `-static-libstdc++ -static-libgcc` removes the libstdc++
-requirement (GLIBCXX_3.4.34 here).
+machine it was built on. `platform/glibc_compat.c` lowers that floor: recent
+glibc gives the float math functions and the C23 strtol/scanf family new symbol
+versions, which would otherwise pin the binary to the build host's glibc
+(2.43 here). Defining those names in terms of the long-standing
+double-precision and pre-C23 functions brings the requirement down to
+**glibc 2.39** (Ubuntu 24.04, the current LTS).
+
+What is left above that is `pidfd_spawnp`/`pidfd_getpid`, used by nod - the
+prebuilt Rust library behind Aurora's disc access - which would need either an
+older nod build or a build on an older base to remove.
 
 The AppImage embeds the statically linked type-2 runtime, so libfuse2 is not
 needed on the target system; check it with `--appimage-version`. Where FUSE

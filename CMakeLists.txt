@@ -70,6 +70,7 @@ add_executable(metroid_prime_port
     platform/sdk_stubs.cpp
     platform/port_textures.cpp
     platform/port_prompts.cpp
+    platform/glibc_compat.c
     platform/ai_dma.cpp)
 add_custom_target(port_build_info
     COMMAND ${CMAKE_COMMAND}
