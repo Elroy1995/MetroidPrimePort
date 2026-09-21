@@ -90,6 +90,11 @@ override these.
   override the file for that run, and are written back into it if any setting is
   changed during that run.
 - `MP_ASPECT=4:3|16:9|window`; the legacy `MP_WIDESCREEN` selects 16:9.
+- The overlay's **Controls** tab rebinds pad 1: click Bind, then press the input.
+  "Keyboard & mouse" assigns a key or mouse button to each pad button and stick
+  axis; "Controller" assigns a physical controller button or axis. Bindings are
+  saved by Aurora next to the other controller data, with buttons to clear the
+  keyboard bindings and restore the controller defaults.
 - `MP_HUD_WIDE=1` (Render tab, persisted as `hud_wide`): widescreen HUD. The
   aspect-matched in-game HUD frames keep each element's shape but spread its
   position about the screen centre, so edge elements (scan panels, energy bar,
