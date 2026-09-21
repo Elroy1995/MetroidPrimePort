@@ -79,6 +79,14 @@ add_custom_target(port_build_info
     VERBATIM)
 add_dependencies(metroid_prime_port port_build_info)
 target_include_directories(metroid_prime_port PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+# Keep the HD texture replacements next to the executable, which is where the
+# port looks for them by default, so a built binary picks them up without a
+# manual copy. Regenerate them with tools/make_prompt_glyphs.py.
+add_custom_command(TARGET metroid_prime_port POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/textures"
+        "$<TARGET_FILE_DIR:metroid_prime_port>/textures"
+    COMMENT "Copying texture replacements next to the executable")
 if(MP_ENABLE_SMOKE_DRIVER)
     target_sources(metroid_prime_port PRIVATE platform/smoke.cpp)
     target_compile_definitions(mp_game PRIVATE MP_ENABLE_SMOKE_DRIVER)
