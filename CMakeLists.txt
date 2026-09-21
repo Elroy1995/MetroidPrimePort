@@ -12,6 +12,16 @@ set(CMAKE_COLOR_DIAGNOSTICS ON)
 include(CTest)
 option(MP_BUILD_TESTS "Build native-port regression tests" ON)
 option(MP_ENABLE_SMOKE_DRIVER "Enable the opt-in real-disc lifecycle test driver" OFF)
+option(MP_ANDROID_NOD_STUB "Use a non-functional nod stub for Android build probes" OFF)
+
+if(MP_ANDROID_NOD_STUB)
+    if(NOT ANDROID)
+        message(FATAL_ERROR "MP_ANDROID_NOD_STUB is only valid for Android builds")
+    endif()
+    add_library(mp_android_nod_stub STATIC platform/android_probe/nod_stub.c)
+    target_include_directories(mp_android_nod_stub PUBLIC platform/android_probe/include)
+    add_library(nod::nod ALIAS mp_android_nod_stub)
+endif()
 
 # Aurora provides the GameCube/Wii compatibility layer (MIT): GX, OS, PAD, DVD,
 # CARD, VI, SI, THP, mtx, plus the SDL3/WebGPU application layer.
@@ -61,8 +71,8 @@ else()
 endif()
 
 # Port entry point and platform shims (Aurora owns the real main; see
-# aurora/main.h).
-add_executable(metroid_prime_port
+# aurora/main.h). Android loads the target through SDL's Java activity.
+set(MP_PORT_SOURCES
     platform/main.cpp
     platform/debug_ui.cpp
     platform/disc.cpp
@@ -72,6 +82,11 @@ add_executable(metroid_prime_port
     platform/port_prompts.cpp
     platform/glibc_compat.c
     platform/ai_dma.cpp)
+if(ANDROID)
+    add_library(metroid_prime_port SHARED ${MP_PORT_SOURCES})
+else()
+    add_executable(metroid_prime_port ${MP_PORT_SOURCES})
+endif()
 add_custom_target(port_build_info
     COMMAND ${CMAKE_COMMAND}
         "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
