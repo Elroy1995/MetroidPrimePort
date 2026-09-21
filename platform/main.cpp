@@ -112,6 +112,13 @@ std::string AskForDiscImage() {
     int windowCount = 0;
     SDL_Window** windows = SDL_GetWindows(&windowCount);
     SDL_Window* window = windows != nullptr && windowCount > 0 ? windows[0] : nullptr;
+    SDL_free(windows);
+    if (window == nullptr) {
+        // Headless, as on a build runner: nothing to show a dialog on, so say
+        // no disc was given rather than waiting for an answer that cannot come.
+        std::fprintf(stderr, "metroid_prime_port: no window to ask for a disc image on\n");
+        return {};
+    }
     std::fprintf(stderr, "metroid_prime_port: no disc image found; asking for one\n");
     SDL_ShowOpenFileDialog(
         [](void*, const char* const* files, int) {
@@ -121,7 +128,9 @@ std::string AskForDiscImage() {
             answered.store(true);
         },
         nullptr, window, filters, 2, nullptr, false);
-    SDL_free(windows);
+    // Wait for the answer, but not forever: a dialog that never calls back
+    // would otherwise hang a scripted or headless run.
+    const Uint64 deadline = SDL_GetTicks() + 5 * 60 * 1000;
     while (!answered.load()) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -129,6 +138,10 @@ std::string AskForDiscImage() {
                 std::fprintf(stderr, "metroid_prime_port: disc selection cancelled\n");
                 return {};
             }
+        }
+        if (SDL_GetTicks() > deadline) {
+            std::fprintf(stderr, "metroid_prime_port: disc selection timed out\n");
+            return {};
         }
         SDL_Delay(10);
     }
