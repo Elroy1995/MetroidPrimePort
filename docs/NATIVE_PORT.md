@@ -148,6 +148,15 @@ What is left above that is `pidfd_spawnp`/`pidfd_getpid`, used by nod - the
 prebuilt Rust library behind Aurora's disc access - which would need either an
 older nod build or a build on an older base to remove.
 
+A Flatpak sidesteps the whole question: `tools/make_flatpak.sh` builds one from
+`flatpak/org.metroidprime.MetroidPrimePort.yml`, and glibc then comes from the
+runtime (24.08) rather than the host, so the floor above does not apply. The GPU
+driver still comes from the host, the disc is not bundled, and the sandbox sees
+the home directory read-only. It needs flatpak and flatpak-builder and compiles
+the whole game, so it is not part of the normal build; change the app id in the
+manifest before publishing. This path has not been built here - flatpak is not
+installed on the machine it was written on.
+
 The AppImage embeds the statically linked type-2 runtime, so libfuse2 is not
 needed on the target system; check it with `--appimage-version`. Where FUSE
 itself is unavailable, such as in a container, run it with

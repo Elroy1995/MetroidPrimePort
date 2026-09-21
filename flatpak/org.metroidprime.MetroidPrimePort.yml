@@ -1,0 +1,36 @@
+# Flatpak manifest for the port.
+#
+# Unlike the AppImage, a Flatpak does not depend on the host's glibc: it comes
+# from the runtime below, so the binary only has to be built against that. The
+# GPU driver still comes from the host through the usual extensions, which is
+# what we want.
+#
+# Build with tools/make_flatpak.sh. Change the app id to something you control
+# before publishing anywhere.
+app-id: org.metroidprime.MetroidPrimePort
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: metroid_prime_port
+
+finish-args:
+  # Vulkan goes through the DRM device.
+  - --device=dri
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # The disc image lives wherever the user keeps it; it is read-only to us.
+  - --filesystem=home:ro
+
+modules:
+  - name: metroid-prime-port
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DMP_BUILD_TESTS=OFF
+    sources:
+      # The repository itself. A git source keeps the build directory, disc
+      # images and other untracked files out of the sandbox.
+      - type: git
+        path: ..
