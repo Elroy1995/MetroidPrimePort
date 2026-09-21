@@ -37,6 +37,7 @@ final class TouchControlsView extends View {
         new ControlButton("R", KeyEvent.KEYCODE_E, 0.76f, 0.10f, 0.065f),
         new ControlButton("Z", KeyEvent.KEYCODE_F, 0.86f, 0.16f, 0.052f),
         new ControlButton("START", KeyEvent.KEYCODE_ENTER, 0.50f, 0.11f, 0.050f),
+        new ControlButton("MENU", KeyEvent.KEYCODE_F1, 0.64f, 0.11f, 0.050f),
         new ControlButton("UP", KeyEvent.KEYCODE_DPAD_UP, 0.08f, 0.25f, 0.043f),
         new ControlButton("DOWN", KeyEvent.KEYCODE_DPAD_DOWN, 0.08f, 0.41f, 0.043f),
         new ControlButton("LEFT", KeyEvent.KEYCODE_DPAD_LEFT, 0.04f, 0.33f, 0.043f),

@@ -692,6 +692,17 @@ bool Visible() {
 
 void UpdateControllerNav() {
   EnsureInitialized();
+  // F1 toggles the overlay as well. This has to run before the controller
+  // early-out below, because the touch controls send F1 and a device with no
+  // gamepad has no other way to open it.
+  static bool sF1Held = false;
+  const bool* keys = SDL_GetKeyboardState(nullptr);
+  const bool f1 = keys != nullptr && keys[SDL_SCANCODE_F1] != 0;
+  if (f1 && !sF1Held) {
+    Toggle();
+  }
+  sF1Held = f1;
+
   ImGuiIO& io = ImGui::GetIO();
   io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
