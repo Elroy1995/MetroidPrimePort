@@ -170,9 +170,10 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
           }
         }
       }
-      const CVector3f eyePos = spreadView * world.GetTranslation();
+      // spreadView is camera-to-world; camera +Y is forward and +Z is screen-up.
+      const CVector3f eyePos = invView * world.GetTranslation();
       const float across = eyePos.GetX();
-      const float depth = eyePos.GetZ() < 0.f ? -eyePos.GetZ() : eyePos.GetZ();
+      const float depth = eyePos.GetY();
       if (depth <= 1.f) {
         // At or behind the eye plane: no sensible tangent to spread.
         widget->Draw(parms);
@@ -191,9 +192,11 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
       const float dx = (spread - 1.f) * across;
       const CVector3f pivot = eyePos + CVector3f(dx, 0.f, 0.f);
       const CTransform4f move = CTransform4f::Translate(CVector3f(dx, 0.f, 0.f));
+      // Positive RotateZ turns +Y toward -X, opposite atan2(across, depth).
+      // Negate delta to turn outward without rolling about the view direction.
       const CTransform4f turn = CTransform4f::Translate(pivot) *
-                                CTransform4f::RotateY(CRelAngle(delta)) * CTransform4f::Translate(-pivot);
-      widget->SetO2WTransform(invView * turn * move * spreadView * world);
+                                CTransform4f::RotateZ(CRelAngle(-delta)) * CTransform4f::Translate(-pivot);
+      widget->SetO2WTransform(spreadView * turn * move * invView * world);
       widget->Draw(parms);
       widget->SetO2WTransform(world);
     } else {
