@@ -51,6 +51,39 @@ DEVICE_ICONS = {
                  "z": "keyboard_f.png", "stick": "keyboard_arrows.png"},
 }
 
+# Per-device icons for the pad's own buttons, keyed by the SDL gamepad button
+# the port reports in the controller's mapping. The port builds the icon name as
+# "<device>_<key>", so a remapped pad button follows the new button.
+PAD_ICONS = {
+    "xbox": {
+        "south": "xbox_button_color_a.png", "east": "xbox_button_color_b.png",
+        "west": "xbox_button_color_x.png", "north": "xbox_button_color_y.png",
+        "start": "xbox_button_start.png", "back": "xbox_button_view.png",
+        "leftshoulder": "xbox_lb.png", "rightshoulder": "xbox_rb.png",
+        "leftstick": "xbox_stick_l_press.png", "rightstick": "xbox_stick_r_press.png",
+        "stick": "xbox_stick_r.png",
+    },
+    "playstation": {
+        "south": "playstation_button_color_cross.png",
+        "east": "playstation_button_color_circle.png",
+        "west": "playstation_button_color_square.png",
+        "north": "playstation_button_color_triangle.png",
+        "start": "playstation3_button_start.png", "back": "playstation3_button_select.png",
+        "leftshoulder": "playstation_trigger_l1.png", "rightshoulder": "playstation_trigger_r1.png",
+        "leftstick": "playstation_stick_l_press.png", "rightstick": "playstation_stick_r_press.png",
+        "stick": "playstation_stick_r.png",
+    },
+    "switch": {
+        "south": "switch_button_b.png", "east": "switch_button_a.png",
+        "west": "switch_button_y.png", "north": "switch_button_x.png",
+        "start": "switch_button_plus.png", "back": "switch_button_minus.png",
+        "leftshoulder": "switch_button_l.png", "rightshoulder": "switch_button_r.png",
+        "leftstick": "switch_stick_l_press.png", "rightstick": "switch_stick_r_press.png",
+        "stick": "switch_stick_r.png",
+    },
+}
+PAD_ICONS["standard"] = PAD_ICONS["xbox"]
+
 # PAD_BUTTON_* / PAD_TRIGGER_* to the action name used above.
 ACTION_FOR_BUTTON = {
     "PAD_BUTTON_A": "a",
@@ -144,6 +177,11 @@ def main():
 
     bindings = os.path.join(OUT, "bindings")
     os.makedirs(bindings, exist_ok=True)
+    padCount = 0
+    for device, icons in PAD_ICONS.items():
+        for key, icon in icons.items():
+            write_dds(make_icon(icon), os.path.join(bindings, f"{device}_{key}.dds"))
+            padCount += 1
     missing = []
     for stem in BINDING_ICONS:
         src = os.path.join(ICONS_DIR, stem + ".png")
@@ -151,7 +189,7 @@ def main():
             missing.append(stem)
             continue
         write_dds(make_icon(stem + ".png"), os.path.join(bindings, stem + ".dds"))
-    print(f"bindings: {len(BINDING_ICONS) - len(missing)} icons -> {bindings}")
+    print(f"bindings: {len(BINDING_ICONS) - len(missing)} key icons, {padCount} pad icons -> {bindings}")
     if missing:
         print("  missing from tools/prompt_icons: " + ", ".join(missing))
 

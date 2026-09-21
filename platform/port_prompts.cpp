@@ -8,6 +8,7 @@
 #include <dolphin/pad.h>
 #include <aurora/texture.hpp>
 
+#include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_scancode.h>
 
 #include <cstdint>
@@ -117,6 +118,24 @@ constexpr KeyIcon kKeyIcons[] = {
     {PAD_KEY_MOUSE_LEFT, "mouse_left"}, {PAD_KEY_MOUSE_RIGHT, "mouse_right"},
 };
 
+// The SDL button a mapping points at, named the way the generated pad icons
+// are (tools/make_prompt_glyphs.py writes "<device>_<suffix>").
+const char* SuffixForSdlButton(int button) {
+  switch (button) {
+  case SDL_GAMEPAD_BUTTON_SOUTH: return "south";
+  case SDL_GAMEPAD_BUTTON_EAST: return "east";
+  case SDL_GAMEPAD_BUTTON_WEST: return "west";
+  case SDL_GAMEPAD_BUTTON_NORTH: return "north";
+  case SDL_GAMEPAD_BUTTON_START: return "start";
+  case SDL_GAMEPAD_BUTTON_BACK: return "back";
+  case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: return "leftshoulder";
+  case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return "rightshoulder";
+  case SDL_GAMEPAD_BUTTON_LEFT_STICK: return "leftstick";
+  case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return "rightstick";
+  default: return nullptr;
+  }
+}
+
 struct Registration {
   std::string iconPath;  // stable storage for the read callback
   std::string activeStem;
@@ -151,42 +170,61 @@ bool ReadIconBytes(void* userData, const char* path, std::vector<uint8_t>& out) 
   return !in.fail();
 }
 
-// The icon stem for whatever is bound to `button`, or null when the port has no
-// icon for it (in which case the static set stays in place).
-const char* IconStemForButton(PADButton button) {
+// The icon stem for whatever is bound to `button` on `device`, or empty when
+// the port has no icon for it (in which case the static set stays in place).
+// Keyboard and mouse come from the key bindings; a pad follows its own button
+// mapping, so a remapped button shows the button it was remapped to.
+std::string IconStemForButton(PADButton button, const char* device) {
+  const bool keyboard = std::strcmp(device, "keyboard") == 0;
   if (button == PAD_AXIS_CSTICK) {
     // A stick is bound to several keys at once, so the icon says "direction
-    // keys" rather than naming one.
-    return "keyboard_arrows";
+    // keys" rather than naming one; a pad shows its own stick.
+    return keyboard ? std::string("keyboard_arrows") : std::string(device) + "_stick";
   }
+
   u32 count = 0;
-  PADKeyButtonBinding* bindings = PADGetKeyButtonBindings(PAD_CHAN0, &count);
-  if (bindings == nullptr) {
-    return nullptr;
+  if (keyboard) {
+    PADKeyButtonBinding* bindings = PADGetKeyButtonBindings(PAD_CHAN0, &count);
+    if (bindings == nullptr) {
+      return {};
+    }
+    for (u32 i = 0; i < count; ++i) {
+      if (bindings[i].padButton != button) {
+        continue;
+      }
+      for (const KeyIcon& icon : kKeyIcons) {
+        if (icon.scancode == bindings[i].scancode) {
+          return icon.stem;
+        }
+      }
+      return {};
+    }
+    return {};
+  }
+
+  PADButtonMapping* mappings = PADGetButtonMappings(PAD_CHAN0, &count);
+  if (mappings == nullptr) {
+    return {};
   }
   for (u32 i = 0; i < count; ++i) {
-    if (bindings[i].padButton != button) {
+    if (mappings[i].padButton != button) {
       continue;
     }
-    for (const KeyIcon& icon : kKeyIcons) {
-      if (icon.scancode == bindings[i].scancode) {
-        return icon.stem;
-      }
-    }
-    return nullptr;
+    const char* suffix = SuffixForSdlButton(static_cast<int>(mappings[i].nativeButton));
+    return suffix != nullptr ? std::string(device) + "_" + suffix : std::string();
   }
-  return nullptr;
+  return {};
 }
 
-void Apply(size_t index, const char* stem) {
+void Apply(size_t index, const std::string& stem) {
   Registration& reg = sRegistrations[index];
   if (reg.registered) {
     aurora::texture::unregister_replacement(reg.handle);
     reg.handle = {};
     reg.registered = false;
   }
-  reg.activeStem = stem != nullptr ? stem : "";
-  if (stem == nullptr) {
+  reg.activeStem = stem;
+  if (stem.empty()) {
     return;
   }
 
@@ -194,7 +232,7 @@ void Apply(size_t index, const char* stem) {
   char keyName[80];
   std::snprintf(keyName, sizeof(keyName), "tex1_%ux%u_%016llx_%s.dds", key.width, key.height,
                 static_cast<unsigned long long>(key.hash), key.format);
-  reg.iconPath = (std::filesystem::path(sBindingsDir) / (std::string(stem) + ".dds")).string();
+  reg.iconPath = (std::filesystem::path(sBindingsDir) / (stem + ".dds")).string();
   reg.handle = aurora::texture::register_virtual_replacement(
       keyName, aurora::texture::VirtualFileSource{&ReadIconBytes, &reg.iconPath});
   reg.registered = reg.handle.id != 0;
@@ -229,20 +267,19 @@ void Poll() {
   if (!sEnabled) {
     return;
   }
-  // A pad's own labels already match the static per-device set.
-  const bool useBindings = std::strcmp(PortTextures::DeviceName(), "keyboard") == 0;
+  const char* device = PortTextures::DeviceName();
   for (const PromptAction& action : kActions) {
-    const char* stem = useBindings ? IconStemForButton(action.button) : nullptr;
+    const std::string stem = IconStemForButton(action.button, device);
     size_t applied = 0;
     for (size_t i = 0; i < kKeyCount; ++i) {
       if (kKeys[i].button != action.button) {
         continue;
       }
       const std::string& current = sRegistrations[i].activeStem;
-      if (stem == nullptr && current.empty()) {
+      if (stem.empty() && current.empty()) {
         continue;
       }
-      if (stem != nullptr && stem == current) {
+      if (!stem.empty() && stem == current) {
         continue;
       }
       Apply(i, stem);
@@ -250,7 +287,7 @@ void Poll() {
     }
     if (applied != 0) {
       std::fprintf(stderr, "metroid_prime_port: prompt %s %s\n", LabelForButton(action.button),
-                   stem != nullptr ? stem : "(back to the static icon)");
+                   stem.empty() ? "(back to the static icon)" : stem.c_str());
     }
   }
 }
