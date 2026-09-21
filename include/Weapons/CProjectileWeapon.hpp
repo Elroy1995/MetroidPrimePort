@@ -21,6 +21,7 @@
 #include "rstl/optional_object.hpp"
 
 class CProjectileWeapon : public IWeaponProjectile {
+public:
   static uint skGlobalSeed;
   CProjectileWeapon(const TToken< CWeaponDescription >& description, const CVector3f& worldOffset,
                     const CTransform4f& localToWorld, const CVector3f& scale, int flags);
@@ -59,6 +60,11 @@ class CProjectileWeapon : public IWeaponProjectile {
   void SetGravity(const CVector3f& gravity);
   const CVector3f& GetGravity() const;
   static void SetGlobalSeed(const uint seed);
+  bool IsProjectileActive() const { return x124_24_active; }
+  TLockedToken< CWeaponDescription > GetWeaponDescription() const { return x4_weaponDesc; }
+  CElementGen* GetAttachedPS1() { return xfc_APSMGen; }
+  const CElementGen* GetAttachedPS1() const { return xfc_APSMGen; }
+  double GameTime() const { return xd0_curTime; }
 
   rstl::optional_object< CAABox > GetBounds() const;
 

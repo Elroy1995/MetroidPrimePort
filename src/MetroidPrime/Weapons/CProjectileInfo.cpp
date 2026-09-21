@@ -2,7 +2,7 @@
 
 #include "MetroidPrime/CSteeringBehaviors.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
-#include "MetroidPrime/Weapons/CProjectileWeapon.hpp"
+#include "Weapons/CProjectileWeapon.hpp"
 
 #include "Weapons/CWeaponDescription.hpp"
 

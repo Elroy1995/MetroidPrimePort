@@ -55,7 +55,7 @@
 #include "MetroidPrime/Tweaks/CTweakGui.hpp"
 #include "MetroidPrime/Tweaks/CTweakPlayer.hpp"
 #include "MetroidPrime/Tweaks/CTweakPlayerRes.hpp"
-#include "MetroidPrime/Weapons/CProjectileWeapon.hpp"
+#include "Weapons/CProjectileWeapon.hpp"
 #include "MetroidPrime/Weapons/CWeapon.hpp"
 #include "Weapons/CCollisionResponseData.hpp"
 

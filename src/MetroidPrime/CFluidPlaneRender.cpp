@@ -50,7 +50,9 @@ float* InitializeSineWave() {
   return sGlobalSineWave;
 }
 
-float* GetGlobalSineWave() { return sGlobalSineWave; }
+// Declared as an array reference in CFluidPlaneCPU.cpp; match it, or the
+// mangled name differs and the call never resolves.
+const float (&GetGlobalSineWave())[256] { return sGlobalSineWave; }
 
 bool PrepareRipple(const CRipple& ripple, const CFluidPlaneCPURender::SPatchInfo& info,
                    CFluidPlaneCPURender::SRippleInfo& rippleInfo) {

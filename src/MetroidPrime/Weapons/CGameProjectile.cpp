@@ -17,7 +17,7 @@
 #include "MetroidPrime/ScriptObjects/CScriptWater.hpp"
 #include "MetroidPrime/TCastTo.hpp"
 #include "MetroidPrime/TGameTypes.hpp"
-#include "MetroidPrime/Weapons/CProjectileWeapon.hpp"
+#include "Weapons/CProjectileWeapon.hpp"
 #include "MetroidPrime/Weapons/CWeapon.hpp"
 #include "Weapons/CWeaponDescription.hpp"
 #include "rstl/math.hpp"

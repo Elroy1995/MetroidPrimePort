@@ -5,7 +5,7 @@
 #include "types.h"
 
 #include "MetroidPrime/CStateManager.hpp"
-#include "MetroidPrime/Weapons/CProjectileWeapon.hpp"
+#include "Weapons/CProjectileWeapon.hpp"
 #include "MetroidPrime/Weapons/CWeapon.hpp"
 
 #include "Kyoto/TToken.hpp"
