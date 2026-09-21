@@ -37,9 +37,25 @@ install -m755 "$BIN" "$APPDIR/usr/bin/metroid_prime_port"
 cp -r "$TEXTURES" "$APPDIR/usr/bin/textures"
 install -m644 "$ICON" "$APPDIR/metroid-prime.png"
 
+# Bundle the shared libraries a base desktop may not have. glibc, libstdc++ and
+# libgcc are deliberately left to the system: shipping them is what breaks
+# AppImages, and the port is built against whatever glibc the build host has.
+mkdir -p "$APPDIR/usr/lib"
+for lib in libfreetype.so.6 libpng16.so.16 libz.so.1 libbz2.so.1.0 \
+           libbrotlicommon.so.1 libbrotlidec.so.1; do
+    src=$(ldd "$BIN" | awk -v want="$lib" '$1 == want { print $3 }')
+    if [[ -n "${src:-}" && -f "$src" ]]; then
+        cp "$src" "$APPDIR/usr/lib/"
+    else
+        echo "note: $lib not found on this host; not bundled" >&2
+    fi
+done
+
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
 HERE=$(dirname "$(readlink -f "$0")")
+# Bundled libraries first, then whatever the system provides.
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$HERE/usr/bin/metroid_prime_port" "$@"
 EOF
 chmod 755 "$APPDIR/AppRun"

@@ -131,6 +131,18 @@ platform's file dialog on first launch and remembers the answer as `disc_path`
 in the settings file. A path given as an argument or in `MP_DISC` still wins,
 then the saved path, then a copy beside the executable.
 
+The AppImage bundles the executable (Aurora, WebGPU/Dawn and SDL3 are linked
+statically), the texture replacements, and the shared libraries a base desktop
+may lack: freetype, libpng, zlib, bzip2 and brotli. It relies on the system for
+glibc, libstdc++, a Vulkan driver, X11 or Wayland, and DBus for the file dialog.
+
+glibc is deliberately not bundled, so the build is only as portable as the
+machine it was built on. This one is built against glibc 2.43 - the float math
+symbols (`acosf`, `sinhf`, ...) are versioned from there - so it needs a
+distribution at least that new. Building on an older base lowers that floor, and
+linking with `-static-libstdc++ -static-libgcc` removes the libstdc++
+requirement (GLIBCXX_3.4.34 here).
+
 The AppImage embeds the statically linked type-2 runtime, so libfuse2 is not
 needed on the target system; check it with `--appimage-version`. Where FUSE
 itself is unavailable, such as in a container, run it with
