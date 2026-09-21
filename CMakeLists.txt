@@ -84,6 +84,7 @@ set(MP_PORT_SOURCES
     platform/ai_dma.cpp)
 if(ANDROID)
     add_library(metroid_prime_port SHARED ${MP_PORT_SOURCES})
+    target_link_options(metroid_prime_port PRIVATE "-Wl,-u,SDL_main")
 else()
     add_executable(metroid_prime_port ${MP_PORT_SOURCES})
 endif()

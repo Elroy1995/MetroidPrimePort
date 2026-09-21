@@ -1,0 +1,94 @@
+plugins {
+    id "com.android.application"
+}
+
+def useNodStub = providers.gradleProperty("androidNodStub").getOrElse("true")
+def generatedAssets = layout.buildDirectory.dir("generated/portAssets")
+def dependencyCache = providers.gradleProperty("cmakeDependencyCache")
+def configuredNdk = System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_ROOT")
+def cmakeArguments = [
+    "-DANDROID_STL=c++_static",
+    "-DMP_BUILD_TESTS=OFF",
+    "-DMP_ANDROID_NOD_STUB=${useNodStub}",
+    "-DAURORA_SDL3_PROVIDER=vendor",
+    "-DAURORA_SDL3_LINKAGE=static",
+    "-DAURORA_DAWN_PROVIDER=auto",
+    "-DAURORA_DAWN_LINKAGE=static",
+    "-DAURORA_NOD_PROVIDER=vendor",
+    "-DAURORA_NOD_LINKAGE=static",
+]
+
+if (dependencyCache.isPresent()) {
+    def cache = file(dependencyCache.get())
+    ["DAWN_PREBUILT", "SDL", "ABSEIL-CPP", "XXHASH", "FMT", "ZLIB", "PNG", "FREETYPE", "IMGUI", "SQLITE3", "ZSTD", "TRACY", "AURORA_NOD", "CORROSION"].each { name ->
+        def source = new File(cache, name.toLowerCase())
+        if (source.isDirectory()) {
+            cmakeArguments.add("-DFETCHCONTENT_SOURCE_DIR_${name}=${source}")
+        }
+    }
+}
+if (!useNodStub.toBoolean()) {
+    cmakeArguments.add("-DRust_CARGO_TARGET=aarch64-linux-android")
+}
+
+android {
+    namespace "org.metroidprime.port"
+    compileSdk 34
+    ndkVersion "29.0.14206865"
+    if (configuredNdk) {
+        ndkPath configuredNdk
+    }
+
+    defaultConfig {
+        applicationId "org.metroidprime.port"
+        minSdk 28
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+        externalNativeBuild {
+            cmake {
+                arguments(*cmakeArguments)
+                targets "metroid_prime_port"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file("../../CMakeLists.txt")
+            version "3.31.5"
+        }
+    }
+
+    sourceSets.main.assets.srcDir(generatedAssets)
+
+    packagingOptions {
+        jniLibs.useLegacyPackaging = true
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+tasks.register("syncPortAssets", Sync) {
+    into generatedAssets
+    from("../../textures") {
+        into "textures"
+    }
+    from("../../assets/initial_pipeline_cache.db")
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("syncPortAssets")
+}

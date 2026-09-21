@@ -1,0 +1,3 @@
+-keep class org.libsdl.app.** { *; }
+-keep class dev.encounter.aurora.** { *; }
+-keep class org.metroidprime.port.** { *; }

@@ -91,9 +91,15 @@ const char* ResolveDiscPath(int argc, char** argv) {
     if (const char* env = std::getenv("MP_DISC"); env != nullptr && env[0] != '\0') {
         return env;
     }
-    if (const char* saved = PortDebug::DiscPath();
-        saved != nullptr && std::filesystem::exists(saved)) {
-        return saved;
+    if (const char* saved = PortDebug::DiscPath(); saved != nullptr) {
+#if defined(__ANDROID__)
+        if (std::strncmp(saved, "content://", 10) == 0) {
+            return saved;
+        }
+#endif
+        if (std::filesystem::exists(saved)) {
+            return saved;
+        }
     }
     static const std::string sFound = FindDiscNextToExecutable();
     return sFound.empty() ? nullptr : sFound.c_str();
@@ -155,11 +161,20 @@ std::string AskForDiscImage() {
 // Default texture-replacement folder next to the executable.
 const char* DefaultTexturesPath() {
     static const std::string sPath = [] {
+#if defined(__ANDROID__)
+        char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime");
+        if (pref == nullptr) {
+            return std::string();
+        }
+        const std::string dir = std::string(pref) + "textures";
+        SDL_free(pref);
+#else
         const char* base = SDL_GetBasePath();
         if (base == nullptr) {
             return std::string();
         }
         const std::string dir = std::string(base) + "textures";
+#endif
         std::error_code ec;
         return std::filesystem::is_directory(dir, ec) ? dir : std::string();
     }();
@@ -180,11 +195,18 @@ int main(int argc, char** argv) {
     // <cachePath>/texture_dumps as DDS, so replacement packs can be authored.
     const char* dumpEnv = std::getenv("MP_DUMP_TEXTURES");
     const bool dumpTextures = dumpEnv != nullptr && dumpEnv[0] != '\0' && std::strcmp(dumpEnv, "0") != 0;
+    std::string resourcesPath;
+#if defined(__ANDROID__)
+    if (char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime")) {
+        resourcesPath = pref;
+        SDL_free(pref);
+    }
+#endif
     const AuroraConfig config = {
         .appName = "Metroid Prime",
         .userPath = std::getenv("MP_USER_PATH"),
         .cachePath = std::getenv("MP_CACHE_PATH"),
-        .resourcesPath = nullptr,
+        .resourcesPath = resourcesPath.empty() ? nullptr : resourcesPath.c_str(),
         .desiredBackend = BACKEND_AUTO,
         .vsync = false,
         .allowTextureDumps = dumpTextures,

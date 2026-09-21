@@ -58,6 +58,10 @@ are available as `MP_*` environment variables.
 `tools/make_flatpak.sh` a Flatpak. Neither bundles the disc. See
 `docs/NATIVE_PORT.md` for what each one expects from the host.
 
+A first Android port builds an installable debug APK for `arm64-v8a`; see
+`docs/ANDROID_BUILD_PROBE.md`. Android is a development probe, not a
+production-supported target yet.
+
 ## Credits and licensing
 
 This is a fork of the [PrimeDecomp/prime](https://github.com/PrimeDecomp/prime)
