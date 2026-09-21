@@ -8,8 +8,10 @@
 #include "GuiSys/CGuiWidget.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Input/CFinalInput.hpp"
+#include "Kyoto/Math/CRelAngle.hpp"
 #include "rstl/algorithm.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -109,19 +111,44 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
   // follow through the transform hierarchy; the shift is undone after drawing.
   const float spread = x14_camera->GetAspectSpread();
   const float spreadCenterX = x14_camera->GetAspectSpreadCenterX();
+  // A perspective HUD is placed in front of the eye, so moving an element away
+  // from the view axis also turns it away from the eye: translating it sideways
+  // shears its shape, and the further it moves the worse it gets, which is why
+  // wide screens looked stretched. Rotating it rigidly about the eye instead
+  // moves it across the frame while leaving everything the viewer sees of it
+  // unchanged. The angle comes from the same aspect ratio, so this holds at any
+  // aspect, not only 16:9.
+  const bool aboutEye = spread != 1.f && x14_camera->GetAspectSpreadAboutEye();
+  const CTransform4f invView =
+      aboutEye ? x14_camera->GetAspectSpreadView().GetInverse() : CTransform4f::Identity();
   for (AUTO(it, x2c_widgets.begin()); it != x2c_widgets.end(); ++it) {
     CGuiWidget* widget = *it;
     if (!widget->GetIsVisible()) {
       continue;
     }
-    if (spread != 1.f) {
+    if (spread == 1.f) {
+      widget->Draw(parms);
+      continue;
+    }
+    if (aboutEye && widget->GetParent() != nullptr) {
+      const CTransform4f world = widget->GetWorldTransform();
+      const CVector3f eyePos =
+          x14_camera->GetAspectSpreadView() * world.GetTranslation();
+      const float yaw = std::atan2(eyePos.GetX(), -eyePos.GetZ());
+      // Spreading in tangent space maps the authored frustum exactly onto the
+      // wider one, so an element at the edge lands at the edge.
+      const float delta = std::atan(std::tan(yaw) * spread) - yaw;
+      const CTransform4f rotate =
+          invView * CTransform4f::RotateY(CRelAngle(delta)) * x14_camera->GetAspectSpreadView();
+      widget->SetO2WTransform(rotate * world);
+      widget->Draw(parms);
+      widget->SetO2WTransform(world);
+    } else {
       const float x = widget->GetWorldPosition().GetX();
       const float dx = (spreadCenterX + (x - spreadCenterX) * spread) - x;
       widget->MoveInWorld(CVector3f(dx, 0.f, 0.f));
       widget->Draw(parms);
       widget->MoveInWorld(CVector3f(-dx, 0.f, 0.f));
-    } else {
-      widget->Draw(parms);
     }
   }
   CGraphics::SetCullMode(kCM_Front);

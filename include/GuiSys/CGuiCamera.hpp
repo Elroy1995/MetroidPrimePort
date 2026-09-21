@@ -43,6 +43,13 @@ public:
   // Widescreen HUD spread for this frame's widgets: 1.0 when inactive.
   float GetAspectSpread() const { return mSpread; }
   float GetAspectSpreadCenterX() const { return mSpreadCenterX; }
+  // Under a perspective projection a widened aspect pulls off-axis elements
+  // toward the centre, and simply translating them back leaves them turned away
+  // from the view axis, which shears their shapes. There the spread rotates
+  // each element rigidly about the eye instead, which leaves what the viewer
+  // sees of it unchanged. Parallel projections do not need that.
+  bool GetAspectSpreadAboutEye() const { return mSpreadAboutEye; }
+  const CTransform4f& GetAspectSpreadView() const { return mSpreadView; }
 
   FourCC GetWidgetTypeID() const override { return 'CAMR'; }
 
@@ -57,6 +64,10 @@ public:
   // Computed in the const Draw() and read immediately by CGuiFrame::Draw.
   mutable float mSpread = 1.f;
   mutable float mSpreadCenterX = 0.f;
+  mutable bool mSpreadAboutEye = false;
+  // The view transform the last Draw used, so the frame can rotate a widget
+  // about the eye rather than shunting it sideways.
+  mutable CTransform4f mSpreadView = CTransform4f::Identity();
 };
 
 #endif // _CGUICAMERA

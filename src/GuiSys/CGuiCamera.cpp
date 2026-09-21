@@ -74,6 +74,7 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
 
   mSpread = 1.f;
   mSpreadCenterX = 0.f;
+  mSpreadAboutEye = false;
 
   if (xb8_projection == kProjection_Perspective) {
     const float authored = mCameraParms.perspective.aspect;
@@ -83,6 +84,7 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
     // positions to reach the true corners.
     if (renderAspect > 0.f && authored > 0.f && PortDebug::HudWide()) {
       mSpread = renderAspect / authored;
+      mSpreadAboutEye = true;
     }
     CGraphics::SetPerspective(mCameraParms.perspective.fov, aspect,
                               mCameraParms.perspective.znear, mCameraParms.perspective.zfar);
@@ -106,8 +108,9 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
                         mCameraParms.orthographic.zfar);
   }
 
-  CGraphics::SetViewPointMatrix(CTransform4f::Translate(parms.GetCameraOffset()) *
-                                GetWorldTransform());
+  mSpreadView =
+      CTransform4f::Translate(parms.GetCameraOffset()) * GetWorldTransform();
+  CGraphics::SetViewPointMatrix(mSpreadView);
   CGuiWidget::Draw(parms);
 }
 

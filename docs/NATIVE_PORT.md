@@ -205,10 +205,14 @@ a temporary directory instead of mounting.
   saved by Aurora next to the other controller data, with buttons to clear the
   keyboard bindings and restore the controller defaults.
 - `MP_HUD_WIDE=1` (Render tab, persisted as `hud_wide`): widescreen HUD. The
-  aspect-matched in-game HUD frames keep each element's shape but spread its
-  position about the screen centre, so edge elements (scan panels, energy bar,
-  map) reach the true wide corners instead of being pulled inward. Menus, the
-  credits and other non-aspect-matched frames are unaffected.
+  aspect-matched in-game HUD frames keep each element's shape but move it away
+  from the screen centre, so edge elements (scan panels, energy bar, map) reach
+  the true wide corners instead of being pulled inward. Under a perspective
+  camera the element is rotated rigidly about the eye rather than slid sideways,
+  since sliding turns off-axis elements away from the viewer and shears them;
+  the rotation leaves what is seen of the element unchanged and the angle is
+  derived from the aspect ratio, so it holds at any aspect rather than only
+  16:9. Menus, the credits and other non-aspect-matched frames are unaffected.
 - The in-game pause and map screens (`FRME_PauseScreen`, `FRME_PauseScreenInstructions`,
   `FRME_MapScreen`) are aspect-matched like the HUD, so they keep their
   proportions and spread across a wide viewport instead of stretching.
