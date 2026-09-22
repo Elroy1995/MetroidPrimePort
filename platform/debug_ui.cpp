@@ -27,6 +27,7 @@
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_sensor.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 
@@ -76,6 +77,11 @@ bool sHudWide = false;
 bool sMouseAim = false;
 bool sTwinStick = false;
 float sStickAimRate = 900.f;
+// Gyro aiming: off / hold / always, auto / controller / phone, and how fast a
+// rotation turns into aim travel.
+int sGyroMode = 0;
+int sGyroSource = 0;
+float sGyroRate = 600.f;
 bool sMouseCaptured = false;
 bool sMouseGameplayActive = false;
 bool sMouseInvertX = false;
@@ -99,6 +105,12 @@ std::atomic< bool > sOverlayVisible{false};
 // Same idea for the twin-stick setting, which the Android touch overlay uses to
 // pick a controller layout.
 std::atomic< bool > sTwinStickFlag{false};
+// Gyro state: the pad's gyro sensor is enabled once, and the phone's sensor is
+// looked up once, so neither is touched on every tick.
+bool sControllerGyroEnabled = false;
+bool sPhoneGyroSearched = false;
+SDL_Sensor* sPhoneGyro = nullptr;
+const char* sGyroStatus = "off";
 bool sVisible = false;
 bool sSettingsDirty = false;
 bool sAudioSettingsApplied = false;
@@ -176,6 +188,21 @@ void ApplySetting(const std::string& key, const std::string& value) {
     const float f = static_cast< float >(std::atof(value.c_str()));
     if (std::isfinite(f) && f >= 50.f && f <= 4000.f) {
       sStickAimRate = f;
+    }
+  } else if (key == "gyro_mode") {
+    const long v = std::strtol(value.c_str(), nullptr, 10);
+    if (v >= 0 && v <= 2) {
+      sGyroMode = static_cast< int >(v);
+    }
+  } else if (key == "gyro_source") {
+    const long v = std::strtol(value.c_str(), nullptr, 10);
+    if (v >= 0 && v <= 2) {
+      sGyroSource = static_cast< int >(v);
+    }
+  } else if (key == "gyro_rate") {
+    const float f = static_cast< float >(std::atof(value.c_str()));
+    if (std::isfinite(f) && f >= 20.f && f <= 5000.f) {
+      sGyroRate = f;
     }
   } else if (key == "mouse_invert_x") {
     sMouseInvertX = ParseBool(value);
@@ -278,6 +305,9 @@ void SaveSettings() {
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "stick_aim_rate=" << sStickAimRate << '\n';
+  file << "gyro_mode=" << sGyroMode << '\n';
+  file << "gyro_source=" << sGyroSource << '\n';
+  file << "gyro_rate=" << sGyroRate << '\n';
   file << "mouse_invert_x=" << (sMouseInvertX ? 1 : 0) << '\n';
   file << "mouse_invert_y=" << (sMouseInvertY ? 1 : 0) << '\n';
   file << "mouse_buttons=" << (sMouseButtons ? 1 : 0) << '\n';
@@ -573,6 +603,144 @@ void AddStickAim(float x, float y, float dt) {
   // x right / y up; the aim state expects SDL-style right/down positive.
   sMouseFrameX += x * sStickAimRate * dt;
   sMouseFrameY -= y * sStickAimRate * dt;
+}
+
+int GyroMode() {
+  EnsureInitialized();
+  return sGyroMode;
+}
+
+void SetGyroMode(int mode) {
+  EnsureInitialized();
+  if (mode < 0 || mode > 2) {
+    return;
+  }
+  sGyroMode = mode;
+  MarkDirty();
+}
+
+int GyroSource() {
+  EnsureInitialized();
+  return sGyroSource;
+}
+
+void SetGyroSource(int source) {
+  EnsureInitialized();
+  if (source < 0 || source > 2) {
+    return;
+  }
+  sGyroSource = source;
+  MarkDirty();
+}
+
+float GyroRate() {
+  EnsureInitialized();
+  return sGyroRate;
+}
+
+void SetGyroRate(float pixelsPerSecondPerRad) {
+  EnsureInitialized();
+  if (std::isfinite(pixelsPerSecondPerRad) && pixelsPerSecondPerRad >= 20.f &&
+      pixelsPerSecondPerRad <= 5000.f) {
+    sGyroRate = pixelsPerSecondPerRad;
+    MarkDirty();
+  }
+}
+
+const char* GyroStatus() { return sGyroStatus; }
+
+void PollGyro() {
+  EnsureInitialized();
+  if (sGyroMode == 0) {
+    sGyroStatus = "off";
+    return;
+  }
+  // Gyro feeds the same aim state the mouse and twin stick use, so it only has
+  // an effect where that is driving the camera.
+  if (!sMouseAim && !sTwinStick) {
+    sGyroStatus = "needs mouse aim or twin stick";
+    return;
+  }
+
+  const bool wantController = sGyroSource == 0 || sGyroSource == 1;
+  const bool wantPhone = sGyroSource == 0 || sGyroSource == 2;
+  float yaw = 0.f;
+  float pitch = 0.f;
+  bool haveRates = false;
+
+  if (wantController) {
+    if (SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0)) {
+      if (SDL_GamepadHasSensor(pad, SDL_SENSOR_GYRO)) {
+        if (!sControllerGyroEnabled) {
+          SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_GYRO, true);
+          sControllerGyroEnabled = true;
+        }
+        float data[3];
+        if (SDL_GetGamepadSensorData(pad, SDL_SENSOR_GYRO, data, 3)) {
+          // Radians per second; x is pitch, y is yaw.
+          yaw = data[1];
+          pitch = data[0];
+          haveRates = true;
+          sGyroStatus = "controller";
+        }
+      }
+    }
+  }
+
+  if (!haveRates && wantPhone) {
+    if (sPhoneGyro == nullptr && !sPhoneGyroSearched) {
+      sPhoneGyroSearched = true;
+      int count = 0;
+      if (SDL_SensorID* ids = SDL_GetSensors(&count)) {
+        for (int i = 0; i < count; ++i) {
+          if (SDL_GetSensorTypeForID(ids[i]) == SDL_SENSOR_GYRO) {
+            sPhoneGyro = SDL_OpenSensor(ids[i]);
+            break;
+          }
+        }
+        SDL_free(ids);
+      }
+    }
+    if (sPhoneGyro != nullptr) {
+      float data[3];
+      if (SDL_GetSensorData(sPhoneGyro, data, 3)) {
+        yaw = data[1];
+        pitch = data[0];
+        haveRates = true;
+        sGyroStatus = "phone";
+      }
+    }
+  }
+
+  if (!haveRates) {
+    sGyroStatus = "no gyro found";
+    return;
+  }
+
+  bool active = sGyroMode == 2;
+  if (!active) {
+    // Hold to aim: right stick click on a pad, left ctrl on a keyboard.
+    if (SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0)) {
+      active = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_STICK);
+    }
+    if (!active) {
+      const bool* keys = SDL_GetKeyboardState(nullptr);
+      active = keys != nullptr && keys[SDL_SCANCODE_LCTRL] != 0;
+    }
+  }
+  if (!active) {
+    sGyroStatus = "held off";
+    return;
+  }
+
+  const float dt = TickPeriod();
+  if (!std::isfinite(dt) || dt <= 0.f) {
+    return;
+  }
+  // x right / y up, the same shape AddStickAim takes; the aim state expects
+  // right/down positive.
+  sMouseFrameX += yaw * sGyroRate * dt;
+  sMouseFrameY -= pitch * sGyroRate * dt;
 }
 
 void ResetMouseAim() {
@@ -942,6 +1110,30 @@ void DrawInputTab() {
       "Twin stick uses the right stick as a direct camera aim (the same path as "
       "the mouse) and consumes it, so it no longer free-looks. Fire stays on "
       "whatever is bound to A; remap it in the Controls tab.");
+  ImGui::SeparatorText("Gyro aim");
+  const char* gyroModes[] = {"Off", "Hold to aim", "Always aim"};
+  int gyroMode = sGyroMode;
+  if (ImGui::Combo("Mode", &gyroMode, gyroModes, 3)) {
+    SetGyroMode(gyroMode);
+  }
+  ImGui::BeginDisabled(sGyroMode == 0);
+  const char* gyroSources[] = {"Auto", "Controller", "Phone"};
+  int gyroSource = sGyroSource;
+  if (ImGui::Combo("Source", &gyroSource, gyroSources, 3)) {
+    SetGyroSource(gyroSource);
+  }
+  float gyroRate = sGyroRate;
+  if (ImGui::SliderFloat("Sensitivity", &gyroRate, 50.f, 3000.f, "%.0f px/s per rad/s",
+                         ImGuiSliderFlags_Logarithmic)) {
+    SetGyroRate(gyroRate);
+  }
+  ImGui::Text("Gyro: %s", GyroStatus());
+  ImGui::TextWrapped(
+      "Tilt the pad or the phone to aim. Hold to aim uses right stick click or "
+      "left ctrl. Needs mouse aim or twin stick, since the gyro feeds that same "
+      "aim.");
+  ImGui::EndDisabled();
+
   if (ImGui::Checkbox("Invert mouse X", &sMouseInvertX)) {
     MarkDirty();
   }

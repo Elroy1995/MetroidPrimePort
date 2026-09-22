@@ -93,6 +93,20 @@ void SetTwinStick(bool enabled);
 // sensitivity, so both share the same feel).
 float StickAimRate();
 void SetStickAimRate(float pixelsPerSecond);
+// Gyro aiming. Mode: 0 off, 1 aim while the hold input is down, 2 always aim.
+// Source: 0 auto (a pad's gyro if it has one, else the phone's), 1 controller
+// only, 2 the device's own gyro (Android phones). Rate is aim pixels per second
+// per radian per second of rotation, so it reads like the stick aim speed.
+int GyroMode();
+void SetGyroMode(int mode);
+int GyroSource();
+void SetGyroSource(int source);
+float GyroRate();
+void SetGyroRate(float pixelsPerSecondPerRad);
+// Reads the gyro and feeds the aim. Call once per tick, before the frame.
+void PollGyro();
+// Short description of what the gyro is doing, for the overlay.
+const char* GyroStatus();
 // Feeds a normalised right-stick vector (-1..1, x right, y up) for this tick.
 void AddStickAim(float x, float y, float dt);void SetMouseCaptured(bool captured);
 bool MouseCaptured();

@@ -928,6 +928,8 @@ int CMain::RsMain(int argc, const char* const* argv) {
       // Port: feed the pad into ImGui's gamepad navigation (and toggle the
       // overlay with Back/Select) before the frame is built.
       PortDebug::UpdateControllerNav();
+      // Port: feed the pad's or the phone's gyro into the aim.
+      PortDebug::PollGyro();
       // Port: swap the HD texture set if the active controller changed, and
       // re-icon the prompts if a binding changed.
       PortTextures::Poll();
