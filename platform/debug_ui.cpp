@@ -3,6 +3,7 @@
 // to build the windows between aurora_begin_frame and aurora_end_frame.
 
 #include "port_debug.h"
+#include "port_prompts.h"
 #include "port_mouse.h"
 #include "port_textures.h"
 #include "port_build_info.h"
@@ -1656,6 +1657,11 @@ Java_org_metroidprime_port_TouchControlsView_nativeVirtualAxis(JNIEnv*, jclass, 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_metroidprime_port_TouchControlsView_nativeDebugOverlayVisible(JNIEnv*, jclass) {
   return PortDebug::OverlayVisible() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_metroidprime_port_TouchControlsView_nativeSetTouchDevice(JNIEnv*, jclass, jboolean xbox) {
+  PortPrompts::NoteTouchInput(xbox == JNI_TRUE);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

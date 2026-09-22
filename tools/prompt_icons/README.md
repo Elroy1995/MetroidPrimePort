@@ -12,18 +12,21 @@ anyway. The pack ships a `License.txt` alongside the download.
 
 Only the icons the port needs are copied here.
 
-The device icons label the A, B, L and R prompts for each controller family.
+The device icons label the A, B, L and R prompts for each controller family. L
+and R are the pad's analog triggers, so they take the trigger art (LT/RT, L2/R2,
+ZL/ZR), while the Z prompt, which is a digital shoulder, takes the bumper.
 The keyboard set doubles as the fallback used when a binding has no icon of its
 own, so it labels the port's default keys:
 
 | File | Used for |
 | --- | --- |
 | `xbox_button_color_a.png`, `xbox_button_color_b.png` | Xbox A / B prompts |
-| `xbox_lb.png`, `xbox_rb.png` | Xbox LB / RB shoulder prompts |
+| `xbox_lt.png`, `xbox_rt.png` | Xbox LT / RT trigger prompts, which is what the port maps the GameCube L and R triggers onto |
+| `xbox_lb.png`, `xbox_rb.png` | Xbox LB / RB shoulder prompts, used for the Z prompt |
 | `playstation_button_color_cross.png`, `playstation_button_color_circle.png` | PlayStation Cross / Circle prompts |
-| `playstation_trigger_l1.png`, `playstation_trigger_r1.png` | PlayStation L1 / R1 shoulder prompts |
+| `playstation_trigger_l2.png`, `playstation_trigger_r2.png` | PlayStation L2 / R2 trigger prompts |
 | `switch_button_a.png`, `switch_button_b.png` | Switch A / B prompts |
-| `switch_button_l.png`, `switch_button_r.png` | Switch L / R shoulder prompts |
+| `switch_button_zl.png`, `switch_button_zr.png` | Switch ZL / ZR trigger prompts |
 | `keyboard_x.png`, `keyboard_z.png` | keyboard A / B, matching the default keys |
 | `keyboard_q.png`, `keyboard_e.png` | keyboard L / R, matching the default keys |
 | `keyboard_f.png` | keyboard Z, matching the default key |

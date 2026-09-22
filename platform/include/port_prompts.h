@@ -17,4 +17,9 @@ void Initialize(const char* textureRoot);
 
 // Re-registers an action's icon when its binding changed. Call once per frame.
 void Poll();
+
+// Tells the prompts that the touch overlay was just used, and in which layout
+// (true for the twin-stick Xbox arrangement, false for the GameCube one), so the
+// in-game prompts follow the input the player actually reached for.
+void NoteTouchInput(bool xboxLayout);
 } // namespace PortPrompts

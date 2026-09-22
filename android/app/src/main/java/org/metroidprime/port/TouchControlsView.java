@@ -127,6 +127,7 @@ final class TouchControlsView extends View {
     private final RectF hideBounds = new RectF();
     private static native boolean nativeDebugOverlayVisible();
     private static native boolean nativeTwinStick();
+    private static native void nativeSetTouchDevice(boolean xboxLayout);
     private static native void nativeToggleDebugOverlay();
     private static native void nativeVirtualButton(int button, boolean down);
     private static native void nativeVirtualAxis(int axis, float value);
@@ -209,6 +210,9 @@ final class TouchControlsView extends View {
         }
 
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+            // The in-game prompts follow the input the player reached for, so
+            // tell the port which set this overlay is showing.
+            nativeSetTouchDevice(twinStickMode);
             int pointerId = event.getPointerId(actionIndex);
             float x = event.getX(actionIndex);
             float y = event.getY(actionIndex);

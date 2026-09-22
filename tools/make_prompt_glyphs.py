@@ -38,13 +38,13 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "textures"
 # binding has no icon of its own, so it labels the port's default keys.
 DEVICE_ICONS = {
     "xbox": {"a": "xbox_button_color_a.png", "b": "xbox_button_color_b.png",
-             "l": "xbox_lb.png", "r": "xbox_rb.png", "stick": "xbox_stick_r.png"},
+             "l": "xbox_lt.png", "r": "xbox_rt.png", "stick": "xbox_stick_r.png"},
     "playstation": {"a": "playstation_button_color_cross.png",
                     "b": "playstation_button_color_circle.png",
-                    "l": "playstation_trigger_l1.png", "r": "playstation_trigger_r1.png",
+                    "l": "playstation_trigger_l2.png", "r": "playstation_trigger_r2.png",
                     "stick": "playstation_stick_r.png"},
     "switch": {"a": "switch_button_a.png", "b": "switch_button_b.png",
-               "l": "switch_button_l.png", "r": "switch_button_r.png",
+               "l": "switch_button_zl.png", "r": "switch_button_zr.png",
                "stick": "switch_stick_r.png"},
     "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png",
                  "l": "keyboard_q.png", "r": "keyboard_e.png",
@@ -61,6 +61,7 @@ PAD_ICONS = {
         "start": "xbox_button_start.png", "back": "xbox_button_view.png",
         "leftshoulder": "xbox_lb.png", "rightshoulder": "xbox_rb.png",
         "leftstick": "xbox_stick_l_press.png", "rightstick": "xbox_stick_r_press.png",
+        "lt": "xbox_lt.png", "rt": "xbox_rt.png",
         "stick": "xbox_stick_r.png",
     },
     "playstation": {
@@ -71,6 +72,7 @@ PAD_ICONS = {
         "start": "playstation3_button_start.png", "back": "playstation3_button_select.png",
         "leftshoulder": "playstation_trigger_l1.png", "rightshoulder": "playstation_trigger_r1.png",
         "leftstick": "playstation_stick_l_press.png", "rightstick": "playstation_stick_r_press.png",
+        "lt": "playstation_trigger_l2.png", "rt": "playstation_trigger_r2.png",
         "stick": "playstation_stick_r.png",
     },
     "switch": {
@@ -79,6 +81,7 @@ PAD_ICONS = {
         "start": "switch_button_plus.png", "back": "switch_button_minus.png",
         "leftshoulder": "switch_button_l.png", "rightshoulder": "switch_button_r.png",
         "leftstick": "switch_stick_l_press.png", "rightstick": "switch_stick_r_press.png",
+        "lt": "switch_button_zl.png", "rt": "switch_button_zr.png",
         "stick": "switch_stick_r.png",
     },
 }

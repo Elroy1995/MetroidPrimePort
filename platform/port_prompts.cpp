@@ -8,9 +8,11 @@
 #include <dolphin/pad.h>
 #include <aurora/texture.hpp>
 
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_scancode.h>
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -146,6 +148,53 @@ Registration sRegistrations[kKeyCount];
 std::string sBindingsDir;
 bool sEnabled = false;
 
+// Which input the player last used. The prompts follow that rather than whatever
+// happens to be plugged in, so switching between a keyboard, a pad and the touch
+// overlay swaps the icons over. Pad is the starting state: with no pad connected
+// the texture device resolves to "keyboard" anyway, which is today's behaviour.
+enum class ActiveInput { Pad, Keyboard, TouchXbox, TouchGameCube };
+std::atomic< ActiveInput > sActiveInput{ActiveInput::Pad};
+
+bool SDLCALL active_input_watch(void*, SDL_Event* event) {
+  switch (event->type) {
+  case SDL_EVENT_KEY_DOWN:
+  case SDL_EVENT_KEY_UP:
+  case SDL_EVENT_TEXT_INPUT:
+  case SDL_EVENT_MOUSE_MOTION:
+  case SDL_EVENT_MOUSE_BUTTON_DOWN:
+  case SDL_EVENT_MOUSE_BUTTON_UP:
+  case SDL_EVENT_MOUSE_WHEEL:
+    sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    break;
+  case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+  case SDL_EVENT_GAMEPAD_BUTTON_UP:
+  case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+  case SDL_EVENT_GAMEPAD_ADDED:
+    sActiveInput.store(ActiveInput::Pad, std::memory_order_relaxed);
+    break;
+  default:
+    break;
+  }
+  return true;
+}
+
+// The icon set for the input in use. "gamecube" has no generated icons, which is
+// deliberate: the game's own prompt art already is the GameCube set, so those
+// prompts are left alone.
+const char* ActiveDevice() {
+  switch (sActiveInput.load(std::memory_order_relaxed)) {
+  case ActiveInput::Keyboard:
+    return "keyboard";
+  case ActiveInput::TouchXbox:
+    return "xbox";
+  case ActiveInput::TouchGameCube:
+    return "gamecube";
+  case ActiveInput::Pad:
+  default:
+    return PortTextures::DeviceName();
+  }
+}
+
 // Serves one generated icon as if it were a replacement file. Called from
 // Aurora worker threads, so it only touches the filesystem.
 bool ReadIconBytes(void* userData, const char* path, std::vector<uint8_t>& out) {
@@ -180,6 +229,12 @@ std::string IconStemForButton(PADButton button, const char* device) {
     // A stick is bound to several keys at once, so the icon says "direction
     // keys" rather than naming one; a pad shows its own stick.
     return keyboard ? std::string("keyboard_arrows") : std::string(device) + "_stick";
+  }
+
+  // A pad's L and R are analog triggers, so they have no SDL button for the
+  // mapping to name; the generated set carries them under one name per action.
+  if (!keyboard && (button == PAD_TRIGGER_L || button == PAD_TRIGGER_R)) {
+    return std::string(device) + (button == PAD_TRIGGER_L ? "_lt" : "_rt");
   }
 
   u32 count = 0;
@@ -233,6 +288,13 @@ void Apply(size_t index, const std::string& stem) {
   std::snprintf(keyName, sizeof(keyName), "tex1_%ux%u_%016llx_%s.dds", key.width, key.height,
                 static_cast<unsigned long long>(key.hash), key.format);
   reg.iconPath = (std::filesystem::path(sBindingsDir) / (stem + ".dds")).string();
+  // A device with no generated icon for this action keeps the game's own art
+  // rather than registering a source that would fail to load and blank it.
+  std::error_code existsError;
+  if (!std::filesystem::is_regular_file(reg.iconPath, existsError)) {
+    reg.activeStem.clear();
+    return;
+  }
   reg.handle = aurora::texture::register_virtual_replacement(
       keyName, aurora::texture::VirtualFileSource{&ReadIconBytes, &reg.iconPath});
   reg.registered = reg.handle.id != 0;
@@ -260,6 +322,7 @@ void Initialize(const char* textureRoot) {
   }
   sBindingsDir = bindingsDir.string();
   sEnabled = true;
+  SDL_AddEventWatch(active_input_watch, nullptr);
   Poll();
 }
 
@@ -267,7 +330,7 @@ void Poll() {
   if (!sEnabled) {
     return;
   }
-  const char* device = PortTextures::DeviceName();
+  const char* device = ActiveDevice();
   for (const PromptAction& action : kActions) {
     const std::string stem = IconStemForButton(action.button, device);
     size_t applied = 0;
@@ -290,5 +353,9 @@ void Poll() {
                    stem.empty() ? "(back to the static icon)" : stem.c_str());
     }
   }
+}
+void NoteTouchInput(bool xboxLayout) {
+  sActiveInput.store(xboxLayout ? ActiveInput::TouchXbox : ActiveInput::TouchGameCube,
+                     std::memory_order_relaxed);
 }
 } // namespace PortPrompts
