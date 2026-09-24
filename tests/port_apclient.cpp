@@ -60,7 +60,7 @@ int main() {
       "39F2DE28:B2701146:00000080":123457
     },
     "items":{
-      "100":{"item":"EnergyTanks","amount":2,"capacity":3},
+      "100":{"item":"EnergyTanks","display":"Energy Tank","amount":2,"capacity":3},
       "101":{"item":"Missiles"}
     },
     "future_setting":{"ignored":true}
@@ -78,9 +78,11 @@ int main() {
         "location and item maps parse");
   Check(config.items.at(100).itemType == PortRandomizer::ItemFromName("EnergyTanks") &&
             config.items.at(100).amount == 2 && config.items.at(100).capacity == 3 &&
+            config.items.at(100).display == "Energy Tank" &&
             config.items.at(101).itemType == PortRandomizer::ItemFromName("Missiles") &&
-            config.items.at(101).amount == 1 && config.items.at(101).capacity == 1,
-        "item types and optional defaults parse");
+            config.items.at(101).amount == 1 && config.items.at(101).capacity == 1 &&
+            config.items.at(101).display == "Missiles",
+        "item types, display names and optional defaults parse");
 
   Config missingServer = ParseConfig(R"({"slot":"Player1"})");
   Config missingSlot = ParseConfig(R"({"server":"ws://localhost"})");
@@ -149,10 +151,17 @@ int main() {
   Session packets(config, initial);
   std::vector<std::string> outgoing;
   std::vector<ItemGrant> grants;
-  packets.HandlePacket(Packet(R"({"cmd":"Connected","team":0,"slot":3,"checked_locations":[123457,123456,999]})"),
-                      outgoing, grants);
+  packets.HandlePacket(Packet(R"({"cmd":"RoomInfo","seed_name":"MP Seed Alpha"})"),
+                       outgoing, grants);
+  Check(packets.SeedName() == "MP Seed Alpha", "RoomInfo captures the seed name");
+  packets.HandlePacket(Packet(
+      R"({"cmd":"Connected","team":0,"slot":3,"players":[{"team":0,"slot":1,"alias":"Bob","name":"Bob's name"},{"team":0,"slot":3,"alias":"","name":"Player1"}],"checked_locations":[123457,123456,999]})"),
+      outgoing, grants);
   Check(packets.HandshakeComplete() && packets.SlotDescription() == "slot 3, team 0",
         "Connected completes handshake and records slot description");
+  Check(packets.PlayerName(1) == "Bob" && packets.PlayerName(3) == "Player1" &&
+            packets.PlayerName(44) == "player 44",
+        "Connected captures player aliases, falls back to name, and names unknown slots");
   Check(packets.GetState().checkedLocations == std::vector<int64_t>({123456, 123457, 999}),
         "Connected checked locations merge without duplicates");
 
@@ -161,24 +170,34 @@ int main() {
       outgoing, grants);
   Check(grants.size() == 1 && grants.back().itemId == 100 &&
             grants.back().itemType == PortRandomizer::ItemFromName("EnergyTanks") &&
-            grants.back().amount == 2 && grants.back().capacity == 3,
+            grants.back().amount == 2 && grants.back().capacity == 3 &&
+            grants.back().display == "Energy Tank",
         "ReceivedItems object grants configured item fields");
   packets.HandlePacket(Packet(
-      R"({"cmd":"ReceivedItems","index":1,"items":[[101,2,1,0]]})"),
+      R"({"cmd":"ReceivedItems","index":1,"items":[[101,2,3,0]]})"),
       outgoing, grants);
   Check(grants.size() == 2 && grants.back().itemId == 101 &&
             grants.back().itemType == PortRandomizer::ItemFromName("Missiles") &&
-            grants.back().amount == 1 && grants.back().capacity == 1,
+            grants.back().amount == 1 && grants.back().capacity == 1 &&
+            grants.back().display == "Missiles",
         "ReceivedItems four-element array grants configured item");
   packets.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":0,"items":[[100,1,1,0]]})"),
                       outgoing, grants);
   Check(grants.size() == 2 && packets.GetState().nextItemIndex == 2,
         "already processed item index is not granted twice");
-  packets.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":2,"items":[[999,1,1,0]]})"),
+  packets.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":2,"items":[[999,1,3,0]]})"),
                       outgoing, grants);
   Check(grants.size() == 3 && grants.back().itemType == -1 &&
             packets.LastError() == "unknown item id 999",
         "unknown received item is counted and reported");
+  std::string notification;
+  Check(packets.TakeNotification(notification) && notification == "Energy Tank from Bob",
+        "received item notification includes the sender alias");
+  Check(packets.TakeNotification(notification) && notification == "Missiles",
+        "received item from our own slot has no sender suffix");
+  Check(packets.TakeNotification(notification) && notification == "unknown item 999",
+        "unknown item notification names its ID");
+  Check(!packets.TakeNotification(notification), "notification queue reports empty after draining");
   packets.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":5,"items":[]})"),
                       outgoing, grants);
   Check(packets.Desynced() && packets.GetState().nextItemIndex == 5 &&
@@ -188,11 +207,30 @@ int main() {
   std::string printParts = R"({"cmd":"PrintJSON","data":[{"text":"Hello"},{"text":"\nworld"}]})";
   packets.HandlePacket(Packet(printParts), outgoing, grants);
   Check(packets.LastMessage() == "Hello world", "PrintJSON joins text and flattens newlines");
+  Check(packets.TakeNotification(notification) && notification == "Hello world",
+        "PrintJSON text is queued as a notification");
   std::string longText(250, 'x');
   const std::string printLong = "{\"cmd\":\"PrintJSON\",\"data\":[{\"text\":\"" + longText + "\"}]}";
   packets.HandlePacket(Packet(printLong), outgoing, grants);
   Check(packets.LastMessage().size() == 203 && packets.LastMessage().substr(200) == "...",
         "PrintJSON truncates long output and marks the cut");
+  Check(packets.TakeNotification(notification) && notification == packets.LastMessage(),
+        "truncated PrintJSON message is queued as a notification");
+
+  Session cappedNotifications(config, State{});
+  for (int i = 0; i < 40; ++i) {
+    const std::string message = "message " + std::to_string(i);
+    cappedNotifications.HandlePacket(
+        Packet("{\"cmd\":\"PrintJSON\",\"data\":[{\"text\":\"" + message + "\"}]}"),
+        outgoing, grants);
+  }
+  bool newestThirtyTwo = true;
+  for (int i = 8; i < 40; ++i) {
+    newestThirtyTwo = cappedNotifications.TakeNotification(notification) &&
+                      notification == "message " + std::to_string(i) && newestThirtyTwo;
+  }
+  Check(newestThirtyTwo && !cappedNotifications.TakeNotification(notification),
+        "notification queue keeps only the newest 32 entries");
   packets.HandlePacket(Packet(R"({"cmd":"InvalidPacket","text":"bad command"})"), outgoing, grants);
   Check(packets.LastError() == "bad command", "InvalidPacket records text as error");
   packets.HandlePacket(Packet(R"({"cmd":"ConnectionRefused","errors":["bad password","unknown slot"]})"),

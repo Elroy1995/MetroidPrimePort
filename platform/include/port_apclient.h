@@ -1,6 +1,7 @@
 #ifndef METROID_PRIME_PORT_PORT_APCLIENT_H
 #define METROID_PRIME_PORT_PORT_APCLIENT_H
 #include <cstdint>
+#include <string>
 
 class CStateManager;
 
@@ -39,6 +40,12 @@ int ItemCount();
 int CheckCount();
 // Most recent PrintJSON text, or "" when there has not been one.
 const char* LastMessage();
+// Drains the oldest human-readable notification (an item receipt or a
+// PrintJSON line) into `text`. False when the queue is empty. Call from the
+// game thread.
+bool TakeNotification(std::string& text);
+// Seed name from the server's RoomInfo, or "" before it arrives.
+const char* SeedName();
 
 // Queues the configured location id for `locationKey` (the randomizer's
 // "world:area:entity" key). No-op when unconfigured, unmapped, or already sent.

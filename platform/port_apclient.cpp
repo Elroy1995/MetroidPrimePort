@@ -5,6 +5,7 @@
 
 #include "MetroidPrime/CHealthInfo.hpp"
 #include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/HUD/CSamusHud.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 
 #include <SDL3/SDL_filesystem.h>
@@ -64,6 +65,61 @@ std::string ErrorText(const char* text) {
   return text != nullptr && text[0] != '\0' ? text : "connection failed";
 }
 
+rstl::wstring ToHudWide(const std::string& text) {
+  std::wstring wide;
+  for (size_t i = 0; i < text.size();) {
+    const uint8_t first = static_cast<uint8_t>(text[i]);
+    uint32_t codepoint = 0xfffd;
+    size_t length = 1;
+    if (first < 0x80) {
+      codepoint = first;
+    } else {
+      size_t expected = 0;
+      uint32_t minimum = 0;
+      if (first >= 0xc2 && first <= 0xdf) {
+        expected = 2;
+        minimum = 0x80;
+        codepoint = first & 0x1f;
+      } else if (first >= 0xe0 && first <= 0xef) {
+        expected = 3;
+        minimum = 0x800;
+        codepoint = first & 0x0f;
+      } else if (first >= 0xf0 && first <= 0xf4) {
+        expected = 4;
+        minimum = 0x10000;
+        codepoint = first & 0x07;
+      }
+      bool valid = expected != 0 && i + expected <= text.size();
+      for (size_t offset = 1; valid && offset < expected; ++offset) {
+        const uint8_t continuation = static_cast<uint8_t>(text[i + offset]);
+        if ((continuation & 0xc0) != 0x80) {
+          valid = false;
+          break;
+        }
+        codepoint = (codepoint << 6) | (continuation & 0x3f);
+      }
+      valid = valid && codepoint >= minimum && codepoint <= 0x10ffff &&
+              !(codepoint >= 0xd800 && codepoint <= 0xdfff);
+      if (valid) {
+        length = expected;
+      } else {
+        codepoint = 0xfffd;
+      }
+    }
+    i += length;
+    if constexpr (sizeof(wchar_t) >= 4) {
+      wide.push_back(static_cast<wchar_t>(codepoint));
+    } else if (codepoint <= 0xffff) {
+      wide.push_back(static_cast<wchar_t>(codepoint));
+    } else {
+      codepoint -= 0x10000;
+      wide.push_back(static_cast<wchar_t>(0xd800 + (codepoint >> 10)));
+      wide.push_back(static_cast<wchar_t>(0xdc00 + (codepoint & 0x3ff)));
+    }
+  }
+  return rstl::wstring(wide.c_str());
+}
+
 struct Runtime {
   ~Runtime() {
     stop.store(true, std::memory_order_release);
@@ -116,6 +172,7 @@ struct Runtime {
   std::unique_ptr<Session> session;
   std::deque<ItemGrant> grants;
   std::deque<int64_t> queuedChecks;
+  std::deque<std::string> notifications;
   int itemCount = 0;
   int checkCount = 0;
 };
@@ -469,6 +526,36 @@ const char* LastMessage() {
   return message.c_str();
 }
 
+bool TakeNotification(std::string& text) {
+  try {
+    EnsureLoaded();
+    Runtime& runtime = GetRuntime();
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (!runtime.notifications.empty()) {
+      text = std::move(runtime.notifications.front());
+      runtime.notifications.pop_front();
+      return true;
+    }
+    return runtime.session != nullptr && runtime.session->TakeNotification(text);
+  } catch (...) {
+    text.clear();
+    return false;
+  }
+}
+
+const char* SeedName() {
+  try {
+    EnsureLoaded();
+    Runtime& runtime = GetRuntime();
+    thread_local std::string seed;
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    seed = runtime.session != nullptr ? runtime.session->SeedName() : std::string();
+    return seed.c_str();
+  } catch (...) {
+    return "";
+  }
+}
+
 void QueueCheck(const char* locationKey) {
   if (locationKey == nullptr || locationKey[0] == '\0')
     return;
@@ -496,9 +583,12 @@ void Poll(CStateManager& mgr) {
     if (player == nullptr)
       return;
 
+    static unsigned int notificationTicks = 0;
     std::deque<ItemGrant> grants;
     {
       std::lock_guard<std::mutex> lock(runtime.mutex);
+      if (!runtime.enabled || runtime.session == nullptr)
+        return;
       grants.swap(runtime.grants);
       const size_t room = static_cast<size_t>(std::max(0, std::numeric_limits<int>::max() -
                                                            runtime.itemCount));
@@ -512,6 +602,33 @@ void Poll(CStateManager& mgr) {
       player->IncrPickUp(type, grant.amount);
       if (type == CPlayerState::kIT_EnergyTanks)
         player->HealthInfo()->SetHP(player->CalculateHealth());
+    }
+
+    if (mgr.GetGameState() != CStateManager::kGS_Running)
+      return;
+    if (++notificationTicks < 120)
+      return;
+    notificationTicks = 0;
+
+    std::string notification;
+    {
+      std::lock_guard<std::mutex> lock(runtime.mutex);
+      if (!runtime.enabled || runtime.session == nullptr)
+        return;
+      std::string next;
+      while (runtime.session->TakeNotification(next)) {
+        runtime.notifications.push_back(std::move(next));
+        next.clear();
+      }
+      while (runtime.notifications.size() > 8)
+        runtime.notifications.pop_front();
+      if (!runtime.notifications.empty()) {
+        notification = std::move(runtime.notifications.front());
+        runtime.notifications.pop_front();
+      }
+    }
+    if (!notification.empty()) {
+      CSamusHud::DisplayHudMemo(ToHudWide(notification), CHUDMemoParms(5.f, true, false, false));
     }
   } catch (...) {
     // Avoid leaking exceptions into the simulation loop.

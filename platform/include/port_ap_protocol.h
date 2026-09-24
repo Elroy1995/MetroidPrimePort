@@ -21,6 +21,7 @@ struct ItemGrant {
   int itemType = -1; // CPlayerState::EItemType value; -1 when the id is unknown
   int amount = 1;
   int capacity = 1;
+  std::string display; // name shown to the player; the item name when unset
 };
 
 // archipelago.json, as documented in docs/ARCHIPELAGO.md.
@@ -68,6 +69,15 @@ public:
   void HandlePacket(const PortJson::Value& packet, std::vector< std::string >& outgoing,
                     std::vector< ItemGrant >& granted);
 
+  // Human-readable notifications for the HUD and overlay, oldest first: item
+  // receipts ("Energy Tank from Bob") and PrintJSON text. Drained by whoever
+  // displays them, so nothing is shown twice. The queue is capped.
+  bool TakeNotification(std::string& text);
+  // Seed name from RoomInfo, or "" before it arrives.
+  const std::string& SeedName() const { return mSeedName; }
+  // Alias of a player slot from Connected, or "player <slot>" when unknown.
+  std::string PlayerName(int64_t slot) const;
+
   // The Connect packet to send after RoomInfo.
   std::string BuildConnect() const;
   static std::string BuildLocationChecks(const std::vector< int64_t >& ids);
@@ -100,6 +110,10 @@ private:
   std::string mSlotDescription;
   std::string mLastMessage;
   std::string mLastError;
+  std::string mSeedName;
+  int64_t mOwnSlot = 0;
+  std::map< int64_t, std::string > mPlayers;
+  std::vector< std::string > mNotifications;
 };
 
 } // namespace Protocol

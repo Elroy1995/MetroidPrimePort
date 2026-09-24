@@ -1,5 +1,25 @@
 # Metroid Prime port — working notes
 
+## Archipelago generator, status and notifications (2026-09-24)
+
+- `tools/make_ap_config.py` joins the AP world's location table (parsed with
+  `ast`) to a port location dump and writes `archipelago.json` plus, from the
+  spoiler, a `randomizer_seed.json` whose remote-item locations become
+  zero-amount placeholders (the real item arrives over the network). Locations
+  are joined by the entity id's area index; the report prints the per-area id
+  delta, `--strict` refuses mixed-delta areas, and unpaired areas are reported
+  rather than guessed. Verified against the real AP data shape: Chozo Ruins
+  Main Plaza flagged for review (`+1,+1,+1,+3`), Ruined Fountain clean at `+1`.
+- Received items and server messages now show as HUD memos, one every two
+  seconds, using the config's optional per-item `display` name; `PortAp` also
+  exposes the seed name and a notification queue for the F1 overlay's Session
+  tab (connection, seed, items, checks, last message).
+- Observation: the port's screenshot capture does not include Aurora's ImGui
+  layer — a front-end run with `MP_SHOW_DEBUG_UI=1` produced a screenshot with
+  no overlay, as every checked-in screenshot also has none — so the overlay
+  cannot be verified from a capture. The HUD (game-drawn) notifications are
+  captured normally.
+
 ## Archipelago client (2026-09-24)
 
 - The port can join an Archipelago multiworld natively: a background thread owns

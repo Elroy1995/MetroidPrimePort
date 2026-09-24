@@ -59,7 +59,7 @@ Path: `$MP_AP_CONFIG`, else `<user dir>/archipelago.json` (`<user dir>` is
 | `version` | Protocol version sent in Connect, default 0.6.0. Must be compatible with the server's. |
 | `tags` | Client tags, default empty. |
 | `locations` | Randomizer key (`WORLD:AREA:ENTITY`, the seed's location key) to AP location id. |
-| `items` | AP item id to the grant the port applies: `item` is a randomizer item name, `amount`/`capacity` default 1. |
+| `items` | AP item id to the grant the port applies: `item` is a randomizer item name, `amount`/`capacity` default 1, and an optional `display` is the name shown in the HUD notification (the item name when unset). |
 
 Unknown keys are ignored so the file can grow. A configuration without a server
 or slot, a malformed location key, or an unknown item name disables the client
@@ -85,15 +85,58 @@ items it already granted belong to the new run and skips them.
 
 ## Producing the id maps
 
-`locations` and `items` are data from the AP world for your seed, not something
-the port can derive:
+`locations` and `items` come from the AP world for your seed. `tools/make_ap_config.py`
+reads the world's `Locations.py` (parsed with `ast`, never imported) and a
+randomizer location dump, and writes both `archipelago.json` and a
+`randomizer_seed.json` from the spoiler log:
 
-- Item ids and location ids are the ones in the world's data package.
-- Map each AP location id to the matching `WORLD:AREA:ENTITY` key. The keys are
-  the randomizer's own location keys, so `MP_RANDO_DUMP=1` (see
-  `docs/RANDOMIZER.md`) gives you the key list per area to match names against.
-- Map each item id to the randomizer item name and the amount/capacity the
-  pickup should grant (e.g. missiles `amount`/`capacity` 5, an energy tank 1).
+```sh
+# 1. Dump every world's item locations once (see docs/RANDOMIZER.md), then:
+python3 tools/make_ap_config.py \
+    --locations /path/to/MetroidAPrime/Locations.py \
+    --dump randomizer_locations.log \
+    --server ws://host:38281 --slot Player1 \
+    --spoiler spoiler.json \
+    --out archipelago.json --seed-out randomizer_seed.json
+```
+
+How it joins the two sides, and what to watch for:
+
+- The AP table gives each location a name and an id, and `PICKUP_LOCATIONS` gives
+  the matching in-game entity id, whose high 16 bits are the area index. The
+  dump gives the port's `world:area:entity` keys, which carry the same area
+  index. Areas are joined by that index, and the pickups inside an area are
+  paired by rank.
+- The tool prints a per-area report with the pairing and the id delta between
+  the AP entity and the port's editor id. A uniform delta means the pairing is
+  clean; a mixed one is flagged **review** (`--strict` makes that fatal). Real
+  data has such a case in Chozo Ruins Main Plaza, so expect to look at a few.
+- Areas missing from the dump are reported, never guessed: to map a world you
+  must have dumped it.
+- `--report` and the warnings are the point — a wrong mapping reports other
+  players' checks, so treat any flagged area as unverified until it is confirmed
+  in game (`MP_AP_SEND_ALL=1` against the server, or by noting that the first
+  pickup grants what the spoiler says).
+
+The spoiler seed turns each location into a pickup: your own items are placed
+normally, and a location holding another player's item becomes a placeholder
+(`UnknownItem1` with zero amount) so the in-game pickup grants nothing locally
+while the real item arrives over the network. Items the port cannot grant yet
+(the AP "progressive beam" ids 43-50, which need a progressive counter) are
+omitted with a warning; turn progressive beam upgrades off in the AP options for
+now.
+
+Item ids in `archipelago.json` mirror the AP world's `Items.py`, whose ids
+correspond 1:1 with the port's `CPlayerState::EItemType` for 0-28, and whose
+29-40 are the artifacts.
+
+## Notifications
+
+Received items and server messages are queued as text and shown one at a time,
+about every two seconds, as a HUD memo (`"Missile Expansion"`, `"Energy Tank"`).
+The F1 overlay's Session tab shows the connection state, seed name, item and
+check counts and the last server message, but the port's screenshot capture does
+not include Aurora's UI layer, so an F1 screenshot will not show it.
 
 ## Verified
 
@@ -111,6 +154,11 @@ the port can derive:
   granted 250); with `MP_AP_SEND_ALL=1` the client sent
   `LocationChecks {"locations":[1001,1002]}`; and `archipelago_state.json`
   recorded `next_item_index 2`, so a reconnect does not re-grant.
+- The notification path was captured on screen: an item whose config carries
+  `"display": "Energy Tank"` produced that text as a HUD memo.
+- `tools/make_ap_config.py --self-test` passes, and a run against the real
+  AP `Locations.py` shape plus a real Chozo Ruins dump mapped 5 locations, with
+  the clean areas at a uniform `+1` delta and Main Plaza flagged for review.
 
 ## Not done yet
 
@@ -119,9 +167,10 @@ the port can derive:
 - **Compression.** No `permessage-deflate`; Archipelago accepts uncompressed
   connections but marks them deprecated.
 - **DeathLink, hints, chat, tracker.** Bounce/DeathLink, hint creation and the
-  item tracker are unimplemented; `PrintJSON` is stored for the overlay but not
-  displayed in-game yet.
-- **A mapping generator.** The id maps must be produced from the AP world by
-  hand or by a script that does not exist here yet.
-- **Status in-game.** `PortAp::StatusText()` is available for the F1 overlay but
-  is not shown there yet.
+  item tracker are unimplemented; `PrintJSON` is queued for the HUD and overlay
+  but chat input does not exist.
+- **Progressive items.** The AP world's progressive beam ids (43-50) need a
+  counter the port does not keep; they are omitted by the generator and need
+  progressive beam upgrades turned off in the AP options for now.
+- **Mapping verification.** The location join is a candidate until confirmed in
+  game; areas the tool flags as "review" can report the wrong checks.

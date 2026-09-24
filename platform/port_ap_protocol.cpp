@@ -143,6 +143,14 @@ std::string ProcessUuid() {
 
 void AppendInt(std::string& out, int64_t value) { out += std::to_string(value); }
 
+void AppendNotification(std::vector<std::string>& notifications, std::string text) {
+  constexpr size_t kNotificationLimit = 32;
+  if (notifications.size() >= kNotificationLimit)
+    notifications.erase(notifications.begin());
+  notifications.push_back(std::move(text));
+}
+
+
 } // namespace
 
 Config ParseConfig(const std::string& text) {
@@ -284,6 +292,17 @@ Config ParseConfig(const std::string& text) {
         ItemGrant grant;
         grant.itemId = itemId;
         grant.itemType = itemType;
+        // `display` is the player-facing name; it is independent of the
+        // randomizer key in `item` and defaults to that resolved item's name.
+        grant.display = itemName;
+        const PortJson::Value* displayValue = Member(entry.second, "display");
+        if (displayValue != nullptr) {
+          if (!displayValue->IsString()) {
+            config.error = "item " + entry.first + " display must be a string";
+            return config;
+          }
+          grant.display = displayValue->AsString();
+        }
         if (!OptionalInt(entry.second, "amount", 1, grant.amount, config.error) ||
             !OptionalInt(entry.second, "capacity", 1, grant.capacity, config.error))
           return config;
@@ -413,7 +432,7 @@ bool SaveStateFile(const std::string& path, const State& state) {
 Session::Session(const Config& config, const State& state) : mConfig(config), mState(state) {}
 
 void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::string>& outgoing,
-                           std::vector<ItemGrant>& granted) {
+                           std::vector<ItemGrant>& granted) try {
   if (!packet.IsObject())
     return;
   const PortJson::Value* commandValue = Member(packet, "cmd");
@@ -423,9 +442,15 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
   if (command == "RoomInfo") {
     mHandshakeComplete = false;
     mSlotDescription.clear();
+    mOwnSlot = 0;
+    mSeedName.clear();
+    const PortJson::Value* seedName = Member(packet, "seed_name");
+    if (seedName != nullptr && seedName->IsString())
+      mSeedName = seedName->AsString();
   } else if (command == "ConnectionRefused") {
     mHandshakeComplete = false;
     mSlotDescription.clear();
+    mOwnSlot = 0;
     mLastError.clear();
     const PortJson::Value* errors = Member(packet, "errors");
     if (errors != nullptr && errors->IsArray()) {
@@ -446,6 +471,29 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
     IntegerMember(packet, "slot", slot);
     IntegerMember(packet, "team", team);
     mSlotDescription = "slot " + std::to_string(slot) + ", team " + std::to_string(team);
+    mOwnSlot = slot;
+    mPlayers.clear();
+    const PortJson::Value* players = Member(packet, "players");
+    if (players != nullptr && players->IsArray()) {
+      for (const PortJson::Value& player : players->AsArray()) {
+        if (!player.IsObject())
+          continue;
+        int64_t playerSlot = 0;
+        if (!IntegerMember(player, "slot", playerSlot))
+          continue;
+        std::string name;
+        const PortJson::Value* alias = Member(player, "alias");
+        if (alias != nullptr && alias->IsString())
+          name = alias->AsString();
+        if (name.empty()) {
+          const PortJson::Value* playerName = Member(player, "name");
+          if (playerName != nullptr && playerName->IsString())
+            name = playerName->AsString();
+        }
+        if (!name.empty())
+          mPlayers[playerSlot] = std::move(name);
+      }
+    }
     const PortJson::Value* checked = Member(packet, "checked_locations");
     if (checked != nullptr && checked->IsArray()) {
       for (const PortJson::Value& location : checked->AsArray()) {
@@ -496,6 +544,20 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
         granted.push_back(grant);
         mLastError = "unknown item id " + std::to_string(itemId);
       }
+
+      std::string notification = found != mConfig.items.end()
+                                     ? found->second.display
+                                     : "unknown item " + std::to_string(itemId);
+      int64_t itemPlayer = 0;
+      bool hasPlayer = false;
+      if (item.IsObject()) {
+        hasPlayer = IntegerMember(item, "player", itemPlayer);
+      } else if (item.IsArray() && item.Size() == 4) {
+        hasPlayer = Integer(&item.AsArray()[2], itemPlayer);
+      }
+      if (hasPlayer && mOwnSlot != 0 && itemPlayer != mOwnSlot)
+        notification += " from " + PlayerName(itemPlayer);
+      AppendNotification(mNotifications, std::move(notification));
     }
     int64_t endIndex = index;
     if (itemList.size() <= static_cast<size_t>(std::numeric_limits<int64_t>::max()) &&
@@ -531,9 +593,37 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       normalized += "...";
     }
     mLastMessage = std::move(normalized);
+    AppendNotification(mNotifications, mLastMessage);
   } else if (command == "InvalidPacket") {
     const PortJson::Value* text = Member(packet, "text");
     mLastError = text != nullptr && text->IsString() ? text->AsString() : std::string();
+  }
+  } catch (...) {
+    // Malformed packets and allocation failures must not escape into the client.
+  }
+
+bool Session::TakeNotification(std::string& text) {
+  try {
+    if (mNotifications.empty()) {
+      text.clear();
+      return false;
+    }
+    text = std::move(mNotifications.front());
+    mNotifications.erase(mNotifications.begin());
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::string Session::PlayerName(int64_t slot) const {
+  try {
+    const auto player = mPlayers.find(slot);
+    if (player != mPlayers.end() && !player->second.empty())
+      return player->second;
+    return "player " + std::to_string(slot);
+  } catch (...) {
+    return std::string();
   }
 }
 

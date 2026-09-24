@@ -3,6 +3,7 @@
 // to build the windows between aurora_begin_frame and aurora_end_frame.
 
 #include "port_debug.h"
+#include "port_apclient.h"
 #include "port_prompts.h"
 #include "port_mouse.h"
 #include "port_textures.h"
@@ -1515,6 +1516,20 @@ void DrawSessionTab() {
   }
   ImGui::SameLine();
   ImGui::TextUnformatted(sSettingsDirty ? "Unsaved changes" : "Saved");
+
+  if (PortAp::Enabled()) {
+    ImGui::SeparatorText("Archipelago");
+    ImGui::TextWrapped("Status: %s", PortAp::StatusText());
+    const char* seedName = PortAp::SeedName();
+    if (seedName != nullptr && seedName[0] != '\0')
+      ImGui::TextWrapped("Seed: %s", seedName);
+    ImGui::Text("Items received: %d", PortAp::ItemCount());
+    ImGui::Text("Location checks sent: %d", PortAp::CheckCount());
+    ImGui::Text("Connection: %s", PortAp::Connected() ? "connected" : "not connected");
+    const char* lastMessage = PortAp::LastMessage();
+    if (lastMessage != nullptr && lastMessage[0] != '\0')
+      ImGui::TextWrapped("Last message: %s", lastMessage);
+  }
 }
 
 void GrantItem(CPlayerState& ps, CPlayerState::EItemType type, int amount, int capacity) {
