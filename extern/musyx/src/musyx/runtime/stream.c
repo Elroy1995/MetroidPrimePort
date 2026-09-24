@@ -8,6 +8,23 @@
 #include "musyx/synthdata.h"
 #include "musyx/voice.h"
 
+// Port diagnostic: streamed-audio service tracing (Android has no stderr, and
+// the port needs it to explain why streamed music stops advancing on device).
+#include <stdlib.h>
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+#define MP_STREAM_DBG(...) __android_log_print(ANDROID_LOG_INFO, "mpstream-mx", __VA_ARGS__)
+#else
+#include <stdio.h>
+#define MP_STREAM_DBG(...)             \
+  do {                                 \
+    fprintf(stderr, "mpstream-mx: ");  \
+    fprintf(stderr, __VA_ARGS__);      \
+    fputc('\n', stderr);               \
+  } while (0)
+#endif
+
 #if !defined(_DEBUG) && MUSY_TARGET == MUSY_TARGET_DOLPHIN
 #include "dolphin/os.h"
 #endif
@@ -126,6 +143,21 @@ void streamHandle() {
       break;
     case 2: {
       cpos = hwGetPos(si->voice);
+      {
+        // Port diagnostic (MP_STREAM_TRACE=1): why refill requests stop.
+        // streamHandle only asks the game for more data while this position
+        // keeps moving away from `last`, so a frozen position silences every
+        // later refill.
+        static int traceEnabled = -1;
+        static u32 traceCount = 0;
+        if (traceEnabled < 0) {
+          traceEnabled = getenv("MP_STREAM_TRACE") != NULL ? 1 : 0;
+        }
+        if (traceEnabled && (++traceCount % 300) == 0) {
+          MP_STREAM_DBG("stream svc i=%u voice=%u last=%u pos=%u size=%u", i, si->voice, si->last,
+                        cpos, si->size);
+        }
+      }
 
       if (si->type == 1) {
         cpos = (cpos / 14) * 14;

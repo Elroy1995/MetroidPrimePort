@@ -361,6 +361,19 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   game, port and MusyX targets (`mp_signed_char`), matching the x86/Windows
   behaviour the port is verified against, and `platform/compat.h` asserts the
   invariant so losing the flag fails the build instead of muting the music.
+- Streamed music stopped refilling part-way through a track and looped the few
+  seconds it already had. `CDSPStream::BufferStream` started the async disc read
+  before publishing either `xec_readsPending` or the destination-half selector,
+  and the completion runs on Aurora's DVD worker thread: a fast completion
+  decremented the count before this call assigned it, wrapping the uchar to 255,
+  after which every refill saw a read outstanding, `UpdateStream` returned 0
+  forever and the mixer looped its buffer. The guest serialized this with
+  `OSDisableInterrupts`, a no-op on PC, so both values are published before the
+  read starts, and a completion for a read the stream no longer owns is dropped
+  instead of counted down. Verified on device: the 99-second intro track now
+  plays to its end (`end of stream`) instead of freezing at half the file. The
+  tracing is in the `mpstream`/`mpstream-mx` logcat tags, with the per-chunk
+  detail behind `MP_STREAM_TRACE=1`.
 - Skinned vertex generation advances its output cursor explicitly. On the console
   the write-gather pipe advances itself as data is written, so `BuildPoints`,
   `BuildNormals`, and `Calculate`'s padding pass all reused one `pipe` value; on PC

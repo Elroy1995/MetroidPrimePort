@@ -7,7 +7,39 @@
 #include "dolphin/dvd.h"
 #include "dolphin/os.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+// Port diagnostic: streamed-audio (music) refill tracing. Android apps have no
+// usable stderr, so report to logcat there. The per-chunk and per-mix detail
+// needs `MP_STREAM_TRACE=1`; stream starts, stops and stale completions are
+// always reported because they are rare and explain a stalled stream.
+#define MP_STREAM_LOG(...) __android_log_print(ANDROID_LOG_INFO, "mpstream", __VA_ARGS__)
+#else
+#define MP_STREAM_LOG(...)                        \
+  do {                                            \
+    std::fprintf(stderr, "mpstream: ");           \
+    std::fprintf(stderr, __VA_ARGS__);            \
+    std::fputc('\n', stderr);                     \
+  } while (0)
+#endif
+
+namespace {
+bool StreamTraceVerbose() {
+  static const bool verbose = getenv("MP_STREAM_TRACE") != nullptr;
+  return verbose;
+}
+} // namespace
+
+#define MP_STREAM_TRACE_LOG(...)     \
+  do {                               \
+    if (StreamTraceVerbose()) {      \
+      MP_STREAM_LOG(__VA_ARGS__);    \
+    }                                \
+  } while (0)
 
 static struct {
   CDSPStream streams[4];
@@ -154,6 +186,9 @@ uint CDSPStream::AllocateStream(const SStreamInfo& info, char vol, char pan) {
   }
 
   x0_state = 2;
+  MP_STREAM_LOG("alloc name=%s rate=%u adpcm=%u loop=%d loopStart=%u loopEnd=%u oneshot=%d",
+                x10_fileName != nullptr ? x10_fileName : "?", x14_sampleRate, x1c_adpcmBytes,
+                x20_loopFlag, x24_loopStartByte, x28_loopEndByte, x1_oneshot);
   return ret;
 }
 
@@ -338,28 +373,46 @@ void CDSPStream::BufferStream() {
   }
 
   BOOL ints = OSDisableInterrupts();
+  // Advance the destination selector before starting the read: the completion
+  // (which may run on Aurora's DVD worker thread before this call returns)
+  // uploads the half that was just read based on this flag, so leaving the
+  // toggle until afterwards could upload the other half instead.
+  xe0_curBuffer ^= 1;
   if (readLen != 0) {
     if (xec_readsPending == 0) {
+      MP_STREAM_TRACE_LOG("read issue file=%s off=%u len=%u half=%u cur=%u loop=%d",
+                          this->x10_fileName, x18_headerSize + xcc_fileCur, readLen, xe0_curBuffer,
+                          static_cast< int >(x20_loopFlag));
+      // Publish the outstanding-read count *before* starting the read. The
+      // completion runs on Aurora's DVD worker thread, so starting the read
+      // first let it decrement the count before this call assigned it: the
+      // uchar wrapped to 255, every later refill saw reads "outstanding" and
+      // stopped, and the mixer looped the buffer it already had. The guest
+      // guarded this with OSDisableInterrupts, which is a no-op on PC.
+      xec_readsPending = secondReadLen != 0 ? 2 : 1;
       DVDReadAsyncPrio(&x50_fileInfo1, buf, static_cast< s32 >(readLen),
                        static_cast< s32 >(x18_headerSize + xcc_fileCur), ReadCompleted, 1);
       if (secondReadLen != 0) {
         DVDReadAsyncPrio(&x8c_fileInfo2, static_cast< char* >(buf) + readLen,
                          static_cast< s32 >(secondReadLen),
                          static_cast< s32 >(x18_headerSize + x24_loopStartByte), ReadCompleted, 1);
-        xec_readsPending = 2;
         xcc_fileCur = secondReadLen + x24_loopStartByte;
       } else {
-        xec_readsPending = 1;
         xcc_fileCur += readLen;
       }
+    } else {
+      MP_STREAM_LOG("read SKIPPED (one pending) file=%s pending=%u cur=%u fileCur=%u",
+                    this->x10_fileName, xec_readsPending, xe0_curBuffer, xcc_fileCur);
     }
   } else if (xe4_needsPrime != 0) {
+    MP_STREAM_TRACE_LOG("prime consumed file=%s", this->x10_fileName);
     xe4_needsPrime = 0;
   } else {
+    MP_STREAM_LOG("end of stream file=%s fileCur=%u remaining=%u loop=%d", this->x10_fileName,
+                  xcc_fileCur, xd0_remaining, static_cast< int >(x20_loopFlag));
     StopStream();
   }
 
-  xe0_curBuffer ^= 1;
   OSRestoreInterrupts(ints);
 }
 
@@ -377,11 +430,18 @@ u32 CDSPStream::UpdateStream(void*, u32 destOffset, void*, u32 len, u32 user) {
     return 0;
   }
 
+  MP_STREAM_TRACE_LOG("update state=%u pending=%u adv=%u len=%u half=%u cur=%u fileCur=%u rem=%u",
+                      stream->x0_state, stream->xec_readsPending, destOffset, len,
+                      stream->xdc_streamSamples >> 1, stream->xe0_curBuffer, stream->xcc_fileCur,
+                      stream->xd0_remaining);
+
   if (destOffset + len < (stream->xdc_streamSamples >> 1)) {
     return 0;
   }
 
   if (stream->xec_readsPending == 0) {
+    MP_STREAM_TRACE_LOG("refill triggered pending=0 state=%u cur=%u fileCur=%u", stream->x0_state,
+                  stream->xe0_curBuffer, stream->xcc_fileCur);
     stream->BufferStream();
     // End-of-stream can synchronously free the MusyX stream in BufferStream.
     // Do not ask its caller to upload another chunk to the retired buffer.
@@ -402,10 +462,12 @@ int CDSPStream::InitializeStream() {
   sndStreamARAMUpdate(xc8_streamId, 0, xdc_streamSamples >> 1, 0, 0);
   if (sndStreamActivate(xc8_streamId)) {
     x0_state = 4;
+    MP_STREAM_LOG("activate ok file=%s id=%u rate=%u", x10_fileName, xc8_streamId, x14_sampleRate);
     BufferStream();
     return 1;
   }
 
+  MP_STREAM_LOG("activate FAILED file=%s id=%u", x10_fileName, xc8_streamId);
   DeallocateStream();
   CloseFiles();
   return 0;
@@ -420,8 +482,26 @@ void CDSPStream::ReadCompleted(s32, DVDFileInfo* fileInfo) {
     }
   }
 
+  if (idx == 4) {
+    // A late completion from a retired stream: the slot has been recycled and
+    // nothing here owns this file info any more. Without this the code below
+    // indexes g_Streams[4] and corrupts whatever follows it.
+    MP_STREAM_LOG("read completion for an unowned file info (ignored)");
+    return;
+  }
+
   CDSPStream& stream = g_Streams[idx];
+  if (stream.xec_readsPending == 0) {
+    // A completion this stream no longer owns (a late callback for a recycled
+    // slot). Counting it down would wrap the uchar and stop every later
+    // refill, which is heard as the music looping the buffer it already had.
+    MP_STREAM_LOG("stale read completion ignored (idx=%d state=%u)", idx, stream.x0_state);
+    return;
+  }
   stream.xec_readsPending--;
+  MP_STREAM_TRACE_LOG("read done idx=%d pending=%u state=%u status=%d fileCur=%u", idx,
+                stream.xec_readsPending, stream.x0_state, DVDGetCommandBlockStatus(&fileInfo->cb),
+                stream.xcc_fileCur);
   if (stream.xec_readsPending != 0) {
     return;
   }
