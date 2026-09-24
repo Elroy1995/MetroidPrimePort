@@ -374,6 +374,18 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   plays to its end (`end of stream`) instead of freezing at half the file. The
   tracing is in the `mpstream`/`mpstream-mx` logcat tags, with the per-chunk
   detail behind `MP_STREAM_TRACE=1`.
+- Android touch sticks and triggers reached the game wrong in three ways. The
+  overlay sends normalised -1..1 deflections but `SDL_SetJoystickVirtualAxis`
+  takes a Sint16 joystick value, so partial deflection truncated to 0 and the
+  player could neither move nor aim; the Y axis was negated (SDL's gamepad +Y is
+  down, which Aurora inverts for the GameCube stick); and a released trigger sent
+  0, which is the axis *centre* rather than a trigger's resting minimum, so the
+  game stayed locked on and strafing after the player let go. Axes now map the
+  full -32768..32767 range and triggers release at the minimum.
+- Controls still held when the debug overlay opened were never released: the
+  overlay stops claiming touches as soon as it is visible, so the matching
+  releases never arrived and whatever was down stayed down for the session. Held
+  controls are released on that transition.
 - Skinned vertex generation advances its output cursor explicitly. On the console
   the write-gather pipe advances itself as data is written, so `BuildPoints`,
   `BuildNormals`, and `Calculate`'s padding pass all reused one `pipe` value; on PC

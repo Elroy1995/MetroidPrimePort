@@ -1801,7 +1801,8 @@ SDL_Joystick* VirtualPad() {
   desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
   desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
   desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
-  // Identify as a common Xbox pad so SDL's built-in mapping matches it.
+  // Report as a common Xbox pad so the pad type, and with it the port's prompt
+  // icons, match what the overlay draws.
   desc.vendor_id = 0x045e;
   desc.product_id = 0x02ea;
   desc.name = "Metroid Prime touch gamepad";
@@ -1810,8 +1811,15 @@ SDL_Joystick* VirtualPad() {
     __android_log_print(ANDROID_LOG_ERROR, "touchpad", "attach failed: %s", SDL_GetError());
     return nullptr;
   }
-  if (!SDL_IsGamepad(id)) {
-    // No built-in mapping matched after all, so supply the standard layout.
+  // Install our own mapping even though SDL recognises those Xbox ids. The
+  // overlay writes SDL_Gamepad* indices straight into
+  // SDL_SetJoystickVirtualAxis/SDL_SetJoystickVirtualButton, which describe the
+  // right controls only when the pad's mapping is this plain layout. SDL's
+  // built-in Xbox mapping binds rightx:a3, righty:a4, start:b8 and the
+  // shoulders to b4/b5, so the right stick, Start and the beams landed on the
+  // wrong controls. An API mapping outranks the built-in table and is reloaded
+  // onto the already-attached pad.
+  {
     char guid[64];
     SDL_GUIDToString(SDL_GetJoystickGUIDForID(id), guid, sizeof(guid));
     char mapping[512];
@@ -1841,7 +1849,16 @@ extern "C" JNIEXPORT void JNICALL
 Java_org_metroidprime_port_TouchControlsView_nativeVirtualAxis(JNIEnv*, jclass, jint axis,
                                                                jfloat value) {
   if (SDL_Joystick* pad = VirtualPad()) {
-    SDL_SetJoystickVirtualAxis(pad, static_cast< int >(axis), static_cast< float >(value));
+    // The overlay sends a normalised -1..1 deflection, but the virtual joystick
+    // API takes a Sint16 joystick-axis value. Passing the float straight through
+    // truncated every partial deflection to 0, so the sticks and triggers read
+    // as centred and the player could neither move nor aim. Map the full range:
+    // SDL's joystick axes run -32768..32767, and a trigger's rest value is the
+    // minimum, not the centre.
+    const float clamped = value < -1.f ? -1.f : (value > 1.f ? 1.f : value);
+    const float scaled = clamped < 0.f ? clamped * 32768.f : clamped * 32767.f;
+    SDL_SetJoystickVirtualAxis(pad, static_cast< int >(axis),
+                               static_cast< Sint16 >(std::lround(scaled)));
   }
 }
 #endif

@@ -197,7 +197,13 @@ final class TouchControlsView extends View {
 
         // While the debug overlay is open the game is paused and the touches
         // are for it, so decline them and let the SDL surface below have them.
+        // Anything still held has to go first: once this view stops claiming
+        // touches the matching releases never arrive, which left whatever was
+        // down (a trigger, say) held for the rest of the session.
         if (nativeDebugOverlayVisible()) {
+            if (!targets.isEmpty() || !held.isEmpty()) {
+                releaseAll();
+            }
             return false;
         }
 
@@ -306,9 +312,10 @@ final class TouchControlsView extends View {
         float centreX = getWidth() * (left ? STICK_LEFT_X : STICK_RIGHT_X);
         float centreY = getHeight() * STICK_Y;
         float radius = getHeight() * STICK_RADIUS;
-        // Screen y grows downward, SDL's stick +Y is up, hence the negated y.
+        // SDL's gamepad axes are +X right and +Y *down* (Aurora inverts Y for the
+        // GameCube stick, whose +Y is up), so screen coordinates apply as-is.
         float dx = (x - centreX) / radius;
-        float dy = (centreY - y) / radius;
+        float dy = (y - centreY) / radius;
         float length = (float) Math.hypot(dx, dy);
         if (length > 1f) {
             dx /= length;
@@ -396,7 +403,11 @@ final class TouchControlsView extends View {
         if (current <= 1) {
             held.remove(id);
             if (id >= AXIS_ID_BASE) {
-                nativeVirtualAxis(id - AXIS_ID_BASE, 0f);
+                // Triggers are axes, and SDL's joystick axes run -32768..32767
+                // with a trigger resting at the minimum: releasing with 0 left
+                // the trigger half pressed, so the game stayed locked on (and
+                // strafing) after the player let go.
+                nativeVirtualAxis(id - AXIS_ID_BASE, -1f);
             } else {
                 nativeVirtualButton(id, false);
             }
