@@ -107,11 +107,19 @@ int main() {
     out << R"({"seed":"test-seed","ignored":false,"locations":{
       "00000001:00000002:00000003":{"item":"EnergyTanks","amount":4,"capacity":6,"extra":{"ok":true}},
       "00000001:00000002:00000004":{"item":"PowerBombs"}
+    },"models":{
+      "EnergyTanks":{"model":"0x0000ABCD","acs":"0","character":0,"animation":0},
+      "PowerBombs":{"model":"00000010","acs":"00000020","character":3,"animation":7}
     }})";
   }
   {
     std::ofstream out(malformedSeed);
     out << R"({"seed":"bad","locations":{"00000001:00000002:00000003":{"item":"Missiles"},}})";
+  }
+  const std::filesystem::path badModelSeed = testDir / "bad-model.json";
+  {
+    std::ofstream out(badModelSeed);
+    out << R"({"seed":"bad-model","locations":{},"models":{"Missiles":{"acs":"0"}}})";
   }
   Check(setenv("MP_USER_PATH", testDir.c_str(), 1) == 0, "set MP_USER_PATH");
   Check(setenv("MP_RANDO_SEED", validSeed.c_str(), 1) == 0, "set valid MP_RANDO_SEED");
@@ -164,6 +172,56 @@ int main() {
           "without seed/dump, hooks must leave pickups untouched and not log checks");
   }
 
+  const pid_t dumpChild = fork();
+  if (dumpChild == 0) {
+    if (unsetenv("MP_RANDO_SEED") != 0 || setenv("MP_RANDO_DUMP", "1", 1) != 0)
+      _exit(2);
+    EnsureLoaded();
+    int item = CPlayerState::kIT_Missiles;
+    int capacity = 5;
+    int amount = 5;
+    PickupModel model;
+    model.model = 0x0000ABCD;
+    const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount, model);
+    _exit(!applied && DumpEnabled() ? 0 : 1);
+  }
+  if (dumpChild < 0) {
+    Check(false, "fork dump test");
+  } else {
+    int childStatus = 0;
+    Check(waitpid(dumpChild, &childStatus, 0) == dumpChild, "wait for dump test");
+    Check(WIFEXITED(childStatus) && WEXITSTATUS(childStatus) == 0,
+          "dump mode must log the location and not apply a placement");
+    std::ifstream dumpLog(testDir / "randomizer_locations.log");
+    const std::string dumpText((std::istreambuf_iterator<char>(dumpLog)),
+                               std::istreambuf_iterator<char>());
+    Check(Contains(dumpText,
+                   "LOC 00000001:00000002:00000003 Missiles amount=5 capacity=5 "
+                   "model=0000ABCD acs=00000000 character=0 animation=0\n"),
+          "dump line should carry the pickup model");
+    std::filesystem::remove(testDir / "randomizer_locations.log");
+  }
+
+  const pid_t badModelChild = fork();
+  if (badModelChild == 0) {
+    if (setenv("MP_RANDO_SEED", badModelSeed.c_str(), 1) != 0)
+      _exit(2);
+    EnsureLoaded();
+    int item = CPlayerState::kIT_Missiles;
+    int capacity = 10;
+    int amount = 5;
+    const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount);
+    _exit(!Enabled() && !applied && item == CPlayerState::kIT_Missiles ? 0 : 1);
+  }
+  if (badModelChild < 0) {
+    Check(false, "fork model test");
+  } else {
+    int childStatus = 0;
+    Check(waitpid(badModelChild, &childStatus, 0) == badModelChild, "wait for model test");
+    Check(WIFEXITED(childStatus) && WEXITSTATUS(childStatus) == 0,
+          "a model entry without a model or acs asset must disable the seed");
+  }
+
   EnsureLoaded();
   Check(Enabled(), "valid seed with placements should enable randomizer");
   Check(std::string(SeedName()) == "test-seed", "seed name should load");
@@ -192,6 +250,18 @@ int main() {
   Check(ApplyPickup(1, 2, 4, item, capacity, amount), "optional-field placement should apply");
   Check(item == CPlayerState::kIT_PowerBombs && capacity == 7 && amount == 8,
         "omitted capacity and amount must remain untouched");
+
+  PickupModel pickupModel;
+  Check(ModelForItem(CPlayerState::kIT_EnergyTanks, pickupModel) &&
+            pickupModel.model == 0x0000ABCD && pickupModel.acs == 0 &&
+            pickupModel.character == 0 && pickupModel.animation == 0,
+        "seed model should load, accepting a 0x prefix");
+  Check(ModelForItem(CPlayerState::kIT_PowerBombs, pickupModel) &&
+            pickupModel.model == 0x00000010 && pickupModel.acs == 0x00000020 &&
+            pickupModel.character == 3 && pickupModel.animation == 7,
+        "seed model should carry an animated model's acs/character/animation");
+  Check(!ModelForItem(CPlayerState::kIT_Missiles, pickupModel),
+        "an item the seed has no model for should report none");
 
   Check(CheckCount() == 0, "check count starts at zero");
   RecordCheck(1, 2, 3, item);

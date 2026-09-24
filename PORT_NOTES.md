@@ -1,5 +1,22 @@
 # Metroid Prime port — working notes
 
+## Randomizer: pickup models and drop filtering (2026-09-24)
+
+- Rewritten pickups now draw the item they grant. `tools/rando_seed.py` derives
+  a `models` map from the dump and the seed's `locations`; `LoadPickup` copies
+  the entry into the pickup's static model and animation parameters exactly as
+  the area data does. Verified on disc: an energy tank swapped into a missile
+  location resolved to `model=86908399 acs=F37BCBC7`, both `ANCS` assets.
+- Real item pickups are animated (`ANCS`) in the retail data; `model` and `acs`
+  are both set and the engine prefers the animation, so the rewrite mirrors
+  both fields instead of picking one.
+- Areas also list their enemy drop templates as pickups (health and ammo
+  refills with `capacity=0`). They are not item locations; the seed tool filters
+  them by default (`--include-drops` keeps them). Confirmed against Chozo Ruins
+  and Tallon Overworld dumps.
+- Item models come from a dump, so a full dump gives full model coverage; an
+  item the dump never saw keeps its retail model. See `docs/RANDOMIZER.md`.
+
 ## Item randomizer proof of concept (2026-09-24)
 
 - Item pickups can be rewritten from a seed file at load time. The gameplay

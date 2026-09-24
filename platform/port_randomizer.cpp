@@ -53,6 +53,7 @@ struct Placement {
 struct State {
   std::map<std::string, Placement> placements;
   std::set<std::string> loggedPlacements;
+  std::map<int, PickupModel> itemModels;
   std::string seedName;
   int checkCount = 0;
   bool enabled = false;
@@ -288,6 +289,80 @@ class Parser {
     }
   }
 
+  // Asset ids are written as 1-8 hexadecimal digits, optionally prefixed with
+  // "0x", so a seed reads like the location keys and the LOC dump lines.
+  uint32_t ParseHexAsset() {
+    const std::string text = ParseString();
+    size_t i = 0;
+    if (text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X'))
+      i = 2;
+    if (i >= text.size() || text.size() - i > 8)
+      Fail("expected 1 to 8 hexadecimal digits");
+    uint32_t value = 0;
+    for (; i < text.size(); ++i) {
+      const char c = text[i];
+      value <<= 4;
+      if (c >= '0' && c <= '9')
+        value |= static_cast< uint32_t >(c - '0');
+      else if (c >= 'a' && c <= 'f')
+        value |= static_cast< uint32_t >(c - 'a' + 10);
+      else if (c >= 'A' && c <= 'F')
+        value |= static_cast< uint32_t >(c - 'A' + 10);
+      else
+        Fail("expected 1 to 8 hexadecimal digits");
+    }
+    return value;
+  }
+
+  PickupModel ParseModel() {
+    PickupModel model;
+    Expect('{');
+    if (!Consume('}')) {
+      for (;;) {
+        const std::string key = ParseString();
+        Expect(':');
+        if (key == "model") {
+          model.model = ParseHexAsset();
+        } else if (key == "acs") {
+          model.acs = ParseHexAsset();
+        } else if (key == "character" || key == "animation") {
+          const int value = ParseInteger();
+          if (value < 0)
+            Fail("character and animation must be non-negative");
+          if (key == "character")
+            model.character = static_cast< uint32_t >(value);
+          else
+            model.animation = static_cast< uint32_t >(value);
+        } else {
+          SkipValue();
+        }
+        if (Consume('}'))
+          break;
+        Expect(',');
+      }
+    }
+    if (model.model == 0 && model.acs == 0)
+      Fail("model entry needs a model or acs asset");
+    return model;
+  }
+
+  void ParseModels(std::map<int, PickupModel>& models) {
+    Expect('{');
+    if (Consume('}'))
+      return;
+    for (;;) {
+      const std::string name = ParseString();
+      Expect(':');
+      const int item = PortRandomizer::ItemFromName(name.c_str());
+      if (item < 0)
+        Fail("unknown item name in models");
+      models[item] = ParseModel();
+      if (Consume('}'))
+        return;
+      Expect(',');
+    }
+  }
+
   Placement ParsePlacement() {
     Placement placement;
     bool hasItem = false;
@@ -339,7 +414,8 @@ class Parser {
 public:
   explicit Parser(const std::string& text) : mText(text) {}
 
-  void Parse(std::string& seedName, std::map<std::string, Placement>& placements) {
+  void Parse(std::string& seedName, std::map<std::string, Placement>& placements,
+             std::map<int, PickupModel>& models) {
     Expect('{');
     if (!Consume('}')) {
       for (;;) {
@@ -349,6 +425,8 @@ public:
           seedName = ParseString();
         } else if (key == "locations") {
           ParseLocations(placements);
+        } else if (key == "models") {
+          ParseModels(models);
         } else {
           SkipValue();
         }
@@ -376,8 +454,9 @@ bool LoadSeed(State& state) {
 
   std::string seedName;
   std::map<std::string, Placement> placements;
+  std::map<int, PickupModel> models;
   try {
-    Parser(text).Parse(seedName, placements);
+    Parser(text).Parse(seedName, placements, models);
   } catch (const ParseError& error) {
     std::fprintf(stderr, "randomizer: seed parse error at byte offset %zu: %s\n", error.offset,
                  error.reason);
@@ -386,6 +465,7 @@ bool LoadSeed(State& state) {
 
   state.seedName = std::move(seedName);
   state.placements = std::move(placements);
+  state.itemModels = std::move(models);
   state.enabled = !state.placements.empty();
   return state.enabled;
 }
@@ -435,8 +515,8 @@ void EnsureLoaded() {
       if (state.dump) {
         std::fprintf(stderr, "randomizer: dump mode (MP_RANDO_DUMP)\n");
       } else if (state.enabled) {
-        std::fprintf(stderr, "randomizer: seed '%s', %zu placements\n", state.seedName.c_str(),
-                     state.placements.size());
+        std::fprintf(stderr, "randomizer: seed '%s', %zu placements, %zu item models\n",
+                     state.seedName.c_str(), state.placements.size(), state.itemModels.size());
       }
       return true;
     }();
@@ -502,16 +582,18 @@ const char* StatusText() {
 }
 
 bool ApplyPickup(uint32_t worldAssetId, uint32_t areaAssetId, uint32_t entityId, int& itemType,
-                 int& capacity, int& amount) {
+                 int& capacity, int& amount, const PickupModel& model) {
   EnsureLoaded();
   try {
     State& state = GetState();
     char key[32];
     FormatLocationKey(worldAssetId, areaAssetId, entityId, key, sizeof(key));
     if (state.dump) {
-      char line[128];
-      std::snprintf(line, sizeof(line), "LOC %s %s amount=%d capacity=%d\n", key,
-                    ItemName(itemType), amount, capacity);
+      char line[200];
+      std::snprintf(line, sizeof(line),
+                    "LOC %s %s amount=%d capacity=%d model=%08X acs=%08X character=%u animation=%u\n",
+                    key, ItemName(itemType), amount, capacity, model.model, model.acs,
+                    model.character, model.animation);
       AppendLog("randomizer_locations.log", line);
       return false;
     }
@@ -528,13 +610,32 @@ bool ApplyPickup(uint32_t worldAssetId, uint32_t areaAssetId, uint32_t entityId,
       capacity = it->second.capacity;
     // Record the rewrite so a seed can be checked without playing the whole
     // game; areas reconstruct their pickups every time they load, so log each
-    // location once per session instead of once per load.
+    // location once per session instead of once per load. The model is the one
+    // the seed associates with the new item (zero when it keeps the original).
     if (state.loggedPlacements.insert(key).second) {
-      char line[160];
-      std::snprintf(line, sizeof(line), "PLACE %s %s -> %s amount=%d capacity=%d\n", key,
-                    ItemName(previous), ItemName(itemType), amount, capacity);
+      const auto modelIt = state.itemModels.find(itemType);
+      const uint32_t modelId = modelIt != state.itemModels.end() ? modelIt->second.model : 0;
+      const uint32_t acsId = modelIt != state.itemModels.end() ? modelIt->second.acs : 0;
+      char line[200];
+      std::snprintf(line, sizeof(line),
+                    "PLACE %s %s -> %s amount=%d capacity=%d model=%08X acs=%08X\n", key,
+                    ItemName(previous), ItemName(itemType), amount, capacity, modelId, acsId);
       AppendLog("randomizer_placements.log", line);
     }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool ModelForItem(int itemType, PickupModel& out) {
+  EnsureLoaded();
+  try {
+    const State& state = GetState();
+    const auto it = state.itemModels.find(itemType);
+    if (it == state.itemModels.end())
+      return false;
+    out = it->second;
     return true;
   } catch (...) {
     return false;

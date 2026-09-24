@@ -35,6 +35,9 @@ directory. Schema:
   "seed": "poc-0001",
   "locations": {
     "39F2DE28:B2701146:0000007E": { "item": "EnergyTanks", "amount": 1, "capacity": 100 }
+  },
+  "models": {
+    "EnergyTanks": { "model": "86908399", "acs": "F37BCBC7", "character": 0, "animation": 0 }
   }
 }
 ```
@@ -45,6 +48,14 @@ and trailing commas are rejected — a malformed seed disables the randomizer wi
 a `randomizer: seed parse error at byte offset N` line on stderr rather than
 applying half of it.
 
+`models` is optional and maps an item name to the assets a pickup of that item
+is drawn with. A rewritten pickup uses that entry so it looks like the item it
+grants; without one it keeps the retail model (the item is still correct). The
+port copies the entry into the pickup's static model and animation parameters
+exactly as the area data would, and the engine already prefers the animation
+when one is present. In the retail data a pickup's `model` and `acs` are both
+ANCS assets, with the animation driving the visual.
+
 ## Workflow
 
 1. Dump every pickup location of a world:
@@ -52,8 +63,13 @@ applying half of it.
    ```sh
    MP_RANDO_DUMP=1 <game> <disc.iso>
    # writes <user dir>/randomizer_locations.log:
-   #   LOC 39F2DE28:B2701146:0000007E Missiles amount=5 capacity=5
+   #   LOC 39F2DE28:B2701146:0000007E Missiles amount=5 capacity=5 \
+   #       model=FFFFFFFF acs=90C6A0EE character=0 animation=0
    ```
+
+   Areas also list their enemy drop templates as pickups (health and ammo
+   refills with `capacity=0`); those are not item locations and are filtered
+   out below.
 
 2. Shuffle the dump into a seed:
 
@@ -63,36 +79,44 @@ applying half of it.
    ```
 
    Locations not present in the seed keep their vanilla items, so a partial dump
-   is a valid partial randomizer.
+   is a valid partial randomizer. `--from-dump` may be repeated to merge several
+   dumps, and `--include-drops` keeps the zero-capacity drop templates as
+   locations. The tool also derives the `models` map from the dump, so a full
+   dump gives full model coverage.
 
 3. Play with the seed. Applied rewrites are appended to
-   `randomizer_placements.log` (once per location per session) and collected
-   checks to `randomizer_checks.log`.
+   `randomizer_placements.log` (once per location per session, with the model
+   used) and collected checks to `randomizer_checks.log`.
 
-The randomizer announces itself at startup (`randomizer: seed 'x', N placements`,
-`randomizer: dump mode (MP_RANDO_DUMP)`) and is otherwise silent.
+The randomizer announces itself at startup (`randomizer: seed 'x', N placements,
+M item models`, `randomizer: dump mode (MP_RANDO_DUMP)`) and is otherwise silent.
 
 ## Verified
 
-- `port_randomizer_tests` covers the seed parser (valid, partial, malformed),
-  the location-key format, item-name mapping and the no-seed no-op path.
-- On a real USA v1.00 disc, dump mode logged a live pickup
-  (`LOC 39F2DE28:B2701146:0000007E Missiles amount=5 capacity=5` — the Tallon
-  Overworld landing site missile expansion), and a seed moved an item to that
-  location (`PLACE 39F2DE28:B2701146:0000007E Missiles -> EnergyTanks
-  amount=1 capacity=100`).
+- `port_randomizer_tests` covers the seed parser (valid, partial, malformed,
+  model entries with and without assets), the location-key format, item-name
+  mapping, model lookup and the no-seed no-op path.
+- On a real USA v1.00 disc, dump mode logged live pickups with their models, and
+  a seed both moved items and swapped their models: Tallon Overworld's landing
+  site missile expansion became an energy tank
+  (`PLACE 39F2DE28:B2701146:0000007E Missiles -> EnergyTanks amount=1 capacity=100`),
+  and in Chozo Ruins the swapped pickups resolved to the right assets
+  (`PLACE 83F6FF6F:D5CDB809:0002012C Missiles -> EnergyTanks ... model=86908399
+  acs=F37BCBC7`, both `ANCS`).
+- Dumps of the first areas of Tallon Overworld and Chozo Ruins produced 5 real
+  Chozo item locations and 2 item models after filtering drops.
 
 ## Not done yet
 
 - **Logic.** Placement logic belongs in an offline generator (randomprime /
   Archipelago's Metroid Prime world); the port only applies the result. Nothing
   in the port guarantees a seed is beatable.
-- **Models.** `LoadPickup` takes the pickup's model from the area file, so a
-  rewritten pickup still renders the original item's model. A
-  `EItemType -> model/animation` table is needed alongside the rewrite.
+- **Model coverage.** Models come from a dump, so an item the dump never saw
+  keeps its retail model. There is no built-in table yet.
 - **Coverage.** `CScriptPickup` is handled; `CScriptPickupGenerator` drops and
   script-granted items (artifacts via `CArtifactDoll`, suit upgrades) are not, so
-  a full randomizer needs those locations too.
+  a full randomizer needs those locations too. Drop templates must stay out of
+  the seed, which the tool does by default.
 - **Checks in the save.** Checks are logged to a sidecar file and counted per
   session; they are not persisted into the save game yet.
 - **Archipelago.** A client needs a socket layer (the port has none) speaking

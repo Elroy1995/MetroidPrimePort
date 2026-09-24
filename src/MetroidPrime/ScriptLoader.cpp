@@ -885,11 +885,29 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
     const uint32_t randoWorld = static_cast< uint32_t >(mgr.GetWorld()->IGetWorldAssetId());
     const uint32_t randoArea = static_cast< uint32_t >(
         mgr.GetWorld()->IGetAreaAlways(info.GetAreaId())->IGetAreaAssetId());
+    PortRandomizer::PickupModel originalModel;
+    originalModel.model = static_cast< uint32_t >(staticModel);
+    originalModel.acs = static_cast< uint32_t >(aParms.GetACSFile());
+    originalModel.character = aParms.GetCharacter();
+    originalModel.animation = aParms.GetInitialAnimation();
     int randoItem = static_cast< int >(itemType);
-    PortRandomizer::ApplyPickup(randoWorld, randoArea,
-                                static_cast< uint32_t >(info.GetEditorId().Value()),
-                                randoItem, capacity, amount);
-    itemType = static_cast< CPlayerState::EItemType >(randoItem);
+    if (PortRandomizer::ApplyPickup(randoWorld, randoArea,
+                                    static_cast< uint32_t >(info.GetEditorId().Value()), randoItem,
+                                    capacity, amount, originalModel)) {
+      itemType = static_cast< CPlayerState::EItemType >(randoItem);
+      // The item changed; draw it with the model the seed associates with the
+      // new item, when it has one. Otherwise the retail model stays, which
+      // still grants the right item but looks like the original one.
+      PortRandomizer::PickupModel randomModel;
+      if (PortRandomizer::ModelForItem(randoItem, randomModel)) {
+        // Mirror the area data exactly: an animated pickup keeps its static
+        // model alongside the animation file, and the loader already prefers
+        // the animation when one is present.
+        staticModel = static_cast< CAssetId >(randomModel.model);
+        aParms = CAnimationParameters(static_cast< CAssetId >(randomModel.acs), randomModel.character,
+                                      randomModel.animation);
+      }
+    }
   }
 
   FourCC staticModelType = gpResourceFactory->GetResourceTypeById(staticModel);
