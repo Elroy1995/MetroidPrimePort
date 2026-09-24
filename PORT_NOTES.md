@@ -351,6 +351,16 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
   `CMoviePlayer::StaticMyAudioCallback` reads the previous DMA buffer through the
   same 64-bit accessor; the truncated form resolved to unrelated memory whose
   bytes were then mixed as audio. `MP_DISABLE_AI_AUDIO=1` isolates this path.
+- Streamed in-game music (`Audio/*.dsp` software streams) was silent on Android
+  only. ARM compilers default plain `char` to unsigned, so the `-1` companion
+  sentinels in `CDSPStreamManager`'s `char` fields read back as 255: the
+  header-read completion then took the companion path with a 255 index, read
+  `g_Streams[255]` out of bounds and discarded the stream, so no streamed voice
+  was ever created and all streamed audio (cutscene and area music) went quiet
+  while MusyX sound effects kept working. CMake now passes `-fsigned-char` to the
+  game, port and MusyX targets (`mp_signed_char`), matching the x86/Windows
+  behaviour the port is verified against, and `platform/compat.h` asserts the
+  invariant so losing the flag fails the build instead of muting the music.
 - Skinned vertex generation advances its output cursor explicitly. On the console
   the write-gather pipe advances itself as data is written, so `BuildPoints`,
   `BuildNormals`, and `Calculate`'s padding pass all reused one `pipe` value; on PC

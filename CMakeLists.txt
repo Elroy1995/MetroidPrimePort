@@ -14,6 +14,21 @@ option(MP_BUILD_TESTS "Build native-port regression tests" ON)
 option(MP_ENABLE_SMOKE_DRIVER "Enable the opt-in real-disc lifecycle test driver" OFF)
 option(MP_ANDROID_NOD_STUB "Use a non-functional nod stub for Android build probes" OFF)
 
+# The decompiled game/engine sources and the port code around them are written
+# for a *signed* plain `char`: the PowerPC/MWCC original and every host the port
+# has been verified on (x86_64, Windows) agree on that. ARM defaults `char` to
+# unsigned, which silently changes sentinels such as CDSPStreamManager's -1
+# companion index into 255: the stream header read then takes the companion path
+# with a 255 index, discards the stream, and all streamed audio (music) goes
+# quiet while MusyX sound effects keep working. Force the verified semantics on
+# every target that compiles game-facing code. MSVC/clang-cl already default to
+# signed char. platform/compat.h asserts the invariant for the game sources.
+function(mp_signed_char target)
+    if(NOT MSVC)
+        target_compile_options(${target} PRIVATE -fsigned-char)
+    endif()
+endfunction()
+
 if(MP_ANDROID_NOD_STUB)
     if(NOT ANDROID)
         message(FATAL_ERROR "MP_ANDROID_NOD_STUB is only valid for Android builds")
@@ -32,6 +47,7 @@ endif()
 
 # MusyX is the game's audio engine; the vendored fork is portable.
 add_subdirectory(extern/musyx EXCLUDE_FROM_ALL)
+mp_signed_char(musyx)
 
 # Decompiled game + engine sources (see files.cmake).
 include(files.cmake)
@@ -50,6 +66,7 @@ list(APPEND MP_GAME_SOURCES src/MetroidPrime/main.cpp)
 # shim-dependent translation units. Link those objects directly on both ELF and
 # COFF rather than relying on archive extraction or suppressing duplicate symbols.
 add_library(mp_game OBJECT ${MP_GAME_SOURCES})
+mp_signed_char(mp_game)
 target_include_directories(mp_game PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/platform/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -88,6 +105,7 @@ if(ANDROID)
 else()
     add_executable(metroid_prime_port ${MP_PORT_SOURCES})
 endif()
+mp_signed_char(metroid_prime_port)
 add_custom_target(port_build_info
     COMMAND ${CMAKE_COMMAND}
         "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"

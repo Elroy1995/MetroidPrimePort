@@ -56,3 +56,15 @@ void ARQPoll(void);
 #define AUTO_CONST_REF(name, val) const __typeof__(val)& name = val
 #endif
 #endif
+
+// The decompiled sources are written for a signed plain `char` (the PowerPC
+// original and the x86 hosts the port is verified on), and several of them use
+// -1 as a sentinel in `char` fields. ARM compilers default `char` to unsigned,
+// where that sentinel reads back as 255 -- which silently broke streamed audio
+// (see mp_signed_char in CMakeLists.txt). If the build ever loses that flag,
+// fail loudly here instead of shipping quiet music.
+#if defined(__cplusplus)
+static_assert((char)-1 < 0, "plain char must be signed; see mp_signed_char in CMakeLists.txt");
+#else
+_Static_assert((char)-1 < 0, "plain char must be signed; see mp_signed_char in CMakeLists.txt");
+#endif
