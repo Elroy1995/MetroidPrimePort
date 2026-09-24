@@ -14,6 +14,7 @@
 #include <dolphin/dvd.h>
 
 #include "port_debug.h"
+#include "port_randomizer.h"
 #include "port_textures.h"
 #include "port_prompts.h"
 #include "port_build_info.h"
@@ -224,6 +225,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     std::fprintf(stderr, "metroid_prime_port: build %s\n", MP_BUILD_REVISION);
+    PortRandomizer::EnsureLoaded();
     // A 16:9 window when widescreen is requested; the game's render mode is
     // widened to match. Values are the default window size only.
     const bool widescreen = PortDebug::AspectMode() != PortDebug::kAspect_4_3;

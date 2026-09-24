@@ -4,6 +4,7 @@
 #include "MetroidPrime/CAnimPlaybackParms.hpp"
 #include "MetroidPrime/CArtifactDoll.hpp"
 #include "MetroidPrime/CExplosion.hpp"
+#include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/CModelData.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
@@ -22,6 +23,7 @@
 #include "Kyoto/Math/CMath.hpp"
 #include "Kyoto/Text/CStringTable.hpp"
 
+#include "port_randomizer.h"
 #include "rstl/math.hpp"
 
 static float skDrawInDistance = 30.f;
@@ -161,6 +163,14 @@ void CScriptPickup::Touch(CActor& act, CStateManager& mgr) {
       }
     }
 
+    if (mgr.GetWorld() != nullptr) {
+      const uint32_t randoWorld = static_cast< uint32_t >(mgr.GetWorld()->IGetWorldAssetId());
+      const uint32_t randoArea = static_cast< uint32_t >(
+          mgr.GetWorld()->IGetAreaAlways(GetAreaId())->IGetAreaAssetId());
+      PortRandomizer::RecordCheck(randoWorld, randoArea,
+                                  static_cast< uint32_t >(GetEditorId().Value()),
+                                  static_cast< int >(itemType));
+    }
     mgr.PlayerState()->InitializePowerUp(itemType, x260_capacity);
     mgr.PlayerState()->IncrPickUp(itemType, x25c_amount);
     mgr.DeleteObjectRequest(GetUniqueId());

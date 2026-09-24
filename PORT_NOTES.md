@@ -1,5 +1,25 @@
 # Metroid Prime port — working notes
 
+## Item randomizer proof of concept (2026-09-24)
+
+- Item pickups can be rewritten from a seed file at load time. The gameplay
+  hooks are in `ScriptLoader::LoadPickup` (rewrite the item/capacity/amount
+  before `CScriptPickup` is constructed) and `CScriptPickup::Touch` (record the
+  check); the port layer is `platform/port_randomizer.cpp` with
+  `MP_RANDO_DUMP` / `MP_RANDO_SEED`. Nothing changes when no seed is set.
+- Verified on a real USA v1.00 disc: dump mode logged a live pickup
+  (`LOC 39F2DE28:B2701146:0000007E Missiles amount=5 capacity=5`, Tallon
+  Overworld landing site) and a seed moved an item to that location
+  (`PLACE ... Missiles -> EnergyTanks amount=1 capacity=100`). See
+  `docs/RANDOMIZER.md` for the format, the `tools/rando_seed.py` helper, and
+  what is still missing (placement logic, pickup models, non-pickup item
+  grants, check persistence, the Archipelago transport).
+- Observation, not from this feature: restarting the world repeatedly (the F1
+  overlay's world teleport path) crashed the ASan build after about ten
+  restarts, in `CDvdFile::IsARAMFileLoaded` under `CAutoMapper::Update ->
+  CStringTable::Lock`. Worth reproducing on a normal build before trusting the
+  repeated world-teleport path.
+
 ## Remote-test regressions (2026-09-19)
 
 - A CachyOS/Radeon 8060S crash in `CCubeMaterial::GetFlags` during door opening

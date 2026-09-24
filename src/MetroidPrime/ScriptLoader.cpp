@@ -15,6 +15,7 @@
 #include "MetroidPrime/CModelData.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
+#include "port_randomizer.h"
 #include "MetroidPrime/Enemies/CAmbientAI.hpp"
 #include "MetroidPrime/Enemies/CAtomicAlpha.hpp"
 #include "MetroidPrime/Enemies/CAtomicBeta.hpp"
@@ -879,6 +880,17 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
   bool active = in.Get< bool >();
   float startDelay = in.Get< float >();
   CAssetId pickupEffect = in.Get< CAssetId >();
+
+  if (mgr.GetWorld() != nullptr) {
+    const uint32_t randoWorld = static_cast< uint32_t >(mgr.GetWorld()->IGetWorldAssetId());
+    const uint32_t randoArea = static_cast< uint32_t >(
+        mgr.GetWorld()->IGetAreaAlways(info.GetAreaId())->IGetAreaAssetId());
+    int randoItem = static_cast< int >(itemType);
+    PortRandomizer::ApplyPickup(randoWorld, randoArea,
+                                static_cast< uint32_t >(info.GetEditorId().Value()),
+                                randoItem, capacity, amount);
+    itemType = static_cast< CPlayerState::EItemType >(randoItem);
+  }
 
   FourCC staticModelType = gpResourceFactory->GetResourceTypeById(staticModel);
   FourCC animType = gpResourceFactory->GetResourceTypeById(aParms.GetACSFile());
