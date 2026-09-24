@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""Run a dependency-free Archipelago test server for Metroid Prime Port.
+
+Write an ``archipelago.json`` with ``server`` set to
+``ws://127.0.0.1:38281``, ``slot`` set to ``Player1``, and ``items`` mapping
+the item IDs passed with ``--item`` to retail item names (for example
+``{"1234":{"item":"EnergyTanks"},"5678":{"item":"Missiles"}}``).
+Then launch the port with ``MP_AP_CONFIG=/path/to/archipelago.json``; use
+``MP_USER_PATH`` to choose the default config/state directory when
+``MP_AP_CONFIG`` is unset (with an explicit config, state is stored beside it),
+or ``MP_AP_SEND_ALL=1`` to send every configured location check after
+connecting.
+"""
+
+import argparse
+import base64
+import hashlib
+import json
+import socket
+import struct
+import sys
+
+
+GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+def recv_exact(sock, size):
+    chunks = bytearray()
+    while len(chunks) < size:
+        data = sock.recv(size - len(chunks))
+        if not data:
+            return None
+        chunks.extend(data)
+    return bytes(chunks)
+
+
+def send_frame(sock, opcode, payload):
+    payload = payload if isinstance(payload, bytes) else payload.encode("utf-8")
+    header = bytearray([0x80 | opcode])
+    length = len(payload)
+    if length < 126:
+        header.append(length)
+    elif length <= 0xFFFF:
+        header.append(126)
+        header.extend(struct.pack("!H", length))
+    else:
+        header.append(127)
+        header.extend(struct.pack("!Q", length))
+    sock.sendall(header + payload)
+
+
+def send_json(sock, packet):
+    send_frame(sock, 1, json.dumps(packet, separators=(",", ":")))
+
+
+def read_frame(sock):
+    header = recv_exact(sock, 2)
+    if header is None:
+        return None
+    first, second = header
+    opcode = first & 0x0F
+    length = second & 0x7F
+    if length == 126:
+        extended = recv_exact(sock, 2)
+        if extended is None:
+            return None
+        length = struct.unpack("!H", extended)[0]
+    elif length == 127:
+        extended = recv_exact(sock, 8)
+        if extended is None:
+            return None
+        length = struct.unpack("!Q", extended)[0]
+    masked = bool(second & 0x80)
+    mask = recv_exact(sock, 4) if masked else b""
+    if masked and mask is None:
+        return None
+    payload = recv_exact(sock, length)
+    if payload is None:
+        return None
+    if masked:
+        payload = bytes(value ^ mask[index & 3] for index, value in enumerate(payload))
+    return opcode, payload
+
+
+def websocket_upgrade(sock):
+    request = bytearray()
+    while b"\r\n\r\n" not in request:
+        data = sock.recv(4096)
+        if not data:
+            return False
+        request.extend(data)
+        if len(request) > 16384:
+            return False
+    headers = {}
+    for line in bytes(request).split(b"\r\n")[1:]:
+        if not line:
+            break
+        if b":" in line:
+            key, value = line.split(b":", 1)
+            headers[key.strip().lower()] = value.strip()
+    key = headers.get(b"sec-websocket-key")
+    if key is None:
+        return False
+    accept = base64.b64encode(hashlib.sha1(key + GUID.encode("ascii")).digest()).decode("ascii")
+    response = (
+        "HTTP/1.1 101 Switching Protocols\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+    )
+    sock.sendall(response.encode("ascii"))
+    return True
+
+
+def packet_command(packet):
+    return packet.get("cmd", "?") if isinstance(packet, dict) else "?"
+
+
+def handle_client(sock, address, args, item_ids):
+    with sock:
+        sock.settimeout(None)
+        if not websocket_upgrade(sock):
+            print(f"[server] rejected invalid WebSocket upgrade from {address}", flush=True)
+            return
+        send_json(sock, {
+            "cmd": "RoomInfo",
+            "version": {"major": 0, "minor": 6, "build": 0},
+            "password": False,
+            "games": ["Metroid Prime"],
+            "seed_name": "Metroid Prime Port fake seed",
+        })
+
+        while True:
+            frame = read_frame(sock)
+            if frame is None:
+                return
+            opcode, payload = frame
+            if opcode == 8:
+                return
+            if opcode == 9:
+                send_frame(sock, 10, payload)
+                continue
+            if opcode != 1:
+                continue
+            try:
+                packet_data = json.loads(payload.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                print(f"[server] invalid client JSON: {error}", flush=True)
+                continue
+            packets = packet_data if isinstance(packet_data, list) else [packet_data]
+            for packet in packets:
+                print(f"[server] {packet_command(packet)} {json.dumps(packet, separators=(',', ':'))}",
+                      flush=True)
+                if packet_command(packet) != "Connect":
+                    continue
+                name = packet.get("name", "") if isinstance(packet, dict) else ""
+                if name != args.slot:
+                    send_json(sock, {"cmd": "ConnectionRefused", "errors": [
+                        f"Unknown slot {name!r}; expected {args.slot!r}"
+                    ]})
+                    continue
+                send_json(sock, {
+                    "cmd": "Connected",
+                    "team": 0,
+                    "slot": 1,
+                    "players": [],
+                    "checked_locations": [],
+                    "missing_locations": [],
+                    "slot_data": {},
+                })
+                send_json(sock, {
+                    "cmd": "ReceivedItems",
+                    "index": 0,
+                    "items": [[item_id, 0, 1, 0] for item_id in item_ids],
+                })
+
+
+def parse_item_ids(text):
+    if not text:
+        return []
+    try:
+        return [int(part, 10) for part in text.split(":")]
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("item IDs must be colon-separated decimal integers") from error
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default="127.0.0.1", help="interface to listen on (default: %(default)s)")
+    parser.add_argument("--port", type=int, default=38281, help="TCP port (default: %(default)s)")
+    parser.add_argument("--slot", default="Player1", help="accepted slot name (default: %(default)s)")
+    parser.add_argument("--item", type=parse_item_ids, default=parse_item_ids("1234:5678"),
+                        metavar="ID[:ID...]", help="item IDs sent in ReceivedItems (default: 1234:5678)")
+    args = parser.parse_args()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((args.host, args.port))
+        server.listen()
+        print(f"[server] listening on ws://{args.host}:{args.port}/ (slot {args.slot})", flush=True)
+        try:
+            while True:
+                client, address = server.accept()
+                handle_client(client, address, args, args.item)
+        except KeyboardInterrupt:
+            print("\n[server] shutting down", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

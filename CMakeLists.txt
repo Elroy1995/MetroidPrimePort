@@ -98,6 +98,10 @@ set(MP_PORT_SOURCES
     platform/port_textures.cpp
     platform/port_prompts.cpp
     platform/port_randomizer.cpp
+    platform/port_ap_protocol.cpp
+    platform/port_apclient.cpp
+    platform/port_json.cpp
+    platform/port_ws.cpp
     platform/glibc_compat.c
     platform/ai_dma.cpp)
 if(ANDROID)
@@ -105,6 +109,9 @@ if(ANDROID)
     target_link_options(metroid_prime_port PRIVATE "-Wl,-u,SDL_main")
 else()
     add_executable(metroid_prime_port ${MP_PORT_SOURCES})
+endif()
+if(WIN32)
+    target_link_libraries(metroid_prime_port PRIVATE ws2_32)
 endif()
 mp_signed_char(metroid_prime_port)
 add_custom_target(port_build_info
@@ -179,6 +186,15 @@ if(MP_BUILD_TESTS)
         platform/include extern/aurora/include include)
     target_compile_definitions(port_randomizer_tests PRIVATE TARGET_PC VERSION=0)
     target_link_libraries(port_randomizer_tests PRIVATE ${AURORA_SDL3_TARGET})
+    add_executable(port_apclient_tests
+        tests/port_apclient.cpp
+        platform/port_ap_protocol.cpp
+        platform/port_json.cpp
+        platform/port_randomizer.cpp)
+    target_include_directories(port_apclient_tests PRIVATE
+        platform/include extern/aurora/include include)
+    target_compile_definitions(port_apclient_tests PRIVATE TARGET_PC VERSION=0)
+    target_link_libraries(port_apclient_tests PRIVATE ${AURORA_SDL3_TARGET})
     add_executable(port_musyx_tests tests/port_musyx.c)
     target_link_libraries(port_musyx_tests PRIVATE musyx)
     add_executable(port_disc_tests tests/port_disc.cpp platform/disc.cpp)
@@ -186,6 +202,15 @@ if(MP_BUILD_TESTS)
     target_compile_definitions(port_disc_tests PRIVATE TARGET_PC)
     add_executable(port_mouse_tests tests/port_mouse.cpp)
     target_include_directories(port_mouse_tests PRIVATE platform/include)
+    add_executable(port_json_tests tests/port_json.cpp platform/port_json.cpp)
+    target_include_directories(port_json_tests PRIVATE platform/include)
+    target_compile_definitions(port_json_tests PRIVATE TARGET_PC)
+    add_executable(port_ws_tests tests/port_ws.cpp platform/port_ws.cpp)
+    target_include_directories(port_ws_tests PRIVATE platform/include)
+    target_compile_definitions(port_ws_tests PRIVATE TARGET_PC)
+    if(WIN32)
+        target_link_libraries(port_ws_tests PRIVATE ws2_32)
+    endif()
     add_executable(port_timing_tests tests/port_timing.cpp)
     target_include_directories(port_timing_tests PRIVATE platform/include)
     add_executable(port_audio_math_tests tests/port_audio_math.c)
@@ -195,7 +220,7 @@ if(MP_BUILD_TESTS)
     add_test(NAME port_card_tests COMMAND port_card_tests "${CMAKE_CURRENT_BINARY_DIR}/card-test-data")
     set_tests_properties(port_card_tests PROPERTIES TIMEOUT 15 LABELS port)
     aurora_copy_runtime_dlls(port_card_tests)
-    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_musyx_tests port_disc_tests port_mouse_tests port_timing_tests port_audio_math_tests)
+    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_musyx_tests port_disc_tests port_mouse_tests port_json_tests port_ws_tests port_timing_tests port_audio_math_tests)
         add_test(NAME ${test} COMMAND ${test})
         set_tests_properties(${test} PROPERTIES TIMEOUT 15 LABELS port)
         aurora_copy_runtime_dlls(${test})

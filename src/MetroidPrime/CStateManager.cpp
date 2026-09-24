@@ -1,5 +1,6 @@
 #define CSTATEMANAGER_OUT_OF_LINE_GETPLAYER
 #include "MetroidPrime/CStateManager.hpp"
+#include "port_apclient.h"
 #include "port_debug.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
@@ -1113,6 +1114,9 @@ void CStateManager::Update(float dt) {
 #endif
 
   PortDebug::SetStateManager(this);
+  // Grants any items the Archipelago server has queued and sends collected
+  // checks; a no-op when no Archipelago configuration is loaded.
+  PortAp::Poll(*this);
   int debugTeleportArea = -1;
   if (PortDebug::ConsumeTeleportRequest(debugTeleportArea)) {
     const TAreaId aid(debugTeleportArea);

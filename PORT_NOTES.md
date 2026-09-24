@@ -1,5 +1,28 @@
 # Metroid Prime port — working notes
 
+## Archipelago client (2026-09-24)
+
+- The port can join an Archipelago multiworld natively: a background thread owns
+  a minimal RFC 6455 WebSocket client (`platform/port_ws.*`) and the AP JSON
+  protocol (`platform/port_ap_protocol.*`); the game reports collected pickups
+  from `CScriptPickup::Touch` (`PortAp::QueueCheck`) and receives items in
+  `PortAp::Poll`, called from `CStateManager::Update` next to the other port
+  hooks. `CPlayerState::InitializePowerUp`/`IncrPickUp` are the grant calls, the
+  same ones the retail pickup makes.
+- Verified end to end against `tools/ap_fake_server.py` (a dependency-free
+  WebSocket AP server): handshake and Connect, items granted into the player
+  state (the HUD missile readout went from 15 to the granted 250),
+  `LocationChecks` sent, and `archipelago_state.json` remembering the processed
+  item index so a reconnect does not re-grant. See `docs/ARCHIPELAGO.md`.
+- Only plain `ws://` (no TLS) and no per-message compression, which Archipelago
+  marks deprecated; DeathLink, hints, chat, an in-game status line and a
+  generator for the location/item id maps are still missing. `PortWs` was
+  written because the server speaks WebSocket, not raw TCP, and no WebSocket
+  dependency is vendored.
+- Follow-up: `platform/port_json.*` is now a general JSON parser while
+  `platform/port_randomizer.cpp` still carries its own seed parser. Folding the
+  seed reader onto `PortJson` would leave one parser in the port.
+
 ## Randomizer: pickup models and drop filtering (2026-09-24)
 
 - Rewritten pickups now draw the item they grant. `tools/rando_seed.py` derives

@@ -23,6 +23,7 @@
 #include "Kyoto/Math/CMath.hpp"
 #include "Kyoto/Text/CStringTable.hpp"
 
+#include "port_apclient.h"
 #include "port_randomizer.h"
 #include "rstl/math.hpp"
 
@@ -167,9 +168,15 @@ void CScriptPickup::Touch(CActor& act, CStateManager& mgr) {
       const uint32_t randoWorld = static_cast< uint32_t >(mgr.GetWorld()->IGetWorldAssetId());
       const uint32_t randoArea = static_cast< uint32_t >(
           mgr.GetWorld()->IGetAreaAlways(GetAreaId())->IGetAreaAssetId());
-      PortRandomizer::RecordCheck(randoWorld, randoArea,
-                                  static_cast< uint32_t >(GetEditorId().Value()),
+      const uint32_t randoEntity = static_cast< uint32_t >(GetEditorId().Value());
+      PortRandomizer::RecordCheck(randoWorld, randoArea, randoEntity,
                                   static_cast< int >(itemType));
+      // Tell the Archipelago server about the check too, when this location has
+      // an id configured. PortAp builds the same key the randomizer uses.
+      char checkKey[32];
+      PortRandomizer::FormatLocationKey(randoWorld, randoArea, randoEntity, checkKey,
+                                        sizeof(checkKey));
+      PortAp::QueueCheck(checkKey);
     }
     mgr.PlayerState()->InitializePowerUp(itemType, x260_capacity);
     mgr.PlayerState()->IncrPickUp(itemType, x25c_amount);

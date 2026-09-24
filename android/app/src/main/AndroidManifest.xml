@@ -3,6 +3,8 @@
     <!-- SDL's Android haptics call Vibrator.cancel() unconditionally, which
          throws without this and poisons the next JNI call. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- The Archipelago client opens a WebSocket to the server. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:allowBackup="false"
         android:hasFragileUserData="true"

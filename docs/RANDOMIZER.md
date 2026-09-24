@@ -119,7 +119,8 @@ M item models`, `randomizer: dump mode (MP_RANDO_DUMP)`) and is otherwise silent
   the seed, which the tool does by default.
 - **Checks in the save.** Checks are logged to a sidecar file and counted per
   session; they are not persisted into the save game yet.
-- **Archipelago.** A client needs a socket layer (the port has none) speaking
-  AP's JSON protocol: send `LocationChecks`, grant `ReceivedItems` through
-  `CPlayerState::InitializePowerUp`/`SetPickup`. The hooks above are the two
-  contact points; the missing piece is transport.
+- **Archipelago.** Implemented; see `docs/ARCHIPELAGO.md`. Checks are reported
+  from `CScriptPickup::Touch` and items are granted by `PortAp::Poll` each
+  simulation tick, over a native WebSocket client. Still missing: `wss://`
+  (no TLS), DeathLink/hints/chat, an in-game status/notification display, and a
+  generator for the location/item id maps.
