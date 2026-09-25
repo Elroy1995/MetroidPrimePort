@@ -345,10 +345,23 @@ int main(int argc, char** argv) try {
         SleepMilliseconds(50);
       }
     }
-    Check(Contains(dumpText,
-                   "LOC 00000001:00000002:00000003 Missiles amount=5 capacity=5 "
-                   "model=0000ABCD acs=00000000 character=0 animation=0\n"),
-          "dump line should carry the pickup model");
+    const std::string expectedLine =
+        "LOC 00000001:00000002:00000003 Missiles amount=5 capacity=5 "
+        "model=0000ABCD acs=00000000 character=0 animation=0\n";
+    if (!Contains(dumpText, expectedLine)) {
+      // Show what was actually written: an empty read, a partial line and a
+      // differently formatted one are three different problems, and only the
+      // text tells them apart.
+      std::string shown = dumpText.substr(0, 200);
+      for (char& c : shown) {
+        if (c == '\n')
+          c = '|';
+        if (static_cast<unsigned char>(c) < 0x20)
+          c = '?';
+      }
+      Phase(("dump log held: \"" + shown + "\"").c_str());
+    }
+    Check(Contains(dumpText, expectedLine), "dump line should carry the pickup model");
     std::error_code removeError;
     std::filesystem::remove(testDir / "randomizer_locations.log", removeError);
   }
