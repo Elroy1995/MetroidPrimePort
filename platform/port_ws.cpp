@@ -23,6 +23,10 @@
 #else
 #include <cerrno>
 #include <fcntl.h>
+// Bionic declares IPPROTO_TCP here rather than in <netdb.h>, where glibc and
+// Winsock get it, so getaddrinfo's ai_protocol below needs this on Android.
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/types.h>
