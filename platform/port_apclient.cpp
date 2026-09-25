@@ -290,11 +290,22 @@ void Worker(Runtime& runtime) {
               const std::vector<int64_t> oldChecks = runtime.session->GetState().checkedLocations;
               const std::map<int64_t, int64_t> oldProgressive =
                   runtime.session->GetState().progressive;
+              const std::string oldSeed = runtime.session->GetState().seed;
               const std::string oldError = runtime.session->LastError();
+              const std::string oldResetReason = runtime.session->ResetReason();
               runtime.session->HandlePacket(command, outgoing, newGrants);
+              if (runtime.session->ResetReason() != oldResetReason) {
+                // The recorded checks belonged to another session, so the state
+                // file has just been rewritten empty. Say why, because the
+                // symptom otherwise is a multiworld that sends nothing.
+                std::fprintf(stderr,
+                             "archipelago: saved progress was %s; starting %s fresh (set "
+                             "MP_AP_RESET_STATE=1 to discard it deliberately)\n",
+                             runtime.session->ResetReason().c_str(), config.slot.c_str());
+              }
               const Protocol::State& state = runtime.session->GetState();
               if (state.nextItemIndex != oldIndex || state.checkedLocations != oldChecks ||
-                  state.progressive != oldProgressive)
+                  state.progressive != oldProgressive || state.seed != oldSeed)
                 runtime.SaveStateLocked();
               runtime.grants.insert(runtime.grants.end(), newGrants.begin(), newGrants.end());
               runtime.lastMessage = runtime.session->LastMessage();
@@ -444,6 +455,15 @@ void EnsureLoadedImpl(Runtime& runtime) {
   Protocol::State state = Protocol::LoadStateFile(runtime.statePath);
   if (state.slot != runtime.config.slot)
     state = Protocol::State();
+  // A rewind the client cannot see - a new game or an older save on the same
+  // slot and seed - leaves the recorded checks looking valid, so this is the
+  // way out: it drops them before the first connect.
+  if (EnvEnabled("MP_AP_RESET_STATE") &&
+      (state.nextItemIndex != 0 || !state.checkedLocations.empty() || !state.progressive.empty())) {
+    std::fprintf(stderr, "archipelago: MP_AP_RESET_STATE=1 discarded saved progress for %s\n",
+                 runtime.config.slot.c_str());
+    state = Protocol::State();
+  }
   state.slot = runtime.config.slot;
   runtime.session = std::make_unique<Session>(runtime.config, state);
   runtime.enabled = true;

@@ -91,12 +91,26 @@ Environment:
 ## State
 
 `archipelago_state.json` sits next to the configuration and remembers the last
-processed item index and the checks already sent, so reconnecting does not hand
-the player the same items twice. It is tied to the slot name; a file with a
-different slot is ignored.
+processed item index, the checks already sent, and the progressive step counts,
+so reconnecting does not hand the player the same items twice.
 
-**Delete it when you start a new save file**, otherwise the client believes the
-items it already granted belong to the new run and skips them.
+It is tied to the **slot name and the seed**. A file with a different slot is
+ignored, and so is progress recorded against a different seed: the first
+`RoomInfo` compares the server's seed name with the one in the file, and when
+they differ it throws the progress away, says so in the log, and continues with
+an empty state. That is deliberate — those checks were only true for the session
+that granted them, and replaying them into a different multiworld makes the
+client claim locations it never collected while skipping the items the server
+still owes it. A file written before the seed was recorded has no seed in it, so
+the first connect adopts the server's and keeps the progress.
+
+On every connect the whole recorded check list is re-sent, so a reconnect or a
+reloaded save re-announces what was already collected.
+
+**Set `MP_AP_RESET_STATE=1` to discard the file before connecting.** That is the
+way out for the one case which cannot be detected: a new game, or an older save
+loaded on the same slot *and* the same seed, looks exactly like continued
+progress, and the client would skip items the server believes were granted.
 
 ## Producing the id maps
 

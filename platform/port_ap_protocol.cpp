@@ -428,6 +428,11 @@ State LoadStateFile(const std::string& path) {
     const PortJson::Value* slot = Member(root, "slot");
     if (slot != nullptr && slot->IsString())
       state.slot = slot->AsString();
+    // Absent in files written before the seed was recorded: an unknown seed,
+    // which the first RoomInfo adopts rather than treating as a mismatch.
+    const PortJson::Value* seed = Member(root, "seed");
+    if (seed != nullptr && seed->IsString())
+      state.seed = seed->AsString();
     int64_t number = 0;
     if (IntegerMember(root, "next_item_index", number) && number >= 0)
       state.nextItemIndex = number;
@@ -464,7 +469,8 @@ bool SaveStateFile(const std::string& path, const State& state) {
       std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
       if (!file.is_open())
         return false;
-      file << "{\"slot\":" << Quote(state.slot) << ",\"next_item_index\":";
+      file << "{\"slot\":" << Quote(state.slot) << ",\"seed\":" << Quote(state.seed)
+           << ",\"next_item_index\":";
       file << state.nextItemIndex << ",\"checked_locations\":[";
       for (size_t i = 0; i < state.checkedLocations.size(); ++i) {
         if (i != 0)
@@ -525,6 +531,20 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
     const PortJson::Value* seedName = Member(packet, "seed_name");
     if (seedName != nullptr && seedName->IsString())
       mSeedName = seedName->AsString();
+    // The recorded checks and item index are only true for the multiworld that
+    // granted them. A different seed is a different session, so keeping them
+    // would claim locations this slot never collected and skip the items the
+    // server owes it. Discard them and say so; an empty recorded seed (a file
+    // from before this was tracked) is adopted instead of treated as a mismatch.
+    if (!mSeedName.empty() && mState.seed != mSeedName) {
+      if (!mState.seed.empty()) {
+        mState.nextItemIndex = 0;
+        mState.checkedLocations.clear();
+        mState.progressive.clear();
+        mResetReason = "recorded for seed \"" + mState.seed + "\", server has \"" + mSeedName + "\"";
+      }
+      mState.seed = mSeedName;
+    }
   } else if (command == "ConnectionRefused") {
     mHandshakeComplete = false;
     mSlotDescription.clear();

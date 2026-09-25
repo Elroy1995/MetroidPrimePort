@@ -67,6 +67,10 @@ Config LoadConfigFile(const std::string& path);
 // reconnect does not hand the player the same items twice.
 struct State {
   std::string slot;
+  // Seed name this progress belongs to, learned from the server's RoomInfo. A
+  // different seed means a different session, so the progress is discarded
+  // rather than replayed into it. Empty in files written before this existed.
+  std::string seed;
   int64_t nextItemIndex = 0;
   std::vector< int64_t > checkedLocations;
   // Progressive item id -> copies processed so far. Persisted because items
@@ -120,6 +124,9 @@ public:
   const std::string& LastError() const { return mLastError; }
   // Set when ReceivedItems arrived with an index other than the expected one.
   bool Desynced() const { return mDesynced; }
+  // Why the loaded progress was thrown away on the last RoomInfo, empty when
+  // nothing was. The state itself is already reset when this is set.
+  const std::string& ResetReason() const { return mResetReason; }
 
 private:
   Config mConfig;
@@ -130,6 +137,7 @@ private:
   std::string mLastMessage;
   std::string mLastError;
   std::string mSeedName;
+  std::string mResetReason;
   int64_t mOwnSlot = 0;
   std::map< int64_t, std::string > mPlayers;
   std::vector< std::string > mNotifications;

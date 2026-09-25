@@ -248,13 +248,14 @@ int main() {
 
   State saved;
   saved.slot = "Player1";
+  saved.seed = "MP Seed Alpha";
   saved.nextItemIndex = 23;
   saved.checkedLocations = {8, 10, 12};
   const std::filesystem::path statePath = testDir / "nested" / "archipelago_state.json";
   Check(SaveStateFile(statePath.string(), saved), "state save creates parent directory");
   const State reloaded = LoadStateFile(statePath.string());
   Check(reloaded.slot == saved.slot && reloaded.nextItemIndex == saved.nextItemIndex &&
-            reloaded.checkedLocations == saved.checkedLocations,
+            reloaded.checkedLocations == saved.checkedLocations && reloaded.seed == saved.seed,
         "saved state round-trips");
   const std::filesystem::path emptyStatePath = testDir / "empty-state.json";
   const State absentState = LoadStateFile(emptyStatePath.string());
@@ -267,6 +268,80 @@ int main() {
         "empty state round-trips");
   Check(emptyReloaded.progressive.empty() && Contains(Read(emptyStatePath), "\"progressive\":{}"),
         "empty state writes an empty progressive map");
+
+  // Progress belongs to the session that granted it. A different seed must not
+  // inherit it, or the client claims locations it never collected and skips the
+  // items the server still owes it.
+  {
+    const std::string configText = R"json({
+      "server":"ws://localhost:38281", "slot":"P",
+      "items":{"5031004":{"item":"Missiles","amount":5,"capacity":5}},
+      "locations":{"39F2DE28:B2701146:0000007E":5031101}
+    })json";
+    const Config config = ParseConfig(configText);
+    Check(config.valid, "seed-mismatch config parses");
+
+    State carried;
+    carried.slot = "P";
+    carried.seed = "MP Seed Alpha";
+    carried.nextItemIndex = 7;
+    carried.checkedLocations = {5031101};
+    carried.progressive[5031043] = 2;
+    Session carriedSession(config, carried);
+    std::vector<std::string> seedOutgoing;
+    std::vector<ItemGrant> seedGrants;
+    carriedSession.HandlePacket(Packet(R"({"cmd":"RoomInfo","seed_name":"MP Seed Beta"})"),
+                                seedOutgoing, seedGrants);
+    const State& afterSwitch = carriedSession.GetState();
+    Check(afterSwitch.nextItemIndex == 0 && afterSwitch.checkedLocations.empty() &&
+              afterSwitch.progressive.empty(),
+          "a different seed discards the recorded checks, item index and progressive counts");
+    Check(afterSwitch.seed == "MP Seed Beta", "the new seed is recorded");
+    Check(carriedSession.SeedName() == "MP Seed Beta" && carriedSession.SeedName() != "",
+          "SeedName still reports the server's seed");
+    Check(carriedSession.ResetReason().find("MP Seed Alpha") != std::string::npos &&
+              carriedSession.ResetReason().find("MP Seed Beta") != std::string::npos,
+          "the reset says which seed the progress belonged to");
+    const std::filesystem::path switchedPath = testDir / "switched-state.json";
+    Check(SaveStateFile(switchedPath.string(), afterSwitch) &&
+              LoadStateFile(switchedPath.string()).nextItemIndex == 0,
+          "the reset progress is what gets written back");
+
+    Session sameSession(config, carried);
+    std::vector<std::string> sameOutgoing;
+    std::vector<ItemGrant> sameGrants;
+    sameSession.HandlePacket(Packet(R"({"cmd":"RoomInfo","seed_name":"MP Seed Alpha"})"), sameOutgoing,
+                             sameGrants);
+    const State& afterSame = sameSession.GetState();
+    Check(afterSame.nextItemIndex == 7 && afterSame.checkedLocations ==
+                std::vector<int64_t>({5031101}) && afterSame.progressive.count(5031043) == 1 &&
+              afterSame.progressive.at(5031043) == 2,
+          "the same seed keeps the recorded progress");
+    Check(sameSession.ResetReason().empty(), "no reset is reported when the seed matches");
+
+    State legacy;
+    legacy.slot = "P";
+    legacy.nextItemIndex = 4;
+    legacy.checkedLocations = {5031101};
+    Session legacySession(config, legacy);
+    std::vector<std::string> legacyOutgoing;
+    std::vector<ItemGrant> legacyGrants;
+    legacySession.HandlePacket(Packet(R"({"cmd":"RoomInfo","seed_name":"MP Seed Alpha"})"),
+                               legacyOutgoing, legacyGrants);
+    Check(legacySession.GetState().nextItemIndex == 4 &&
+              legacySession.GetState().seed == "MP Seed Alpha" && legacySession.ResetReason().empty(),
+          "a state file with no recorded seed adopts the server's without discarding progress");
+
+    // A file written before the seed existed still loads, with an unknown seed.
+    const std::filesystem::path legacyPath = testDir / "legacy-state.json";
+    {
+      std::ofstream legacyFile(legacyPath, std::ios::binary | std::ios::trunc);
+      legacyFile << R"({"slot":"P","next_item_index":5,"checked_locations":[5031101]})";
+    }
+    const State legacyLoaded = LoadStateFile(legacyPath.string());
+    Check(legacyLoaded.seed.empty() && legacyLoaded.nextItemIndex == 5,
+          "a pre-seed state file loads with an unknown seed and keeps its progress");
+  }
 
   const std::string progressiveConfigText = R"json({
     "server":"ws://localhost", "slot":"P",

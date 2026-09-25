@@ -1,5 +1,25 @@
 # Metroid Prime port — working notes
 
+## Archipelago state belongs to a session, not to a file (2026-09-25)
+
+- The recorded checks and item index were only invalidated by a slot change, so a
+  state file left over from a different multiworld was silently replayed: the
+  client claimed locations the save never collected and skipped the items the
+  server still owed it. `archipelago_state.json` now records the seed name from
+  the server's `RoomInfo`; a different seed discards the progress, logs why, and
+  continues from empty. A file with no seed in it (written before this) adopts
+  the server's and keeps its progress, so no one loses a session to the upgrade.
+- Verified on disc against `tools/ap_fake_server.py`: a state file recorded
+  against "MP Seed Alpha" connecting to the fake seed is discarded, the file is
+  rewritten empty with the new seed, and the server sees no `LocationChecks` for
+  the stale location; the same file with the server's own seed keeps its
+  progress and re-sends the check on connect. Eight new assertions in
+  `port_apclient_tests` cover both paths, the round trip and the legacy file.
+- `MP_AP_RESET_STATE=1` discards the state before connecting. A new game or an
+  older save on the same slot *and* seed is indistinguishable from continued
+  progress, so this stays the manual way out; the memory card exposes no play
+  time or save identity to detect it with.
+
 ## Impact Crater sweeps clean; the Wayland hang is not the port (2026-09-25)
 
 - Impact Crater (`C13B09D1`) is no longer the sweep's stopping point. It reaches
