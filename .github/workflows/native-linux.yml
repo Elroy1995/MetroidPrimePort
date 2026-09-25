@@ -30,6 +30,11 @@ jobs:
         run: cmake --build build/native -j 4
       - name: Test
         run: ctest --test-dir build/native -L port --output-on-failure
+      # ctest only prints a test's output when it fails, so the wss:// evidence
+      # - the verified handshake and the rejections - would otherwise never
+      # appear in the log. Run it once more directly to record it.
+      - name: Show the TLS handshake result
+        run: ./build/native/port_ws_tests
       - name: Build FIFO regressions
         run: cmake --build build/native --target gx_fifo_tests -j 4
       - name: Test FIFO regressions

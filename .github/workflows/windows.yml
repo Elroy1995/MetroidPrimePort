@@ -35,6 +35,12 @@ jobs:
       - name: Test
         run: ctest --test-dir build-win -L port --output-on-failure
 
+      # ctest only prints a test's output when it fails, so the wss:// evidence
+      # - the verified handshake and the rejections - would otherwise never
+      # appear in the log. Run it once more directly to record it.
+      - name: Show the TLS handshake result
+        run: ./build-win/port_ws_tests.exe
+
       - name: Build FIFO regressions
         run: cmake --build build-win --target gx_fifo_tests -j
 
