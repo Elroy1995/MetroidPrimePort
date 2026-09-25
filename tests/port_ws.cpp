@@ -344,9 +344,15 @@ void CheckTlsEndToEnd() {
       Run(prefix + "openssl x509 -req -days 1 -in server.csr -CA ca.pem -CAkey ca.key " +
           "-CAcreateserial -extfile server.ext -out server.pem" + quiet);
   Check(generated, "openssl CLI generates the test CA and server certificate");
+  // Starting four openssl processes and a python server is not instant on a
+  // loaded CI machine, and the whole test has a timeout of its own.
+  if (!generated) {
+    std::filesystem::remove_all(dir, ignored);
+    return;
+  }
   const uint16_t port = FreeLoopbackPort();
   Check(port != 0, "a free loopback port for the TLS server");
-  if (!generated || port == 0) {
+  if (port == 0) {
     std::filesystem::remove_all(dir, ignored);
     return;
   }
@@ -374,14 +380,18 @@ void CheckTlsEndToEnd() {
   PortWs::Client client;
   bool connected = false;
   // The server needs a moment to start listening; retry until it does.
-  if (!WaitForListener(port, 30)) {
+  if (!WaitForListener(port, 10)) {
     std::ifstream earlyLog(logPath);
-    std::fprintf(stderr, "[ws-tests] fake server never listened on %u; its log was:\n%s\n", port,
-                 std::string(std::istreambuf_iterator<char>(earlyLog), {}).c_str());
+    std::fprintf(stderr, "[ws-tests] fake server never listened on %u within 10s; its log was:\n%s\n",
+                 port, std::string(std::istreambuf_iterator<char>(earlyLog), {}).c_str());
   }
-  // The listener is up, so a short retry loop only covers a server that accepts
-  // the socket a moment before it can complete the handshake.
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+  // The listener being up does not guarantee the first TLS attempt lands: the
+  // server accepts the connect a moment before it can complete the handshake. A
+  // short retry covers that without the test outlasting ctest's own timeout -
+  // three generous budgets here add up to more than the 15 seconds the target
+  // is given, and a slow runner then reports a timeout that says nothing about
+  // which budget was exhausted.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(6);
   while (!connected && std::chrono::steady_clock::now() < deadline) {
     connected = client.Connect("127.0.0.1", port, "/", 2000, true, goodCa);
     if (!connected)

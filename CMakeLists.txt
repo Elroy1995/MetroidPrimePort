@@ -244,6 +244,10 @@ if(MP_BUILD_TESTS)
         set_tests_properties(${test} PROPERTIES TIMEOUT 15 LABELS port)
         aurora_copy_runtime_dlls(${test})
     endforeach()
+    # port_ws_tests starts an openssl-generated CA and a python TLS server, which
+    # is not instant on a loaded runner; 15 seconds is enough to time it out and
+    # report nothing about which part was slow.
+    set_tests_properties(port_ws_tests PROPERTIES TIMEOUT 120)
     # The tools' own checks, so a change to the location join or the fixture
     # generator fails here rather than in whoever runs the tools next. Both are
     # dependency-free Python and skip themselves when python3 is absent.
