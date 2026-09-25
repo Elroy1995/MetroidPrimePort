@@ -335,10 +335,13 @@ int main(int argc, char** argv) try {
     // The child appends to this log and has only just exited. Windows can still
     // be holding the file open, so the read retries and the removal is best
     // effort; failing to tidy up is not a test failure, and the whole
-    // directory is removed at the end anyway.
+    // directory is removed at the end anyway. The read is in text mode on
+    // purpose: the port appends through a text-mode ofstream, so on Windows the
+    // file holds CRLF and a binary read would hand back a \r the expected line
+    // does not have.
     std::string dumpText;
     for (int attempt = 0; attempt < 20 && dumpText.empty(); ++attempt) {
-      std::ifstream dumpLog(testDir / "randomizer_locations.log", std::ios::binary);
+      std::ifstream dumpLog(testDir / "randomizer_locations.log");
       dumpText.assign(std::istreambuf_iterator<char>(dumpLog), std::istreambuf_iterator<char>());
       if (dumpText.empty()) {
         Phase("dump log not readable yet; retrying");
@@ -353,9 +356,11 @@ int main(int argc, char** argv) try {
       // differently formatted one are three different problems, and only the
       // text tells them apart.
       std::string shown = dumpText.substr(0, 200);
-      for (char& c : shown) {
+        for (char& c : shown) {
         if (c == '\n')
           c = '|';
+        if (c == '\r')
+          c = '^';
         if (static_cast<unsigned char>(c) < 0x20)
           c = '?';
       }
