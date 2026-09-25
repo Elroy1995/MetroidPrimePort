@@ -110,6 +110,79 @@ bool OptionalInt(const PortJson::Value& object, const char* field, int fallback,
   return true;
 }
 
+// Parses one grant object ({"item", "amount", "capacity", "display"}).
+// `label` names it in errors: "item 12" or "item 12 progressive step 2".
+bool ParseGrant(const PortJson::Value& object, const std::string& label, int64_t itemId,
+                ItemGrant& grant, std::string& error) {
+  if (!object.IsObject()) {
+    error = label + " must be an object";
+    return false;
+  }
+  const PortJson::Value* nameValue = Member(object, "item");
+  if (nameValue == nullptr || !nameValue->IsString()) {
+    error = label + " requires an item name string";
+    return false;
+  }
+  const std::string& itemName = nameValue->AsString();
+  const int itemType = PortRandomizer::ItemFromName(itemName.c_str());
+  if (itemType < 0) {
+    error = "unknown item name: " + itemName;
+    return false;
+  }
+  grant.itemId = itemId;
+  grant.itemType = itemType;
+  // `display` is the player-facing name; it is independent of the
+  // randomizer key in `item` and defaults to that resolved item's name.
+  grant.display = itemName;
+  const PortJson::Value* displayValue = Member(object, "display");
+  if (displayValue != nullptr) {
+    if (!displayValue->IsString()) {
+      error = label + " display must be a string";
+      return false;
+    }
+    grant.display = displayValue->AsString();
+  }
+  return OptionalInt(object, "amount", 1, grant.amount, error) &&
+         OptionalInt(object, "capacity", 1, grant.capacity, error);
+}
+
+// Parses one "items" entry: a flat grant, or {"progressive": [grant, ...]}.
+bool ParseItemEntry(const PortJson::Value& object, const std::string& key, int64_t itemId,
+                    ItemEntry& entry, std::string& error) {
+  const std::string label = "item " + key;
+  if (!object.IsObject()) {
+    error = label + " must be an object";
+    return false;
+  }
+  const PortJson::Value* steps = Member(object, "progressive");
+  if (steps == nullptr) {
+    if (Member(object, "item") == nullptr) {
+      error = label + " requires an item name string or a progressive list";
+      return false;
+    }
+    return ParseGrant(object, label, itemId, entry, error);
+  }
+  if (Member(object, "item") != nullptr) {
+    error = label + " cannot have both item and progressive";
+    return false;
+  }
+  if (!steps->IsArray() || steps->AsArray().empty()) {
+    error = label + " progressive must be a non-empty array of grants";
+    return false;
+  }
+  const PortJson::Value::Elements& list = steps->AsArray();
+  entry.progressive.reserve(list.size());
+  for (size_t i = 0; i < list.size(); ++i) {
+    ItemGrant step;
+    if (!ParseGrant(list[i], label + " progressive step " + std::to_string(i + 1), itemId, step,
+                    error))
+      return false;
+    entry.progressive.push_back(std::move(step));
+  }
+  static_cast<ItemGrant&>(entry) = entry.progressive.front();
+  return true;
+}
+
 std::string ProcessUuid() {
   static const std::string uuid = [] {
     std::array<uint8_t, 16> bytes{};
@@ -152,6 +225,16 @@ void AppendNotification(std::vector<std::string>& notifications, std::string tex
 
 
 } // namespace
+
+const ItemGrant& ItemEntry::Step(int64_t count) const {
+  if (progressive.empty())
+    return *this;
+  if (count <= 0)
+    return progressive.front();
+  if (static_cast<uint64_t>(count) >= progressive.size())
+    return progressive.back();
+  return progressive[static_cast<size_t>(count)];
+}
 
 Config ParseConfig(const std::string& text) {
   Config config;
@@ -282,39 +365,10 @@ Config ParseConfig(const std::string& text) {
           config.error = "invalid decimal item id: " + entry.first;
           return config;
         }
-        if (!entry.second.IsObject()) {
-          config.error = "item " + entry.first + " must be an object";
+        ItemEntry item;
+        if (!ParseItemEntry(entry.second, entry.first, itemId, item, config.error))
           return config;
-        }
-        const PortJson::Value* nameValue = Member(entry.second, "item");
-        if (nameValue == nullptr || !nameValue->IsString()) {
-          config.error = "item " + entry.first + " requires an item name string";
-          return config;
-        }
-        const std::string& itemName = nameValue->AsString();
-        const int itemType = PortRandomizer::ItemFromName(itemName.c_str());
-        if (itemType < 0) {
-          config.error = "unknown item name: " + itemName;
-          return config;
-        }
-        ItemGrant grant;
-        grant.itemId = itemId;
-        grant.itemType = itemType;
-        // `display` is the player-facing name; it is independent of the
-        // randomizer key in `item` and defaults to that resolved item's name.
-        grant.display = itemName;
-        const PortJson::Value* displayValue = Member(entry.second, "display");
-        if (displayValue != nullptr) {
-          if (!displayValue->IsString()) {
-            config.error = "item " + entry.first + " display must be a string";
-            return config;
-          }
-          grant.display = displayValue->AsString();
-        }
-        if (!OptionalInt(entry.second, "amount", 1, grant.amount, config.error) ||
-            !OptionalInt(entry.second, "capacity", 1, grant.capacity, config.error))
-          return config;
-        config.items[itemId] = grant;
+        config.items[itemId] = std::move(item);
       }
     }
     config.valid = true;
@@ -386,6 +440,14 @@ State LoadStateFile(const std::string& path) {
           state.checkedLocations.push_back(number);
       }
     }
+    const PortJson::Value* progressive = Member(root, "progressive");
+    if (progressive != nullptr && progressive->IsObject()) {
+      for (const auto& entry : progressive->AsObject()) {
+        int64_t itemId = 0;
+        if (ParseItemKey(entry.first, itemId) && Integer(&entry.second, number) && number > 0)
+          state.progressive[itemId] = number;
+      }
+    }
   } catch (...) {
     return State();
   }
@@ -409,7 +471,15 @@ bool SaveStateFile(const std::string& path, const State& state) {
           file << ',';
         file << state.checkedLocations[i];
       }
-      file << "]}";
+      file << "],\"progressive\":{";
+      bool firstCount = true;
+      for (const auto& count : state.progressive) {
+        if (!firstCount)
+          file << ',';
+        file << '"' << count.first << "\":" << count.second;
+        firstCount = false;
+      }
+      file << "}}";
       file.flush();
       if (!file)
         return false;
@@ -519,6 +589,10 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
     const PortJson::Value::Elements empty;
     const auto& itemList = items != nullptr && items->IsArray() ? items->AsArray() : empty;
     const int64_t expectedIndex = mState.nextItemIndex;
+    // Nothing processed yet: the server is starting a fresh inventory, so the
+    // progressive counts start over and the replay rebuilds them.
+    if (index == 0 && expectedIndex == 0)
+      mState.progressive.clear();
     if (index > 0 && index != expectedIndex) {
       mDesynced = true;
       outgoing.push_back(BuildSync());
@@ -541,21 +615,29 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       if (receivedIndex < mState.nextItemIndex)
         continue;
       const auto found = mConfig.items.find(itemId);
+      std::string notification;
       if (found != mConfig.items.end()) {
-        ItemGrant grant = found->second;
+        const ItemEntry& entry = found->second;
+        int64_t count = 0;
+        if (entry.IsProgressive()) {
+          int64_t& stored = mState.progressive[itemId];
+          count = stored;
+          if (stored < std::numeric_limits<int64_t>::max())
+            ++stored;
+        }
+        ItemGrant grant = entry.Step(count);
         grant.itemId = itemId;
-        granted.push_back(grant);
+        notification = grant.display;
+        granted.push_back(std::move(grant));
       } else {
         ItemGrant grant;
         grant.itemId = itemId;
         grant.itemType = -1;
         granted.push_back(grant);
         mLastError = "unknown item id " + std::to_string(itemId);
+        notification = "unknown item " + std::to_string(itemId);
       }
 
-      std::string notification = found != mConfig.items.end()
-                                     ? found->second.display
-                                     : "unknown item " + std::to_string(itemId);
       int64_t itemPlayer = 0;
       bool hasPlayer = false;
       if (item.IsObject()) {

@@ -21,6 +21,7 @@
 #include <functional>
 #include <filesystem>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -287,10 +288,13 @@ void Worker(Runtime& runtime) {
                 continue;
               const int64_t oldIndex = runtime.session->GetState().nextItemIndex;
               const std::vector<int64_t> oldChecks = runtime.session->GetState().checkedLocations;
+              const std::map<int64_t, int64_t> oldProgressive =
+                  runtime.session->GetState().progressive;
               const std::string oldError = runtime.session->LastError();
               runtime.session->HandlePacket(command, outgoing, newGrants);
               const Protocol::State& state = runtime.session->GetState();
-              if (state.nextItemIndex != oldIndex || state.checkedLocations != oldChecks)
+              if (state.nextItemIndex != oldIndex || state.checkedLocations != oldChecks ||
+                  state.progressive != oldProgressive)
                 runtime.SaveStateLocked();
               runtime.grants.insert(runtime.grants.end(), newGrants.begin(), newGrants.end());
               runtime.lastMessage = runtime.session->LastMessage();

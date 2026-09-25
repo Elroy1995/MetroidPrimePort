@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <sys/types.h>
 #include <unistd.h>
@@ -264,6 +265,147 @@ int main() {
   const State emptyReloaded = LoadStateFile(emptyStatePath.string());
   Check(emptyReloaded.nextItemIndex == 0 && emptyReloaded.checkedLocations.empty(),
         "empty state round-trips");
+  Check(emptyReloaded.progressive.empty() && Contains(Read(emptyStatePath), "\"progressive\":{}"),
+        "empty state writes an empty progressive map");
+
+  const std::string progressiveConfigText = R"json({
+    "server":"ws://localhost", "slot":"P",
+    "items":{
+      "5031004":{"item":"Missiles","amount":5,"capacity":5,"display":"Missile Expansion"},
+      "5031043":{"progressive":[
+        {"item":"PowerBeam","amount":1,"capacity":1,"display":"Power Beam"},
+        {"item":"ChargeBeam","amount":1,"capacity":1,"display":"Charge Beam"},
+        {"item":"SuperMissile","amount":1,"capacity":1,"display":"Super Missile"}]},
+      "5031047":{"item":"ChargeBeam","display":"Charge Beam (Power)"}
+    }
+  })json";
+  const Config progressiveConfig = ParseConfig(progressiveConfigText);
+  Check(progressiveConfig.valid && progressiveConfig.items.size() == 3,
+        "progressive configuration parses");
+  const ItemEntry& powerEntry = progressiveConfig.items.at(5031043);
+  Check(powerEntry.IsProgressive() && powerEntry.progressive.size() == 3 &&
+            powerEntry.progressive[0].itemType == PortRandomizer::ItemFromName("PowerBeam") &&
+            powerEntry.progressive[1].itemType == PortRandomizer::ItemFromName("ChargeBeam") &&
+            powerEntry.progressive[2].itemType == PortRandomizer::ItemFromName("SuperMissile") &&
+            powerEntry.progressive[2].display == "Super Missile" &&
+            powerEntry.progressive[2].itemId == 5031043,
+        "progressive entry keeps its steps in order");
+  Check(powerEntry.itemType == powerEntry.progressive[0].itemType &&
+            powerEntry.display == "Power Beam",
+        "progressive entry's flat fields mirror step 0");
+  Check(!progressiveConfig.items.at(5031004).IsProgressive() &&
+            progressiveConfig.items.at(5031004).amount == 5 &&
+            progressiveConfig.items.at(5031047).itemType ==
+                PortRandomizer::ItemFromName("ChargeBeam"),
+        "flat entries still parse alongside progressive ones");
+
+  Session progressive(progressiveConfig, State{});
+  std::vector<ItemGrant> progressiveGrants;
+  progressive.HandlePacket(Packet(
+      R"({"cmd":"ReceivedItems","index":0,"items":[[5031043,1,1,0],[5031004,2,1,0],[5031043,3,1,0]]})"),
+      outgoing, progressiveGrants);
+  progressive.HandlePacket(Packet(
+      R"({"cmd":"ReceivedItems","index":3,"items":[[999,4,1,0],[5031043,5,1,0]]})"),
+      outgoing, progressiveGrants);
+  Check(progressiveGrants.size() == 5 &&
+            progressiveGrants[0].itemType == PortRandomizer::ItemFromName("PowerBeam") &&
+            progressiveGrants[0].display == "Power Beam" &&
+            progressiveGrants[1].itemType == PortRandomizer::ItemFromName("Missiles") &&
+            progressiveGrants[1].amount == 5 &&
+            progressiveGrants[2].itemType == PortRandomizer::ItemFromName("ChargeBeam") &&
+            progressiveGrants[2].display == "Charge Beam" &&
+            progressiveGrants[3].itemType == -1 &&
+            progressiveGrants[4].itemType == PortRandomizer::ItemFromName("SuperMissile") &&
+            progressiveGrants[4].display == "Super Missile" &&
+            progressiveGrants[4].itemId == 5031043,
+        "progressive copies grant steps 1, 2 and 3 in order");
+  Check(progressive.GetState().progressive.size() == 1 &&
+            progressive.GetState().progressive.at(5031043) == 3,
+        "progressive count tracks copies and ignores flat and unknown ids");
+  const char* expectedNotifications[] = {"Power Beam", "Missile Expansion", "Charge Beam",
+                                         "unknown item 999", "Super Missile"};
+  bool notificationsMatch = true;
+  for (const char* expected : expectedNotifications)
+    notificationsMatch = progressive.TakeNotification(notification) &&
+                         notification == expected && notificationsMatch;
+  Check(notificationsMatch, "notifications name the progressive step actually granted");
+
+  const std::filesystem::path progressiveStatePath = testDir / "progressive-state.json";
+  State progressiveState = progressive.GetState();
+  progressiveState.slot = "P";
+  Check(SaveStateFile(progressiveStatePath.string(), progressiveState) &&
+            Contains(Read(progressiveStatePath), "\"progressive\":{\"5031043\":3}"),
+        "progressive counts are written to the state file");
+  const State progressiveReloaded = LoadStateFile(progressiveStatePath.string());
+  Check(progressiveReloaded.nextItemIndex == 5 &&
+            progressiveReloaded.progressive == progressiveState.progressive,
+        "progressive counts round-trip through the state file");
+
+  Session resumed(progressiveConfig, progressiveReloaded);
+  progressiveGrants.clear();
+  resumed.HandlePacket(Packet(
+      R"({"cmd":"ReceivedItems","index":0,"items":[[5031043,1,1,0],[5031004,2,1,0],[5031043,3,1,0],[999,4,1,0],[5031043,5,1,0],[5031043,6,1,0]]})"),
+      outgoing, progressiveGrants);
+  Check(progressiveGrants.size() == 1 &&
+            progressiveGrants[0].itemType == PortRandomizer::ItemFromName("SuperMissile") &&
+            progressiveGrants[0].display == "Super Missile" &&
+            resumed.GetState().progressive.at(5031043) == 4,
+        "after reload a 4th copy stays at the last step and old copies are skipped");
+
+  State stale;
+  stale.progressive[5031043] = 2;
+  Session fresh(progressiveConfig, stale);
+  progressiveGrants.clear();
+  fresh.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":0,"items":[[5031043,1,1,0]]})"),
+                     outgoing, progressiveGrants);
+  Check(progressiveGrants.size() == 1 &&
+            progressiveGrants[0].itemType == PortRandomizer::ItemFromName("PowerBeam") &&
+            fresh.GetState().progressive.at(5031043) == 1,
+        "a fresh inventory restarts progressive counts");
+
+  State saturated;
+  saturated.progressive[5031043] = std::numeric_limits<int64_t>::max();
+  saturated.nextItemIndex = 1;
+  Session capped(progressiveConfig, saturated);
+  progressiveGrants.clear();
+  capped.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":1,"items":[[5031043,1,1,0]]})"),
+                      outgoing, progressiveGrants);
+  Check(progressiveGrants.size() == 1 &&
+            progressiveGrants[0].itemType == PortRandomizer::ItemFromName("SuperMissile") &&
+            capped.GetState().progressive.at(5031043) == std::numeric_limits<int64_t>::max(),
+        "progressive count saturates instead of overflowing");
+
+  const std::filesystem::path oldStatePath = testDir / "old-state.json";
+  {
+    std::ofstream file(oldStatePath);
+    file << R"({"slot":"P","next_item_index":4,"checked_locations":[1]})";
+  }
+  const State oldState = LoadStateFile(oldStatePath.string());
+  Check(oldState.nextItemIndex == 4 && oldState.progressive.empty(),
+        "a state file without progressive counts loads with zero counts");
+
+  const Config emptyProgressive = ParseConfig(
+      R"({"server":"ws://localhost","slot":"P","items":{"5031043":{"progressive":[]}}})");
+  Check(!emptyProgressive.valid && Contains(emptyProgressive.error, "5031043") &&
+            Contains(emptyProgressive.error, "progressive"),
+        "empty progressive list is rejected and names the id");
+  const Config badStep = ParseConfig(
+      R"({"server":"ws://localhost","slot":"P","items":{"5031044":{"progressive":[{"item":"IceBeam"},{"amount":1}]}}})");
+  Check(!badStep.valid && Contains(badStep.error, "5031044") &&
+            Contains(badStep.error, "step 2"),
+        "progressive step without an item name is rejected and named");
+  const Config unknownStep = ParseConfig(
+      R"({"server":"ws://localhost","slot":"P","items":{"5031045":{"progressive":[{"item":"Unobtainium"}]}}})");
+  Check(!unknownStep.valid && Contains(unknownStep.error, "Unobtainium"),
+        "unknown item name in a progressive step is rejected");
+  const Config neither = ParseConfig(
+      R"({"server":"ws://localhost","slot":"P","items":{"5031046":{"display":"Nothing"}}})");
+  Check(!neither.valid && Contains(neither.error, "5031046"),
+        "entry with neither item nor progressive is rejected and names the id");
+  const Config both = ParseConfig(
+      R"({"server":"ws://localhost","slot":"P","items":{"5031046":{"item":"PlasmaBeam","progressive":[{"item":"PlasmaBeam"}]}}})");
+  Check(!both.valid && Contains(both.error, "5031046"),
+        "entry with both item and progressive is rejected");
 
   std::filesystem::remove_all(testDir);
   if (!sPassed)

@@ -24,6 +24,17 @@ struct ItemGrant {
   std::string display; // name shown to the player; the item name when unset
 };
 
+// A configured item: one grant, or a progressive sequence where the Nth copy
+// received grants step N and later copies repeat the last step. The inherited
+// fields are the flat grant, and mirror step 0 for a progressive item.
+struct ItemEntry : ItemGrant {
+  std::vector< ItemGrant > progressive; // empty for a flat item
+
+  bool IsProgressive() const { return !progressive.empty(); }
+  // The grant for a copy received after `count` earlier copies of this id.
+  const ItemGrant& Step(int64_t count) const;
+};
+
 // archipelago.json, as documented in docs/ARCHIPELAGO.md.
 struct Config {
   std::string server; // ws:// or wss://host[:port][/path]
@@ -40,7 +51,7 @@ struct Config {
   int versionMinor = 6;
   int versionBuild = 0;
   std::map< std::string, int64_t > locations; // randomizer key -> AP location id
-  std::map< int64_t, ItemGrant > items;       // AP item id -> grant
+  std::map< int64_t, ItemEntry > items;       // AP item id -> grant
   bool valid = false;
   std::string error; // why the configuration was rejected, for the log
 };
@@ -58,6 +69,10 @@ struct State {
   std::string slot;
   int64_t nextItemIndex = 0;
   std::vector< int64_t > checkedLocations;
+  // Progressive item id -> copies processed so far. Persisted because items
+  // below nextItemIndex are skipped on reconnect, so the counts cannot be
+  // rebuilt from what the server resends. Absent in older files: all zero.
+  std::map< int64_t, int64_t > progressive;
 };
 State LoadStateFile(const std::string& path);
 // Writes the state through a temporary file and renames it into place.

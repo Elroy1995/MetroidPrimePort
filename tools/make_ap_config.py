@@ -24,9 +24,9 @@ check to run before playing a seed. ``--extra FILE.json`` supplies the ones the
 join could not place, as ``{"<AP location name>": "<WORLD:AREA:ENTITY key>"}``,
 and the report names the candidates.
 
-The AP world's progressive beam items (IDs 43-46) and charge-beam tracker
-items (IDs 47-50) are deliberately omitted: the port has no progressive counter
-for them. Turn progressive beam upgrades off in the Archipelago options for now.
+The AP world's progressive beam items (IDs 43-46) are written as progressive
+entries: the client grants the Nth copy's step and keeps the count in its state
+file. The charge-beam tracker items (IDs 47-50) map to the Charge Beam.
 """
 
 import argparse
@@ -111,15 +111,31 @@ ITEM_DEFINITIONS = (
     (42, "PowerBombs", 1, 1, "Power Bomb (Main)"),
 )
 
+# Mirrors the AP world's PROGRESSIVE_ITEM_MAPPING: the Nth copy of a
+# progressive item grants the Nth step, and later copies repeat the last one.
+# Each row is (AP id, AP display name, steps as (port item name, display name)).
 PROGRESSIVE_ITEMS = (
-    (43, "Progressive Power Beam"),
-    (44, "Progressive Ice Beam"),
-    (45, "Progressive Wave Beam"),
-    (46, "Progressive Plasma Beam"),
-    (47, "Charge Beam (Power)"),
-    (48, "Charge Beam (Wave)"),
-    (49, "Charge Beam (Ice)"),
-    (50, "Charge Beam (Plasma)"),
+    (43, "Progressive Power Beam",
+     (("PowerBeam", "Power Beam"), ("ChargeBeam", "Charge Beam"),
+      ("SuperMissile", "Super Missile"))),
+    (44, "Progressive Ice Beam",
+     (("IceBeam", "Ice Beam"), ("ChargeBeam", "Charge Beam"),
+      ("IceSpreader", "Ice Spreader"))),
+    (45, "Progressive Wave Beam",
+     (("WaveBeam", "Wave Beam"), ("ChargeBeam", "Charge Beam"),
+      ("Wavebuster", "Wavebuster"))),
+    (46, "Progressive Plasma Beam",
+     (("PlasmaBeam", "Plasma Beam"), ("ChargeBeam", "Charge Beam"),
+      ("Flamethrower", "Flamethrower"))),
+)
+
+# Tracker-only items the server does not normally send; granting the Charge Beam
+# keeps an unexpected one harmless.
+CHARGE_BEAM_ITEMS = (
+    (47, "ChargeBeam", 1, 1, "Charge Beam (Power)"),
+    (48, "ChargeBeam", 1, 1, "Charge Beam (Wave)"),
+    (49, "ChargeBeam", 1, 1, "Charge Beam (Ice)"),
+    (50, "ChargeBeam", 1, 1, "Charge Beam (Plasma)"),
 )
 
 ITEMS_BY_NAME = {row[4]: row[1:4] for row in ITEM_DEFINITIONS}
@@ -618,23 +634,21 @@ def make_archipelago_config(join, server=None, slot=None):
                 "capacity": capacity,
                 "display": display,
             }
-            for ap_id, item, amount, capacity, display in ITEM_DEFINITIONS
+            for ap_id, item, amount, capacity, display in ITEM_DEFINITIONS + CHARGE_BEAM_ITEMS
         },
     }
+    for ap_id, _name, steps in PROGRESSIVE_ITEMS:
+        config["items"][str(AP_ITEM_ID_BASE + ap_id)] = {
+            "progressive": [
+                {"item": item, "amount": 1, "capacity": 1, "display": display}
+                for item, display in steps
+            ]
+        }
     if server is not None:
         config["server"] = server
     if slot is not None:
         config["slot"] = slot
     return config
-
-
-def progressive_item_warning():
-    names = ", ".join("%d %s" % item for item in PROGRESSIVE_ITEMS)
-    return (
-        "warning: omitting unsupported AP items %s from archipelago.json; "
-        "turn progressive beam upgrades off in the AP options for now"
-        % names
-    )
 
 
 def _same_player(player, slot_number):
@@ -883,10 +897,22 @@ LOC 39F2DE28:33333333:00040020 PowerSuit amount=1 capacity=1 model=FEDCBA98 acs=
         assert arch["items"]["5031000"]["item"] == "PowerBeam"
         assert arch["items"]["5031041"]["display"] == "Missile Launcher"
         assert arch["items"]["5031042"]["item"] == "PowerBombs"
-        assert "5031043" not in arch["items"]
-        warning = progressive_item_warning()
-        assert "Progressive Power Beam" in warning and "Charge Beam (Plasma)" in warning
-        assert "turn progressive beam upgrades off" in warning
+        power = arch["items"]["5031043"]
+        assert "item" not in power
+        assert [step["item"] for step in power["progressive"]] == [
+            "PowerBeam", "ChargeBeam", "SuperMissile"
+        ]
+        assert power["progressive"][2] == {
+            "item": "SuperMissile", "amount": 1, "capacity": 1, "display": "Super Missile"
+        }
+        assert [step["item"] for step in arch["items"]["5031046"]["progressive"]] == [
+            "PlasmaBeam", "ChargeBeam", "Flamethrower"
+        ]
+        assert arch["items"]["5031047"] == {
+            "item": "ChargeBeam", "amount": 1, "capacity": 1, "display": "Charge Beam (Power)"
+        }
+        assert arch["items"]["5031050"]["display"] == "Charge Beam (Plasma)"
+        assert len(arch["items"]) == 51
 
         spoiler = {
             "locations": {
@@ -997,7 +1023,6 @@ def main(argv=None):
                 )
             )
 
-        _emit_report([progressive_item_warning()])
         write_json(args.out, make_archipelago_config(result, args.server, args.slot))
 
         if args.spoiler:

@@ -1,5 +1,20 @@
 # Metroid Prime port — working notes
 
+## Archipelago progressive items (2026-09-25)
+
+- The AP world's progressive beam items work: a config entry can carry
+  `progressive`, a list of grants applied in order as copies arrive, and the
+  count lives in `archipelago_state.json` so a reconnect resumes at the right
+  step (verified on disc: two copies of id 5031043 recorded
+  `"progressive":{"5031043":2}`). `tools/make_ap_config.py` emits the four beam
+  sequences and maps the tracker-only ids 47-50 to the Charge Beam.
+- The HUD notification names the resolved step ("Charge Beam"), not the item id,
+  so a progressive grant still reads sensibly.
+- Note for future edits to `tests/port_apclient.cpp`: JSON fixtures that contain
+  `)"` (for example `"Charge Beam (Power)"`) must use a delimited raw string
+  (`R"json(...)json"`), otherwise the fixture ends early and the file stops
+  compiling.
+
 ## Archipelago over TLS (2026-09-25)
 
 - `wss://` works through OpenSSL, enabled by CMake when it finds it (`OpenSSL

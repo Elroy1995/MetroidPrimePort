@@ -74,7 +74,7 @@ Path: `$MP_AP_CONFIG`, else `<user dir>/archipelago.json` (`<user dir>` is
 | `version` | Protocol version sent in Connect, default 0.6.0. Must be compatible with the server's. |
 | `tags` | Client tags, default empty. |
 | `locations` | Randomizer key (`WORLD:AREA:ENTITY`, the seed's location key) to AP location id. |
-| `items` | AP item id to the grant the port applies: `item` is a randomizer item name, `amount`/`capacity` default 1, and an optional `display` is the name shown in the HUD notification (the item name when unset). |
+| `items` | AP item id to the grant the port applies: `item` is a randomizer item name, `amount`/`capacity` default 1, and an optional `display` is the name shown in the HUD notification (the item name when unset). An entry may instead carry `progressive`, a non-empty list of grants applied in order as more copies of that item arrive. |
 
 Unknown keys are ignored so the file can grow. A configuration without a server
 or slot, a malformed location key, or an unknown item name disables the client
@@ -136,14 +136,20 @@ How it joins the two sides, and what to watch for:
 The spoiler seed turns each location into a pickup: your own items are placed
 normally, and a location holding another player's item becomes a placeholder
 (`UnknownItem1` with zero amount) so the in-game pickup grants nothing locally
-while the real item arrives over the network. Items the port cannot grant yet
-(the AP "progressive beam" ids 43-50, which need a progressive counter) are
-omitted with a warning; turn progressive beam upgrades off in the AP options for
-now.
+while the real item arrives over the network.
 
 Item ids in `archipelago.json` mirror the AP world's `Items.py`, whose ids
 correspond 1:1 with the port's `CPlayerState::EItemType` for 0-28, and whose
 29-40 are the artifacts.
+
+The AP world's progressive beam items use the `progressive` form and follow its
+`PROGRESSIVE_ITEM_MAPPING`: the first copy of id 5031043 grants the Power Beam,
+the second the Charge Beam and the third the Super Missile (and likewise for the
+Ice, Wave and Plasma beams). How many copies have arrived is kept in
+`archipelago_state.json` so a reconnect resumes at the right step instead of
+starting over; a fresh inventory (or deleting the state file) starts from the
+first step again. Ids 47-50, which the server only sends for tracking, are
+mapped to the Charge Beam so an unexpected one is harmless.
 
 ## Notifications
 
@@ -191,8 +197,7 @@ not include Aurora's UI layer, so an F1 screenshot will not show it.
 - **DeathLink, hints, chat, tracker.** Bounce/DeathLink, hint creation and the
   item tracker are unimplemented; `PrintJSON` is queued for the HUD and overlay
   but chat input does not exist.
-- **Progressive items.** The AP world's progressive beam ids (43-50) need a
-  counter the port does not keep; they are omitted by the generator and need
-  progressive beam upgrades turned off in the AP options for now.
+- **Tracking UI.** The item tracker, hints and DeathLink are absent, so the
+  progressive steps below are only visible through the HUD notification.
 - **Mapping verification.** The location join is a candidate until confirmed in
   game; areas the tool flags as "review" can report the wrong checks.
