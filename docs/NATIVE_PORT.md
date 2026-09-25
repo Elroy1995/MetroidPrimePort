@@ -156,10 +156,20 @@ screen quickly to see the result.
 
 ### Platforms
 
-The port is built and tested on Linux. Its own platform code is portable - SDL3
-and `std::filesystem` throughout, no POSIX-only calls - and the CMake keeps the
-MSVC linker paths from the template, but the Windows build has not been tried:
-there is no MSVC or mingw toolchain on the machine this was developed on.
+The port is built and tested on Linux and Windows. Its own platform code is
+portable - SDL3 and `std::filesystem` throughout - and the CMake keeps the MSVC
+linker paths from the template. The Windows build is exercised by
+`.github/workflows/windows.yml` on `windows-latest`: it configures with
+clang-cl, builds, runs `ctest -L port`, runs the FIFO regressions, packages a
+`dist/` directory with licences, checks that the packaged executable reaches
+main and reports the missing disc image, and uploads the result as an artifact.
+All of that is green.
+
+Two things are only verified on Linux. Anything needing a GPU, a window or a
+real controller is, and the TLS round-trip test in `port_ws_tests` skips itself
+on Windows, so `wss://` there rests on the configure step finding OpenSSL
+rather than on a handshake that has been run.
+
 `platform/glibc_compat.c`, which lowers the glibc the Linux build needs, is
 guarded to Linux and takes no part elsewhere. The AppImage and Flatpak packaging
 are Linux-only.

@@ -1,5 +1,36 @@
 # Metroid Prime port — working notes
 
+## Windows and Linux CI green over the randomizer and Archipelago work (2026-09-25)
+
+- All 28 commits of randomizer and Archipelago work had never been through CI,
+  because they sat unpushed. The first Windows run over them failed in five
+  places, all of them things only clang-cl sees:
+  - `platform/port_ws.cpp` includes winsock2.h, whose windows.h `min`/`max`
+    macros break every `std::max` in the file. `NOMINMAX` now goes in first.
+  - `tests/port_randomizer.cpp` and `tests/port_apclient.cpp` used `<unistd.h>`,
+    `fork` and `waitpid`. The randomizer's four cases that need an unloaded
+    process now re-run the test binary with the case name and directory as
+    arguments (fork/execv, CreateProcessA), and both files' pid and environment
+    helpers are spelled per platform.
+  - The self-spawn built its Windows command line by wrapping narrow pointers in
+    `std::wstring`, which has no such constructor; and `argv[0]` is whatever
+    ctest used, which need not be a path the process can spawn itself by, so the
+    executable's own path is read with `GetModuleFileNameA` on Windows.
+  - The test then died with `0xc0000409` and no output. Phase markers named the
+    phase, and the bytes named the cause: the test read the child's dump log
+    with `std::ios::binary` while the port appends through a text-mode
+    `ofstream`, so on Windows the file ended CRLF and no retry could match a
+    line ending in a bare LF. That was a bug in the test, not the port; the
+    markers, exit-code reporting and byte dump stay because they are what turned
+    an unexplained fast-fail into that one line.
+- Windows is now green: build, `ctest -L port` 13/13, the FIFO regressions, the
+  packaged startup check and the artifact upload. `native-linux` is green on the
+  same commit, and the configure step reports **OpenSSL 3.6.4 found: wss://
+  enabled** on Windows, which is the first evidence that `wss://` is available
+  there rather than merely possible. The TLS end-to-end test still skips itself
+  on Windows, so that is a configure-level fact and not yet a handshake.
+
+
 ## Archipelago state belongs to a session, not to a file (2026-09-25)
 
 - The recorded checks and item index were only invalidated by a slot change, so a
