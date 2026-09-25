@@ -200,6 +200,14 @@ Config ParseConfig(const std::string& text) {
       }
       config.game = value->AsString();
     }
+    value = Member(root, "tls_ca");
+    if (value != nullptr) {
+      if (!value->IsString()) {
+        config.error = "tls_ca must be a string";
+        return config;
+      }
+      config.tlsCa = value->AsString();
+    }
     int64_t integer = 0;
     value = Member(root, "items_handling");
     if (value != nullptr) {

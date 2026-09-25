@@ -1,5 +1,20 @@
 # Metroid Prime port — working notes
 
+## Archipelago over TLS (2026-09-25)
+
+- `wss://` works through OpenSSL, enabled by CMake when it finds it (`OpenSSL
+  found: wss:// enabled`) and optional otherwise: Android refuses `wss://` with
+  a clear error instead of downgrading to plaintext. Verification is always on
+  (system trust store or the config's `tls_ca`, TLS 1.2 floor, host-name check);
+  there is deliberately no insecure switch.
+- `port_ws_tests` runs a real TLS handshake against `tools/ap_fake_server.py
+  --tls` with a generated CA and asserts four rejections (wrong CA, host-name
+  mismatch, system store only, missing CA file); with the game, a `wss://`
+  config connected and granted items, and a missing CA was refused.
+- Worth knowing: OpenSSL writes with `write()`, which raises SIGPIPE when the
+  server has gone, so the TLS calls block it on the calling thread and swallow
+  one that arrived, rather than letting a dead server kill the process.
+
 ## Archipelago generator, status and notifications (2026-09-24)
 
 - `tools/make_ap_config.py` joins the AP world's location table (parsed with

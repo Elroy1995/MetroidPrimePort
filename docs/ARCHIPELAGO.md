@@ -22,9 +22,23 @@ placement logic and the location/item id tables — comes from the AP world
   `ConnectionRefused`/`InvalidPacket`, answers pings, and reconnects with
   backoff. Only the two queues cross between threads.
 
-Transport is a minimal RFC 6455 client (`platform/port_ws.h`): plain `ws://`,
-text frames, no TLS, no extensions and no per-message compression (servers still
-accept uncompressed connections, but it is deprecated on their side).
+Transport is a minimal RFC 6455 client (`platform/port_ws.h`): text frames, no
+extensions and no per-message compression (servers still accept uncompressed
+connections, but it is deprecated on their side). `ws://` needs nothing extra;
+`wss://` uses OpenSSL when the build finds it.
+
+### TLS
+
+`wss://` is verified by default — no option disables it — with the system trust
+store or the `tls_ca` file from the configuration (a relative path is resolved
+against the configuration file's directory), TLS 1.2 as the floor, and the
+certificate checked against the host name.
+
+OpenSSL is an optional build dependency: CMake enables it when it finds it and
+prints `OpenSSL <version> found: wss:// enabled`. Android's NDK ships no
+OpenSSL, so Android builds refuse `wss://` with `wss:// is not supported: this
+build has no TLS (built without OpenSSL)` rather than downgrading to plaintext;
+Windows needs OpenSSL provided to CMake.
 
 ## Configuration
 
@@ -51,7 +65,8 @@ Path: `$MP_AP_CONFIG`, else `<user dir>/archipelago.json` (`<user dir>` is
 
 | Key | Notes |
 |---|---|
-| `server` | Required. `ws://host[:port][/path]`. `wss://` is not supported. |
+| `server` | Required. `ws://host[:port][/path]` or `wss://...`. |
+| `tls_ca` | Optional PEM CA bundle to verify a `wss://` server that is not in the system trust store. Relative paths resolve against this file's directory. |
 | `slot` | Required. Player name in the multiworld. |
 | `game` | Default `Metroid Prime`; must match the AP world's game name. |
 | `password` | Room password, default empty. |
@@ -147,7 +162,12 @@ not include Aurora's UI layer, so an F1 screenshot will not show it.
   state file round trip.
 - `port_ws_tests` pins SHA-1 to the RFC 3174 vectors, base64, the RFC 6455
   `Sec-WebSocket-Accept` example, URL parsing, frame encoding/decoding,
-  fragmentation, control frames and the size limit.
+  fragmentation, control frames and the size limit. Its TLS test generates a CA
+  and server certificate, runs `tools/ap_fake_server.py --tls`, completes a
+  handshake and asserts four rejections: wrong CA, host-name mismatch, system
+  trust store only, and a missing CA file.
+- With the game: `wss://127.0.0.1` with a `tls_ca` connected, sent its Connect
+  and received items; a missing CA was refused and never fell back to plaintext.
 - End to end against `tools/ap_fake_server.py`: the client performed the
   WebSocket handshake and sent a well-formed Connect; the server's items were
   granted to the player state (the HUD's missile readout went from 15 to the
@@ -162,8 +182,10 @@ not include Aurora's UI layer, so an F1 screenshot will not show it.
 
 ## Not done yet
 
-- **TLS.** `wss://` servers (including the hosted service) need a TLS stack;
-  only plain `ws://` works, so use a self-hosted or tunnelled server.
+- **TLS on Android/Windows.** `wss://` needs OpenSSL found at configure time;
+  Linux and any desktop build with OpenSSL works (verified against a TLS server
+  including the rejection cases), Android's NDK has none, and Windows needs it
+  supplied. A JNI `SSLSocket` backend or a vendored TLS library would fix that.
 - **Compression.** No `permessage-deflate`; Archipelago accepts uncompressed
   connections but marks them deprecated.
 - **DeathLink, hints, chat, tracker.** Bounce/DeathLink, hint creation and the

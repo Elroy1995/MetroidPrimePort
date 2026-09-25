@@ -10,6 +10,9 @@ Then launch the port with ``MP_AP_CONFIG=/path/to/archipelago.json``; use
 ``MP_AP_CONFIG`` is unset (with an explicit config, state is stored beside it),
 or ``MP_AP_SEND_ALL=1`` to send every configured location check after
 connecting.
+
+With ``--tls --cert FILE --key FILE`` the server speaks ``wss://`` instead;
+point ``tls_ca`` in ``archipelago.json`` at the CA that signed the certificate.
 """
 
 import argparse
@@ -17,6 +20,7 @@ import base64
 import hashlib
 import json
 import socket
+import ssl
 import struct
 import sys
 
@@ -191,16 +195,38 @@ def main():
     parser.add_argument("--slot", default="Player1", help="accepted slot name (default: %(default)s)")
     parser.add_argument("--item", type=parse_item_ids, default=parse_item_ids("1234:5678"),
                         metavar="ID[:ID...]", help="item IDs sent in ReceivedItems (default: 1234:5678)")
+    parser.add_argument("--tls", action="store_true", help="serve wss:// (requires --cert and --key)")
+    parser.add_argument("--cert", metavar="FILE", help="PEM server certificate chain for --tls")
+    parser.add_argument("--key", metavar="FILE", help="PEM private key for --tls")
     args = parser.parse_args()
+
+    context = None
+    if args.tls:
+        if not args.cert or not args.key:
+            parser.error("--tls requires --cert and --key")
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(args.cert, args.key)
+    elif args.cert or args.key:
+        parser.error("--cert and --key only apply with --tls")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((args.host, args.port))
         server.listen()
-        print(f"[server] listening on ws://{args.host}:{args.port}/ (slot {args.slot})", flush=True)
+        scheme = "wss" if context is not None else "ws"
+        print(f"[server] listening on {scheme}://{args.host}:{args.port}/ (slot {args.slot})", flush=True)
         try:
             while True:
                 client, address = server.accept()
+                if context is not None:
+                    try:
+                        client.settimeout(10)
+                        client = context.wrap_socket(client, server_side=True)
+                    except (ssl.SSLError, OSError) as error:
+                        # A client that rejects our certificate lands here.
+                        print(f"[server] TLS handshake with {address} failed: {error}", flush=True)
+                        client.close()
+                        continue
                 handle_client(client, address, args, args.item)
         except KeyboardInterrupt:
             print("\n[server] shutting down", flush=True)

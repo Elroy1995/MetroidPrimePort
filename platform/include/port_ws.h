@@ -4,22 +4,44 @@
 #include <string>
 #include <vector>
 
-// Minimal RFC 6455 WebSocket client: text frames over plain TCP.
+// Minimal RFC 6455 WebSocket client: text frames over TCP, optionally TLS.
 //
 // Archipelago servers speak WebSocket, not raw TCP, so this is the transport
 // under the Archipelago client. It deliberately covers only what that protocol
 // needs: an HTTP upgrade handshake, masked client text frames, unmasked server
-// frames, ping/pong, and close. No TLS (ws:// only), no extensions, and no
-// per-message compression (servers still accept uncompressed connections, but
-// it is deprecated on their side).
+// frames, ping/pong, and close. No extensions and no per-message compression
+// (servers still accept uncompressed connections, but it is deprecated on their
+// side).
+//
+// wss:// uses OpenSSL when the build defines MP_HAVE_OPENSSL. The server
+// certificate is always verified against the host name; there is no way to
+// turn that off. Without OpenSSL a wss:// connect fails rather than falling
+// back to plaintext.
 //
 // The socket is blocking with explicit timeouts; the Archipelago client runs it
 // on its own thread.
+struct ssl_st;
+struct ssl_ctx_st;
+
 namespace PortWs {
 
 // "ws://host", "ws://host:port", "ws://host:port/path". Returns false for any
 // other scheme (including wss://) or an empty host. Defaults: port 80, path "/".
 bool ParseUrl(const std::string& url, std::string& host, uint16_t& port, std::string& path);
+// Same, but also accepts "wss://..." (default port 443) and reports which
+// scheme was used in `secure`. ws:// results match the overload above.
+bool ParseUrl(const std::string& url, std::string& host, uint16_t& port, std::string& path,
+              bool& secure);
+
+// Settings for wss:// connections. Verification is not optional.
+struct TlsOptions {
+  // PEM CA bundle to verify the server against; empty uses the system trust
+  // store.
+  std::string caFile;
+};
+
+// Whether this build can connect to wss:// servers.
+bool TlsAvailable();
 
 // A received frame. Opcodes follow RFC 6455: 0x1 text, 0x2 binary, 0x8 close,
 // 0x9 ping, 0xA pong. Continuation frames are never surfaced: the decoder
@@ -66,8 +88,11 @@ public:
   Client& operator=(const Client&) = delete;
 
   // Resolves and connects, then performs the upgrade handshake. Blocks up to
-  // timeoutMs; false fills Error(). `host`/`port`/`path` come from ParseUrl.
-  bool Connect(const std::string& host, uint16_t port, const std::string& path, int timeoutMs);
+  // timeoutMs; false fills Error(). `host`/`port`/`path`/`secure` come from
+  // ParseUrl. With `secure`, a TLS handshake that verifies the certificate
+  // for `host` runs before the upgrade.
+  bool Connect(const std::string& host, uint16_t port, const std::string& path, int timeoutMs,
+               bool secure = false, const TlsOptions& tls = TlsOptions());
   // Sends a close frame if open and releases the socket. Idempotent.
   void Close();
   bool IsOpen() const { return mSocket >= 0; }
@@ -88,9 +113,26 @@ public:
 
 private:
   bool SendRaw(const std::string& data);
-  bool ReadRaw(std::string& out);
+  // Writes everything through TLS or the plain socket; false fills `error`.
+  bool SendBytes(const std::string& data, int timeoutMs, std::string& error);
+  // One read. True with `out` possibly empty when nothing was ready; false
+  // with `closed` set when the peer closed, otherwise `error` has the detail.
+  bool ReadRaw(std::string& out, bool& closed, std::string& error);
+  // Sends TLS close_notify if the session is still healthy; no-op otherwise.
+  void ShutdownTls();
+  // Waits until a read can make progress: TLS may already hold buffered data,
+  // or need the socket writable first. Returns 1 ready, 0 timeout, -1 error.
+  int WaitIo(int timeoutMs);
+  // Releases the TLS state and the socket without any shutdown exchange.
+  void DropConnection();
 
   int mSocket = -1;
+  ssl_ctx_st* mSslContext = nullptr;
+  ssl_st* mSsl = nullptr;
+  // Set after a fatal TLS error, when SSL_shutdown must not be attempted.
+  bool mTlsFailed = false;
+  // The last SSL_read wanted the socket writable (renegotiation, key update).
+  bool mTlsReadWantsWrite = false;
   int mTimeoutMs = 10000;
   std::string mError = "not connected";
   std::string mReceiveBuffer;

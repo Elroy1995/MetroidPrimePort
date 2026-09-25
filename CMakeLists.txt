@@ -113,6 +113,21 @@ endif()
 if(WIN32)
     target_link_libraries(metroid_prime_port PRIVATE ws2_32)
 endif()
+# OpenSSL gives the Archipelago WebSocket client wss://. It is optional: without
+# it the port still builds and a wss:// server fails with a clear error.
+find_package(OpenSSL)
+function(mp_websocket_tls target)
+    if(OpenSSL_FOUND)
+        target_compile_definitions(${target} PRIVATE MP_HAVE_OPENSSL)
+        target_link_libraries(${target} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    endif()
+endfunction()
+if(OpenSSL_FOUND)
+    message(STATUS "OpenSSL ${OPENSSL_VERSION} found: wss:// enabled")
+else()
+    message(STATUS "OpenSSL not found: wss:// disabled")
+endif()
+mp_websocket_tls(metroid_prime_port)
 mp_signed_char(metroid_prime_port)
 add_custom_target(port_build_info
     COMMAND ${CMAKE_COMMAND}
@@ -211,6 +226,10 @@ if(MP_BUILD_TESTS)
     if(WIN32)
         target_link_libraries(port_ws_tests PRIVATE ws2_32)
     endif()
+    mp_websocket_tls(port_ws_tests)
+    # The TLS end-to-end test runs tools/ap_fake_server.py from the source tree.
+    target_compile_definitions(port_ws_tests PRIVATE
+        "MP_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
     add_executable(port_timing_tests tests/port_timing.cpp)
     target_include_directories(port_timing_tests PRIVATE platform/include)
     add_executable(port_audio_math_tests tests/port_audio_math.c)

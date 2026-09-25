@@ -26,10 +26,14 @@ struct ItemGrant {
 
 // archipelago.json, as documented in docs/ARCHIPELAGO.md.
 struct Config {
-  std::string server; // ws://host[:port][/path]
+  std::string server; // ws:// or wss://host[:port][/path]
   std::string slot;
   std::string password;
   std::string game = "Metroid Prime";
+  // PEM CA bundle for wss:// servers the system trust store does not cover.
+  // Empty means the system store. Stored as written; a relative path is
+  // resolved against the config file's directory by the client.
+  std::string tlsCa;
   int itemsHandling = 7;
   std::vector< std::string > tags;
   int versionMajor = 0;

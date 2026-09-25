@@ -217,12 +217,15 @@ void Worker(Runtime& runtime) {
     std::string host;
     std::string path;
     uint16_t port = 0;
+    bool secure = false;
     std::string connectionError;
     PortWs::Client client;
+    PortWs::TlsOptions tls;
+    tls.caFile = config.tlsCa;
     bool transportReady = false;
-    if (!PortWs::ParseUrl(config.server, host, port, path)) {
+    if (!PortWs::ParseUrl(config.server, host, port, path, secure)) {
       connectionError = "invalid server URL: " + config.server;
-    } else if (!client.Connect(host, port, path, 10000)) {
+    } else if (!client.Connect(host, port, path, 10000, secure, tls)) {
       connectionError = ErrorText(client.Error());
     } else {
       transportReady = true;
@@ -430,6 +433,9 @@ void EnsureLoadedImpl(Runtime& runtime) {
   std::filesystem::path parent = std::filesystem::path(configPath).parent_path();
   if (parent.empty())
     parent = ".";
+  // tls_ca is written relative to the config file, not the working directory.
+  if (!runtime.config.tlsCa.empty() && std::filesystem::path(runtime.config.tlsCa).is_relative())
+    runtime.config.tlsCa = (parent / runtime.config.tlsCa).string();
   runtime.statePath = (parent / "archipelago_state.json").string();
   Protocol::State state = Protocol::LoadStateFile(runtime.statePath);
   if (state.slot != runtime.config.slot)

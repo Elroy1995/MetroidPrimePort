@@ -24,6 +24,17 @@
 #include <unistd.h>
 #endif
 
+#ifdef MP_HAVE_OPENSSL
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#if !defined(_WIN32)
+#include <csignal>
+#include <ctime>
+#include <pthread.h>
+#endif
+#endif
+
 namespace PortWs {
 namespace {
 
@@ -254,13 +265,189 @@ void AppendUnmaskedFrame(std::string& destination, uint8_t opcode, const std::st
   destination.append(payload);
 }
 
+#ifdef MP_HAVE_OPENSSL
+#if !defined(_WIN32) && !defined(SO_NOSIGPIPE)
+// OpenSSL writes to the socket with write(), which raises SIGPIPE when the
+// server has gone away. Block it on this thread around each TLS call and
+// swallow one that arrives, so a dead server is an error instead of killing
+// the game. (Windows has no SIGPIPE; Apple sockets get SO_NOSIGPIPE.)
+class SigpipeGuard {
+public:
+  SigpipeGuard() {
+    sigemptyset(&mPipe);
+    sigaddset(&mPipe, SIGPIPE);
+    pthread_sigmask(SIG_BLOCK, &mPipe, &mPrevious);
+    sigset_t pending;
+    sigemptyset(&pending);
+    mWasPending = sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE) == 1;
+  }
+  ~SigpipeGuard() {
+    const int savedErrno = errno;
+    sigset_t pending;
+    sigemptyset(&pending);
+    if (!mWasPending && sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE) == 1) {
+      const timespec zero{};
+      sigtimedwait(&mPipe, nullptr, &zero);
+    }
+    pthread_sigmask(SIG_SETMASK, &mPrevious, nullptr);
+    errno = savedErrno;
+  }
+  SigpipeGuard(const SigpipeGuard&) = delete;
+  SigpipeGuard& operator=(const SigpipeGuard&) = delete;
+
+private:
+  sigset_t mPipe;
+  sigset_t mPrevious;
+  bool mWasPending = false;
+};
+#else
+struct SigpipeGuard {
+  SigpipeGuard() {}
+};
+#endif
+
+// Takes the oldest queued OpenSSL error as text and clears the queue.
+std::string TlsQueueText() {
+  const unsigned long code = ERR_get_error();
+  ERR_clear_error();
+  if (code == 0)
+    return "unknown TLS error";
+  if (const char* reason = ERR_reason_error_string(code))
+    return reason;
+  char text[256];
+  ERR_error_string_n(code, text, sizeof(text));
+  return text;
+}
+
+// Describes a fatal SSL_get_error result. `closed` reports that the peer
+// simply went away (clean close_notify or a bare TCP close).
+std::string TlsFailureText(int sslError, bool& closed) {
+  closed = false;
+  if (sslError == SSL_ERROR_ZERO_RETURN) {
+    closed = true;
+    ERR_clear_error();
+    return "connection closed";
+  }
+  if (sslError == SSL_ERROR_SYSCALL) {
+    const int socketError = SocketError();
+    if (ERR_peek_error() == 0 && socketError == 0) {
+      closed = true;
+      return "connection closed";
+    }
+    if (ERR_peek_error() == 0)
+      return SystemError(socketError);
+  }
+#ifdef SSL_R_UNEXPECTED_EOF_WHILE_READING
+  // OpenSSL 3 reports a server that closes without close_notify this way.
+  if (sslError == SSL_ERROR_SSL && ERR_GET_REASON(ERR_peek_error()) == SSL_R_UNEXPECTED_EOF_WHILE_READING) {
+    closed = true;
+    ERR_clear_error();
+    return "connection closed";
+  }
+#endif
+  return TlsQueueText();
+}
+
+// SNI carries DNS names only (RFC 6066); IP literals are still checked by
+// SSL_set1_host against the certificate's IP addresses.
+bool IsIpLiteral(const std::string& host) {
+  addrinfo hints{};
+  hints.ai_flags = AI_NUMERICHOST;
+  addrinfo* result = nullptr;
+  const bool numeric = getaddrinfo(host.c_str(), nullptr, &hints, &result) == 0;
+  if (result != nullptr)
+    freeaddrinfo(result);
+  return numeric;
+}
+
+bool SendAllTls(SSL* ssl, int storedSocket, const std::string& data, int timeoutMs, std::string& error,
+                bool& fatal) {
+  const bool infinite = timeoutMs <= 0;
+  const Clock::time_point deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 0));
+  size_t sent = 0;
+  while (sent < data.size()) {
+    // A retry after WANT_READ/WANT_WRITE must repeat the same buffer and
+    // length, which it does because `sent` has not moved.
+    const int chunk = static_cast<int>(std::min<size_t>(data.size() - sent, static_cast<size_t>(INT_MAX)));
+    int count = 0;
+    int sslError = SSL_ERROR_NONE;
+    {
+      SigpipeGuard guard;
+      ERR_clear_error();
+      count = SSL_write(ssl, data.data() + sent, chunk);
+      if (count <= 0)
+        sslError = SSL_get_error(ssl, count);
+    }
+    if (count > 0) {
+      sent += static_cast<size_t>(count);
+      continue;
+    }
+    if (sslError != SSL_ERROR_WANT_READ && sslError != SSL_ERROR_WANT_WRITE) {
+      bool closed = false;
+      const std::string detail = TlsFailureText(sslError, closed);
+      fatal = true;
+      error = closed ? "socket closed during send" : "send failed: " + detail;
+      return false;
+    }
+    const int remaining = RemainingMs(deadline, infinite);
+    if (remaining < 0) {
+      error = "send timed out";
+      return false;
+    }
+    const int ready = WaitReady(storedSocket, sslError == SSL_ERROR_WANT_READ, remaining);
+    if (ready == 0) {
+      error = "send timed out";
+      return false;
+    }
+    if (ready < 0) {
+      const int socketError = SocketError();
+      if (IsInterrupted(socketError))
+        continue;
+      error = "send wait failed: " + SystemError(socketError);
+      return false;
+    }
+  }
+  return true;
+}
+#endif
+
 } // namespace
 
+bool TlsAvailable() {
+#ifdef MP_HAVE_OPENSSL
+  return true;
+#else
+  return false;
+#endif
+}
+
 bool ParseUrl(const std::string& url, std::string& host, uint16_t& port, std::string& path) {
-  constexpr std::string_view scheme = "ws://";
-  if (url.compare(0, scheme.size(), scheme) != 0)
+  std::string parsedHost;
+  uint16_t parsedPort = 0;
+  std::string parsedPath;
+  bool secure = false;
+  if (!ParseUrl(url, parsedHost, parsedPort, parsedPath, secure) || secure)
     return false;
-  const size_t authorityStart = scheme.size();
+  host = std::move(parsedHost);
+  port = parsedPort;
+  path = std::move(parsedPath);
+  return true;
+}
+
+bool ParseUrl(const std::string& url, std::string& host, uint16_t& port, std::string& path,
+              bool& secure) {
+  constexpr std::string_view plainScheme = "ws://";
+  constexpr std::string_view secureScheme = "wss://";
+  bool parsedSecure = false;
+  size_t authorityStart = 0;
+  if (url.compare(0, plainScheme.size(), plainScheme) == 0) {
+    authorityStart = plainScheme.size();
+  } else if (url.compare(0, secureScheme.size(), secureScheme) == 0) {
+    authorityStart = secureScheme.size();
+    parsedSecure = true;
+  } else {
+    return false;
+  }
   const size_t pathStart = url.find('/', authorityStart);
   const size_t authorityEnd = pathStart == std::string::npos ? url.size() : pathStart;
   const std::string authority = url.substr(authorityStart, authorityEnd - authorityStart);
@@ -269,7 +456,7 @@ bool ParseUrl(const std::string& url, std::string& host, uint16_t& port, std::st
     return false;
 
   std::string parsedHost;
-  uint16_t parsedPort = 80;
+  uint16_t parsedPort = parsedSecure ? 443 : 80;
   std::string_view portText;
   if (authority.front() == '[') {
     const size_t close = authority.find(']');
@@ -315,6 +502,7 @@ bool ParseUrl(const std::string& url, std::string& host, uint16_t& port, std::st
   host = std::move(parsedHost);
   port = parsedPort;
   path = std::move(parsedPath);
+  secure = parsedSecure;
   return true;
 }
 
@@ -581,21 +769,16 @@ Client::Client() = default;
 
 Client::~Client() { Close(); }
 
-bool Client::Connect(const std::string& host, uint16_t port, const std::string& path, int timeoutMs) {
-  if (mSocket >= 0) {
-    CloseNative(NativeFromStored(mSocket));
-    mSocket = -1;
-  }
+bool Client::Connect(const std::string& host, uint16_t port, const std::string& path, int timeoutMs,
+                     bool secure, const TlsOptions& tls) {
+  DropConnection();
   mReceiveBuffer.clear();
   mDecoder.Reset();
   mError.clear();
   mTimeoutMs = timeoutMs;
   auto fail = [this](const std::string& reason) {
     mError = reason;
-    if (mSocket >= 0) {
-      CloseNative(NativeFromStored(mSocket));
-      mSocket = -1;
-    }
+    DropConnection();
     mReceiveBuffer.clear();
     mDecoder.Reset();
     return false;
@@ -606,6 +789,12 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
   if (host.empty() || host.find_first_of("\r\n\t /\\") != std::string::npos || port == 0 ||
       path.empty() || path.front() != '/' || path.find_first_of("\r\n") != std::string::npos)
     return fail("invalid WebSocket endpoint");
+#ifndef MP_HAVE_OPENSSL
+  // Never downgrade a wss:// server to plaintext.
+  if (secure)
+    return fail("wss:// is not supported: this build has no TLS (built without OpenSSL)");
+  (void)tls;
+#endif
 
   const bool infinite = timeoutMs <= 0;
   const Clock::time_point deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 0));
@@ -677,6 +866,76 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
   if (mSocket < 0)
     return fail(connectError);
 
+#ifdef MP_HAVE_OPENSSL
+  if (secure) {
+#ifdef SO_NOSIGPIPE
+    int noSigpipe = 1;
+    setsockopt(NativeFromStored(mSocket), SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
+#endif
+    ERR_clear_error();
+    mSslContext = SSL_CTX_new(TLS_client_method());
+    if (mSslContext == nullptr)
+      return fail("could not create TLS context: " + TlsQueueText());
+    SSL_CTX_set_min_proto_version(mSslContext, TLS1_2_VERSION);
+    SSL_CTX_set_verify(mSslContext, SSL_VERIFY_PEER, nullptr);
+    if (tls.caFile.empty()) {
+      if (SSL_CTX_set_default_verify_paths(mSslContext) != 1)
+        return fail("could not load the system TLS trust store: " + TlsQueueText());
+    } else if (SSL_CTX_load_verify_locations(mSslContext, tls.caFile.c_str(), nullptr) != 1) {
+      return fail("could not load TLS CA file " + tls.caFile + ": " + TlsQueueText());
+    }
+    mSsl = SSL_new(mSslContext);
+    if (mSsl == nullptr)
+      return fail("could not create TLS session: " + TlsQueueText());
+    if (SSL_set_fd(mSsl, mSocket) != 1)
+      return fail("could not attach TLS to the socket: " + TlsQueueText());
+    // The certificate must name this host; a valid certificate for any other
+    // name fails verification.
+    if (SSL_set1_host(mSsl, host.c_str()) != 1)
+      return fail("could not set the TLS host name: " + TlsQueueText());
+    if (!IsIpLiteral(host) && SSL_set_tlsext_host_name(mSsl, host.c_str()) != 1)
+      return fail("could not set the TLS server name: " + TlsQueueText());
+
+    for (;;) {
+      int result = 0;
+      int sslError = SSL_ERROR_NONE;
+      {
+        SigpipeGuard guard;
+        ERR_clear_error();
+        result = SSL_connect(mSsl);
+        if (result != 1)
+          sslError = SSL_get_error(mSsl, result);
+      }
+      if (result == 1)
+        break;
+      if (sslError != SSL_ERROR_WANT_READ && sslError != SSL_ERROR_WANT_WRITE) {
+        mTlsFailed = true;
+        const long verifyResult = SSL_get_verify_result(mSsl);
+        if (verifyResult != X509_V_OK) {
+          ERR_clear_error();
+          return fail(std::string("TLS certificate verification failed: ") +
+                      X509_verify_cert_error_string(verifyResult));
+        }
+        bool closed = false;
+        const std::string detail = TlsFailureText(sslError, closed);
+        return fail(closed ? "server closed during TLS handshake" : "TLS handshake failed: " + detail);
+      }
+      const int remaining = RemainingMs(deadline, infinite);
+      if (remaining < 0)
+        return fail("TLS handshake timed out");
+      const int ready = WaitReady(mSocket, sslError == SSL_ERROR_WANT_READ, remaining);
+      if (ready == 0)
+        return fail("TLS handshake timed out");
+      if (ready < 0) {
+        const int socketError = SocketError();
+        if (IsInterrupted(socketError))
+          continue;
+        return fail("TLS handshake wait failed: " + SystemError(socketError));
+      }
+    }
+  }
+#endif
+
   uint8_t randomKey[16];
   try {
     std::random_device random;
@@ -689,14 +948,14 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
   std::string hostHeader = host;
   if (host.find(':') != std::string::npos && (host.empty() || host.front() != '['))
     hostHeader = "[" + host + "]";
-  if (port != 80)
+  if (port != (secure ? 443 : 80))
     hostHeader += ":" + std::to_string(port);
   const std::string request = "GET " + path + " HTTP/1.1\r\nHost: " + hostHeader +
                               "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " +
                               clientKey + "\r\nSec-WebSocket-Version: 13\r\n\r\n";
   std::string ioError;
   const int remainingForSend = RemainingMs(deadline, infinite);
-  if (remainingForSend < 0 || !SendAll(mSocket, request, remainingForSend, ioError))
+  if (remainingForSend < 0 || !SendBytes(request, remainingForSend, ioError))
     return fail(remainingForSend < 0 ? "handshake timed out" : ioError);
 
   size_t headerEnd = std::string::npos;
@@ -706,7 +965,7 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
     const int remaining = RemainingMs(deadline, infinite);
     if (remaining < 0)
       return fail("handshake timed out");
-    const int ready = WaitReady(mSocket, true, remaining);
+    const int ready = WaitIo(remaining);
     if (ready == 0)
       return fail("handshake timed out");
     if (ready < 0) {
@@ -715,21 +974,12 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
         continue;
       return fail("handshake read wait failed: " + SystemError(socketError));
     }
-    char buffer[4096];
-#ifdef _WIN32
-    const int count = ::recv(NativeFromStored(mSocket), buffer, sizeof(buffer), 0);
-#else
-    const ssize_t count = ::recv(NativeFromStored(mSocket), buffer, sizeof(buffer), 0);
-#endif
-    if (count == 0)
-      return fail("server closed during handshake");
-    if (count < 0) {
-      const int socketError = SocketError();
-      if (IsInterrupted(socketError) || IsWouldBlock(socketError))
-        continue;
-      return fail("handshake read failed: " + SystemError(socketError));
-    }
-    mReceiveBuffer.append(buffer, static_cast<size_t>(count));
+    std::string bytes;
+    bool closed = false;
+    std::string readError;
+    if (!ReadRaw(bytes, closed, readError))
+      return fail(closed ? "server closed during handshake" : "handshake read failed: " + readError);
+    mReceiveBuffer.append(bytes);
     headerEnd = mReceiveBuffer.find("\r\n\r\n");
     if (headerEnd == std::string::npos && mReceiveBuffer.size() > 16 * 1024)
       return fail("WebSocket response headers too large");
@@ -785,9 +1035,9 @@ void Client::Close() {
       SendRaw(EncodeFrame(0x8, std::string(), seed));
     else
       mError = "could not generate close-frame mask";
-    CloseNative(NativeFromStored(mSocket));
-    mSocket = -1;
+    ShutdownTls();
   }
+  DropConnection();
   mReceiveBuffer.clear();
   mDecoder.Reset();
 }
@@ -820,8 +1070,7 @@ bool Client::ReceiveText(std::string& message, int timeoutMs) {
       ++consumed;
       if (mDecoder.Failed()) {
         mError = "invalid WebSocket frame";
-        CloseNative(NativeFromStored(mSocket));
-        mSocket = -1;
+        DropConnection();
         mReceiveBuffer.clear();
         return false;
       }
@@ -835,8 +1084,8 @@ bool Client::ReceiveText(std::string& message, int timeoutMs) {
           uint32_t seed = 0;
           if (RandomSeed(seed))
             SendRaw(EncodeFrame(0x8, frame.payload, seed));
-          CloseNative(NativeFromStored(mSocket));
-          mSocket = -1;
+          ShutdownTls();
+          DropConnection();
           mReceiveBuffer.clear();
           mDecoder.Reset();
           mError = "server closed WebSocket";
@@ -845,14 +1094,12 @@ bool Client::ReceiveText(std::string& message, int timeoutMs) {
         if (frame.opcode == 0x9) {
           uint32_t seed = 0;
           if (!RandomSeed(seed) || !SendRaw(EncodeFrame(0xa, frame.payload, seed))) {
-            CloseNative(NativeFromStored(mSocket));
-            mSocket = -1;
+            DropConnection();
             return false;
           }
         } else if (frame.opcode != 0xa) {
           mError = "unsupported WebSocket data opcode";
-          CloseNative(NativeFromStored(mSocket));
-          mSocket = -1;
+          DropConnection();
           mReceiveBuffer.clear();
           return false;
         }
@@ -866,7 +1113,7 @@ bool Client::ReceiveText(std::string& message, int timeoutMs) {
       mError = "receive timed out";
       return false;
     }
-    const int ready = WaitReady(mSocket, true, remaining);
+    const int ready = WaitIo(remaining);
     if (ready == 0) {
       mError = "receive timed out";
       return false;
@@ -879,9 +1126,13 @@ bool Client::ReceiveText(std::string& message, int timeoutMs) {
       return false;
     }
     std::string bytes;
-    if (!ReadRaw(bytes)) {
-      CloseNative(NativeFromStored(mSocket));
-      mSocket = -1;
+    bool closed = false;
+    std::string readError;
+    if (!ReadRaw(bytes, closed, readError)) {
+      mError = closed ? "server closed the connection" : "receive failed: " + readError;
+      if (closed)
+        ShutdownTls();
+      DropConnection();
       return false;
     }
     if (!bytes.empty())
@@ -894,7 +1145,7 @@ bool Client::WaitReadable(int timeoutMs) {
     mError = "not connected";
     return false;
   }
-  const int ready = WaitReady(mSocket, true, timeoutMs);
+  const int ready = WaitIo(timeoutMs);
   if (ready > 0)
     return true;
   if (ready == 0)
@@ -910,15 +1161,55 @@ bool Client::SendRaw(const std::string& data) {
     return false;
   }
   std::string error;
-  if (!SendAll(mSocket, data, mTimeoutMs, error)) {
+  if (!SendBytes(data, mTimeoutMs, error)) {
     mError = std::move(error);
     return false;
   }
   return true;
 }
 
-bool Client::ReadRaw(std::string& out) {
+bool Client::SendBytes(const std::string& data, int timeoutMs, std::string& error) {
+#ifdef MP_HAVE_OPENSSL
+  if (mSsl != nullptr) {
+    bool fatal = false;
+    const bool sent = SendAllTls(mSsl, mSocket, data, timeoutMs, error, fatal);
+    if (fatal)
+      mTlsFailed = true;
+    return sent;
+  }
+#endif
+  return SendAll(mSocket, data, timeoutMs, error);
+}
+
+bool Client::ReadRaw(std::string& out, bool& closed, std::string& error) {
+  closed = false;
   char buffer[4096];
+#ifdef MP_HAVE_OPENSSL
+  if (mSsl != nullptr) {
+    int count = 0;
+    int sslError = SSL_ERROR_NONE;
+    {
+      // Reads can write too (key updates), so they need the guard as well.
+      SigpipeGuard guard;
+      ERR_clear_error();
+      count = SSL_read(mSsl, buffer, sizeof(buffer));
+      if (count <= 0)
+        sslError = SSL_get_error(mSsl, count);
+    }
+    mTlsReadWantsWrite = sslError == SSL_ERROR_WANT_WRITE;
+    if (count > 0) {
+      out.assign(buffer, static_cast<size_t>(count));
+      return true;
+    }
+    if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE)
+      return true;
+    error = TlsFailureText(sslError, closed);
+    // Only a clean close_notify leaves the session fit for our own shutdown.
+    if (sslError != SSL_ERROR_ZERO_RETURN)
+      mTlsFailed = true;
+    return false;
+  }
+#endif
 #ifdef _WIN32
   const int count = ::recv(NativeFromStored(mSocket), buffer, sizeof(buffer), 0);
 #else
@@ -929,14 +1220,55 @@ bool Client::ReadRaw(std::string& out) {
     return true;
   }
   if (count == 0) {
-    mError = "server closed the connection";
+    closed = true;
     return false;
   }
   const int socketError = SocketError();
   if (IsInterrupted(socketError) || IsWouldBlock(socketError))
     return true;
-  mError = "receive failed: " + SystemError(socketError);
+  error = SystemError(socketError);
   return false;
+}
+
+int Client::WaitIo(int timeoutMs) {
+#ifdef MP_HAVE_OPENSSL
+  if (mSsl != nullptr) {
+    // Decrypted bytes, or a whole record OpenSSL has already pulled off the
+    // socket, would never make select() fire.
+    if (SSL_has_pending(mSsl) == 1)
+      return 1;
+    return WaitReady(mSocket, !mTlsReadWantsWrite, timeoutMs);
+  }
+#endif
+  return WaitReady(mSocket, true, timeoutMs);
+}
+
+void Client::ShutdownTls() {
+#ifdef MP_HAVE_OPENSSL
+  if (mSsl != nullptr && !mTlsFailed) {
+    SigpipeGuard guard;
+    ERR_clear_error();
+    // Sends close_notify without waiting for the server's; the socket closes
+    // right after.
+    SSL_shutdown(mSsl);
+    ERR_clear_error();
+  }
+#endif
+}
+
+void Client::DropConnection() {
+#ifdef MP_HAVE_OPENSSL
+  SSL_free(mSsl);
+  mSsl = nullptr;
+  SSL_CTX_free(mSslContext);
+  mSslContext = nullptr;
+#endif
+  mTlsFailed = false;
+  mTlsReadWantsWrite = false;
+  if (mSocket >= 0) {
+    CloseNative(NativeFromStored(mSocket));
+    mSocket = -1;
+  }
 }
 
 } // namespace PortWs
