@@ -8,9 +8,14 @@
 #include <iterator>
 #include <limits>
 #include <string>
+#include <vector>
+
+#ifdef _WIN32
+#include <process.h>
+#else
 #include <sys/types.h>
 #include <unistd.h>
-#include <vector>
+#endif
 
 namespace {
 
@@ -42,12 +47,21 @@ std::string Read(const std::filesystem::path& path) {
   return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
+// A per-process temporary directory, so parallel test runs cannot collide.
+unsigned long TestProcessId() {
+#ifdef _WIN32
+  return static_cast<unsigned long>(_getpid());
+#else
+  return static_cast<unsigned long>(getpid());
+#endif
+}
+
 } // namespace
 
 int main() {
   using namespace PortAp::Protocol;
   const std::filesystem::path testDir = std::filesystem::temp_directory_path() /
-      ("mp-ap-test-" + std::to_string(static_cast<long long>(getpid())));
+      ("mp-ap-test-" + std::to_string(static_cast<long long>(TestProcessId())));
   std::filesystem::remove_all(testDir);
   std::filesystem::create_directories(testDir);
 

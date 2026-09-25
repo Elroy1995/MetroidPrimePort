@@ -70,19 +70,22 @@ unsigned long ProcessId() {
 int RunChild(const char* self, const char* name, const std::filesystem::path& testDir) {
   const std::string dir = testDir.string();
 #ifdef _WIN32
-  std::wstring command = L"\"";
-  command += std::wstring(self, self + std::strlen(self));
-  command += L"\" ";
-  command += std::wstring(name, name + std::strlen(name));
-  command += L" \"";
-  command += std::string(dir.begin(), dir.end());
-  command += L"\"";
-  std::vector<wchar_t> mutableCommand(command.begin(), command.end());
-  mutableCommand.push_back(L'\0');
-  STARTUPINFOW startup{};
+  // The ANSI entry point takes the command line as plain bytes, which is what
+  // the paths here are; the wide one would need a real encoding conversion for
+  // no gain in a test.
+  std::string command = "\"";
+  command += self;
+  command += "\" ";
+  command += name;
+  command += " \"";
+  command += dir;
+  command += "\"";
+  std::vector<char> mutableCommand(command.begin(), command.end());
+  mutableCommand.push_back('\0');
+  STARTUPINFOA startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
-  if (CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr,
+  if (CreateProcessA(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr,
                      &startup, &process) == 0)
     return -1;
   WaitForSingleObject(process.hProcess, INFINITE);
