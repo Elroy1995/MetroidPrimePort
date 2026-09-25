@@ -33,3 +33,6 @@ report*.json
 
 # Port runtime output
 screenshots/
+
+# Claude Code personal settings (per-machine allow/deny rules)
+.claude/settings.local.json
