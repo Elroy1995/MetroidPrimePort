@@ -1,5 +1,23 @@
 # Metroid Prime port — working notes
 
+## Impact Crater sweeps clean; the Wayland hang is not the port (2026-09-25)
+
+- Impact Crater (`C13B09D1`) is no longer the sweep's stopping point. It reaches
+  all 12 of its areas (`[sweep] complete: 1 worlds, 12 areas`) and dumps 85
+  pickups, all `capacity=0` drops, so it contributes 0 item locations — which
+  agrees with retail, where the crater holds no items. Every world is now
+  covered, and the merged dump is 4969 LOC lines / 328 locations / 170 areas.
+- The "unreproduced free" that ended earlier crater sweeps was never in the port.
+  The run had stopped making progress because SDL3 was using its Wayland backend,
+  where `SDL_ShowWindow` dispatches into libdecor's client-side decorations and
+  never returns; the process sat at 100% with no frames and no log output past
+  `Using surface format`. A backtrace of a hung instance pinned it, and
+  `SDL_VIDEODRIVER=x11` runs normally (3481 frames in 60 s). Documented under
+  "A Wayland session hangs at startup" in `docs/NATIVE_PORT.md`; no code change.
+- Consequence for tooling: the sweep recipe needs `DISPLAY`, `XAUTHORITY` and
+  `SDL_VIDEODRIVER=x11` on a GNOME Wayland session; unattended runs that set only
+  the first two hang silently instead of failing.
+
 ## World restart crash, full location sweep, audio bug (2026-09-25)
 
 - Restarting the current world used to crash after about ten restarts: the
@@ -14,8 +32,9 @@
   328 capacity-granting item locations across 170 distinct areas, including
   every artifact, suit and beam. `tools/make_ap_config.py --strict` maps a
   matching AP table with 100/100 entries and 0 areas for review, and the seed
-  tool derives 33 item models from it. Impact Crater is the exception (3 areas,
-  no items) because the save has not opened it.
+  tool derives 33 item models from it. Impact Crater was the exception (3 areas,
+  no items) because the save has not opened it; it now sweeps to all 12 areas
+  and holds no item locations, so nothing is missing from the table.
 - Two port-side fixes were needed in vendored code along the way:
   - `extern/aurora/lib/gx/shader.cpp`: a texcoord generator whose source
     register is still `GX_MAX_TEXGENSRC` ("no source", what the game leaves
@@ -25,9 +44,8 @@
     pointers into a `CDSPStreamManager` that is reassigned and freed while the
     stream is live, so `activate ok file=...` printed garbage and a long sweep
     died with `free(): invalid size`. Both are now owned `rstl::string`s.
-    The sweep still ends in Impact Crater; the remaining fault after that fix
-    is no longer the audio names but an unreproduced free, so the dump is taken
-    by merging runs.
+    The sweeps that still ended in Impact Crater were not failing at all; see
+    the section above.
 
 ## Archipelago progressive items (2026-09-25)
 

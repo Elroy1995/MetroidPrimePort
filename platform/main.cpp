@@ -265,6 +265,25 @@ int main(int argc, char** argv) {
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
     config.logCallback = AndroidLogCallback;
 #endif
+    // SDL3 picks its Wayland backend whenever WAYLAND_DISPLAY is set, and on a
+    // GNOME session that backend never returns from SDL_ShowWindow: it dispatches
+    // pending events, libdecor's client-side decoration configure re-enters GTK
+    // layout from inside that dispatch, and the process spins at 100% before the
+    // first frame is ever presented. Nothing in the port can fix that, so ask for
+    // the X11 backend instead — unless the user named a driver themselves, which
+    // is also how they opt back in.
+    {
+        const char* requested = SDL_GetHint(SDL_HINT_VIDEO_DRIVER);
+        const char* wayland = std::getenv("WAYLAND_DISPLAY");
+        const bool unnamed = requested == nullptr || requested[0] == '\0';
+        if (unnamed && wayland != nullptr && wayland[0] != '\0') {
+            SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+            std::fprintf(stderr,
+                         "port: WAYLAND_DISPLAY is set, but SDL's wayland backend hangs on window "
+                         "creation under GNOME (libdecor). Using the x11 driver; set "
+                         "SDL_VIDEODRIVER=wayland to override.\n");
+        }
+    }
     aurora_initialize(argc, argv, &config);
     // Apply the persisted render scale. Vsync is applied on the first drawn
     // frame (once the swapchain surface exists) so it uses real capabilities.

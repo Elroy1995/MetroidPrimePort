@@ -80,6 +80,29 @@ executable (or one level below it), and texture replacements are loaded from
 `<executable dir>/textures` when present. `MP_DISC` and `MP_TEXTURES` still
 override these.
 
+### A Wayland session hangs at startup
+
+On a GNOME Wayland session the port can pin a core at 100% and never reach its
+first frame. The log stops after `Using surface format BGRA8Unorm`, and no
+`MP frame` line ever appears. The cause is outside the port: SDL3 chooses its
+Wayland backend when `WAYLAND_DISPLAY` is set, and `SDL_ShowWindow` dispatches
+pending Wayland events, one of which is libdecor's client-side decoration
+configure. libdecor then re-enters GTK layout from inside that dispatch and
+never returns. A backtrace of the hung process shows the loop:
+
+```
+hypot → cairo_scaled_font_create → pango_context_get_metrics
+      → gtk_widget_get_preferred_height → libdecor_frame_commit
+      → decoration_frame_configure → SDL_waylandwindow.c → Wayland_ShowWindow
+      → SDL_ShowWindow_REAL → aurora::window::show_window
+```
+
+Run with `SDL_VIDEODRIVER=x11` (and `DISPLAY` plus `XAUTHORITY` pointing at the
+session's Xwayland) to use the X11 backend instead, which reaches the main loop
+normally. No port change is involved, and neither backend is a workaround for
+missing functionality — the only difference is which window system draws the
+window.
+
 ### HD texture replacements
 
 `MP_TEXTURES` (default `<executable dir>/textures`) points at a folder of
