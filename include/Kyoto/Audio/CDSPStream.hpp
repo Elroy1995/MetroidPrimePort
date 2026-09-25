@@ -6,6 +6,8 @@
 #include "dolphin/dvd.h"
 #include "musyx/musyx.h"
 
+#include "rstl/string.hpp"
+
 struct dspadpcm_header {
   uint x0_numSamples;
   uint x4_numNibbles;
@@ -28,7 +30,10 @@ struct dspadpcm_header {
 CHECK_SIZEOF(dspadpcm_header, 0x60);
 
 struct SStreamInfo {
-  const char* x0_fileName;
+  // Owned copy: MakeDSPStreamInfo used to hand out a pointer into the
+  // CDSPStreamManager object, which is reassigned and freed while the stream
+  // still logs and opens the file.
+  rstl::string x0_fileName;
   ushort x4_sampleRate;
   ushort x6_pad;
   uint x8_headerSize;
@@ -81,7 +86,7 @@ private:
   uint x4_handle;
   CDSPStream* x8_right;
   CDSPStream* xc_left;
-  const char* x10_fileName;
+  rstl::string x10_fileName;
   ushort x14_sampleRate;
   ushort x16_pad;
   uint x18_headerSize;

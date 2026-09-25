@@ -1088,6 +1088,8 @@ void CStateManager::PreThinkObjects(float dt) {
 void CStateManager::PostUpdatePlayer(float dt) { x84c_player->DoPostCameraStuff(dt, *this); }
 
 void CStateManager::Update(float dt) {
+  if (GetWantsToQuit()) return;
+
   CElementGen::SetGlobalSeed(static_cast< ushort >(x8d8_updateFrameIdx));
   CParticleElectric::SetGlobalSeed(static_cast< ushort >(x8d8_updateFrameIdx));
   CDecal::SetGlobalSeed(static_cast< ushort >(x8d8_updateFrameIdx));
@@ -1114,6 +1116,7 @@ void CStateManager::Update(float dt) {
 #endif
 
   PortDebug::SetStateManager(this);
+  PortDebug::ConsumeWorldSweepRequest(*this);
   // Grants any items the Archipelago server has queued and sends collected
   // checks; a no-op when no Archipelago configuration is loaded.
   PortAp::Poll(*this);
@@ -1159,6 +1162,9 @@ void CStateManager::Update(float dt) {
                                                            : kInvalidAssetId);
       gpMain->SetRestartMode(CMain::kRM_None);
       QuitGame();
+      // SetCurrentWorldId has retired the outgoing world's PAKs. Do not run
+      // its scripts/loads, or overwrite the destination's area with our old id.
+      return;
     }
   }
 

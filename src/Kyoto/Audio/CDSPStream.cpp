@@ -187,7 +187,7 @@ uint CDSPStream::AllocateStream(const SStreamInfo& info, char vol, char pan) {
 
   x0_state = 2;
   MP_STREAM_LOG("alloc name=%s rate=%u adpcm=%u loop=%d loopStart=%u loopEnd=%u oneshot=%d",
-                x10_fileName != nullptr ? x10_fileName : "?", x14_sampleRate, x1c_adpcmBytes,
+                x10_fileName.data(), x14_sampleRate, x1c_adpcmBytes,
                 x20_loopFlag, x24_loopStartByte, x28_loopEndByte, x1_oneshot);
   return ret;
 }
@@ -200,7 +200,7 @@ int CDSPStream::AllocateMono(const SStreamInfo& info, char vol, char pan, int on
   if (static_cast< uint >(handle) != static_cast< uint >(-1)) {
     uint readLen = stream->AllocateStream(info, vol, pan);
     OSRestoreInterrupts(ints);
-    OpenFiles(stream->x10_fileName, *stream);
+    OpenFiles(stream->x10_fileName.data(), *stream);
     DVDReadAsyncPrio(&stream->x50_fileInfo1, stream->xd4_buffer, static_cast< s32 >(readLen),
                      static_cast< s32 >(stream->x18_headerSize), ReadCompleted, 1);
     return handle;
@@ -244,8 +244,8 @@ int CDSPStream::AllocateStereo(const SStreamInfo& leftInfo, const SStreamInfo& r
       readLen[0] = streams[0]->AllocateStream(leftInfo, vol, 0);
       readLen[1] = streams[1]->AllocateStream(rightInfo, vol, 0x7F);
       OSRestoreInterrupts(ints);
-      OpenFiles(streams[0]->x10_fileName, *streams[0]);
-      OpenFiles(streams[1]->x10_fileName, *streams[1]);
+      OpenFiles(streams[0]->x10_fileName.data(), *streams[0]);
+      OpenFiles(streams[1]->x10_fileName.data(), *streams[1]);
       DVDReadAsyncPrio(&streams[0]->x50_fileInfo1, streams[0]->xd4_buffer,
                        static_cast< s32 >(readLen[0]),
                        static_cast< s32 >(streams[0]->x18_headerSize), ReadCompleted, 1);
@@ -381,7 +381,7 @@ void CDSPStream::BufferStream() {
   if (readLen != 0) {
     if (xec_readsPending == 0) {
       MP_STREAM_TRACE_LOG("read issue file=%s off=%u len=%u half=%u cur=%u loop=%d",
-                          this->x10_fileName, x18_headerSize + xcc_fileCur, readLen, xe0_curBuffer,
+                          this->x10_fileName.data(), x18_headerSize + xcc_fileCur, readLen, xe0_curBuffer,
                           static_cast< int >(x20_loopFlag));
       // Publish the outstanding-read count *before* starting the read. The
       // completion runs on Aurora's DVD worker thread, so starting the read
@@ -402,13 +402,14 @@ void CDSPStream::BufferStream() {
       }
     } else {
       MP_STREAM_LOG("read SKIPPED (one pending) file=%s pending=%u cur=%u fileCur=%u",
-                    this->x10_fileName, xec_readsPending, xe0_curBuffer, xcc_fileCur);
+                    this->x10_fileName.data(), xec_readsPending, xe0_curBuffer, xcc_fileCur);
     }
   } else if (xe4_needsPrime != 0) {
-    MP_STREAM_TRACE_LOG("prime consumed file=%s", this->x10_fileName);
+    MP_STREAM_TRACE_LOG("prime consumed file=%s", this->x10_fileName.data());
     xe4_needsPrime = 0;
   } else {
-    MP_STREAM_LOG("end of stream file=%s fileCur=%u remaining=%u loop=%d", this->x10_fileName,
+    MP_STREAM_LOG("end of stream file=%s fileCur=%u remaining=%u loop=%d",
+                  this->x10_fileName.data(),
                   xcc_fileCur, xd0_remaining, static_cast< int >(x20_loopFlag));
     StopStream();
   }
@@ -462,12 +463,13 @@ int CDSPStream::InitializeStream() {
   sndStreamARAMUpdate(xc8_streamId, 0, xdc_streamSamples >> 1, 0, 0);
   if (sndStreamActivate(xc8_streamId)) {
     x0_state = 4;
-    MP_STREAM_LOG("activate ok file=%s id=%u rate=%u", x10_fileName, xc8_streamId, x14_sampleRate);
+    MP_STREAM_LOG("activate ok file=%s id=%u rate=%u", x10_fileName.data(), xc8_streamId,
+                 x14_sampleRate);
     BufferStream();
     return 1;
   }
 
-  MP_STREAM_LOG("activate FAILED file=%s id=%u", x10_fileName, xc8_streamId);
+  MP_STREAM_LOG("activate FAILED file=%s id=%u", x10_fileName.data(), xc8_streamId);
   DeallocateStream();
   CloseFiles();
   return 0;

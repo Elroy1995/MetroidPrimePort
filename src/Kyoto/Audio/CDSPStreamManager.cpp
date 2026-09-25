@@ -255,7 +255,7 @@ void CDSPStreamManager::StopStreaming(int handle) {
 
 SStreamInfo MakeDSPStreamInfo(const CDSPStreamManager& stream) {
   SStreamInfo info;
-  info.x0_fileName = stream.x60_fileName.data();
+  info.x0_fileName = stream.x60_fileName;
   info.x4_sampleRate = stream.x0_header.x8_sampleRate;
   info.xc_adpcmBytes = (stream.x0_header.x4_numNibbles / 2) & 0x7FFFFFE0;
   info.x8_headerSize = 0x60;

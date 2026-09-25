@@ -10,11 +10,14 @@
 #include "port_build_info.h"
 
 #include "MetroidPrime/CHealthInfo.hpp"
+#include "MetroidPrime/CGameArea.hpp"
+#include "MetroidPrime/CMapWorld.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
+#include "Kyoto/CResFactory.hpp"
 
 #include <aurora/gfx.h>
 #include <dolphin/pad.h>
@@ -122,6 +125,17 @@ bool sHasWorldTeleport = false;
 std::string sDiscPath;
 uint32_t sWorldTeleportWorld = 0;
 uint32_t sWorldTeleportArea = 0;
+bool sWorldSweepRequested = false;
+struct WorldSweep {
+  std::vector< uint32_t > worlds;
+  std::vector< uint32_t > areas;
+  size_t world = 0;
+  size_t area = 0;
+  unsigned settledTicks = 0;
+  unsigned completedAreas = 0;
+  bool active = false;
+  bool waiting = false;
+} sWorldSweep;
 
 std::string SettingsFilePath() {
   std::string dir;
@@ -878,6 +892,108 @@ bool ConsumeWorldTeleportRequest(uint32_t& worldId, uint32_t& areaAssetId) {
   worldId = sWorldTeleportWorld;
   areaAssetId = sWorldTeleportArea;
   sHasWorldTeleport = false;
+  return true;
+}
+
+void RequestWorldSweep() {
+  if (sWorldSweepRequested || sWorldSweep.active || sHasWorldTeleport || sPendingTeleport >= 0)
+    return;
+  sWorldSweepRequested = true;
+}
+
+bool ConsumeWorldSweepRequest(CStateManager& mgr) {
+  // This entry point is called only by gameplay, never the frontend or UI.
+  static const bool envChecked = [] {
+    const char* value = std::getenv("MP_RANDO_SWEEP");
+    if (value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0)
+      RequestWorldSweep();
+    return true;
+  }();
+  (void)envChecked;
+  WorldSweep& sweep = sWorldSweep;
+  if ((!sWorldSweepRequested && !sweep.active) || mgr.GetWantsToQuit()) return false;
+  if (sHasWorldTeleport || sPendingTeleport >= 0 || sResetRequested) {
+    // A manual debug request wins; do not resume the tour behind the user's back.
+    if (sweep.active) std::fputs("[sweep] cancelled: another debug teleport/reset\n", stderr);
+    sweep = {};
+    sWorldSweepRequested = false;
+    return false;
+  }
+  CWorld* world = mgr.World();
+  if (mgr.GetGameState() != CStateManager::kGS_Running || world == nullptr ||
+      gpGameState == nullptr || gpMemoryCard == nullptr) return false;
+
+  if (sWorldSweepRequested) {
+    const auto& worlds = gpMemoryCard->GetMemoryWorlds();
+    if (worlds.empty()) return false;
+    sweep = {};
+    // Visit the live world first so its MLVL can supply the first area list;
+    // later worlds are entered at area zero, which also visits their first area.
+    sweep.worlds.push_back(world->IGetWorldAssetId());
+    for (const auto& entry : worlds) {
+      if (entry.first != world->IGetWorldAssetId()) sweep.worlds.push_back(entry.first);
+    }
+    sweep.active = true;
+    sWorldSweepRequested = false;
+    std::fprintf(stderr, "[sweep] begin: %zu worlds (use MP_RANDO_DUMP=1 for pickups)\n",
+                 sweep.worlds.size());
+  }
+  if (world->IGetWorldAssetId() != sweep.worlds[sweep.world]) {
+    std::fputs("[sweep] cancelled: gameplay changed worlds\n", stderr);
+    sweep = {};
+    return false;
+  }
+  if (sweep.areas.empty()) {
+    for (int i = 0; i < world->IGetAreaCount(); ++i)
+      sweep.areas.push_back(world->IGetAreaAlways(TAreaId(i))->IGetAreaAssetId());
+    if (sweep.areas.empty()) {
+      std::fputs("[sweep] stopped: world has no areas\n", stderr);
+      sweep = {};
+      return false;
+    }
+    std::fprintf(stderr, "[sweep] world %zu/%zu: %08X, %zu areas\n", sweep.world + 1,
+                 sweep.worlds.size(), sweep.worlds[sweep.world], sweep.areas.size());
+  }
+
+  // Count consecutive quiet simulation ticks, not rendered frames or a wall
+  // clock timeout. Current-area construction alone does not imply that adjacent
+  // areas, map tiles and factory requests have finished streaming.
+  const TAreaId current = world->GetCurrentAreaId();
+  const bool ready = world->DoesAreaExist(current) && world->GetArea(current)->IsValidated() &&
+      world->GetChainHead(CWorld::kC_Loading) == CWorld::GetAliveAreasEnd() &&
+      world->GetChainHead(CWorld::kC_ToDeallocate) == CWorld::GetAliveAreasEnd() &&
+      !world->GetMapWorld()->IsMapAreasStreaming() && !gpResourceFactory->HasPendingLoads();
+  if (!ready) {
+    sweep.settledTicks = 0;
+    return false;
+  }
+  if (++sweep.settledTicks < 30) return false;
+  sweep.settledTicks = 0;
+  if (sweep.waiting) {
+    if (world->IGetAreaAlways(current)->IGetAreaAssetId() != sweep.areas[sweep.area]) {
+      std::fputs("[sweep] stopped: destination area changed before settling\n", stderr);
+      sweep = {};
+      return false;
+    }
+    ++sweep.completedAreas;
+    std::fprintf(stderr, "[sweep] area %zu/%zu: %08X (total %u)\n", sweep.area + 1,
+                 sweep.areas.size(), sweep.areas[sweep.area], sweep.completedAreas);
+    if (++sweep.area == sweep.areas.size()) {
+      if (++sweep.world == sweep.worlds.size()) {
+        std::fprintf(stderr, "[sweep] complete: %zu worlds, %u areas\n", sweep.worlds.size(),
+                     sweep.completedAreas);
+        sweep = {};
+        return false;
+      }
+      sweep.areas.clear();
+      sweep.area = 0;
+    }
+  }
+  // QuitGame is consumed in this same tick. The next call with !GetWantsToQuit
+  // belongs to the new manager even if the allocator reused its old address.
+  sweep.waiting = true;
+  RequestWorldTeleport(sweep.worlds[sweep.world],
+                       sweep.areas.empty() ? 0u : sweep.areas[sweep.area]);
   return true;
 }
 

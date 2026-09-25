@@ -23,6 +23,11 @@ bool ConsumeTeleportRequest(int& areaId);
 // restart the in-game world teleporters use, so the world is fully reloaded.
 void RequestWorldTeleport(uint32_t worldId, uint32_t areaAssetId);
 bool ConsumeWorldTeleportRequest(uint32_t& worldId, uint32_t& areaAssetId);
+// Opt-in pickup-dump tour (MP_RANDO_SWEEP=1, with MP_RANDO_DUMP=1). Advance
+// once per gameplay simulation tick; returns true when a restart was queued.
+// Duplicate sweep requests and requests conflicting with a teleport are ignored.
+void RequestWorldSweep();
+bool ConsumeWorldSweepRequest(CStateManager& mgr);
 
 // Disc image chosen on a previous launch, from the settings file. SetDiscPath
 // marks the settings dirty so the choice is written back out on exit.

@@ -1,5 +1,34 @@
 # Metroid Prime port — working notes
 
+## World restart crash, full location sweep, audio bug (2026-09-25)
+
+- Restarting the current world used to crash after about ten restarts: the
+  retiring mapper kept updating after its PAK's resource table was retired and
+  locked a new STRG against it, dereferencing a null `CDvdFile`. `CStateManager`
+  now stops the outgoing simulation as soon as a restart is requested and
+  `CAutoMapper::Update` returns while `GetWantsToQuit()`, so no scripts or loads
+  run against the retired world. Fifteen consecutive restarts are clean under
+  ASan (`MP_SMOKE_WORLD_RESTARTS`, `MP_SMOKE_WORLD_TICKS`).
+- `MP_RANDO_SWEEP=1` (+ `MP_RANDO_DUMP=1`) walks all eight worlds and their
+  areas in one run (~10 minutes) and now produces a full dump: 4969 LOC lines,
+  328 capacity-granting item locations across 170 distinct areas, including
+  every artifact, suit and beam. `tools/make_ap_config.py --strict` maps a
+  matching AP table with 100/100 entries and 0 areas for review, and the seed
+  tool derives 33 item models from it. Impact Crater is the exception (3 areas,
+  no items) because the save has not opened it.
+- Two port-side fixes were needed in vendored code along the way:
+  - `extern/aurora/lib/gx/shader.cpp`: a texcoord generator whose source
+    register is still `GX_MAX_TEXGENSRC` ("no source", what the game leaves
+    behind for a disabled texcoord) aborted the process. It now emits a constant
+    texcoord, matching the existing skip in the shader dump.
+  - `SStreamInfo::x0_fileName` and `CDSPStream::x10_fileName` were non-owning
+    pointers into a `CDSPStreamManager` that is reassigned and freed while the
+    stream is live, so `activate ok file=...` printed garbage and a long sweep
+    died with `free(): invalid size`. Both are now owned `rstl::string`s.
+    The sweep still ends in Impact Crater; the remaining fault after that fix
+    is no longer the audio names but an unreproduced free, so the dump is taken
+    by merging runs.
+
 ## Archipelago progressive items (2026-09-25)
 
 - The AP world's progressive beam items work: a config entry can carry

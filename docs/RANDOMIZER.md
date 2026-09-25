@@ -58,18 +58,28 @@ ANCS assets, with the animation driving the visual.
 
 ## Workflow
 
-1. Dump every pickup location of a world:
+1. Dump every pickup location:
 
    ```sh
-   MP_RANDO_DUMP=1 <game> <disc.iso>
+   MP_RANDO_DUMP=1 MP_RANDO_SWEEP=1 <game> <disc.iso>
    # writes <user dir>/randomizer_locations.log:
    #   LOC 39F2DE28:B2701146:0000007E Missiles amount=5 capacity=5 \
    #       model=FFFFFFFF acs=90C6A0EE character=0 animation=0
    ```
 
+   `MP_RANDO_SWEEP=1` makes one run visit every world and area (a world restart
+   per area, waiting for streaming to go idle) so a complete dump needs no
+   playthrough. It takes about ten minutes and logs `[sweep]` progress. A long
+   run can still end on an unrelated fault — a sweep stopped in Impact Crater
+   crashed in the audio stream path (`free(): invalid size`) after fixing an
+   earlier one — so merge repeated runs with `--from-dump` (the tools take
+   several `--dump` arguments) rather than relying on a single one.
+
    Areas also list their enemy drop templates as pickups (health and ammo
    refills with `capacity=0`); those are not item locations and are filtered
-   out below.
+   out below. A world that the save file has not opened (Impact Crater here)
+   only yields the areas the game builds, so its pickups need a dump taken with
+   access to it.
 
 2. Shuffle the dump into a seed:
 

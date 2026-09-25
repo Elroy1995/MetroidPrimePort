@@ -1242,6 +1242,13 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, nbt_slice_local(NbtSlice::B));
     } else if (tcg.src == GX_TG_TANGENT) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, nbt_slice_local(NbtSlice::T));
+    } else if (tcg.src == GX_MAX_TEXGENSRC) {
+      // The game leaves a texcoord generator's source register undefined when
+      // it disables that generator, and only writes the ones it enables. This
+      // value means "no source": the stage contributes nothing, so give it a
+      // constant texcoord instead of aborting on the game's own idle state.
+      // Logging already skips this value (see the dump above).
+      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f(0.0, 0.0, 1.0, 1.0);", i);
     } else
       UNLIKELY FATAL("unhandled tcg src {}", underlying(tcg.src));
     if (tcg.type == GX_TG_MTX2x4 || tcg.type == GX_TG_MTX3x4) {

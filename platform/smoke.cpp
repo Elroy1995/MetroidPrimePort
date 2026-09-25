@@ -153,41 +153,50 @@ void PortSmokeWorldTeleport(CStateManager& mgr) {
   if (sTargetWorld == 0) return;
   const uint32_t targetWorld = sTargetWorld;
 
-  static CStateManager* sRequestMgr = nullptr;
-  static CWorld* sRequestWorld = nullptr;
+  // Repeat the exact overlay restart for lifetime regressions. Do not compare
+  // manager/world addresses: their allocations can be reused after a restart.
+  static const unsigned restartCount = [] {
+    const char* value = std::getenv("MP_SMOKE_WORLD_RESTARTS");
+    return value != nullptr ? static_cast< unsigned >(std::strtoul(value, nullptr, 10)) : 1u;
+  }();
+  static const uint32_t targetArea = [] {
+    const char* value = std::getenv("MP_SMOKE_WORLD_AREA");
+    return value != nullptr ? static_cast< uint32_t >(std::strtoul(value, nullptr, 16)) : 0u;
+  }();
+  static const unsigned warmupTicks = [] {
+    const char* value = std::getenv("MP_SMOKE_WORLD_TICKS");
+    return value != nullptr ? static_cast< unsigned >(std::strtoul(value, nullptr, 10)) : 120u;
+  }();
+  // An explicit tick delay also permits a restart during the opening camera,
+  // including the first GUI tick before the mapper has locked its area STRG.
+  static const bool waitForCamera = std::getenv("MP_SMOKE_WORLD_TICKS") == nullptr;
   static unsigned sWarmupTicks = 0;
-  static bool sPassed = false;
+  static unsigned sRestarts = 0;
+  static bool sWaiting = false;
+  if (sRestarts >= restartCount || mgr.GetWantsToQuit()) return;
 
-  if (sRequestMgr == nullptr) {
+  if (!sWaiting) {
     if (mgr.GetGameState() != CStateManager::kGS_Running ||
-        !mgr.GetCameraManager()->IsInFPCamera() ||
-        mgr.GetCameraManager()->IsInCinematicCamera()) {
+        (waitForCamera && (!mgr.GetCameraManager()->IsInFPCamera() ||
+                           mgr.GetCameraManager()->IsInCinematicCamera()))) {
       return;
     }
-    if (++sWarmupTicks < 120) return;
-    std::fprintf(stderr, "[world-smoke] requesting world %08X\n", targetWorld);
-    PortDebug::RequestWorldTeleport(targetWorld, 0u);
-    sRequestMgr = &mgr;
-    sRequestWorld = mgr.World();
+    if (++sWarmupTicks < warmupTicks) return;
+    std::fprintf(stderr, "[world-smoke] requesting world %08X restart %u/%u\n", targetWorld,
+                 sRestarts + 1, restartCount);
+    PortDebug::RequestWorldTeleport(targetWorld, targetArea);
+    sWaiting = true;
+    sWarmupTicks = 0;
     return;
   }
 
-  if (sPassed) return;
-  static uint32_t sLastWorld = 0;
-  if (gpGameState != nullptr && gpGameState->CurrentWorldAssetId() != sLastWorld) {
-    sLastWorld = gpGameState->CurrentWorldAssetId();
-    std::fprintf(stderr, "[world-smoke] current world %08X (mgr=%p world=%p loaded=%08X)\n",
-                 sLastWorld, static_cast< void* >(&mgr), static_cast< void* >(mgr.World()),
-                 mgr.World() != nullptr ? static_cast< uint32_t >(mgr.World()->IGetWorldAssetId())
-                                        : 0u);
-  }
-  if (mgr.World() == sRequestWorld) return;
   if (gpGameState == nullptr || gpGameState->CurrentWorldAssetId() != targetWorld) return;
   if (mgr.GetGameState() != CStateManager::kGS_Running || mgr.World() == nullptr) return;
   if (mgr.World()->IGetWorldAssetId() != targetWorld) return;
-  sPassed = true;
-  std::fprintf(stderr, "[world-smoke] passed: world %08X area %d\n", targetWorld,
-               mgr.World()->GetCurrentAreaId().Value());
+  sWaiting = false;
+  ++sRestarts;
+  std::fprintf(stderr, "[world-smoke] passed: world %08X area %d restart %u/%u\n", targetWorld,
+               mgr.World()->GetCurrentAreaId().Value(), sRestarts, restartCount);
 }
 
 // MP_SMOKE_STICK=1: hold the right stick and report the aim yaw change, to

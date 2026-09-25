@@ -57,6 +57,9 @@ public:
   }
 
   void AsyncIdle(uint time);
+  bool HasPendingLoads() const {
+    return !x84_loadList.empty() || !xb0_cancelledList.empty() || !x4_resLoader.AreAllPaksLoaded();
+  }
 
   CResLoader& GetResLoader() { return x4_resLoader; }
   CFactoryMgr& GetFactoryMgr() { return x5c_factoryMgr; }

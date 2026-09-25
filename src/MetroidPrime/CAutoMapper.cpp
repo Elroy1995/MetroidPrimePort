@@ -1304,6 +1304,12 @@ CAssetId CAutoMapper::GetAreaHintDescriptionString(CAssetId mreaId) {
 }
 
 void CAutoMapper::Update(float dt, const CStateManager& mgr) {
+  // World teleports switch the available PAKs before this frame's GUI update.
+  // The outgoing mapper still names the old world's STRG: locking a NEW token
+  // here used to find no PAK (and dereference a null CDvdFile), not a stale token.
+  // This mapper is about to be destroyed; let the new world's mapper load it.
+  if (mgr.GetWantsToQuit()) return;
+
   if (IsFullyOutOfMiniMapState()) {
     x1d8_flashTimer = static_cast< float >(fmod(x1d8_flashTimer + dt, 0.75));
     x1dc_playerFlashPulse =
