@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -24,9 +25,18 @@ namespace {
 
 bool sPassed = true;
 
+// A Windows fast-fail kills the process before anything buffered is written, so
+// every phase marker is flushed as it is reached. Without them a crash reports
+// as a bare exit code with no clue which phase it happened in.
+void Phase(const char* message) {
+  std::fprintf(stderr, "[randomizer-tests] %s\n", message);
+  std::fflush(stderr);
+}
+
 void Check(bool condition, const char* message) {
   if (!condition) {
     std::fprintf(stderr, "[randomizer-tests] FAILED: %s\n", message);
+    std::fflush(stderr);
     sPassed = false;
   }
 }
@@ -121,8 +131,9 @@ int RunChild(const char* self, const char* name, const std::filesystem::path& te
 
 } // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
   using namespace PortRandomizer;
+  Phase(argc == 3 ? "child start" : "parent start");
 
   // ctest may launch the test by a bare name, in which case argv[0] is not a
   // path this process can spawn itself by. Resolve it to the running
@@ -255,6 +266,7 @@ int main(int argc, char** argv) {
   Check(ItemName(-1) == std::string("Unknown") && ItemName(41) == std::string("Unknown"),
         "out-of-range item should be Unknown");
 
+  Phase("item table checked");
   const std::filesystem::path testDir = std::filesystem::temp_directory_path() /
                                         ("mp-rando-test-" +
                                          std::to_string(static_cast<long long>(ProcessId())));
@@ -281,6 +293,7 @@ int main(int argc, char** argv) {
     std::ofstream out(badModelSeed);
     out << R"({"seed":"bad-model","locations":{},"models":{"Missiles":{"acs":"0"}}})";
   }
+  Phase("seed files written");
   Check(SetEnv("MP_USER_PATH", testDir.string().c_str()), "set MP_USER_PATH");
   Check(SetEnv("MP_RANDO_SEED", validSeed.string().c_str()), "set valid MP_RANDO_SEED");
   Check(UnsetEnv("MP_RANDO_DUMP"), "unset MP_RANDO_DUMP");
@@ -296,6 +309,7 @@ int main(int argc, char** argv) {
     }
     return code;
   };
+  Phase("running sub-cases");
   Check(runCase("malformed") == 0,
         "malformed seed must disable randomizer without partial application");
   Check(runCase("no-seed") == 0,
@@ -315,6 +329,7 @@ int main(int argc, char** argv) {
   Check(runCase("bad-model") == 0,
         "a model entry without a model or acs asset must disable the seed");
 
+  Phase("sub-cases done; checking the loaded seed");
   EnsureLoaded();
   Check(Enabled(), "valid seed with placements should enable randomizer");
   Check(std::string(SeedName()) == "test-seed", "seed name should load");
@@ -365,6 +380,7 @@ int main(int argc, char** argv) {
   Check(Contains(checkLog, "CHECK 00000001:00000002:00000003 PowerBombs\n"),
         "collected check should be logged");
 
+  Phase("cleaning up");
   std::filesystem::remove_all(testDir);
   UnsetEnv("MP_USER_PATH");
   UnsetEnv("MP_RANDO_SEED");
@@ -373,4 +389,10 @@ int main(int argc, char** argv) {
     return 1;
   std::puts("[randomizer-tests] passed");
   return 0;
+} catch (const std::exception& error) {
+  std::fprintf(stderr, "[randomizer-tests] threw: %s\n", error.what());
+  return 2;
+} catch (...) {
+  std::fputs("[randomizer-tests] threw an unknown exception\n", stderr);
+  return 2;
 }
