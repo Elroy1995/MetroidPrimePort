@@ -129,13 +129,33 @@ python3 tools/make_ap_config.py \
     --out archipelago.json --seed-out randomizer_seed.json
 ```
 
+### When the world's file is not to hand
+
+The world lives in a separate repository, and its contents have been
+unreachable while this was built, which left `--strict` with nothing to run
+against. `tools/ap-world-fixture/Locations.py` is a **spec-shaped stand-in**
+generated from a real port dump: the entity ids, areas, vanilla items and the
+count (100) are real, while the AP ids are synthetic and assigned from
+50310000 so none can be mistaken for a real one. Regenerate it with:
+
+```sh
+python3 tools/make_ap_fixture.py --dump randomizer_locations.log \
+    --out tools/ap-world-fixture
+```
+
+`ctest -R port_ap_fixture` checks that the generator reproduces the committed
+file, that `--strict` maps every location in it, and that the config it writes
+carries all of them plus the four progressive beams. Replace the table with the
+real file and re-run `--strict` when the world is reachable; the join does not
+care which table it is given.
+
 How it joins the two sides, and what to watch for:
 
 - The AP table gives each location a name and an id, and `PICKUP_LOCATIONS` gives
   the matching in-game entity id, whose high 16 bits are the area index. The
   dump gives the port's `world:area:entity` keys, which carry the same area
   index. Areas are joined by that index, and the pickups inside an area are
-  paired by rank.
+  paired by id delta, never by rank.
 - The tool prints a per-area report with the pairing and the id delta between
   the AP entity and the port's editor id. A uniform delta means the pairing is
   clean; a mixed one is flagged **review** (`--strict` makes that fatal). Real

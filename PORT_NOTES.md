@@ -1,5 +1,35 @@
 # Metroid Prime port — working notes
 
+## A spec-shaped AP world table, so the location join is exercisable (2026-09-26)
+
+- The join tool had nothing to run against: the upstream world's repository
+  answers for metadata but 404s every content path, so `--strict` could only be
+  driven by the tool's own built-in self-test fixture.
+  `tools/make_ap_fixture.py` writes the two files `make_ap_config.py` reads - a
+  per-world location table and a `PICKUP_LOCATIONS` list of level and entity ids
+  - from a real port dump, and `tools/ap-world-fixture/Locations.py` is that
+  generated file.
+- What is real in it: every entity id, the area each lives in, the vanilla item,
+  and the count of 100, which is retail Prime's number, all taken from the
+  sweep. What is synthetic and documented as such: the AP location ids,
+  assigned from 50310000 so none can be mistaken for a real one, and the names,
+  which are derived from the dump. It stands in for the upstream table, it is
+  not a copy of it.
+- Verified end to end rather than merely generated: `--strict` over this table
+  and the full dump reports **100 locations mapped, 0 unmapped, 82 areas clean,
+  0 for review, 0 missing from the dump**; the config it writes carries all 100
+  locations and 51 items with the four progressive beams; and the port connects
+  with that generated config against `tools/ap_fake_server.py`, receives the
+  three items it offers and records the progressive step (`next_item_index` 3,
+  `progressive {"5031043":1}`).
+- `tests/port_ap_fixture.py` is registered as a ctest target so this cannot rot:
+  it checks the generator reproduces every location from the same dump, that
+  `--strict` maps all of them, and that the written config carries every
+  location, passes the server through and still emits four progressive beams.
+  It builds its dump from the fixture, since a real sweep log is far too large
+  to commit. 14/14 port tests pass on Linux and Windows.
+
+
 ## Android APK builds again, and the Archipelago client was missing from it (2026-09-26)
 
 - `tools/android_apk.sh :app:assembleRelease` works from this tree with the
