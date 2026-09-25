@@ -163,6 +163,12 @@ int main(int argc, char** argv) try {
   if (argc == 3) {
     const std::string which = argv[1];
     const std::filesystem::path childDir = argv[2];
+    // Set the user directory here rather than relying on inheriting the parent's
+    // MP_USER_PATH: this is what decides where the dump and check logs land, and
+    // a child that wrote them somewhere else would leave the parent reading an
+    // empty file and looking for a defect that is not there.
+    SetEnv("MP_USER_PATH", childDir.string().c_str());
+    Phase("child user directory set");
     if (which == "malformed") {
       if (!SetEnv("MP_RANDO_SEED", (childDir / "malformed.json").string().c_str()))
         return 2;
@@ -401,7 +407,14 @@ int main(int argc, char** argv) try {
         "collected check should be logged");
 
   Phase("cleaning up");
-  std::filesystem::remove_all(testDir);
+  // Best effort: a just-exited child can still hold a file on Windows, and a
+  // temporary directory that survives one run is not a test failure.
+  {
+    std::error_code removeError;
+    std::filesystem::remove_all(testDir, removeError);
+    if (removeError)
+      Phase("temporary directory left behind (ignored)");
+  }
   UnsetEnv("MP_USER_PATH");
   UnsetEnv("MP_RANDO_SEED");
   UnsetEnv("MP_RANDO_DUMP");
