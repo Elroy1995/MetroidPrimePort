@@ -4,14 +4,21 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace {
 
@@ -28,10 +35,143 @@ bool Contains(const std::string& text, const std::string& value) {
   return text.find(value) != std::string::npos;
 }
 
+// These tests set environment variables, which Windows spells differently and
+// which needs the _s form to be safe.
+bool SetEnv(const char* name, const char* value) {
+#ifdef _WIN32
+  return _putenv_s(name, value) == 0;
+#else
+  return setenv(name, value, 1) == 0;
+#endif
+}
+
+bool UnsetEnv(const char* name) {
+#ifdef _WIN32
+  return _putenv_s(name, "") == 0;
+#else
+  return unsetenv(name) == 0;
+#endif
+}
+
+unsigned long ProcessId() {
+#ifdef _WIN32
+  return static_cast<unsigned long>(GetCurrentProcessId());
+#else
+  return static_cast<unsigned long>(getpid());
+#endif
+}
+
+// Several cases here must run in a process that has not already loaded a seed:
+// the loader keeps its state in a function-local static, so a second load in the
+// same process would reuse the first one's result and prove nothing. Rather than
+// reach for a reload API that production has no use for, the test re-runs itself
+// with the case name and the shared directory as arguments. fork/execv on POSIX,
+// CreateProcessW on Windows.
+int RunChild(const char* self, const char* name, const std::filesystem::path& testDir) {
+  const std::string dir = testDir.string();
+#ifdef _WIN32
+  std::wstring command = L"\"";
+  command += std::wstring(self, self + std::strlen(self));
+  command += L"\" ";
+  command += std::wstring(name, name + std::strlen(name));
+  command += L" \"";
+  command += std::string(dir.begin(), dir.end());
+  command += L"\"";
+  std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+  mutableCommand.push_back(L'\0');
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  if (CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr,
+                     &startup, &process) == 0)
+    return -1;
+  WaitForSingleObject(process.hProcess, INFINITE);
+  DWORD code = 1;
+  GetExitCodeProcess(process.hProcess, &code);
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+  return static_cast<int>(code);
+#else
+  const pid_t child = fork();
+  if (child < 0)
+    return -1;
+  if (child == 0) {
+    std::vector<char> selfPath(self, self + std::strlen(self));
+    selfPath.push_back('\0');
+    std::vector<char> caseName(name, name + std::strlen(name));
+    caseName.push_back('\0');
+    std::vector<char> caseDir(dir.begin(), dir.end());
+    caseDir.push_back('\0');
+    char* args[] = {selfPath.data(), caseName.data(), caseDir.data(), nullptr};
+    execv(selfPath.data(), args);
+    _exit(127);
+  }
+  int status = 0;
+  if (waitpid(child, &status, 0) != child)
+    return -1;
+  return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+#endif
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
   using namespace PortRandomizer;
+
+  // Child mode: a single case, named on the command line, sharing the parent's
+  // temporary directory so the seed files it reads are the ones just written.
+  if (argc == 3) {
+    const std::string which = argv[1];
+    const std::filesystem::path childDir = argv[2];
+    if (which == "malformed") {
+      if (!SetEnv("MP_RANDO_SEED", (childDir / "malformed.json").string().c_str()))
+        return 2;
+      EnsureLoaded();
+      int item = CPlayerState::kIT_Missiles;
+      int capacity = 10;
+      int amount = 5;
+      const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount);
+      return !Enabled() && !applied && item == CPlayerState::kIT_Missiles && CheckCount() == 0 ? 0 : 1;
+    }
+    if (which == "no-seed") {
+      if (!UnsetEnv("MP_RANDO_SEED"))
+        return 2;
+      EnsureLoaded();
+      int item = CPlayerState::kIT_Missiles;
+      int capacity = 10;
+      int amount = 5;
+      const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount);
+      RecordCheck(1, 2, 3, item);
+      const bool untouched = !Enabled() && !DumpEnabled() && !applied &&
+                             item == CPlayerState::kIT_Missiles && capacity == 10 && amount == 5 &&
+                             CheckCount() == 0 &&
+                             !std::filesystem::exists(childDir / "randomizer_checks.log");
+      return untouched ? 0 : 1;
+    }
+    if (which == "dump") {
+      if (!UnsetEnv("MP_RANDO_SEED") || !SetEnv("MP_RANDO_DUMP", "1"))
+        return 2;
+      EnsureLoaded();
+      int item = CPlayerState::kIT_Missiles;
+      int capacity = 5;
+      int amount = 5;
+      PickupModel model;
+      model.model = 0x0000ABCD;
+      const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount, model);
+      return !applied && DumpEnabled() ? 0 : 1;
+    }
+    if (which == "bad-model") {
+      if (!SetEnv("MP_RANDO_SEED", (childDir / "bad-model.json").string().c_str()))
+        return 2;
+      EnsureLoaded();
+      int item = CPlayerState::kIT_Missiles;
+      int capacity = 10;
+      int amount = 5;
+      const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount);
+      return !Enabled() && !applied && item == CPlayerState::kIT_Missiles ? 0 : 1;
+    }
+    return 3;
+  }
 
   struct ExpectedItem {
     const char* name;
@@ -97,7 +237,7 @@ int main() {
 
   const std::filesystem::path testDir = std::filesystem::temp_directory_path() /
                                         ("mp-rando-test-" +
-                                         std::to_string(static_cast<long long>(getpid())));
+                                         std::to_string(static_cast<long long>(ProcessId())));
   std::filesystem::remove_all(testDir);
   std::filesystem::create_directories(testDir);
   const std::filesystem::path validSeed = testDir / "valid.json";
@@ -121,77 +261,19 @@ int main() {
     std::ofstream out(badModelSeed);
     out << R"({"seed":"bad-model","locations":{},"models":{"Missiles":{"acs":"0"}}})";
   }
-  Check(setenv("MP_USER_PATH", testDir.c_str(), 1) == 0, "set MP_USER_PATH");
-  Check(setenv("MP_RANDO_SEED", validSeed.c_str(), 1) == 0, "set valid MP_RANDO_SEED");
-  Check(unsetenv("MP_RANDO_DUMP") == 0, "unset MP_RANDO_DUMP");
+  Check(SetEnv("MP_USER_PATH", testDir.string().c_str()), "set MP_USER_PATH");
+  Check(SetEnv("MP_RANDO_SEED", validSeed.string().c_str()), "set valid MP_RANDO_SEED");
+  Check(UnsetEnv("MP_RANDO_DUMP"), "unset MP_RANDO_DUMP");
 
-  // A fork gives the malformed-seed case its own function-local once state; the
-  // parent then tests the successful load without exposing a production reload API.
-  const pid_t child = fork();
-  if (child == 0) {
-    if (setenv("MP_RANDO_SEED", malformedSeed.c_str(), 1) != 0)
-      _exit(2);
-    EnsureLoaded();
-    int item = CPlayerState::kIT_Missiles;
-    int capacity = 10;
-    int amount = 5;
-    const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount);
-    _exit(!Enabled() && !applied && item == CPlayerState::kIT_Missiles && CheckCount() == 0 ? 0 : 1);
-  }
-  if (child < 0) {
-    Check(false, "fork malformed-seed test");
-  } else {
-    int childStatus = 0;
-    Check(waitpid(child, &childStatus, 0) == child, "wait for malformed-seed test");
-    Check(WIFEXITED(childStatus) && WEXITSTATUS(childStatus) == 0,
-          "malformed seed must disable randomizer without partial application");
-  }
-
-  const pid_t noSeedChild = fork();
-  if (noSeedChild == 0) {
-    if (unsetenv("MP_RANDO_SEED") != 0)
-      _exit(2);
-    EnsureLoaded();
-    int item = CPlayerState::kIT_Missiles;
-    int capacity = 10;
-    int amount = 5;
-    const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount);
-    RecordCheck(1, 2, 3, item);
-    const bool untouched = !Enabled() && !DumpEnabled() && !applied &&
-                           item == CPlayerState::kIT_Missiles && capacity == 10 && amount == 5 &&
-                           CheckCount() == 0 &&
-                           !std::filesystem::exists(testDir / "randomizer_checks.log");
-    _exit(untouched ? 0 : 1);
-  }
-  if (noSeedChild < 0) {
-    Check(false, "fork no-seed test");
-  } else {
-    int childStatus = 0;
-    Check(waitpid(noSeedChild, &childStatus, 0) == noSeedChild, "wait for no-seed test");
-    Check(WIFEXITED(childStatus) && WEXITSTATUS(childStatus) == 0,
-          "without seed/dump, hooks must leave pickups untouched and not log checks");
-  }
-
-  const pid_t dumpChild = fork();
-  if (dumpChild == 0) {
-    if (unsetenv("MP_RANDO_SEED") != 0 || setenv("MP_RANDO_DUMP", "1", 1) != 0)
-      _exit(2);
-    EnsureLoaded();
-    int item = CPlayerState::kIT_Missiles;
-    int capacity = 5;
-    int amount = 5;
-    PickupModel model;
-    model.model = 0x0000ABCD;
-    const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount, model);
-    _exit(!applied && DumpEnabled() ? 0 : 1);
-  }
-  if (dumpChild < 0) {
-    Check(false, "fork dump test");
-  } else {
-    int childStatus = 0;
-    Check(waitpid(dumpChild, &childStatus, 0) == dumpChild, "wait for dump test");
-    Check(WIFEXITED(childStatus) && WEXITSTATUS(childStatus) == 0,
-          "dump mode must log the location and not apply a placement");
+  // Each of these needs a process that has not already loaded a seed, so the
+  // test re-runs itself rather than exposing a production reload API.
+  Check(RunChild(argv[0], "malformed", testDir) == 0,
+        "malformed seed must disable randomizer without partial application");
+  Check(RunChild(argv[0], "no-seed", testDir) == 0,
+        "without seed/dump, hooks must leave pickups untouched and not log checks");
+  const int dumpResult = RunChild(argv[0], "dump", testDir);
+  Check(dumpResult == 0, "dump mode must log the location and not apply a placement");
+  if (dumpResult == 0) {
     std::ifstream dumpLog(testDir / "randomizer_locations.log");
     const std::string dumpText((std::istreambuf_iterator<char>(dumpLog)),
                                std::istreambuf_iterator<char>());
@@ -201,26 +283,8 @@ int main() {
           "dump line should carry the pickup model");
     std::filesystem::remove(testDir / "randomizer_locations.log");
   }
-
-  const pid_t badModelChild = fork();
-  if (badModelChild == 0) {
-    if (setenv("MP_RANDO_SEED", badModelSeed.c_str(), 1) != 0)
-      _exit(2);
-    EnsureLoaded();
-    int item = CPlayerState::kIT_Missiles;
-    int capacity = 10;
-    int amount = 5;
-    const bool applied = ApplyPickup(1, 2, 3, item, capacity, amount);
-    _exit(!Enabled() && !applied && item == CPlayerState::kIT_Missiles ? 0 : 1);
-  }
-  if (badModelChild < 0) {
-    Check(false, "fork model test");
-  } else {
-    int childStatus = 0;
-    Check(waitpid(badModelChild, &childStatus, 0) == badModelChild, "wait for model test");
-    Check(WIFEXITED(childStatus) && WEXITSTATUS(childStatus) == 0,
-          "a model entry without a model or acs asset must disable the seed");
-  }
+  Check(RunChild(argv[0], "bad-model", testDir) == 0,
+        "a model entry without a model or acs asset must disable the seed");
 
   EnsureLoaded();
   Check(Enabled(), "valid seed with placements should enable randomizer");
@@ -273,9 +337,9 @@ int main() {
         "collected check should be logged");
 
   std::filesystem::remove_all(testDir);
-  unsetenv("MP_USER_PATH");
-  unsetenv("MP_RANDO_SEED");
-  unsetenv("MP_RANDO_DUMP");
+  UnsetEnv("MP_USER_PATH");
+  UnsetEnv("MP_RANDO_SEED");
+  UnsetEnv("MP_RANDO_DUMP");
   if (!sPassed)
     return 1;
   std::puts("[randomizer-tests] passed");
