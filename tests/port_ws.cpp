@@ -8,20 +8,28 @@
 #include <utility>
 #include <vector>
 
-#if defined(MP_HAVE_OPENSSL) && !defined(_WIN32)
-#include <arpa/inet.h>
+#if defined(MP_HAVE_OPENSSL)
 #include <chrono>
-#include <csignal>
 #include <cstdlib>
-#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <thread>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <csignal>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
-#include <thread>
 #include <unistd.h>
+#endif
 #endif
 
 namespace {
@@ -83,16 +91,157 @@ void CheckRoundTrip(size_t size) {
         "masked encode/decode round trip at each length encoding boundary");
 }
 
-#if defined(MP_HAVE_OPENSSL) && !defined(_WIN32)
-bool Run(const std::string& command) { return std::system(command.c_str()) == 0; }
+#if defined(MP_HAVE_OPENSSL)
+namespace platform {
 
-bool Contains(const std::string& text, const char* wanted) {
-  return text.find(wanted) != std::string::npos;
+// Quotes a path for the shell that std::system goes through: single quotes on
+// POSIX, double quotes on cmd.exe, which has no single-quote form.
+std::string QuotePath(const std::string& path) {
+#ifdef _WIN32
+  return "\"" + path + "\"";
+#else
+  return "'" + path + "'";
+#endif
 }
 
-// Asks the kernel for a free loopback port. The fake server binds it a moment
-// later; nothing else on a test machine races for it in practice.
+bool Run(const std::string& command) { return std::system(command.c_str()) == 0; }
+
+bool Have(const std::string& program) {
+#ifdef _WIN32
+  return Run("where " + program + " >nul 2>&1");
+#else
+  return Run("command -v " + program + " >/dev/null 2>&1");
+#endif
+}
+
+// A fresh directory under the system temp root, named after the process so
+// parallel runs cannot collide.
+std::string MakeTempDir() {
+  std::error_code ignored;
+  const unsigned long unique = [] {
+#ifdef _WIN32
+    return static_cast<unsigned long>(GetCurrentProcessId());
+#else
+    return static_cast<unsigned long>(getpid());
+#endif
+  }();
+  const std::filesystem::path base =
+      std::filesystem::temp_directory_path() / ("mp-ws-tls-" + std::to_string(unique));
+  std::filesystem::remove_all(base, ignored);
+  std::filesystem::create_directories(base);
+  return base.string();
+}
+
+const char* Quiet() {
+#ifdef _WIN32
+  return " >nul 2>&1";
+#else
+  return " >/dev/null 2>&1";
+#endif
+}
+
+const char* ChangeTo() {
+#ifdef _WIN32
+  return "cd /d ";
+#else
+  return "cd ";
+#endif
+}
+
+// A running fake server, however the platform starts one.
+class Server {
+public:
+  Server(const std::vector<std::string>& arguments, const std::string& logPath) : mLogPath(logPath) {
+#ifdef _WIN32
+    std::string command = QuotePath(arguments.front());
+    for (size_t i = 1; i < arguments.size(); ++i)
+      command += " " + QuotePath(arguments[i]);
+    command += " > " + QuotePath(mLogPath) + " 2>&1";
+    std::vector<char> mutableCommand(command.begin(), command.end());
+    mutableCommand.push_back('\0');
+    STARTUPINFOA startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    mStarted = CreateProcessA(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, 0, nullptr,
+                              nullptr, &startup, &process) != 0;
+    if (mStarted) {
+      mProcess = process.hProcess;
+      CloseHandle(process.hThread);
+    }
+#else
+    const pid_t child = fork();
+    if (child == 0) {
+      const int log = ::open(mLogPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+      if (log >= 0) {
+        dup2(log, STDOUT_FILENO);
+        dup2(log, STDERR_FILENO);
+      }
+      std::vector<std::string> storage = arguments;
+      std::vector<char*> argv;
+      for (std::string& argument : storage)
+        argv.push_back(argument.data());
+      argv.push_back(nullptr);
+      execvp(argv[0], argv.data());
+      _exit(127);
+    }
+    mPid = child;
+    mStarted = child > 0;
+#endif
+  }
+
+  ~Server() { Stop(); }
+
+  bool started() const { return mStarted; }
+  const std::string& logPath() const { return mLogPath; }
+
+  void Stop() {
+    if (!mStarted)
+      return;
+    mStarted = false;
+#ifdef _WIN32
+    TerminateProcess(mProcess, 0);
+    WaitForSingleObject(mProcess, 2000);
+    CloseHandle(mProcess);
+#else
+    kill(mPid, SIGTERM);
+    int status = 0;
+    waitpid(mPid, &status, 0);
+#endif
+  }
+
+private:
+  bool mStarted = false;
+  std::string mLogPath;
+#ifdef _WIN32
+  HANDLE mProcess = nullptr;
+#else
+  pid_t mPid = -1;
+#endif
+};
+
 uint16_t FreeLoopbackPort() {
+#ifdef _WIN32
+  // Winsock is started here and deliberately never cleaned up, matching
+  // PortWs::EnsureWinsock: the client connects after this and initialises it
+  // through its own once_flag, and a WSACleanup in between would drop the
+  // reference count to zero and leave the later socket calls unusable.
+  WSADATA data{};
+  if (WSAStartup(MAKEWORD(2, 2), &data) != 0)
+    return 0;
+  const SOCKET probe = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (probe == INVALID_SOCKET)
+    return 0;
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  int length = sizeof(address);
+  uint16_t port = 0;
+  if (::bind(probe, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0 &&
+      ::getsockname(probe, reinterpret_cast<sockaddr*>(&address), &length) == 0)
+    port = ntohs(address.sin_port);
+  ::closesocket(probe);
+  return port;
+#else
   const int probe = ::socket(AF_INET, SOCK_STREAM, 0);
   if (probe < 0)
     return 0;
@@ -106,37 +255,44 @@ uint16_t FreeLoopbackPort() {
     port = ntohs(address.sin_port);
   ::close(probe);
   return port;
+#endif
+}
+
+} // namespace platform
+
+bool Contains(const std::string& text, const char* wanted) {
+  return text.find(wanted) != std::string::npos;
 }
 
 // wss:// against tools/ap_fake_server.py --tls with a throwaway CA: a verified
 // round trip, then the rejections that make verification mean something.
 void CheckTlsEndToEnd() {
-  if (!Run("command -v openssl >/dev/null 2>&1") || !Run("command -v python3 >/dev/null 2>&1")) {
+  using namespace platform;
+  if (!Have("openssl") || !Have("python3")) {
     std::puts("[ws-tests] tls skipped (no openssl/python3)");
     return;
   }
   std::error_code ignored;
-  char dirTemplate[] = "/tmp/mp-ws-tls-XXXXXX";
-  if (mkdtemp(dirTemplate) == nullptr) {
+  const std::string dir = MakeTempDir();
+  if (dir.empty()) {
     Check(false, "TLS test temp directory");
     return;
   }
-  const std::string dir = dirTemplate;
   {
     std::ofstream extensions(dir + "/server.ext");
     extensions << "subjectAltName=IP:127.0.0.1\nbasicConstraints=CA:FALSE\n";
   }
   // EC keys keep generation fast. `wrong-ca` never signs anything the server
   // presents.
-  const std::string quiet = " >/dev/null 2>&1";
+  const std::string quiet = Quiet();
   const std::string newKey = "openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes ";
+  const std::string prefix = ChangeTo() + QuotePath(dir) + " && ";
   const bool generated =
-      Run("cd '" + dir + "' && " + newKey + "-x509 -days 1 -subj /CN=mp-test-ca -keyout ca.key -out ca.pem" +
-          quiet) &&
-      Run("cd '" + dir + "' && " + newKey +
+      Run(prefix + newKey + "-x509 -days 1 -subj /CN=mp-test-ca -keyout ca.key -out ca.pem" + quiet) &&
+      Run(prefix + newKey +
           "-x509 -days 1 -subj /CN=mp-wrong-ca -keyout wrong-ca.key -out wrong-ca.pem" + quiet) &&
-      Run("cd '" + dir + "' && " + newKey + "-subj /CN=127.0.0.1 -keyout server.key -out server.csr" + quiet) &&
-      Run("cd '" + dir + "' && openssl x509 -req -days 1 -in server.csr -CA ca.pem -CAkey ca.key " +
+      Run(prefix + newKey + "-subj /CN=127.0.0.1 -keyout server.key -out server.csr" + quiet) &&
+      Run(prefix + "openssl x509 -req -days 1 -in server.csr -CA ca.pem -CAkey ca.key " +
           "-CAcreateserial -extfile server.ext -out server.pem" + quiet);
   Check(generated, "openssl CLI generates the test CA and server certificate");
   const uint16_t port = FreeLoopbackPort();
@@ -149,21 +305,12 @@ void CheckTlsEndToEnd() {
   const std::string script = std::string(MP_SOURCE_DIR) + "/tools/ap_fake_server.py";
   const std::string cert = dir + "/server.pem";
   const std::string key = dir + "/server.key";
-  const std::string portText = std::to_string(port);
   const std::string logPath = dir + "/server.log";
-  const pid_t child = fork();
-  if (child == 0) {
-    const int log = ::open(logPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (log >= 0) {
-      dup2(log, STDOUT_FILENO);
-      dup2(log, STDERR_FILENO);
-    }
-    execlp("python3", "python3", script.c_str(), "--tls", "--cert", cert.c_str(), "--key", key.c_str(),
-           "--port", portText.c_str(), static_cast<char*>(nullptr));
-    _exit(127);
-  }
-  Check(child > 0, "fork the TLS fake server");
-  if (child <= 0) {
+  Server server({"python3", script, "--tls", "--cert", cert, "--key", key,
+                 "--port", std::to_string(port)},
+                logPath);
+  Check(server.started(), "start the TLS fake server");
+  if (!server.started()) {
     std::filesystem::remove_all(dir, ignored);
     return;
   }
@@ -240,9 +387,7 @@ void CheckTlsEndToEnd() {
         "the TLS server still serves a verified client after rejections");
   again.Close();
 
-  kill(child, SIGTERM);
-  int status = 0;
-  waitpid(child, &status, 0);
+  server.Stop();
   if (!sPassed) {
     std::ifstream log(logPath);
     std::fprintf(stderr, "[ws-tests] fake server log:\n%s\n",
@@ -415,7 +560,7 @@ int main() {
   oversizedDecoder.Feed(oversized.data(), oversized.size(), oversizedFrames);
   Check(oversizedDecoder.Failed(), "oversized message latches decoder failure");
 
-#if defined(MP_HAVE_OPENSSL) && !defined(_WIN32)
+#if defined(MP_HAVE_OPENSSL)
   CheckTlsEndToEnd();
 #endif
 
