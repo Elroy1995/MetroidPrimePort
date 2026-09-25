@@ -318,8 +318,13 @@ void CheckTlsEndToEnd() {
   const std::string cert = dir + "/server.pem";
   const std::string key = dir + "/server.key";
   const std::string logPath = dir + "/server.log";
+  // Bound to all IPv4 interfaces, not just 127.0.0.1, so the mismatch case can
+  // connect to another loopback address by number. Resolving a name for that
+  // case is what made it flaky: on Windows `localhost` can resolve to ::1,
+  // where this IPv4 server is not listening, and the connect times out instead
+  // of reaching the certificate check.
   Server server({"python3", script, "--tls", "--cert", cert, "--key", key,
-                 "--port", std::to_string(port)},
+                 "--host", "0.0.0.0", "--port", std::to_string(port)},
                 logPath);
   Check(server.started(), "start the TLS fake server");
   if (!server.started()) {
@@ -378,7 +383,11 @@ void CheckTlsEndToEnd() {
   };
   const Rejection rejections[] = {
       {"wrong CA", "127.0.0.1", dir + "/wrong-ca.pem", "certificate verification failed"},
-      {"certificate for another host", "localhost", dir + "/ca.pem", "certificate verification failed"},
+      // 127.0.0.2 is loopback everywhere but is not in the certificate, which
+      // covers IP:127.0.0.1 only. A number rather than a name keeps the check
+      // from depending on how the machine resolves localhost.
+      {"certificate for another address", "127.0.0.2", dir + "/ca.pem",
+       "certificate verification failed"},
       {"system trust store", "127.0.0.1", "", "certificate verification failed"},
       {"missing CA file", "127.0.0.1", dir + "/missing.pem", "could not load TLS CA file"},
   };
