@@ -11,6 +11,19 @@ Archipelago spoiler into the port's native randomizer seed format. Repeat
 ``--dump`` to merge multiple port dumps; ``--world-map`` accepts additional or
 overridden world-name to MLVL-asset-ID mappings.
 
+Locations are paired inside each area by the *id delta* between the AP entity id
+and the port's editor id, which is a per-area constant (measured on real data:
+Chozo Ruins +1, the Tallon Overworld landing site +7). An AP location whose
+counterpart is missing at that delta is reported as unmapped rather than paired
+with the nearest key, because a wrong pairing reports another player's check.
+Dump every area with every layer it can be in: a pickup that the game has not
+built yet is not in the dump.
+
+``--strict`` writes nothing unless every AP location has a key, which is the
+check to run before playing a seed. ``--extra FILE.json`` supplies the ones the
+join could not place, as ``{"<AP location name>": "<WORLD:AREA:ENTITY key>"}``,
+and the report names the candidates.
+
 The AP world's progressive beam items (IDs 43-46) and charge-beam tracker
 items (IDs 47-50) are deliberately omitted: the port has no progressive counter
 for them. Turn progressive beam upgrades off in the Archipelago options for now.
@@ -269,6 +282,55 @@ def read_ap_locations(path):
     return _read_location_tables(tree)
 
 
+def read_extra(path):
+    """Read manual gap fillers: {"<AP location name>": "<port key>"}.
+
+    The join reports any AP location it could not place; this is how a user
+    supplies the key for one (for example when the dump missed a pickup that is
+    only built in an inactive layer)."""
+    if path is None:
+        return {}
+    with open(path, "r", encoding="utf-8") as source:
+        data = json.load(source)
+    if not isinstance(data, dict):
+        raise MakeAPConfigError("--extra must be a JSON object of AP location name -> port key")
+    extras = {}
+    for name, key in data.items():
+        if not isinstance(name, str) or not isinstance(key, str):
+            raise MakeAPConfigError("--extra entries must map a string name to a string key")
+        try:
+            world_hex, mrea_hex, editor_hex = key.split(":")
+            int(world_hex, 16), int(mrea_hex, 16), int(editor_hex, 16)
+        except ValueError as error:
+            raise MakeAPConfigError(
+                "--extra %r is not a WORLD:AREA:ENTITY key: %r" % (name, key)
+            ) from error
+        extras[name] = key.upper()
+    return extras
+
+
+def apply_extra(join, extras, ap_locations):
+    """Fill gaps the join reported. Returns the number of entries applied."""
+    known = {location["name"] for location in ap_locations}
+    applied = 0
+    for name, key in sorted(extras.items()):
+        if name not in known:
+            raise MakeAPConfigError("--extra names an unknown AP location: %r" % name)
+        ap_id = join["unmapped"].get(name)
+        if ap_id is None:
+            if join["locations"].get(name) == key:
+                continue
+            raise MakeAPConfigError(
+                "--extra %r was already mapped automatically; remove it or correct the dump" % name
+            )
+        join["locations"][name] = key
+        join["ap_ids_by_port_key"][key] = ap_id
+        del join["unmapped"][name]
+        join["report"].append("manual: %r -> %s (--extra)" % (name, key))
+        applied += 1
+    return applied
+
+
 def read_world_map(path):
     world_map = dict(WORLD_ASSET_IDS)
     if not path:
@@ -365,6 +427,7 @@ def join_locations(ap_locations, dump_locations, world_map):
 
     joined = {}
     ap_ids_by_port_key = {}
+    unmapped = {}
     report = []
     clean_areas = 0
     review_areas = 0
@@ -408,6 +471,7 @@ def join_locations(ap_locations, dump_locations, world_map):
                 report.append("  AP %r (id %d, entity %08X) -> no port key" % (
                     entry["name"], entry["ap_id"], entry["entity_id"] & 0xFFFFFFFF
                 ))
+                unmapped[entry["name"]] = entry["ap_id"]
             continue
         if len(ap_entries) != len(port_entries):
             mismatch_areas += 1
@@ -420,14 +484,53 @@ def join_locations(ap_locations, dump_locations, world_map):
                 report.append("  AP %r (id %d, entity %08X) -> unpaired" % (
                     entry["name"], entry["ap_id"], entry["entity_id"] & 0xFFFFFFFF
                 ))
+                unmapped[entry["name"]] = entry["ap_id"]
             for entry in port_entries:
                 report.append("  dump %s -> unpaired" % entry["key"])
             continue
 
-        deltas = []
-        for ap_entry, port_entry in zip(ap_entries, port_entries):
+        # Pair by the dominant id delta rather than by rank. The AP entity id
+        # and the port's editor id address the same object in two id spaces that
+        # differ by a per-area constant (measured on real data: Chozo Ruins +1,
+        # Tallon Overworld Landing Site +7). An entry with no counterpart at
+        # that delta means the dump is missing it; guessing instead would report
+        # another player's check, so emit nothing for it and say so.
+        ranked = sorted(
+            (
+                (ap_entry["entity_id"] - port_entry["editor_id"], ap_entry, port_entry)
+                for ap_entry, port_entry in zip(ap_entries, port_entries)
+            ),
+            key=lambda triple: (triple[0], triple[1]["entity_id"]),
+        )
+        counts = {}
+        for delta, _, _ in ranked:
+            counts[delta] = counts.get(delta, 0) + 1
+        best = max(counts.values())
+        modes = [delta for delta, count in counts.items() if count == best]
+
+        pairs = []
+        unmatched_ap = []
+        if len(modes) == 1:
+            mode = modes[0]
+            port_by_editor = {entry["editor_id"]: entry for entry in port_entries}
+            used = set()
+            for ap_entry in ap_entries:
+                port_entry = port_by_editor.get(ap_entry["entity_id"] - mode)
+                if port_entry is None or port_entry["editor_id"] in used:
+                    unmatched_ap.append(ap_entry)
+                    continue
+                used.add(port_entry["editor_id"])
+                pairs.append((ap_entry, port_entry))
+            unmatched_port = [entry for entry in port_entries if entry["editor_id"] not in used]
+        else:
+            # No dominant delta: fall back to rank pairing, which the caller
+            # must review, and never emit silently.
+            pairs = list(zip(ap_entries, port_entries))
+            unmatched_port = []
+            unmatched_ap = []
+
+        for ap_entry, port_entry in pairs:
             delta = ap_entry["entity_id"] - port_entry["editor_id"]
-            deltas.append(delta)
             joined[ap_entry["name"]] = port_entry["key"]
             ap_ids_by_port_key[port_entry["key"]] = ap_entry["ap_id"]
             report.append(
@@ -440,27 +543,57 @@ def join_locations(ap_locations, dump_locations, world_map):
                     delta,
                 )
             )
-        if len(set(deltas)) == 1:
+        for ap_entry in unmatched_ap:
+            unmapped[ap_entry["name"]] = ap_entry["ap_id"]
+            report.append(
+                "  AP %r (id %d, entity %08X) -> no port counterpart at delta %+d; "
+                "the dump is missing it (inactive layer or an undumped area)"
+                % (
+                    ap_entry["name"],
+                    ap_entry["ap_id"],
+                    ap_entry["entity_id"] & 0xFFFFFFFF,
+                    modes[0] if len(modes) == 1 else 0,
+                )
+            )
+        for port_entry in unmatched_port:
+            report.append("  dump %s -> unpaired" % port_entry["key"])
+
+        deltas = ", ".join("%+d" % delta for delta, _, _ in ranked)
+        if len(modes) == 1 and not unmatched_ap and not unmatched_port:
             clean_areas += 1
             report.append(
-                "clean: %s (%d AP / %d dump; delta %s)"
-                % (label, len(ap_entries), len(port_entries), ", ".join("%+d" % d for d in deltas))
+                "clean: %s (%d AP / %d dump; delta %+d)" % (label, len(ap_entries), len(port_entries), modes[0])
             )
         else:
             review_areas += 1
-            report.append(
-                "review: %s (%d AP / %d dump; deltas %s)"
-                % (label, len(ap_entries), len(port_entries), ", ".join("%+d" % d for d in deltas))
-            )
+            if len(modes) != 1:
+                report.append(
+                    "review: %s (%d AP / %d dump; deltas %s; no dominant delta, paired by rank)"
+                    % (label, len(ap_entries), len(port_entries), deltas)
+                )
+            else:
+                report.append(
+                    "review: %s (%d AP / %d dump; delta %+d; %d unpaired AP, %d unpaired dump)"
+                    % (
+                        label,
+                        len(ap_entries),
+                        len(port_entries),
+                        modes[0],
+                        len(unmatched_ap),
+                        len(unmatched_port),
+                    )
+                )
 
     mapped = len(joined)
     report.append(
-        "summary: %d locations mapped / %d areas clean / %d areas for review / "
+        "summary: %d locations mapped, %d unmapped / %d areas clean / %d areas for review / "
         "%d areas missing from the dump (%d count mismatches; %d unknown-world areas)"
-        % (mapped, clean_areas, review_areas, missing_dump_areas, mismatch_areas, len(unknown_groups))
+        % (mapped, len(unmapped), clean_areas, review_areas, missing_dump_areas, mismatch_areas,
+           len(unknown_groups))
     )
     return {
         "locations": joined,
+        "unmapped": unmapped,
         "ap_ids_by_port_key": ap_ids_by_port_key,
         "report": report,
         "clean_areas": clean_areas,
@@ -622,12 +755,27 @@ LOC 39F2DE28:33333333:00040020 PowerSuit amount=1 capacity=1 model=FEDCBA98 acs=
             "Chozo Ruins: D": "83F6FF6F:11111111:00020130",
             "Phendrana Drifts: E": "A8BE6291:22222222:00050010",
         }
-        assert result["locations"] == expected, result["locations"]
+        # D is the entry the dump has no counterpart for: the join must not
+        # guess it (it becomes an --extra gap).
+        mapped_expected = {name: key for name, key in expected.items() if name != "Chozo Ruins: D"}
+        assert result["locations"] == mapped_expected, result["locations"]
         assert result["clean_areas"] == 1
         assert result["review_areas"] == 1
         assert result["mismatch_areas"] == 1
         assert result["missing_dump_areas"] == 1
-        assert any("deltas +1, +1, +1, +3" in line for line in result["report"])
+        # The mixed-delta area keeps only the pairs at the dominant delta and
+        # reports the rest instead of guessing them.
+        assert result["unmapped"] == {
+            "Chozo Ruins: D": 104,
+            "Tallon Overworld: F": 301,
+            "Tallon Overworld: G": 302,
+            "Phazon Mines: H": 401,
+        }, result["unmapped"]
+        assert any(
+            "no port counterpart at delta +1" in line and "Chozo Ruins: D" in line
+            for line in result["report"]
+        )
+        assert any("dump 83F6FF6F:11111111:00020130 -> unpaired" in line for line in result["report"])
         assert any("count mismatch: Tallon Overworld area 0x0004" in line for line in result["report"])
         strict_out = os.path.join(temp_dir, "strict-should-not-exist.json")
         with contextlib.redirect_stderr(io.StringIO()):
@@ -646,12 +794,90 @@ LOC 39F2DE28:33333333:00040020 PowerSuit amount=1 capacity=1 model=FEDCBA98 acs=
                 raise AssertionError("--strict did not fail for a non-uniform area")
         assert not os.path.exists(strict_out), "--strict wrote output before failing"
 
+        # Manual gap fillers: malformed keys are rejected, valid ones fill the
+        # holes, and --strict still refuses while any AP location is unmapped.
+        bad_extra = os.path.join(temp_dir, "bad-extra.json")
+        with open(bad_extra, "w", encoding="utf-8") as output:
+            output.write(json.dumps({"Chozo Ruins: D": "not-a-key"}))
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                main(
+                    [
+                        "--locations", locations_path,
+                        "--dump", dump_path,
+                        "--out", os.path.join(temp_dir, "bad.json"),
+                        "--extra", bad_extra,
+                    ]
+                )
+            except SystemExit as error:
+                assert error.code == 2, error.code
+            else:
+                raise AssertionError("--extra must reject a malformed port key")
+
+        partial_extra = os.path.join(temp_dir, "partial-extra.json")
+        with open(partial_extra, "w", encoding="utf-8") as output:
+            output.write(json.dumps({"Chozo Ruins: D": expected["Chozo Ruins: D"]}))
+        partial_out = os.path.join(temp_dir, "partial.json")
+        main(
+            [
+                "--locations", locations_path,
+                "--dump", dump_path,
+                "--out", partial_out,
+                "--extra", partial_extra,
+            ]
+        )
+        with open(partial_out, "r", encoding="utf-8") as source:
+            partial = json.load(source)
+        assert partial["locations"][expected["Chozo Ruins: D"]] == 104, partial["locations"]
+        assert len(partial["locations"]) == 5
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                main(
+                    [
+                        "--locations", locations_path,
+                        "--dump", dump_path,
+                        "--out", os.path.join(temp_dir, "strict2.json"),
+                        "--extra", partial_extra,
+                        "--strict",
+                    ]
+                )
+            except SystemExit as error:
+                assert error.code == 2, error.code
+            else:
+                raise AssertionError("--strict must still fail while AP locations are unmapped")
+
+        full_extra = os.path.join(temp_dir, "full-extra.json")
+        with open(full_extra, "w", encoding="utf-8") as output:
+            output.write(
+                json.dumps(
+                    {
+                        "Chozo Ruins: D": expected["Chozo Ruins: D"],
+                        "Tallon Overworld: F": "39F2DE28:33333333:00040021",
+                        "Tallon Overworld: G": "39F2DE28:33333333:00040022",
+                        "Phazon Mines: H": "B1AC4D65:44444444:00070031",
+                    }
+                )
+            )
+        full_out = os.path.join(temp_dir, "full.json")
+        main(
+            [
+                "--locations", locations_path,
+                "--dump", dump_path,
+                "--out", full_out,
+                "--extra", full_extra,
+                "--strict",
+            ]
+        )
+        with open(full_out, "r", encoding="utf-8") as source:
+            full = json.load(source)
+        assert len(full["locations"]) == 8, full["locations"]
+
         arch = make_archipelago_config(result, "ws://localhost:38281", "Player1")
         assert arch["locations"] == {
             expected["Chozo Ruins: A"]: 101,
             expected["Chozo Ruins: B"]: 102,
             expected["Chozo Ruins: C"]: 103,
-            expected["Chozo Ruins: D"]: 104,
             expected["Phendrana Drifts: E"]: 201,
         }
         assert arch["items"]["5031000"]["item"] == "PowerBeam"
@@ -707,7 +933,12 @@ def main(argv=None):
     parser.add_argument("--server", help="AP server URL to embed, e.g. ws://host:port")
     parser.add_argument("--slot", help="AP slot name to embed, e.g. Player1")
     parser.add_argument("--world-map", metavar="FILE.json", help="add/override world asset IDs")
-    parser.add_argument("--strict", action="store_true", help="fail if any joined area needs review")
+    parser.add_argument("--extra", metavar="FILE.json", help="AP location name -> port key for gaps")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="fail unless every AP location is mapped (dump complete and joins clean)",
+    )
     parser.add_argument("--spoiler", metavar="FILE.json", help="AP spoiler JSON")
     parser.add_argument("--seed-out", metavar="FILE", help="write port randomizer seed JSON")
     parser.add_argument("--slot-number", type=int, default=1, help="local AP player number (default: 1)")
@@ -750,11 +981,20 @@ def main(argv=None):
         ap_locations = read_ap_locations(args.locations)
         dump_locations, models = read_dumps(args.dump)
         result = join_locations(ap_locations, dump_locations, world_map)
+        extras = read_extra(args.extra)
+        if extras:
+            applied = apply_extra(result, extras, ap_locations)
+            result["report"].append("file: %d gap(s) filled from --extra" % applied)
         _emit_report(result["report"])
-        if args.strict and result["review_areas"]:
+        if args.strict and result["unmapped"]:
+            sample = ", ".join(sorted(result["unmapped"])[:3])
             raise MakeAPConfigError(
-                "--strict: %d area(s) have non-uniform entity-ID deltas; no output written"
-                % result["review_areas"]
+                "--strict: %d AP location(s) have no port key (%s%s); no output written"
+                % (
+                    len(result["unmapped"]),
+                    sample,
+                    ", ..." if len(result["unmapped"]) > 3 else "",
+                )
             )
 
         _emit_report([progressive_item_warning()])
