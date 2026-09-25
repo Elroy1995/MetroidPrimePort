@@ -1,5 +1,35 @@
 # Metroid Prime port — working notes
 
+## Android APK builds again, and the Archipelago client was missing from it (2026-09-26)
+
+- `tools/android_apk.sh :app:assembleRelease` works from this tree with the
+  cached SDK/NDK and produces an 11 MB RelWithDebInfo APK carrying
+  `lib/arm64-v8a/libmetroid_prime_port.so`, with no disc image or game asset
+  inside. All the toolchain is present: SDK at `~/android/sdk`, the pinned NDK
+  at `~/android-ndk-cache/android-ndk-r29`, Gradle 8.7 in the user's wrapper
+  cache, and a Rust toolchain under `build/android-rust`.
+- It did not build at first: `platform/port_ws.cpp` used `IPPROTO_TCP` without
+  including `<netinet/in.h>`, where Bionic declares it (glibc and Winsock both
+  get it from `<netdb.h>`). So the entire WebSocket client — and therefore the
+  entire Archipelago feature — was absent from every Android build until now.
+- `wss://` on Android remains impossible as configured: the NDK ships no
+  OpenSSL, so there is no `MP_HAVE_OPENSSL` and the client refuses a `wss://`
+  server instead of downgrading it. A JNI `SSLSocket` backend or a vendored TLS
+  library is the remaining work.
+- The port's diagnostics were `fprintf(stderr, …)`, which Android discards, so a
+  device run that exited during startup reported nothing. They now go to logcat
+  under the `metroidprime` tag. That is what made the disc-path failure below
+  readable rather than invisible; desktop output is unchanged.
+- On-device findings from one run of the built APK, recorded for whoever picks
+  this up: it installs and launches, Vulkan initialises on the device GPU,
+  the surface and framebuffer come up (2351x1056), texture replacements load,
+  and then it exits. The reason was a remembered `content://` disc URI that no
+  longer opens — and because that is exactly what the port remembers, every
+  later launch fails the same way. The fix is to ask again when a remembered
+  `content://` URI fails to open; it is not applied because it cannot be
+  verified without a device, and on-device testing is out of scope for now.
+
+
 ## wss:// proven by a handshake on Windows, not just a configure line (2026-09-26)
 
 - The TLS end-to-end test skipped itself on Windows, so `wss://` there was a

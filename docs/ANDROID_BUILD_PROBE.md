@@ -88,6 +88,35 @@ the interface Aurora calls. It cannot read a disc, so the package is not
 playable; it exists to isolate link/packaging problems from a reproducible
 `nod` cross-build. Use `-PandroidNodStub=false` for a playable build.
 
+## Archipelago and the disc path (2026-09-26)
+
+The APK builds with the Archipelago client compiled in. Two things were found by
+building and running it:
+
+- `platform/port_ws.cpp` did not compile for Android at all: Bionic declares
+  `IPPROTO_TCP` in `<netinet/in.h>`, which the file did not include, while glibc
+  and Winsock both supply it through `<netdb.h>`. Until that include was added
+  the whole WebSocket client, and so the whole Archipelago feature, was missing
+  from the Android build.
+- `wss://` still does not work there. The NDK has no OpenSSL, so the build has
+  no `MP_HAVE_OPENSSL` and the client refuses a `wss://` server by design rather
+  than downgrading it. A JNI `SSLSocket` backend or a vendored TLS library is
+  what that needs; nothing about the port's protocol code blocks it.
+- The remembered disc path is Android-specific: `ResolveDiscPath` accepts a
+  `content://` URI from the file picker, and the remembered value is handed
+  straight to `aurora_dvd_open`. On a device whose saved URI no longer opens -
+  the picker grants access to a document, and that grant can lapse - the app
+  prints `failed to open disc image: content://…` and exits, and it does the
+  same on every later launch, because the failing value is exactly what it
+  remembers. That needs a directed fix: fall back to asking again when a
+  remembered `content://` URI fails to open, rather than retrying it forever.
+  It is not fixed here because it cannot be verified without a device.
+- The port's own diagnostics used to go to stderr, which Android discards
+  entirely, so a device run that exits during startup reports nothing about why.
+  They now go to logcat under the `metroidprime` tag (`PortLog::Write`), which
+  is how the disc-path failure above was read on the device. Desktop behaviour
+  is unchanged.
+
 ## Current limitations
 
 - The first touch overlay provides digital movement and camera sticks plus the
