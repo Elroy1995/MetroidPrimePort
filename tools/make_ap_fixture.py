@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Generate the spec-shaped Locations.py fixture from a port dump.
+
+The Archipelago world this port joins against is a separate repository whose
+contents have been unreachable, so ``tools/make_ap_config.py --strict`` had
+nothing to run against. This writes the two files that tool reads - a
+``Locations.py`` with the world's location tables and a ``PICKUP_LOCATIONS``
+list - from a real port dump, in the same shape as the upstream world.
+
+It is a stand-in, not the upstream table: the names are derived from the dump
+and the AP location ids are synthetic, assigned in a documented range. Its job
+is to keep the join, the generator and the tests exercisable, and to be re-run
+in place of the real file whenever the world's contents become reachable.
+
+Usage:
+    python3 tools/make_ap_fixture.py --dump randomizer_locations.log \
+        --out tools/ap-world-fixture
+"""
+
+import argparse
+import os
+import sys
+
+# The AP world assigns item ids from 5031000 and locations from 5031100.
+# The fixture keeps locations in a separate high range so a synthetic id can
+# never be mistaken for a real one.
+FIXTURE_LOCATION_BASE = 50310000
+
+# World asset id -> (enum member, display name). The port's dump carries the
+# asset id; Locations.py is written in terms of the world's level enum.
+WORLDS = {
+    "158EFE17": ("Frigate_Orpheon", "Frigate Orpheon"),
+    "13D79165": ("Unnamed_World", "Unnamed World"),
+    "39F2DE28": ("Tallon_Overworld", "Tallon Overworld"),
+    "3EF8237C": ("Magmoor_Caverns", "Magmoor Caverns"),
+    "83F6FF6F": ("Chozo_Ruins", "Chozo Ruins"),
+    "A8BE6291": ("Phendrana_Drifts", "Phendrana Drifts"),
+    "B1AC4D65": ("Phazon_Mines", "Phazon Mines"),
+    "C13B09D1": ("Impact_Crater", "Impact Crater"),
+}
+
+# The dump spells items the way the port does; the world spells them the way a
+# player reads them. Only names that differ need an entry.
+ITEM_NAMES = {
+    "EnergyTanks": "Energy Tank",
+    "Missiles": "Missile Expansion",
+    "PowerBombs": "Power Bomb Expansion",
+    "MorphBallBombs": "Morph Ball Bomb",
+    "MorphBall": "Morph Ball",
+    "SpaceJumpBoots": "Space Jump Boots",
+    "GrappleBeam": "Grapple Beam",
+    "XRayVisor": "X-Ray Visor",
+    "ThermalVisor": "Thermal Visor",
+    "ScanVisor": "Scan Visor",
+    "CombatVisor": "Combat Visor",
+    "PowerBeam": "Power Beam",
+    "IceBeam": "Ice Beam",
+    "WaveBeam": "Wave Beam",
+    "PlasmaBeam": "Plasma Beam",
+    "ChargeBeam": "Charge Beam",
+    "SuperMissile": "Super Missile",
+    "IceSpreader": "Ice Spreader",
+    "Wavebuster": "Wave Buster",
+    "Flamethrower": "Flamethrower",
+    "BoostBall": "Boost Ball",
+    "SpiderBall": "Spider Ball",
+    "PowerSuit": "Power Suit",
+    "VariaSuit": "Varia Suit",
+    "GravitySuit": "Gravity Suit",
+    "PhazonSuit": "Phazon Suit",
+    "HealthRefill": "Health Refill",
+}
+
+ARTIFACT_ORDER = [
+    "Truth", "Strength", "Elder", "Wild", "Lifegiver", "Warrior",
+    "Chozo", "Nature", "Sun", "World", "Spirit", "Newborn",
+]
+
+
+def item_display(raw):
+    return ITEM_NAMES.get(raw, raw)
+
+
+def parse_dump(path):
+    """Returns [(world, area, entity, item)] for capacity-granting locations."""
+    locations = []
+    seen = set()
+    with open(path, "r", encoding="utf-8") as source:
+        for line in source:
+            if not line.startswith("LOC ") or "capacity=0" in line:
+                continue
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            key = parts[1]
+            item = parts[2]
+            if key in seen:
+                continue
+            seen.add(key)
+            world, area, entity = key.split(":")
+            locations.append((world, area, entity, item))
+    return locations
+
+
+def location_name(world_name, item, index):
+    """A stable, human-readable name for one location.
+
+    The name carries the item the location holds in the vanilla game, which is
+    how the upstream world names most of its entries, plus the entity id so two
+    locations of the same kind stay distinct.
+    """
+    return "%s: %s %d" % (world_name, item_display(item), index)
+
+
+def build(locations):
+    """Splits locations into per-world tables and the PICKUP_LOCATIONS list."""
+    tables = {}
+    pickups = []
+    next_id = FIXTURE_LOCATION_BASE
+    for world, area, entity, item in locations:
+        if world not in WORLDS:
+            raise SystemExit("unknown world asset id %s in the dump" % world)
+        member, display = WORLDS[world]
+        table = tables.setdefault(member, {})
+        # Count per world so the numbering is stable and readable.
+        index = len(table) + 1
+        name = location_name(display, item, index)
+        table[name] = next_id
+        next_id += 1
+        pickups.append((member, int(entity, 16)))
+    return tables, pickups
+
+
+def render(tables, pickups):
+    lines = [
+        '"""Spec-shaped fixture for tools/make_ap_config.py.',
+        "",
+        "Generated by tools/make_ap_fixture.py from a real port dump. It is a",
+        "stand-in for the upstream Archipelago world's Locations.py, not a copy of",
+        "it: names are derived from the dump and AP ids are synthetic, in the range",
+        "documented by FIXTURE_LOCATION_BASE. Replace it with the real file when the",
+        "world's contents are reachable, and re-run --strict.",
+        '"""',
+        "",
+        "",
+        "class MetroidPrimeLevel:",
+    ]
+    for member, display in WORLDS.values():
+        lines.append("    %s = 0x%s" % (member, display and ""))
+    # Re-render the enum with the asset ids that actually address each level.
+    lines = lines[: lines.index("class MetroidPrimeLevel:") + 1]
+    for asset, (member, _display) in WORLDS.items():
+        lines.append("    %s = 0x%s" % (member, asset))
+    lines.extend(["", ""])
+    for member in tables:
+        lines.append("%s_location_table = {" % _table_prefix(member))
+        for name, value in tables[member].items():
+            lines.append('    "%s": %d,' % (name, value))
+        lines.append("}")
+        lines.append("")
+    lines.append("PICKUP_LOCATIONS = [")
+    for member, entity in pickups:
+        lines.append("    (MetroidPrimeLevel.%s, 0x%08X)," % (member, entity))
+    lines.append("]")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _table_prefix(member):
+    """chozo_location_table, phen_location_table, ... as the world names them."""
+    short = {
+        "Frigate_Orpheon": "frigate",
+        "Unnamed_World": "unnamed",
+        "Tallon_Overworld": "tallon",
+        "Magmoor_Caverns": "magmoor",
+        "Chozo_Ruins": "chozo",
+        "Phendrana_Drifts": "phen",
+        "Phazon_Mines": "mines",
+        "Impact_Crater": "crater",
+    }
+    return short.get(member, member.lower())
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--dump", required=True,
+                        help="port randomizer_locations.log to derive the fixture from")
+    parser.add_argument("--out", required=True, help="directory to write Locations.py into")
+    arguments = parser.parse_args(argv)
+
+    locations = parse_dump(arguments.dump)
+    if not locations:
+        raise SystemExit("no capacity-granting locations in %s" % arguments.dump)
+    tables, pickups = build(locations)
+    os.makedirs(arguments.out, exist_ok=True)
+    path = os.path.join(arguments.out, "Locations.py")
+    with open(path, "w", encoding="utf-8") as output:
+        output.write(render(tables, pickups))
+    total = sum(len(table) for table in tables.values())
+    print("%s: %d locations across %d worlds, %d PICKUP_LOCATIONS" %
+          (path, total, len(tables), len(pickups)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
