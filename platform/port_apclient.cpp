@@ -1,4 +1,5 @@
 #include "port_apclient.h"
+#include "port_log.h"
 
 #include "port_ap_protocol.h"
 #include "port_ws.h"
@@ -131,7 +132,7 @@ struct Runtime {
 
   void LogStateLocked(const std::string& message) {
     if (lastLogged != message) {
-      std::fprintf(stderr, "archipelago: %s\n", message.c_str());
+      PortLog::Write( "archipelago: %s\n", message.c_str());
       lastLogged = message;
     }
   }
@@ -298,7 +299,7 @@ void Worker(Runtime& runtime) {
                 // The recorded checks belonged to another session, so the state
                 // file has just been rewritten empty. Say why, because the
                 // symptom otherwise is a multiworld that sends nothing.
-                std::fprintf(stderr,
+                PortLog::Write(
                              "archipelago: saved progress was %s; starting %s fresh (set "
                              "MP_AP_RESET_STATE=1 to discard it deliberately)\n",
                              runtime.session->ResetReason().c_str(), config.slot.c_str());
@@ -441,7 +442,7 @@ void EnsureLoadedImpl(Runtime& runtime) {
   runtime.config = Protocol::LoadConfigFile(configPath);
   if (!runtime.config.valid) {
     runtime.stateLabel = "off";
-    std::fprintf(stderr, "archipelago: %s\n", runtime.config.error.c_str());
+    PortLog::Write( "archipelago: %s\n", runtime.config.error.c_str());
     return;
   }
 
@@ -460,7 +461,7 @@ void EnsureLoadedImpl(Runtime& runtime) {
   // way out: it drops them before the first connect.
   if (EnvEnabled("MP_AP_RESET_STATE") &&
       (state.nextItemIndex != 0 || !state.checkedLocations.empty() || !state.progressive.empty())) {
-    std::fprintf(stderr, "archipelago: MP_AP_RESET_STATE=1 discarded saved progress for %s\n",
+    PortLog::Write( "archipelago: MP_AP_RESET_STATE=1 discarded saved progress for %s\n",
                  runtime.config.slot.c_str());
     state = Protocol::State();
   }
@@ -483,14 +484,14 @@ void EnsureLoaded() {
       runtime.attempted = true;
     runtime.enabled = false;
     runtime.stateLabel = "off";
-    std::fprintf(stderr, "archipelago: initialization failed: %s\n", error.what());
+    PortLog::Write( "archipelago: initialization failed: %s\n", error.what());
   } catch (...) {
     Runtime& runtime = GetRuntime();
     std::lock_guard<std::mutex> lock(runtime.mutex);
     runtime.attempted = true;
     runtime.enabled = false;
     runtime.stateLabel = "off";
-    std::fprintf(stderr, "archipelago: initialization failed\n");
+    PortLog::Write( "archipelago: initialization failed\n");
   }
 }
 

@@ -1,4 +1,5 @@
 #include "port_randomizer.h"
+#include "port_log.h"
 
 #include <SDL3/SDL.h>
 
@@ -448,7 +449,7 @@ bool LoadSeed(State& state) {
     return false;
   const std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
   if (input.bad()) {
-    std::fprintf(stderr, "randomizer: seed read error at byte offset 0: could not read file\n");
+    PortLog::Write( "randomizer: seed read error at byte offset 0: could not read file\n");
     return false;
   }
 
@@ -458,7 +459,7 @@ bool LoadSeed(State& state) {
   try {
     Parser(text).Parse(seedName, placements, models);
   } catch (const ParseError& error) {
-    std::fprintf(stderr, "randomizer: seed parse error at byte offset %zu: %s\n", error.offset,
+    PortLog::Write( "randomizer: seed parse error at byte offset %zu: %s\n", error.offset,
                  error.reason);
     return false;
   }
@@ -494,7 +495,7 @@ void EnsureLoaded() {
         state.enabled = false;
         state.placements.clear();
         state.seedName.clear();
-        std::fprintf(stderr, "randomizer: seed parse error at byte offset %zu: %s\n", error.offset,
+        PortLog::Write( "randomizer: seed parse error at byte offset %zu: %s\n", error.offset,
                      error.reason);
       } catch (...) {
         try {
@@ -513,9 +514,9 @@ void EnsureLoaded() {
     static const bool announced = [] {
       const State& state = GetState();
       if (state.dump) {
-        std::fprintf(stderr, "randomizer: dump mode (MP_RANDO_DUMP)\n");
+        PortLog::Write( "randomizer: dump mode (MP_RANDO_DUMP)\n");
       } else if (state.enabled) {
-        std::fprintf(stderr, "randomizer: seed '%s', %zu placements, %zu item models\n",
+        PortLog::Write( "randomizer: seed '%s', %zu placements, %zu item models\n",
                      state.seedName.c_str(), state.placements.size(), state.itemModels.size());
       }
       return true;

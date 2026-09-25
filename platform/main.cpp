@@ -19,6 +19,7 @@
 #include "port_textures.h"
 #include "port_prompts.h"
 #include "port_build_info.h"
+#include "port_log.h"
 
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
@@ -157,10 +158,10 @@ std::string AskForDiscImage() {
     if (window == nullptr) {
         // Headless, as on a build runner: nothing to show a dialog on, so say
         // no disc was given rather than waiting for an answer that cannot come.
-        std::fprintf(stderr, "metroid_prime_port: no window to ask for a disc image on\n");
+        PortLog::Write( "metroid_prime_port: no window to ask for a disc image on\n");
         return {};
     }
-    std::fprintf(stderr, "metroid_prime_port: no disc image found; asking for one\n");
+    PortLog::Write( "metroid_prime_port: no disc image found; asking for one\n");
     SDL_ShowOpenFileDialog(
         [](void*, const char* const* files, int) {
             if (files != nullptr && files[0] != nullptr) {
@@ -176,12 +177,12 @@ std::string AskForDiscImage() {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
-                std::fprintf(stderr, "metroid_prime_port: disc selection cancelled\n");
+                PortLog::Write( "metroid_prime_port: disc selection cancelled\n");
                 return {};
             }
         }
         if (SDL_GetTicks() > deadline) {
-            std::fprintf(stderr, "metroid_prime_port: disc selection timed out\n");
+            PortLog::Write( "metroid_prime_port: disc selection timed out\n");
             return {};
         }
         SDL_Delay(10);
@@ -191,7 +192,7 @@ std::string AskForDiscImage() {
         // Persist immediately: the settings are otherwise only written from the
         // overlay's draw path, which never runs if the game cannot frame.
         PortDebug::SaveSettingsNow();
-        std::fprintf(stderr, "metroid_prime_port: disc image set to %s\n", chosen.c_str());
+        PortLog::Write( "metroid_prime_port: disc image set to %s\n", chosen.c_str());
     }
     return chosen;
 }
@@ -225,7 +226,7 @@ int main(int argc, char** argv) {
         std::printf("Metroid Prime native port %s\n", MP_BUILD_REVISION);
         return 0;
     }
-    std::fprintf(stderr, "metroid_prime_port: build %s\n", MP_BUILD_REVISION);
+    PortLog::Write( "metroid_prime_port: build %s\n", MP_BUILD_REVISION);
     PortRandomizer::EnsureLoaded();
     PortAp::EnsureLoaded();
     // A 16:9 window when widescreen is requested; the game's render mode is
@@ -281,7 +282,7 @@ int main(int argc, char** argv) {
         const bool unnamed = !present(requested);
         if (unnamed && present(x11)) {
             SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
-            std::fprintf(stderr,
+            PortLog::Write(
                          "port: using SDL's x11 video driver on %s; its wayland backend hangs on "
                          "window creation under GNOME (libdecor). Set SDL_VIDEODRIVER to "
                          "override.\n",
@@ -327,7 +328,7 @@ int main(int argc, char** argv) {
         discImage = AskForDiscImage();
     }
     if (discImage.empty()) {
-        std::fprintf(stderr,
+        PortLog::Write(
                      "metroid_prime_port: no disc image given.\n"
                      "  usage: %s <path to Metroid Prime (USA) (v1.00).iso>\n"
                      "  or set MP_DISC, or place the image next to the executable.\n", argv[0]);
@@ -337,7 +338,7 @@ int main(int argc, char** argv) {
     const char* discPath = discImage.c_str();
 
     if (!aurora_dvd_open(discPath)) {
-        std::fprintf(stderr, "metroid_prime_port: failed to open disc image: %s\n", discPath);
+        PortLog::Write( "metroid_prime_port: failed to open disc image: %s\n", discPath);
         aurora_shutdown();
         return 1;
     }
@@ -345,7 +346,7 @@ int main(int argc, char** argv) {
     const DVDDiskID* discId = DVDGetCurrentDiskID();
     if (discId == nullptr || std::memcmp(discId->gameName, "GM8E", 4) != 0 ||
         std::memcmp(discId->company, "01", 2) != 0 || discId->diskNumber != 0 || discId->gameVersion != 0) {
-        std::fprintf(stderr, "metroid_prime_port: unsupported disc; expected GM8E01 USA revision 0.\n");
+        PortLog::Write( "metroid_prime_port: unsupported disc; expected GM8E01 USA revision 0.\n");
         aurora_dvd_close();
         aurora_shutdown();
         return 1;
@@ -359,7 +360,7 @@ int main(int argc, char** argv) {
     try {
         result = metroid_main(argc, argv);
     } catch (const std::exception& error) {
-        std::fprintf(stderr, "metroid_prime_port: %s\n", error.what());
+        PortLog::Write( "metroid_prime_port: %s\n", error.what());
     }
 
     AIPortShutdown();
