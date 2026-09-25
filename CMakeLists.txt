@@ -244,4 +244,14 @@ if(MP_BUILD_TESTS)
         set_tests_properties(${test} PROPERTIES TIMEOUT 15 LABELS port)
         aurora_copy_runtime_dlls(${test})
     endforeach()
+    # The tools' own checks, so a change to the location join or the fixture
+    # generator fails here rather than in whoever runs the tools next. Both are
+    # dependency-free Python and skip themselves when python3 is absent.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME port_ap_fixture
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/port_ap_fixture.py
+                    ${CMAKE_CURRENT_SOURCE_DIR})
+        set_tests_properties(port_ap_fixture PROPERTIES TIMEOUT 120 LABELS port)
+    endif()
 endif()
