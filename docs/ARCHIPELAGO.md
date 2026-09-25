@@ -8,6 +8,10 @@ checks. All of it is opt-in; with no configuration the port is unaffected.
 This is the transport and protocol half. What makes a seed *playable* — the
 placement logic and the location/item id tables — comes from the AP world
 (`randomprime` / Archipelago's Metroid Prime world) and is not part of the port.
+The port consumes that world's `Locations.py`; when the world's own file is not
+to hand, the spec-shaped stand-in described under
+[Producing the id maps](#producing-the-id-maps) keeps the join, the generator
+and the tests exercisable.
 
 ## How it connects
 
@@ -233,5 +237,9 @@ not include Aurora's UI layer, so an F1 screenshot will not show it.
   but chat input does not exist.
 - **Tracking UI.** The item tracker, hints and DeathLink are absent, so the
   progressive steps below are only visible through the HUD notification.
-- **Mapping verification.** The location join is a candidate until confirmed in
-  game; areas the tool flags as "review" can report the wrong checks.
+- **Mapping verification.** The join itself is now checked against the
+  spec-shaped fixture (`ctest -R port_ap_fixture`): 100/100 mapped, no area for
+  review, no area missing. What is still unverified is the game side - that a
+  pickup touched in game reports the location the table claims it is. That needs
+  a played seed, and the join remains a candidate for any world whose table
+  differs from the fixture.
