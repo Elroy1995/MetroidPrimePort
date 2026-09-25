@@ -99,10 +99,14 @@ hypot → cairo_scaled_font_create → pango_context_get_metrics
 
 Run with `SDL_VIDEODRIVER=x11` (and `DISPLAY` plus `XAUTHORITY` pointing at the
 session's Xwayland) to use the X11 backend instead, which reaches the main loop
-normally. The port does this for you: unless `SDL_VIDEODRIVER` names a driver
-itself, it requests `x11` when `WAYLAND_DISPLAY` is set and says so in the log.
-Neither backend is a workaround for missing functionality — the only difference
-is which window system draws the window.
+normally. The port does this for you: when `SDL_VIDEODRIVER` names no driver and
+`DISPLAY` is set, it requests `x11` and says so in the log. Keying off `DISPLAY`
+rather than `WAYLAND_DISPLAY` matters — SDL3 reaches for Wayland even with
+`WAYLAND_DISPLAY` unset, falling back to the default socket in `XDG_RUNTIME_DIR`.
+With no `DISPLAY` there is nothing to fall back to, so the port prints why it is
+about to hang rather than leaving only the frozen frame to go on. Neither backend
+is a workaround for missing functionality — the only difference is which window
+system draws the window.
 
 ### HD texture replacements
 
