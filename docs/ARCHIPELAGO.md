@@ -202,10 +202,10 @@ not include Aurora's UI layer, so an F1 screenshot will not show it.
 
 ## Not done yet
 
-- **TLS on Android/Windows.** `wss://` needs OpenSSL found at configure time;
-  Linux and any desktop build with OpenSSL works (verified against a TLS server
-  including the rejection cases), Android's NDK has none, and Windows needs it
-  supplied. A JNI `SSLSocket` backend or a vendored TLS library would fix that.
+- **TLS on Android only.** `wss://` needs OpenSSL found at configure time.
+  Linux and Windows are both verified against a real TLS server, including every
+  rejection case, in CI. Android's NDK has no OpenSSL, so a JNI `SSLSocket`
+  backend or a vendored TLS library is what that platform needs.
 - **Compression.** No `permessage-deflate`; Archipelago accepts uncompressed
   connections but marks them deprecated.
 - **DeathLink, hints, chat, tracker.** Bounce/DeathLink, hint creation and the

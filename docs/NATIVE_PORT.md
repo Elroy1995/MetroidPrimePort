@@ -165,10 +165,12 @@ clang-cl, builds, runs `ctest -L port`, runs the FIFO regressions, packages a
 main and reports the missing disc image, and uploads the result as an artifact.
 All of that is green.
 
-Two things are only verified on Linux. Anything needing a GPU, a window or a
-real controller is, and the TLS round-trip test in `port_ws_tests` skips itself
-on Windows, so `wss://` there rests on the configure step finding OpenSSL
-rather than on a handshake that has been run.
+Only the things that need a GPU, a window or a real controller are verified on
+one platform alone. `wss://` is verified on both: each CI job runs
+`port_ws_tests` directly as well as through ctest, so the log shows a completed
+TLS handshake against a throwaway CA plus the four rejections (wrong CA,
+certificate for another address, system trust store, missing CA file) rather
+than only a configure line saying OpenSSL was found.
 
 `platform/glibc_compat.c`, which lowers the glibc the Linux build needs, is
 guarded to Linux and takes no part elsewhere. The AppImage and Flatpak packaging

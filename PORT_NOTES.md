@@ -1,5 +1,37 @@
 # Metroid Prime port — working notes
 
+## wss:// proven by a handshake on Windows, not just a configure line (2026-09-26)
+
+- The TLS end-to-end test skipped itself on Windows, so `wss://` there was a
+  configure line saying OpenSSL 3.6.4 was found. It now runs there, ported
+  rather than duplicated: a small platform shim covers the four POSIX-only
+  spots (shell quoting for cmd.exe, a temp directory made from
+  temp_directory_path, a Server object that is fork/exec on POSIX and
+  CreateProcessA on Windows, and WSAStartup/closesocket for the free-port
+  probe). FreeLoopbackPort deliberately never calls WSACleanup, matching
+  `PortWs::EnsureWinsock` — a cleanup between the probe and the client connect
+  would drop the reference count to zero.
+- Three failures surfaced only by actually running it, all of them real:
+  - `CreateProcessA` does not interpret `>`, so the server's log redirection
+    was passed to python as arguments and it exited before binding. The log is
+    now a CreateFileA handle passed through STARTF_USESTDHANDLES.
+  - The "certificate for another host" case connected to `localhost`, which on
+    Windows can resolve to `::1` where this IPv4 server is not listening, so it
+    timed out instead of reaching the certificate check. It connects to
+    127.0.0.2 with the server bound to all IPv4 interfaces: still loopback
+    everywhere, still not in the certificate, and nothing depends on how a
+    machine resolves a name.
+  - The job then went green once and failed on the next run with "TLS handshake
+    timed out" while all four rejection cases worked seconds later — the server
+    was still starting. The test now polls a plain TCP connect for up to thirty
+    seconds before the first handshake, and prints the server's log at the point
+    of failure rather than only at the end.
+- Evidence, in the CI log rather than inferred: Linux and Windows both complete
+  a verified handshake and all four rejections, and both jobs now run
+  `port_ws_tests` directly because ctest only prints a failing test's output.
+  `wss://` on Android is untouched and still needs a TLS backend.
+
+
 ## Windows and Linux CI green over the randomizer and Archipelago work (2026-09-25)
 
 - All 28 commits of randomizer and Archipelago work had never been through CI,
