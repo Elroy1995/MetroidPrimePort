@@ -153,21 +153,33 @@ class Server {
 public:
   Server(const std::vector<std::string>& arguments, const std::string& logPath) : mLogPath(logPath) {
 #ifdef _WIN32
+    // CreateProcessA does not interpret shell redirection, so `> file` would be
+    // handed to the program as arguments. The log is a real file handle passed
+    // through the child's standard handles, which is the fork/dup2 equivalent.
+    const HANDLE log = CreateFileA(mLogPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     std::string command = QuotePath(arguments.front());
     for (size_t i = 1; i < arguments.size(); ++i)
       command += " " + QuotePath(arguments[i]);
-    command += " > " + QuotePath(mLogPath) + " 2>&1";
     std::vector<char> mutableCommand(command.begin(), command.end());
     mutableCommand.push_back('\0');
     STARTUPINFOA startup{};
     startup.cb = sizeof(startup);
+    if (log != INVALID_HANDLE_VALUE) {
+      startup.dwFlags = STARTF_USESTDHANDLES;
+      startup.hStdInput = log;
+      startup.hStdOutput = log;
+      startup.hStdError = log;
+    }
     PROCESS_INFORMATION process{};
-    mStarted = CreateProcessA(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, 0, nullptr,
-                              nullptr, &startup, &process) != 0;
+    mStarted = CreateProcessA(nullptr, mutableCommand.data(), nullptr, nullptr, log != INVALID_HANDLE_VALUE,
+                              0, nullptr, nullptr, &startup, &process) != 0;
     if (mStarted) {
       mProcess = process.hProcess;
       CloseHandle(process.hThread);
     }
+    if (log != INVALID_HANDLE_VALUE)
+      CloseHandle(log);
 #else
     const pid_t child = fork();
     if (child == 0) {
