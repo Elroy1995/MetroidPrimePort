@@ -86,8 +86,11 @@ int RunChild(const char* self, const char* name, const std::filesystem::path& te
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
   if (CreateProcessA(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr,
-                     &startup, &process) == 0)
+                     &startup, &process) == 0) {
+    std::fprintf(stderr, "[randomizer-tests] CreateProcessA failed for %s: %lu\n", name,
+                 static_cast<unsigned long>(GetLastError()));
     return -1;
+  }
   WaitForSingleObject(process.hProcess, INFINITE);
   DWORD code = 1;
   GetExitCodeProcess(process.hProcess, &code);
@@ -120,6 +123,20 @@ int RunChild(const char* self, const char* name, const std::filesystem::path& te
 
 int main(int argc, char** argv) {
   using namespace PortRandomizer;
+
+  // ctest may launch the test by a bare name, in which case argv[0] is not a
+  // path this process can spawn itself by. Resolve it to the running
+  // executable's own path first; that is also what makes a Windows spawn work,
+  // where the working directory is not searched the way execv's is.
+  std::string selfPath = argc > 0 && argv[0] != nullptr ? argv[0] : std::string();
+#ifdef _WIN32
+  {
+    char buffer[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
+    if (length != 0 && length < MAX_PATH)
+      selfPath.assign(buffer, length);
+  }
+#endif
 
   // Child mode: a single case, named on the command line, sharing the parent's
   // temporary directory so the seed files it reads are the ones just written.
@@ -269,12 +286,21 @@ int main(int argc, char** argv) {
   Check(UnsetEnv("MP_RANDO_DUMP"), "unset MP_RANDO_DUMP");
 
   // Each of these needs a process that has not already loaded a seed, so the
-  // test re-runs itself rather than exposing a production reload API.
-  Check(RunChild(argv[0], "malformed", testDir) == 0,
+  // test re-runs itself rather than exposing a production reload API. The exit
+  // code is reported because a spawn that never happened and a child that died
+  // both look like a bare failure otherwise.
+  const auto runCase = [&](const char* name) {
+    const int code = RunChild(selfPath.c_str(), name, testDir);
+    if (code != 0) {
+      std::fprintf(stderr, "[randomizer-tests] case %s exited with %d\n", name, code);
+    }
+    return code;
+  };
+  Check(runCase("malformed") == 0,
         "malformed seed must disable randomizer without partial application");
-  Check(RunChild(argv[0], "no-seed", testDir) == 0,
+  Check(runCase("no-seed") == 0,
         "without seed/dump, hooks must leave pickups untouched and not log checks");
-  const int dumpResult = RunChild(argv[0], "dump", testDir);
+  const int dumpResult = runCase("dump");
   Check(dumpResult == 0, "dump mode must log the location and not apply a placement");
   if (dumpResult == 0) {
     std::ifstream dumpLog(testDir / "randomizer_locations.log");
@@ -286,7 +312,7 @@ int main(int argc, char** argv) {
           "dump line should carry the pickup model");
     std::filesystem::remove(testDir / "randomizer_locations.log");
   }
-  Check(RunChild(argv[0], "bad-model", testDir) == 0,
+  Check(runCase("bad-model") == 0,
         "a model entry without a model or acs asset must disable the seed");
 
   EnsureLoaded();
