@@ -6,7 +6,19 @@
   all 12 of its areas (`[sweep] complete: 1 worlds, 12 areas`) and dumps 85
   pickups, all `capacity=0` drops, so it contributes 0 item locations — which
   agrees with retail, where the crater holds no items. Every world is now
-  covered, and the merged dump is 4969 LOC lines / 328 locations / 170 areas.
+  covered, and one clean tour of all eight (`complete: 8 worlds, 276 areas`,
+  ~12 minutes) yields the whole table: 2542 LOC lines, 1333 distinct pickup
+  keys across 180 areas, and exactly **100 capacity-granting item locations** —
+  50 missile expansions, 14 energy tanks, 5 power bomb expansions and the rest of
+  retail's set, which is the count vanilla Prime has. `tools/rando_seed.py`
+  turns that single dump into a seed with all 100 locations and 33 models.
+  The earlier "4969 lines / 328 locations" figures came from merging ten partial
+  runs and counted the same locations repeatedly; one tour needs no merging.
+- A tour that long ends in `vkAllocateMemory failed with
+  VK_ERROR_OUT_OF_DEVICE_MEMORY` while the frontend loads its first texture, and
+  the process aborts. The dump is already complete when that happens, so it is
+  cosmetic for the sweep, but a full eight-world tour is a ~37000-frame session
+  and VRAM is not returned as fast as it is taken.
 - The "unreproduced free" that ended earlier crater sweeps was never in the port.
   The run had stopped making progress because SDL3 was using its Wayland backend,
   where `SDL_ShowWindow` dispatches into libdecor's client-side decorations and
@@ -28,13 +40,10 @@
   run against the retired world. Fifteen consecutive restarts are clean under
   ASan (`MP_SMOKE_WORLD_RESTARTS`, `MP_SMOKE_WORLD_TICKS`).
 - `MP_RANDO_SWEEP=1` (+ `MP_RANDO_DUMP=1`) walks all eight worlds and their
-  areas in one run (~10 minutes) and now produces a full dump: 4969 LOC lines,
-  328 capacity-granting item locations across 170 distinct areas, including
-  every artifact, suit and beam. `tools/make_ap_config.py --strict` maps a
-  matching AP table with 100/100 entries and 0 areas for review, and the seed
-  tool derives 33 item models from it. Impact Crater was the exception (3 areas,
-  no items) because the save has not opened it; it now sweeps to all 12 areas
-  and holds no item locations, so nothing is missing from the table.
+  areas in one run (~12 minutes) and now produces a full dump in a single pass —
+  see the section above for the counts and what they mean. `tools/make_ap_config.py
+  --strict` maps a matching AP table with 100/100 entries and 0 areas for review,
+  and the seed tool derives 33 item models from it.
 - Two port-side fixes were needed in vendored code along the way:
   - `extern/aurora/lib/gx/shader.cpp`: a texcoord generator whose source
     register is still `GX_MAX_TEXGENSRC` ("no source", what the game leaves

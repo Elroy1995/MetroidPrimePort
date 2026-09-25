@@ -69,31 +69,29 @@ ANCS assets, with the animation driving the visual.
 
    `MP_RANDO_SWEEP=1` makes one run visit every world and area (a world restart
    per area, waiting for streaming to go idle) so a complete dump needs no
-   playthrough. It takes about ten minutes and logs `[sweep]` progress. Add
+   playthrough. It takes about twelve minutes and logs `[sweep]` progress. Add
    `MP_RANDO_SWEEP_WORLDS=<hex>[,<hex>...]` to tour only some worlds (the ids
    are the `WORLD:` column of the dump); the tour logs `complete: N worlds, M
    areas` when it finishes.
 
-   The run needs a display, and on a GNOME Wayland session it must be pinned to
-   X11:
+   The run needs a display, and on a GNOME Wayland session the port now selects
+   the X11 backend by itself (see `docs/NATIVE_PORT.md` for why, and for
+   `SDL_VIDEODRIVER` to override the choice):
 
    ```sh
    DISPLAY=:0 XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.XXXXX \
-   SDL_VIDEODRIVER=x11 MP_RANDO_DUMP=1 MP_RANDO_SWEEP=1 <game> <disc.iso>
+   MP_RANDO_DUMP=1 MP_RANDO_SWEEP=1 <game> <disc.iso>
    ```
 
-   Without `SDL_VIDEODRIVER=x11` SDL3 picks its Wayland backend, which SDL's own
-   `SDL_ShowWindow` dispatches into libdecor's client-side decorations, and that
-   never returns — the run pins a core at 100% with no frames and no log output
-   after `Using surface format`. It is not the port's code; see
-   `docs/NATIVE_PORT.md`.
-
-   Areas also list their enemy drop templates as pickups (health and ammo
-   refills with `capacity=0`); those are not item locations and are filtered
-   out below. All eight worlds now sweep to completion, Impact Crater included:
-   its 12 areas are reached (`complete: 1 worlds, 12 areas`) and dump 85
-   pickups, every one of them a `capacity=0` drop, so it contributes no item
-   locations — which matches retail, where the crater holds no items.
+   A full tour writes 2542 LOC lines covering 1333 distinct pickup keys in 180
+   areas, of which **100 are item locations** — the same count retail Prime has,
+   and a seed built from that one dump covers all of them. Areas also list their
+   enemy drop templates as pickups (health and ammo refills with `capacity=0`);
+   those are not item locations and are filtered out below. All eight worlds
+   sweep to completion, Impact Crater included: its 12 areas are reached
+   (`complete: 1 worlds, 12 areas`) and dump 85 pickups, every one of them a
+   `capacity=0` drop, so it contributes no item locations — which matches retail,
+   where the crater holds no items.
 
 2. Shuffle the dump into a seed:
 
