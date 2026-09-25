@@ -276,6 +276,43 @@ bool Contains(const std::string& text, const char* wanted) {
   return text.find(wanted) != std::string::npos;
 }
 
+// Waits for the server to accept a plain TCP connection. Starting python and
+// importing its TLS stack can take several seconds on a loaded CI machine, and
+// the TLS connect below used to race it: on Windows the first handshake could
+// time out against a server that was not listening yet, while the rejection
+// cases a moment later found it up and healthy. A plaintext connect is the
+// cheapest way to tell "not started yet" from "started but broken".
+bool WaitForListener(uint16_t port, int seconds) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
+  while (std::chrono::steady_clock::now() < deadline) {
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(port);
+#ifdef _WIN32
+    const SOCKET probe = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (probe != INVALID_SOCKET) {
+      const bool accepted =
+          ::connect(probe, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0;
+      ::closesocket(probe);
+      if (accepted)
+        return true;
+    }
+#else
+    const int probe = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (probe >= 0) {
+      const bool accepted =
+          ::connect(probe, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0;
+      ::close(probe);
+      if (accepted)
+        return true;
+    }
+#endif
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  return false;
+}
+
 // wss:// against tools/ap_fake_server.py --tls with a throwaway CA: a verified
 // round trip, then the rejections that make verification mean something.
 void CheckTlsEndToEnd() {
@@ -337,14 +374,25 @@ void CheckTlsEndToEnd() {
   PortWs::Client client;
   bool connected = false;
   // The server needs a moment to start listening; retry until it does.
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+  if (!WaitForListener(port, 30)) {
+    std::ifstream earlyLog(logPath);
+    std::fprintf(stderr, "[ws-tests] fake server never listened on %u; its log was:\n%s\n", port,
+                 std::string(std::istreambuf_iterator<char>(earlyLog), {}).c_str());
+  }
+  // The listener is up, so a short retry loop only covers a server that accepts
+  // the socket a moment before it can complete the handshake.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
   while (!connected && std::chrono::steady_clock::now() < deadline) {
     connected = client.Connect("127.0.0.1", port, "/", 2000, true, goodCa);
     if (!connected)
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
-  if (!connected)
+  if (!connected) {
     std::fprintf(stderr, "[ws-tests] wss connect error: %s\n", client.Error());
+    std::ifstream earlyLog(logPath);
+    std::fprintf(stderr, "[ws-tests] fake server log:\n%s\n",
+                 std::string(std::istreambuf_iterator<char>(earlyLog), {}).c_str());
+  }
   Check(connected, "wss:// connects and verifies against the test CA");
 
   std::string roomInfo;
