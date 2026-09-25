@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <system_error>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -60,6 +61,14 @@ bool UnsetEnv(const char* name) {
   return _putenv_s(name, "") == 0;
 #else
   return unsetenv(name) == 0;
+#endif
+}
+
+void SleepMilliseconds(int milliseconds) {
+#ifdef _WIN32
+  Sleep(static_cast<DWORD>(milliseconds));
+#else
+  usleep(static_cast<useconds_t>(milliseconds) * 1000);
 #endif
 }
 
@@ -317,14 +326,25 @@ int main(int argc, char** argv) try {
   const int dumpResult = runCase("dump");
   Check(dumpResult == 0, "dump mode must log the location and not apply a placement");
   if (dumpResult == 0) {
-    std::ifstream dumpLog(testDir / "randomizer_locations.log");
-    const std::string dumpText((std::istreambuf_iterator<char>(dumpLog)),
-                               std::istreambuf_iterator<char>());
+    // The child appends to this log and has only just exited. Windows can still
+    // be holding the file open, so the read retries and the removal is best
+    // effort; failing to tidy up is not a test failure, and the whole
+    // directory is removed at the end anyway.
+    std::string dumpText;
+    for (int attempt = 0; attempt < 20 && dumpText.empty(); ++attempt) {
+      std::ifstream dumpLog(testDir / "randomizer_locations.log", std::ios::binary);
+      dumpText.assign(std::istreambuf_iterator<char>(dumpLog), std::istreambuf_iterator<char>());
+      if (dumpText.empty()) {
+        Phase("dump log not readable yet; retrying");
+        SleepMilliseconds(50);
+      }
+    }
     Check(Contains(dumpText,
                    "LOC 00000001:00000002:00000003 Missiles amount=5 capacity=5 "
                    "model=0000ABCD acs=00000000 character=0 animation=0\n"),
           "dump line should carry the pickup model");
-    std::filesystem::remove(testDir / "randomizer_locations.log");
+    std::error_code removeError;
+    std::filesystem::remove(testDir / "randomizer_locations.log", removeError);
   }
   Check(runCase("bad-model") == 0,
         "a model entry without a model or acs asset must disable the seed");
