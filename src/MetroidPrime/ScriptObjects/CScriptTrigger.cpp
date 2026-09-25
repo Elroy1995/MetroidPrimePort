@@ -204,7 +204,9 @@ void CScriptTrigger::UpdateInhabitants(float dt, CStateManager& mgr) {
        it != xe8_inhabitants.end();) {
     AUTO(nextIt, it);
     ++nextIt;
-#if NONMATCHING
+// Port: the matching code reads the tracker after erasing its list node
+// (a use-after-free the console heap tolerated); keep the id beforehand.
+#if NONMATCHING || defined(TARGET_PC)
     const TUniqueId objectId = it->GetObjectId();
 #endif
     if (CActor* act = TCastToPtr< CActor >(mgr.ObjectById(it->GetObjectId()))) {
@@ -269,7 +271,7 @@ void CScriptTrigger::UpdateInhabitants(float dt, CStateManager& mgr) {
         } else {
           xe8_inhabitants.erase(it);
           sendExited = true;
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
           if (objectId == mgr.GetPlayer()->GetUniqueId() && x148_28_playerTriggerProc) {
 #else
           if (it->GetObjectId() == mgr.GetPlayer()->GetUniqueId() && x148_28_playerTriggerProc) {
@@ -282,7 +284,7 @@ void CScriptTrigger::UpdateInhabitants(float dt, CStateManager& mgr) {
       }
     } else {
       xe8_inhabitants.erase(it);
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
       if (objectId == mgr.GetPlayer()->GetUniqueId() && x148_28_playerTriggerProc) {
 #else
       if (it->GetObjectId() == mgr.GetPlayer()->GetUniqueId() && x148_28_playerTriggerProc) {

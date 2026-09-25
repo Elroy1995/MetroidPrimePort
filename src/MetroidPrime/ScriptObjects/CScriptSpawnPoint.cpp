@@ -5,6 +5,10 @@
 #include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
 
+#ifdef TARGET_PC
+#include "dolphin/ar.h"
+#endif
+
 CScriptSpawnPoint::CScriptSpawnPoint(
     TUniqueId uid, const rstl::string& name, const CEntityInfo& info, const CTransform4f& xf,
     const rstl::reserved_vector< int, int(CPlayerState::kIT_Max) >& itemCounts,
@@ -49,6 +53,12 @@ void CScriptSpawnPoint::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId objI
         CGameArea* area = stateMgr.World()->Area(thisAreaId);
         if (area->GetOcclusionState() == CGameArea::kOS_Occluded) {
           while (!area->TryTakingOutOfARAM()) {
+#ifdef TARGET_PC
+            // Port: the ARAM DMA completes by interrupt on the console. Aurora
+            // queues the completion until ARQPoll runs, so spinning without
+            // it never ends when the occluded area's data is still in ARAM.
+            ARQPoll();
+#endif
           }
           CWorld::PropogateAreaChain(CGameArea::kOS_Visible, area, stateMgr.World());
           propagateAgain = true;

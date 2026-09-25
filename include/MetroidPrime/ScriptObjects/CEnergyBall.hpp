@@ -13,6 +13,7 @@ public:
   ~CEnergyBall();
 
   DECLARE_TYPES_MATCH_OR_ACCEPT;
+  int GetBallType() const { return x570; }
   void AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CStateManager& mgr) override;
   void Generate(CStateManager& mgr, EStateMsg msg, float arg) override;
   void Attack(CStateManager& mgr, EStateMsg msg, float arg) override;

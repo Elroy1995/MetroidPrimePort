@@ -927,16 +927,50 @@ bool ConsumeWorldSweepRequest(CStateManager& mgr) {
     const auto& worlds = gpMemoryCard->GetMemoryWorlds();
     if (worlds.empty()) return false;
     sweep = {};
+    // MP_RANDO_SWEEP_WORLDS=<hex id>[,<hex id>...] limits the tour to those
+    // worlds, e.g. to redo one world without walking the seven before it.
+    std::vector< uint32_t > only;
+    if (const char* list = std::getenv("MP_RANDO_SWEEP_WORLDS")) {
+      for (const char* p = list; *p != '\0';) {
+        char* end = nullptr;
+        const unsigned long id = std::strtoul(p, &end, 16);
+        if (end == p) {
+          ++p;
+          continue;
+        }
+        only.push_back(static_cast< uint32_t >(id));
+        p = end;
+      }
+    }
+    const auto wanted = [&only](uint32_t id) {
+      if (only.empty()) return true;
+      for (uint32_t w : only)
+        if (w == id) return true;
+      return false;
+    };
     // Visit the live world first so its MLVL can supply the first area list;
     // later worlds are entered at area zero, which also visits their first area.
-    sweep.worlds.push_back(world->IGetWorldAssetId());
+    if (wanted(world->IGetWorldAssetId())) sweep.worlds.push_back(world->IGetWorldAssetId());
     for (const auto& entry : worlds) {
-      if (entry.first != world->IGetWorldAssetId()) sweep.worlds.push_back(entry.first);
+      if (entry.first != world->IGetWorldAssetId() && wanted(entry.first))
+        sweep.worlds.push_back(entry.first);
+    }
+    sWorldSweepRequested = false;
+    if (sweep.worlds.empty()) {
+      std::fputs("[sweep] stopped: MP_RANDO_SWEEP_WORLDS matches no world\n", stderr);
+      sweep = {};
+      return false;
     }
     sweep.active = true;
-    sWorldSweepRequested = false;
     std::fprintf(stderr, "[sweep] begin: %zu worlds (use MP_RANDO_DUMP=1 for pickups)\n",
                  sweep.worlds.size());
+    if (world->IGetWorldAssetId() != sweep.worlds[0]) {
+      // The live world was filtered out: enter the first wanted world the same
+      // way a finished world hands over to the next one.
+      sweep.waiting = true;
+      RequestWorldTeleport(sweep.worlds[0], 0u);
+      return true;
+    }
   }
   if (world->IGetWorldAssetId() != sweep.worlds[sweep.world]) {
     std::fputs("[sweep] cancelled: gameplay changed worlds\n", stderr);
@@ -970,10 +1004,12 @@ bool ConsumeWorldSweepRequest(CStateManager& mgr) {
   if (++sweep.settledTicks < 30) return false;
   sweep.settledTicks = 0;
   if (sweep.waiting) {
-    if (world->IGetAreaAlways(current)->IGetAreaAssetId() != sweep.areas[sweep.area]) {
-      std::fputs("[sweep] stopped: destination area changed before settling\n", stderr);
-      sweep = {};
-      return false;
+    const uint32_t settled = world->IGetAreaAlways(current)->IGetAreaAssetId();
+    if (settled != sweep.areas[sweep.area]) {
+      // The destination's own scripts moved the player on (Impact Crater's
+      // spawn points do). Its objects, and so its dump, were already built.
+      std::fprintf(stderr, "[sweep] note: %08X moved the player to %08X; continuing\n",
+                   sweep.areas[sweep.area], settled);
     }
     ++sweep.completedAreas;
     std::fprintf(stderr, "[sweep] area %zu/%zu: %08X (total %u)\n", sweep.area + 1,
