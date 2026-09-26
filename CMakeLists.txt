@@ -102,6 +102,7 @@ set(MP_PORT_SOURCES
     platform/port_apclient.cpp
     platform/port_json.cpp
     platform/port_ws.cpp
+    platform/touch_pad.cpp
     platform/glibc_compat.c
     platform/ai_dma.cpp)
 if(ANDROID)
@@ -265,6 +266,14 @@ if(MP_BUILD_TESTS)
     target_compile_definitions(port_disc_tests PRIVATE TARGET_PC)
     add_executable(port_mouse_tests tests/port_mouse.cpp)
     target_include_directories(port_mouse_tests PRIVATE platform/include)
+    # Drives a real SDL virtual gamepad through the touch overlay's own code.
+    # That code was Android-only and untested, so a wrong button mapping could
+    # not fail anywhere except on a phone.
+    add_executable(port_touch_pad_tests tests/touch_pad.cpp platform/touch_pad.cpp)
+    target_include_directories(port_touch_pad_tests PRIVATE
+        platform/include extern/aurora/include)
+    target_compile_definitions(port_touch_pad_tests PRIVATE TARGET_PC)
+    target_link_libraries(port_touch_pad_tests PRIVATE ${AURORA_SDL3_TARGET})
     add_executable(port_json_tests tests/port_json.cpp platform/port_json.cpp)
     target_include_directories(port_json_tests PRIVATE platform/include)
     target_compile_definitions(port_json_tests PRIVATE TARGET_PC)
@@ -287,7 +296,7 @@ if(MP_BUILD_TESTS)
     add_test(NAME port_card_tests COMMAND port_card_tests "${CMAKE_CURRENT_BINARY_DIR}/card-test-data")
     set_tests_properties(port_card_tests PROPERTIES TIMEOUT 15 LABELS port)
     aurora_copy_runtime_dlls(port_card_tests)
-    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_musyx_tests port_disc_tests port_mouse_tests port_json_tests port_ws_tests port_timing_tests port_audio_math_tests)
+    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_musyx_tests port_disc_tests port_mouse_tests port_touch_pad_tests port_json_tests port_ws_tests port_timing_tests port_audio_math_tests)
         add_test(NAME ${test} COMMAND ${test})
         set_tests_properties(${test} PROPERTIES TIMEOUT 15 LABELS port)
         aurora_copy_runtime_dlls(${test})

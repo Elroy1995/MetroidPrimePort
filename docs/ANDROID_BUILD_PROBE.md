@@ -284,6 +284,20 @@ building and running it:
   GameCube face, shoulder, Start and D-pad controls. `HIDE` collapses it to a
   small `SHOW` tab. Its sizing and ergonomics still need device testing;
   physical USB and BLE controllers remain supported.
+- **A short tap on the overlay can be missed.** SDL's virtual joystick is
+  state-sampling, not event-queueing: a press and release that both land between
+  two joystick updates leave only the release, so the game never sees the press.
+  A quick tap on A or Start can therefore do nothing, most visibly while a game
+  frame is stalled. It is not a race — the setters hold SDL's joystick mutex — and
+  sustained presses and ordinary releases are unaffected, which is why it never
+  showed up as "the controls don't work". Fixing it means latching a press until
+  the game samples it, released on an update the port does not control, so it is
+  recorded at the code rather than half-solved. Worth checking on a device: tap
+  Start rapidly and confirm the game menu opens every time.
+- The pad is now built from `platform/touch_pad.cpp` and covered by
+  `port_touch_pad_tests`, which attaches a real SDL virtual gamepad and asserts
+  what the game reads back. That is the first time any of this code has been
+  compiled outside an Android build; it previously had no test at all.
 - On-device behavior is not yet fully exercised: the Vulkan renderer, activity
   lifecycle, audio, controller, and SAF/disc-access paths have been wired up but
   still need device verification.

@@ -1,3 +1,64 @@
+## The touch overlay is testable now, and writing the test deleted the mapping (2026-09-26)
+
+The virtual gamepad has been lifted out of `#if defined(__ANDROID__)` and given a
+host test. That is the first time this code has ever been compiled outside an
+Android build.
+
+- **`platform/touch_pad.cpp` + `platform/include/touch_pad.h`** hold the
+  descriptor, the axis conversion, attach and detach. `tests/touch_pad.cpp`
+  attaches a **real** SDL virtual gamepad and asserts what the game would read
+  back through `SDL_GetGamepadButton` / `SDL_GetGamepadAxis`, rather than what the
+  code wrote. The host's `libSDL3.a` does contain the virtual joystick driver, so
+  this runs in CI on Linux and Windows.
+- **Why read-back and not write-only.** The overlay writes raw `SDL_Gamepad*`
+  indices, and SDL turns those into logical controls using a mapping. If the
+  mapping is wrong the write still *succeeds* and the game still reads
+  *something* — the right stick moves when A is pressed — so nothing upstream can
+  notice. Driving a real pad and reading it back is the only thing that tests it.
+  The test presses each raw index in turn and asserts that exactly one logical
+  button comes up, naming both on failure.
+- **The first run failed, and the failure was the point.** 28 checks failed
+  against the real code, and they were right to: the hand-written mapping string
+  named `b0`-`b4` and `b9`-`b14`, while `SDL_GAMEPAD_BUTTON_COUNT` is **26**.
+  Guide, both stick clicks and every paddle were unmapped, so a write to any of
+  them went nowhere. The overlay does not send those today, so nothing was
+  visibly broken — but the string was incomplete, and it was incomplete in a way
+  that would have bitten the first person to add a stick-click to the overlay.
+- **So the mapping string is gone, and that is the improvement.** The string was
+  never doing the job its comment claimed. A virtual device gets a GUID with the
+  virtual bus and a `'v'` signature, so the vendor and product ids never selected
+  a built-in table by GUID match either; SDL routes an unmatched virtual device
+  to the virtual driver's own generated mapping, which is exactly this enum order
+  (`SDL_virtualjoystick.c:803, :933`). I checked that rather than assuming it:
+  with the explicit string disabled, every button index still reached its own
+  logical control. A hand-written table is one more thing that can disagree with
+  SDL and it can only fall behind; the generated mapping is derived from the enum,
+  which is SDL's public ABI. The test is what pins the behaviour now, so a change
+  in SDL fails a build instead of quietly misplacing a button on a phone.
+  A by-product: SDL's own database contains entries with `start:b6` and shoulders
+  `b9`/`b10`, which independently corroborates that the layout was right all along.
+- **My test had a bug too, and it was the kind that lies.** The cross-axis
+  checks reported contamination that was not there, because each iteration left
+  the previous axis at the *minimum* instead of at rest and then asserted the
+  others read 0. A stick rests at 0 and a trigger rests at the minimum, so "all
+  axes at rest" is not one value. Fixed with an explicit `RestAxes`, and the
+  contamination went away — which is how I know the remaining failures were real.
+- **The test is not vacuous, checked by breaking the code twice.** Reverting the
+  conversion to truncation fails it on "half deflection must be a real half, not
+  zero" — which is exactly the bug the conversion exists to prevent, since
+  truncation made every partial deflection read as centred. Removing the
+  detach-on-failed-open fails it on the device count. Both restored.
+  **Stated honestly:** the open-failure path itself is not directly exercised,
+  because forcing an allocation failure inside SDL is not something a test can
+  ask for. What the test catches is the missing detach, by counting devices.
+- **Verified on both builds, and the Android one the hard way.** Host: 15/15
+  ctest. Android: Gradle reported `BUILD SUCCESSFUL`, which I now treat as no
+  evidence at all, so I checked that both objects postdate the edits and that our
+  mapping string is **absent** from the `.so` (0 occurrences) while SDL's own
+  database entries remain, the JNI entry points are intact, and the log line
+  survives. Absent-because-removed is a decisive marker; present-because-added
+  would not have been, since the symbols are hidden by design.
+
 ## Virtual gamepad review: the threading worry was wrong, the comment was too (2026-09-26)
 
 A second opinion on the Android touch overlay's virtual gamepad. It overturned my

@@ -8,6 +8,9 @@
 #include "port_mouse.h"
 #include "port_textures.h"
 #include "port_build_info.h"
+#if defined(__ANDROID__)
+#include "touch_pad.h"
+#endif
 
 #include "MetroidPrime/CHealthInfo.hpp"
 #include "MetroidPrime/CGameArea.hpp"
@@ -2148,79 +2151,26 @@ void SetDiscPath(const char* path) {
 // sees it. While the debug overlay is open the game is paused and those touches
 // belong to ImGui, so the Java side asks this and stops claiming them.
 #if defined(__ANDROID__)
+// The pad itself - descriptor, mapping, axis conversion, attach and detach -
+// lives in platform/touch_pad.cpp so that it can be built and tested on the
+// host. It used to be here, inside this #if, which meant it was never compiled
+// anywhere except an Android build and no test could ever have caught a wrong
+// button mapping. See tests/touch_pad.cpp.
 namespace {
-// The touch overlay acts as a real gamepad rather than synthesising keyboard
-// keys, so the game's own controller mapping, prompts and rebinding apply to it
-// unchanged, and its sticks are sticks rather than four keys pretending to be
-// one.
-SDL_Joystick* g_virtualPad = nullptr;
+PortTouchPad::Pad g_touchPad;
 
-SDL_Joystick* VirtualPad() {
-  if (g_virtualPad != nullptr) {
-    return g_virtualPad;
+PortTouchPad::Pad& TouchPad() {
+  if (!g_touchPad.ok()) {
+    g_touchPad = PortTouchPad::Attach();
+    __android_log_print(ANDROID_LOG_INFO, "touchpad", "attached id=%d gamepad=%d open=%d",
+                        g_touchPad.id, SDL_IsGamepad(g_touchPad.id) ? 1 : 0,
+                        g_touchPad.ok() ? 1 : 0);
+    if (!g_touchPad.ok())
+      __android_log_print(ANDROID_LOG_ERROR, "touchpad", "attach failed: %s", SDL_GetError());
   }
-  SDL_VirtualJoystickDesc desc;
-  SDL_INIT_INTERFACE(&desc);
-  desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
-  desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
-  desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
-  // Report as a common Xbox pad so the pad type, and with it the port's prompt
-  // icons, match what the overlay draws.
-  desc.vendor_id = 0x045e;
-  desc.product_id = 0x02ea;
-  desc.name = "Metroid Prime touch gamepad";
-  const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
-  if (id == 0) {
-    __android_log_print(ANDROID_LOG_ERROR, "touchpad", "attach failed: %s", SDL_GetError());
-    return nullptr;
-  }
-  // State the mapping explicitly. The overlay writes SDL_Gamepad* indices
-  // straight into SDL_SetJoystickVirtualAxis/SDL_SetJoystickVirtualButton, so
-  // what the game reads back depends entirely on this string. Every entry is the
-  // plain enum order from SDL_gamepad.h:152-181 - start is b6 because b5 is
-  // Guide, b8 is right-stick click, and the shoulders are b9/b10 - and the
-  // triggers are axes a4/a5, which is what Aurora's binding expects
-  // (dolphin/pad/pad.cpp:243).
-  //
-  // It is kept even though SDL would probably supply this layout anyway. A
-  // virtual device gets a GUID with the virtual bus and a 'v' signature
-  // (SDL_virtualjoystick.c:234), so the vendor/product ids above do not select a
-  // built-in table by GUID match, and an unmatched virtual device falls through
-  // to the virtual driver's own generated mapping - which happens to be this
-  // same enum order (SDL_virtualjoystick.c:803, 933). So the explicit mapping is
-  // belt and braces, not a correction.
-  //
-  // An earlier version of this comment claimed SDL's built-in Xbox mapping binds
-  // rightx:a3, righty:a4, start:b8 and the shoulders to b4/b5. That was wrong,
-  // and wrong in a way that mattered: the start:b8 table is in SDL_gamepad_db.h's
-  // macOS section (:483), while the Android 045e:02ea entry (:816) already says
-  // start:b6, rightx:a2, righty:a3. The mapping was always correct; the reason
-  // given for it was not, and would have sent the next person looking for a
-  // fault that was not there.
-  {
-    char guid[64];
-    SDL_GUIDToString(SDL_GetJoystickGUIDForID(id), guid, sizeof(guid));
-    char mapping[512];
-    SDL_snprintf(mapping, sizeof(mapping),
-                 "%s,Metroid Prime touch gamepad,a:b0,b:b1,x:b2,y:b3,back:b4,start:b6,"
-                 "leftshoulder:b9,rightshoulder:b10,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,"
-                 "leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:a4,righttrigger:a5,",
-                 guid);
-    SDL_AddGamepadMapping(mapping);
-  }
-  g_virtualPad = SDL_OpenJoystick(id);
-  if (g_virtualPad == nullptr) {
-    // Detach before returning. SDL has no fixed limit on virtual devices - they
-    // are a linked list - so without this every later input call would attach
-    // another one and accumulate them, because g_virtualPad stays null and
-    // nothing else holds the id. Reachable when the SDL_Joystick or its axis and
-    // button state fails to allocate (SDL_joystick.c:1360, 1394).
-    SDL_DetachVirtualJoystick(id);
-  }
-  __android_log_print(ANDROID_LOG_INFO, "touchpad", "attached id=%d gamepad=%d open=%d", id,
-                      SDL_IsGamepad(id) ? 1 : 0, g_virtualPad != nullptr ? 1 : 0);
-  return g_virtualPad;
+  return g_touchPad;
 }
+} // namespace
 
 // KNOWN LIMITATION: a short tap can be missed.
 //
@@ -2242,12 +2192,11 @@ SDL_Joystick* VirtualPad() {
 // real design problem, not a two-line patch, so it is recorded rather than
 // half-solved. A missed tap is recoverable by tapping again; a control that fires
 // when it should not is not.
-} // namespace
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_metroidprime_port_TouchControlsView_nativeVirtualButton(JNIEnv*, jclass, jint button,
                                                                  jboolean down) {
-  if (SDL_Joystick* pad = VirtualPad()) {
+  if (SDL_Joystick* pad = TouchPad().handle) {
     SDL_SetJoystickVirtualButton(pad, static_cast< int >(button), down == JNI_TRUE);
   }
 }
@@ -2255,17 +2204,8 @@ Java_org_metroidprime_port_TouchControlsView_nativeVirtualButton(JNIEnv*, jclass
 extern "C" JNIEXPORT void JNICALL
 Java_org_metroidprime_port_TouchControlsView_nativeVirtualAxis(JNIEnv*, jclass, jint axis,
                                                                jfloat value) {
-  if (SDL_Joystick* pad = VirtualPad()) {
-    // The overlay sends a normalised -1..1 deflection, but the virtual joystick
-    // API takes a Sint16 joystick-axis value. Passing the float straight through
-    // truncated every partial deflection to 0, so the sticks and triggers read
-    // as centred and the player could neither move nor aim. Map the full range:
-    // SDL's joystick axes run -32768..32767, and a trigger's rest value is the
-    // minimum, not the centre.
-    const float clamped = value < -1.f ? -1.f : (value > 1.f ? 1.f : value);
-    const float scaled = clamped < 0.f ? clamped * 32768.f : clamped * 32767.f;
-    SDL_SetJoystickVirtualAxis(pad, static_cast< int >(axis),
-                               static_cast< Sint16 >(std::lround(scaled)));
+  if (SDL_Joystick* pad = TouchPad().handle) {
+    SDL_SetJoystickVirtualAxis(pad, static_cast< int >(axis), PortTouchPad::AxisValue(value));
   }
 }
 #endif
