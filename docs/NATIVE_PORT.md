@@ -189,9 +189,16 @@ in the settings file. A path given as an argument or in `MP_DISC` still wins,
 then the saved path, then a copy beside the executable.
 
 The AppImage bundles the executable (Aurora, WebGPU/Dawn and SDL3 are linked
-statically), the texture replacements, and the shared libraries a base desktop
-may lack: freetype, libpng, zlib, bzip2 and brotli. It relies on the system for
-glibc, libstdc++, a Vulkan driver, X11 or Wayland, and DBus for the file dialog.
+statically), the texture replacements, the shared libraries a base desktop may
+lack (freetype, libpng, zlib, bzip2 and brotli), and the third-party notices
+for the vendored and fetched components in
+`usr/share/licenses/metroid-prime-port/`, alongside a
+`BUNDLED_LIBRARIES.txt` naming the host libraries it copied. It relies on the
+system for glibc, libstdc++, a Vulkan driver, X11 or Wayland, and DBus for the
+file dialog.
+
+`docs/RELEASING.md` covers what a release has to carry, what has not been done
+yet, and the licensing position.
 
 glibc is deliberately not bundled, so the build is only as portable as the
 machine it was built on. `platform/glibc_compat.c` lowers that floor: recent
