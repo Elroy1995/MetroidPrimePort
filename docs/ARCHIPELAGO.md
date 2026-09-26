@@ -133,14 +133,43 @@ python3 tools/make_ap_config.py \
     --out archipelago.json --seed-out randomizer_seed.json
 ```
 
+### The world's own file
+
+The world is `github.com/UltiNaruto/MetroidAPPrime` - note the single "P" in
+`Prime`. `MetroidAPPrime` is a different name, and asking for it gets a
+confusing 404 from GitHub that looks exactly like a private repository. Its
+`src/Locations.py` is what this tool wants:
+
+```sh
+git clone --depth 1 https://github.com/UltiNaruto/MetroidAPPrime
+python3 tools/make_ap_config.py \
+    --locations MetroidAPPrime/src/Locations.py \
+    --dump randomizer_locations.log \
+    --server wss://host:38281 --slot Player1 \
+    --out archipelago.json
+```
+
+Against the real table and a full port dump, the join maps **95 of 100**
+locations with 75 areas clean. The five it does not map are all dump coverage,
+not pairing, and it says so per location rather than guessing:
+
+- `Chozo Ruins: Main Plaza - Locked Door` and `Chozo Ruins: Ruined Shrine -
+  Plated Beetle` have no counterpart in the dump: those pickups sit in layers a
+  plain area tour does not build.
+- Two more are count mismatches - an area with two AP locations and one dumped
+  pickup - and a third is the same shape in Phazon Mines.
+
+The areas with a mixed id delta are reported as **review** rather than mapped on
+a guess, which is why `--strict` refuses to write. Filling them is
+`--extra` (see below), and the honest way to get more is a dump that visits
+those layers.
+
 ### When the world's file is not to hand
 
-The world lives in a separate repository, and its contents have been
-unreachable while this was built, which left `--strict` with nothing to run
-against. `tools/ap-world-fixture/Locations.py` is a **spec-shaped stand-in**
-generated from a real port dump: the entity ids, areas, vanilla items and the
-count (100) are real, while the AP ids are synthetic and assigned from
-50310000 so none can be mistaken for a real one. Regenerate it with:
+`tools/ap-world-fixture/Locations.py` is a **spec-shaped stand-in** generated
+from a real port dump: the entity ids, areas, vanilla items and the count (100)
+are real, while the AP ids are synthetic and assigned from 50310000 so none can
+be mistaken for a real one. Regenerate it with:
 
 ```sh
 python3 tools/make_ap_fixture.py --dump randomizer_locations.log \
@@ -149,9 +178,8 @@ python3 tools/make_ap_fixture.py --dump randomizer_locations.log \
 
 `ctest -R port_ap_fixture` checks that the generator reproduces the committed
 file, that `--strict` maps every location in it, and that the config it writes
-carries all of them plus the four progressive beams. Replace the table with the
-real file and re-run `--strict` when the world is reachable; the join does not
-care which table it is given.
+carries all of them plus the four progressive beams. It is a stand-in for CI and
+offline use; prefer the world's own `Locations.py` for anything real.
 
 How it joins the two sides, and what to watch for:
 
