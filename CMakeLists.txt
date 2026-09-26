@@ -212,13 +212,13 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/textures/
     DESTINATION ${CMAKE_INSTALL_BINDIR}/textures)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/assets/initial_pipeline_cache.db
     DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/org.metroidprime.MetroidPrimePort.desktop
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/io.github.odrannnn.metroidprimeport.desktop
     DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 # The AppStream description, which the desktop entry cannot carry. Flatpak
 # software centres and app stores show this rather than the desktop file, and
 # Flathub will not accept a component without it. Installed rather than left for
 # the manifest so the AppImage and a package-manager install carry it too.
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/org.metroidprime.MetroidPrimePort.metainfo.xml
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/io.github.odrannnn.metroidprimeport.metainfo.xml
     DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
               ${CMAKE_CURRENT_SOURCE_DIR}/NOTICE

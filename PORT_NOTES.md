@@ -1,3 +1,58 @@
+## Found: no icon is shipped, at all (2026-09-26)
+
+Chasing the Flatpak app id turned up something that was not on any list,
+including the blocker list I wrote myself.
+
+- **The desktop entry names an icon that does not exist.**
+  `Icon=io.github.odrannnn.metroidprimeport`, and there is no icon file with
+  that name in the tree, no `share/icons` install rule in `CMakeLists.txt`, and
+  nothing in the Flatpak manifest that installs one. A desktop environment falls
+  back to a generic icon, and Flathub requires a real one. It affects the
+  AppImage, the Flatpak and a package-manager install equally — not just the one
+  format I was looking at.
+- **How it survived.** I had been reading `appstreamcli validate` as the gate on
+  the metainfo, and it is: the file is valid. But the icon is not the
+  metainfo's business, and the desktop file passes `desktop-file-validate`
+  happily while pointing at nothing. The only way I found it was to install to a
+  prefix and look at the tree rather than at the two validators — which is
+  exactly the check I had used to prove the Flatpak install rules work in the
+  first place, and then stopped doing.
+- **It cannot be filled with Nintendo's artwork**, for the same reason the
+  screenshots cannot: anything recognisably Nintendo's is not this package's to
+  redistribute. So this one needs original artwork, which is a decision rather
+  than a task, and I have not invented one.
+
+## Flatpak app id: io.github.odrannnn.metroidprimeport (2026-09-26)
+
+The app id is renamed, everywhere it appears.
+
+- **The rename is complete and consistent**: the metainfo `<id>` and
+  `<launchable>`, the desktop entry's `Icon=`, the manifest's `app-id:`, the two
+  `install(FILES ...)` rules in `CMakeLists.txt`, `tools/make_flatpak.sh`'s
+  manifest path, and the references in `PORT_NOTES.md`, `docs/RELEASING.md` and
+  `docs/NATIVE_PORT.md`. The three files were `git mv`d, not copied.
+- **The complaint is gone.** Before, `appstreamcli validate --pedantic` reported
+  `cid-contains-uppercase-letter` for `org.metroidprime.MetroidPrimePort`. It
+  now reports `Validation was successful.` with no pedantic warnings at all.
+  Worth noting the flag matters: plain `appstreamcli validate` passed *before*
+  the rename too, so the check I had been running was not the one that mattered.
+  The docs said this was the outstanding complaint and I had believed the
+  metainfo was clean because the laxer command said so.
+- **Why `io.github.odrannnn`.** Flathub verifies an app id against a domain you
+  control, and `org.metroidprime` was a placeholder nobody owns, so it could
+  never have been submitted. `io.github.*` is a convention Flathub accepts and
+  the account is the maintainer's own.
+- **Verified by installing, not by validating.** `cmake --install` to a prefix:
+  the binary runs (`a9c16516-dirty`), the desktop entry and metainfo land under
+  `share/applications` and `share/metainfo` with the new id, the installed
+  metainfo still validates pedantically clean from the install tree, and the
+  desktop entry's id matches the filename it was installed as. That last check
+  is what caught the missing icon.
+- **The Android package name is unchanged** at `org.metroidprime.port`.
+  It happens to share the old domain, but it is a different identifier in a
+  different ecosystem, and changing an `applicationId` breaks installs for no
+  reason. It was not in scope.
+
 ## Android wss:// works, and it cost more than I said it would (2026-09-26)
 
 The last AP gap that stopped a session is closed. A real `wss://` handshake from
@@ -452,7 +507,7 @@ measurement rather than in the port.
 
 ## The Flatpak has an AppStream description (2026-09-26)
 
-- `packaging/org.metroidprime.MetroidPrimePort.metainfo.xml`, installed to
+- `packaging/io.github.odrannnn.metroidprimeport.metainfo.xml`, installed to
   `share/metainfo/` by the project's own install rules, so the AppImage and a
   package-manager install carry it as well as the Flatpak. It passes
   `appstreamcli validate --no-net`; the only remaining complaint is the component

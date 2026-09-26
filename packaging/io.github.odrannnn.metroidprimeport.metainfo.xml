@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>org.metroidprime.MetroidPrimePort</id>
+  <id>io.github.odrannnn.metroidprimeport</id>
   <metadata_license>MIT</metadata_license>
   <project_license>LicenseRef-mixed</project_license>
 
@@ -28,7 +28,7 @@
     </p>
   </description>
 
-  <launchable type="desktop-id">org.metroidprime.MetroidPrimePort.desktop</launchable>
+  <launchable type="desktop-id">io.github.odrannnn.metroidprimeport.desktop</launchable>
 
   <url type="homepage">https://github.com/Odrannnn/MetroidPrimePort</url>
   <url type="bugtracker">https://github.com/Odrannnn/MetroidPrimePort/issues</url>

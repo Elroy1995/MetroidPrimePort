@@ -179,18 +179,30 @@ under GNOME unless the port's own X11 preference applies — see
    verification failure later. Both halves are proven on the emulator — see
    `docs/ANDROID_BUILD_PROBE.md`. **Costs 2.17 MB of APK, +20.3%** (11.19 MB ->
    13.46 MB), which is more than the 0.8-1.2 MB first estimated.
-6. **The Flatpak path has never been built.** Its manifest is now correct — the
+6. **The Flatpak path has never been built.** Its manifest is correct — the
    project's own install rules put a runnable tree in `/app`, and the notices
    are collected — but nothing here has ever run `flatpak-builder`, so the
-   manifest is unproven against a real runtime. Three things also remain before
-   it could be published, all of them decisions rather than code:
-   - **The app id is a placeholder**, and it has to change. It also contains
-     uppercase, which AppStream rejects for a component id
-     (`cid-contains-uppercase-letter`), so the rename has to lowercase it.
+   manifest is unproven against a real runtime. That part needs
+   `flatpak-builder`, which is not installed. Two things also remain before it
+   could be published:
+   - **No icon is shipped at all.** The desktop entry's
+     `Icon=io.github.odrannnn.metroidprimeport` names a file that no packaging
+     format installs: there is no `share/icons/` entry in the install rules, in
+     the manifest, or in the tree. A desktop environment falls back to a generic
+     icon, and Flathub requires one. It has to be *original* artwork for the
+     same reason the screenshots cannot be supplied — anything recognisably
+     Nintendo's is not ours to redistribute. This is new; it was not on any
+     list until the installed tree was inspected.
    - **No screenshots.** Flathub requires them, and any screenshot of the running
      game shows Nintendo's game, which this package may not redistribute. This
      one cannot be fixed by writing a file.
-   - The metainfo itself is in place at
-     `packaging/org.metroidprime.MetroidPrimePort.metainfo.xml`, installed to
-     `share/metainfo/` and passing `appstreamcli validate`; its only outstanding
-     complaint is the component id's uppercase.
+   - The app id is now `io.github.odrannnn.metroidprimeport`, in the metainfo,
+     the desktop entry, the icon name, the manifest, the install rules and the
+     packaging script. It is lowercase and passes `appstreamcli validate
+     --pedantic` with no complaints, which it did not before: the old
+     `org.metroidprime.MetroidPrimePort` drew `cid-contains-uppercase-letter`.
+     `io.github.*` is a domain the maintainer controls, which is what Flathub
+     verifies an id against — the previous `org.metroidprime` was a placeholder
+     nobody owned. Verified by installing to a prefix and checking that the
+     binary runs, the metainfo validates from the install tree, and the desktop
+     entry's id matches the file it is installed as.

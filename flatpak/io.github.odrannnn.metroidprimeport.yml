@@ -5,9 +5,9 @@
 # GPU driver still comes from the host through the usual extensions, which is
 # what we want.
 #
-# Build with tools/make_flatpak.sh. Change the app id to something you control
-# before publishing anywhere.
-app-id: org.metroidprime.MetroidPrimePort
+# Build with tools/make_flatpak.sh. The app id is io.github.odrannnn.metroidprimeport,
+# which is a domain the maintainer controls, as Flathub requires.
+app-id: io.github.odrannnn.metroidprimeport
 runtime: org.freedesktop.Platform
 runtime-version: '24.08'
 sdk: org.freedesktop.Sdk

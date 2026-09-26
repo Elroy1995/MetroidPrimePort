@@ -14,7 +14,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${1:-"$ROOT/build/flatpak"}
-MANIFEST="$ROOT/flatpak/org.metroidprime.MetroidPrimePort.yml"
+MANIFEST="$ROOT/flatpak/io.github.odrannnn.metroidprimeport.yml"
 APP_ID=$(sed -n 's/^app-id: *//p' "$MANIFEST")
 
 for tool in flatpak flatpak-builder; do
