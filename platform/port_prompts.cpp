@@ -53,7 +53,18 @@ constexpr PromptKey kKeys[] = {
     {PAD_TRIGGER_R, 32, 32, 0xc39b2f9c2eac777bull, "5"},
     // Stick prompts. Not a button, so there is no binding to follow; the icon
     // is the device's own stick (or the direction keys for a keyboard).
-    {PAD_AXIS_CSTICK, 32, 32, 0x1ff9d2b310c0b706ull, "14"},
+    //
+    // There is one of these, not two. This table used to carry a second entry,
+    // 0x1ff9d2b310c0b706 at 32x32 format 14, and it was wrong: that texture is
+    // the pause menu's Exit prompt, not a stick. Because the table said stick,
+    // tools/make_prompt_glyphs.py wrote the C-stick's four-square arrow glyph
+    // into it and shipped that to all four device folders, so the Exit prompt
+    // drew a cluster of white squares where the game draws a plain sphere. It
+    // was the only 32x32 entry here with format 14 while the other eight are
+    // format 5, which is the tell that the row had been transcribed carelessly.
+    // Caught by A/B capture: with the replacement off the sphere is clean, and
+    // removing just that one file - not the whole bindings directory, and not
+    // the table row - restores it.
     {PAD_AXIS_CSTICK, 64, 32, 0xe14dc493b5513d14ull, "5"},
 };
 constexpr size_t kKeyCount = sizeof(kKeys) / sizeof(kKeys[0]);
@@ -195,6 +206,28 @@ const char* ActiveDevice() {
   }
 }
 
+// The width and height a DDS header declares, or false if the file is too short
+// to hold one. A DDS opens with the "DDS " magic then a 124-byte header, of
+// which the height and width are the two little-endian uint32 at offset 12.
+bool IconDimensions(const std::string& path, uint32_t& width, uint32_t& height) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    return false;
+  }
+  char magic[4] = {};
+  if (!in.read(magic, 4) || std::strncmp(magic, "DDS ", 4) != 0) {
+    return false;
+  }
+  in.seekg(12, std::ios::beg);
+  uint32_t both[2] = {};
+  if (!in.read(reinterpret_cast<char*>(both), sizeof(both))) {
+    return false;
+  }
+  height = both[0];
+  width = both[1];
+  return true;
+}
+
 // Serves one generated icon as if it were a replacement file. Called from
 // Aurora worker threads, so it only touches the filesystem.
 bool ReadIconBytes(void* userData, const char* path, std::vector<uint8_t>& out) {
@@ -292,6 +325,20 @@ void Apply(size_t index, const std::string& stem) {
   // rather than registering a source that would fail to load and blank it.
   std::error_code existsError;
   if (!std::filesystem::is_regular_file(reg.iconPath, existsError)) {
+    reg.activeStem.clear();
+    return;
+  }
+  // Refuse art of the wrong size. The generated bindings are all written 32x32
+  // (tools/make_prompt_glyphs.py calls make_icon(icon) with no dimensions),
+  // but a single stem can serve textures of different sizes - the C-stick
+  // prompts here are one 32x32 and one 64x32. Serving 32x32 bytes under a name
+  // that says 64x32 does not scale the image: the game reads 64x32 worth of
+  // pixels out of half the data and draws the right-hand half as noise. Keeping
+  // the game's own art is the correct outcome, not a fallback to apologise for.
+  uint32_t iconWidth = 0;
+  uint32_t iconHeight = 0;
+  if (!IconDimensions(reg.iconPath, iconWidth, iconHeight) ||
+      (iconWidth != key.width || iconHeight != key.height)) {
     reg.activeStem.clear();
     return;
   }

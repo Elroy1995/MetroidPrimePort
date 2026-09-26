@@ -1,3 +1,53 @@
+## The wrong prompt art on the pause menu's Exit, and why the first two fixes failed (2026-09-26)
+
+Reported as "the textures for button presses that are getting replaced in game are
+incorrect". Real, reproducible, and shipped in the repository.
+
+- **The symptom.** The pause menu's bottom bar draws `Q OPTIONS`, `X NEXT`,
+  `EXIT`, `Z BACK`, `E LOG BOOK`. Four of the five are correct. **EXIT** drew a
+  cluster of mismatched grey squares instead of the plain white sphere the game
+  draws. Evidence in `docs/images/prompt-replacement-ab.png`: the same bar with
+  replacements off, before, and after.
+- **The cause.** `platform/port_prompts.cpp` listed a texture as a C-stick
+  prompt that is actually the pause menu's **Exit sphere**:
+  `{PAD_AXIS_CSTICK, 32, 32, 0x1ff9d2b310c0b706ull, "14"}`. Because the table
+  said stick, `tools/make_prompt_glyphs.py` wrote the C-stick's four-square arrow
+  glyph into it and shipped that to all four device folders, so the game was
+  handed a stick icon for its Exit button.
+- **The tell was in the table all along.** It was the **only** 32x32 entry with
+  format `14`; the other eight are format `5`, and every 64x32 entry is format
+  `14`. One row had its dimensions and format transposed relative to every other
+  row, which is what a careless transcription looks like. Counting the format
+  field per size would have flagged it without running anything.
+- **Two fixes I tried first did not work, and both failures were informative.**
+  1. *Deleting the table row* changed nothing. There are **two independent
+     systems** registering the same texture names: `PortPrompts` serves the
+     binding-aware art from `<textures>/bindings/`, and `PortTextures` registers
+     static per-device files from `<textures>/<device>/tex1_<w>x<h>_<hash>_<fmt>.dds`
+     at startup. The static one is keyed by **filename**, so it is untouched by
+     any edit to the table. Deleting the row is necessary but not sufficient.
+  2. *Hiding the whole `bindings/` directory* also changed nothing, for the same
+     reason, and it was the clue: with `PortPrompts` entirely out of the picture
+     the wrong art was still on screen, so the static file was the culprit.
+  Removing that **one file** restored the sphere. The fix is the file, and the
+  table row goes with it so the generator cannot recreate it.
+- **A second, latent bug the hunt exposed.** Bindings are written
+  `make_icon(icon)` with no dimensions, so every generated binding is **32x32** —
+  but a single stem can serve textures of different sizes, and the remaining
+  C-stick prompt is 64x32. Serving 32x32 bytes under a name that says 64x32 does
+  not scale the image: the game reads 64x32 of pixels out of half the data and
+  draws the right-hand half as noise. `Apply` now reads the DDS header and
+  **refuses art of the wrong size**, keeping the game's own art instead, which is
+  the correct outcome rather than a fallback to apologise for.
+  **I have not seen this one on screen** — the 64x32 prompt is not on the pause
+  menu — so it is fixed by inspection and by the size check, not by a capture.
+- **How the capture was made, and one trap.** `MP_TEXTURES=<empty dir>` disables
+  both replacement systems, which gives the "off" half of the A/B. The screenshots
+  are PNGs with an **alpha channel of zero everywhere**, so cropping and viewing
+  them shows black unless they are converted to RGB first; two crop attempts came
+  back black and looked like a rendering fault before the alpha was noticed. Also
+  worth recording: Gradle's `BUILD SUCCESSFUL` is not evidence, and a screenshot
+  that renders is not evidence either.
 ## The touch overlay is testable now, and writing the test deleted the mapping (2026-09-26)
 
 The virtual gamepad has been lifted out of `#if defined(__ANDROID__)` and given a
