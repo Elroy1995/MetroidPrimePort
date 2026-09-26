@@ -157,6 +157,26 @@ faster.
 Under **Xvfb with `SDL_AUDIO_DRIVER=dummy`**, so treat the throughput figure as a
 best case. The presented rate and the jitter are the parts that transfer.
 
+### Audio
+
+A run reports which backend it got, and with what:
+
+```
+MP audio: driver pulseaudio
+```
+
+or `MP audio: no driver; SDL opened no audio device`. SDL3 picks the first
+available backend, so on Linux this is normally `pipewire` or `pulseaudio` — SDL
+loads both at runtime, which is why neither appears in `ldd` — and it is the only
+place a missing `libpulse` becomes visible at all. Force one with
+`SDL_AUDIO_DRIVER`; `SDL_AUDIO_DRIVER=dummy` is what the automated runs use so
+they do not fight over a real device.
+
+There is deliberately **no** mixer level or queue-depth report. The mix happens in
+vendored MusyX, not in the port, so measuring it there means instrumenting a
+vendored snapshot, and a report taken from the port's AI DMA path would describe a
+path that is idle in a normal run.
+
 ### Running out of device memory
 
 A Vulkan allocation that does not fit is fatal:

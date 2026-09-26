@@ -11,6 +11,11 @@
   carry their own terms, and the decompiled game code is not redistributable at
   all, and no single SPDX id can say that. And a component with no `url` is a
   warning, so the repository is now linked as the homepage.
+- A false claim corrected: the notes here used to say "`MP_AUDIO_STATS=1` reports
+  mixer rate/clipping". **No such flag existed** — grepping the tree for audio
+  flags turns up only `MP_STREAM_LOG`, `MP_STREAM_TRACE`, `MP_STREAM_TRACE_LOG`
+  and `MP_DISABLE_AI_AUDIO`. It was documented and never implemented, which is
+  worse than a missing feature because it reads like a way to check the thing.
 - **The two remaining Flathub blockers are not code.** The app id must change and
   be lowercased, and there can be no screenshots: any screenshot of the running
   game shows Nintendo's game, which this package may not redistribute. That one
@@ -793,7 +798,7 @@ Two release blockers, and the second turned out to be hiding a third.
   end and loop context, and preserves streaming history across circular-buffer
   wraps. Signed PCM8 and wide intermediate Q15 products were corrected too.
   Golden-sample tests pass; confirmation of the audible static fix on the remote
-  PulseAudio setup is still needed. `MP_AUDIO_STATS=1` reports mixer rate/clipping.
+  PulseAudio setup is still needed.
 - Build revisions are generated at build time and exposed by `--version`, the
   launch log and F1. `MP_TRACE_TIMING=1` logs actual render and simulation rates.
 

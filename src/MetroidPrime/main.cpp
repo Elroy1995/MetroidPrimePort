@@ -1072,6 +1072,17 @@ int CMain::RsMain(int argc, const char* const* argv) {
     fprintf(stderr, "MP startup: first frame %llu ms after the main loop began, %u frames run\n",
             static_cast< unsigned long long >(firstFrameNs / 1000000ull), s_frameLog);
   }
+  // Which audio backend the run actually got, and at what rate. Nothing reported
+  // this, so "is there any sound" was unanswerable from a run: a machine with no
+  // server, a build without a backend and a correctly working setup all look the
+  // same from the outside. On Linux the answer is normally pipewire or pulse,
+  // whichever SDL reached first, and SDL loads them at runtime - so this is also
+  // the only place a missing libpulse shows up.
+  if (const char* audioDriver = SDL_GetCurrentAudioDriver(); audioDriver != nullptr) {
+    fprintf(stderr, "MP audio: driver %s\n", audioDriver);
+  } else {
+    fprintf(stderr, "MP audio: no driver; SDL opened no audio device\n");
+  }
   }
   ShutdownSubsystems();
   gameGlobalObjects = nullptr;
