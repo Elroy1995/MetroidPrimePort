@@ -1045,6 +1045,12 @@ int CMain::RsMain(int argc, const char* const* argv) {
       }
       CheckTweakManagerDebugOptions();
 
+      // Taken before the frame cap, deliberately. Measuring after it folded the
+      // pacing sleep into the frame's cost, so the one number being reported was
+      // the presented rate whatever the machine's actual headroom was, and the
+      // two could never be told apart - which is the only thing worth reporting
+      // when a frame overruns its budget.
+      const uint64_t workEndNs = SDL_GetTicksNS();
       if (PortDebug::FrameLimitEnabled()) {
         nextFrameDeadline += framePeriodNs;
         const uint64_t now = SDL_GetTicksNS();
@@ -1056,7 +1062,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
       } else {
         nextFrameDeadline = SDL_GetTicksNS();
       }
-      PortDebug::RecordFrame(SDL_GetTicksNS() - loopStartNs, sTicksAdvanced, presented);
+      PortDebug::RecordFrame(workEndNs - loopStartNs, sTicksAdvanced, presented);
       if (firstFrameNs == 0 && presented)
         firstFrameNs = SDL_GetTicksNS();
     }

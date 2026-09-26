@@ -31,6 +31,7 @@
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_scancode.h>
+#include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_sensor.h>
 #include <SDL3/SDL_stdinc.h>
@@ -73,8 +74,14 @@ float sTickPeriod = 1.f / 60.f;
 bool sFrameLimitEnabled = true;
 bool sTraceTiming = false;
 uint64_t sTimingNs = 0;
+// Wall-clock for the same span as sTimingNs, so presented frames can be divided
+// by elapsed time rather than by the frames' own cost. Zero on the first call,
+// which is why the delta is skipped until a previous reading exists.
+uint64_t sTimingWallNs = 0;
+uint64_t sTimingWallLastNs = 0;
 unsigned sTimingFrames = 0, sTimingTicks = 0;
 double sActualFps = 0.0, sActualTps = 0.0;
+double sThroughputFps = 0.0;
 bool sVsyncEnabled = false;
 float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
@@ -517,15 +524,33 @@ void RecordFrame(uint64_t durationNs, unsigned ticks, bool presented) {
   sTimingNs += durationNs;
   sTimingTicks += ticks;
   if (presented) ++sTimingFrames;
+  // Wall-clock time for the same span, kept separately from the frame's own
+  // duration. Dividing presented frames by the frame's CPU time reports
+  // throughput, which is what the process can *produce*; dividing by wall time
+  // reports what reaches the screen. The two agree while the 60 Hz cap is
+  // waiting more than the frame costs, and part company exactly when a frame
+  // overruns its budget - which is the case someone opens the Performance tab
+  // to diagnose. One of the two numbers without the other is misleading there.
+  {
+    const uint64_t nowNs = SDL_GetTicksNS();
+    if (sTimingWallLastNs != 0) {
+      sTimingWallNs += nowNs - sTimingWallLastNs;
+    }
+    sTimingWallLastNs = nowNs;
+  }
   if (sTimingNs >= 1000000000ull) {
     const double seconds = static_cast<double>(sTimingNs) / 1000000000.0;
-    sActualFps = sTimingFrames / seconds;
+    const double wallSeconds = static_cast<double>(sTimingWallNs) / 1000000000.0;
+    sActualFps = sTimingFrames / (wallSeconds > 0.0 ? wallSeconds : seconds);
+    sThroughputFps = sTimingFrames / seconds;
     sActualTps = sTimingTicks / seconds;
     if (sTraceTiming) {
-      std::fprintf(stderr, "[timing] render=%.1f FPS simulation=%.1f ticks/s cap=%s\n",
-                   sActualFps, sActualTps, sFrameLimitEnabled ? "60" : "off");
+      std::fprintf(stderr,
+                   "[timing] presented=%.1f FPS throughput=%.1f FPS simulation=%.1f ticks/s cap=%s\n",
+                   sActualFps, sThroughputFps, sActualTps, sFrameLimitEnabled ? "60" : "off");
     }
     sTimingNs = 0;
+    sTimingWallNs = 0;
     sTimingFrames = sTimingTicks = 0;
   }
 }
@@ -1287,7 +1312,12 @@ void DrawPerformanceTab() {
     SetFrameLimitEnabled(frameLimit);
     MarkDirty();
   }
-  ImGui::Text("Measured render rate: %.1f FPS", sActualFps);
+  // Both, because they answer different questions. Throughput is what the
+  // machine produces once the pacing wait is excluded; presented is what
+  // reaches the screen. A player seeing stutter wants the second one, and the
+  // gap between them is the headroom.
+  ImGui::Text("Presented: %.1f FPS", sActualFps);
+  ImGui::Text("Throughput: %.1f FPS (headroom at the current frame cost)", sThroughputFps);
   if (sSimAdaptive) {
     ImGui::Text("Measured simulation: %.1f ticks/s (adaptive)", sActualTps);
   } else {

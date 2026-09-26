@@ -1,5 +1,50 @@
 # Metroid Prime port — working notes
 
+## Frame pacing, measured — and the number that was not what it said (2026-09-26)
+
+- Measured over 24 samples of 60 frames each, under Xvfb with the dummy audio
+  driver: **16.667 ms/frame, 60.00 FPS presented**, p99 16.672 ms, jitter
+  p99-p50 of **5.6 us**, and **0 of 24** intervals more than 1 ms late. Pacing is
+  not a problem on the Linux path.
+- Uncapped (`F10`): 137.0 FPS presented, p99 10.534 ms. Simulation stays at 60
+  ticks/s, because it is fixed-step; uncapped presentation renders the same
+  simulation more often rather than advancing it faster.
+- **The reported rate was measuring the wrong thing.** `RecordFrame` was handed
+  `SDL_GetTicksNS() - loopStartNs` *after* the frame-cap sleep, so the pacing wait
+  was folded into the frame's own cost. The one number the port reported was
+  therefore the presented rate whatever the machine's headroom was, and "is the
+  CPU the problem" could never be answered from it. The frame's work is now
+  measured before the sleep and both rates are reported: presented (per second of
+  wall time) and throughput (with the wait excluded).
+- The check that the split is real: uncapped, the two must agree, and they do —
+  137.0 and 137.0. At the cap they differ by 21x, which is the number worth
+  having when something stutters.
+- My first measurement script had the arithmetic inverted — it computed frames per
+  second and then printed the result as milliseconds per frame, so a 60 FPS run
+  reported as 16.67 FPS. The raw number was right and the label was wrong, which
+  is the worst combination; it is stated in the script so it cannot be
+  reintroduced silently.
+
+## The end-of-tour Vulkan failure is a busy GPU, not VRAM retention (2026-09-26)
+
+- A full eight-world tour ended in
+  `vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY` while creating a
+  `GX Static Texture`, which read like textures never being released across
+  hundreds of world restarts. Measured instead:
+  - Reproduced in a **one-world, one-area tour, 23 frames in**, immediately after
+    `sweep: complete` and not before it — the opposite of accumulation.
+  - The port's own process holds **118 MiB** of device memory while running, and a
+    normal run reached 57+ frames with no failure at all under the same
+    conditions.
+  - `nvidia-smi` shows an LM Studio `llama-server` holding **15124 MiB of
+    16303 MiB** — about 1.1 GB free for everything else.
+- The one thing here worth keeping: the port aborts on the fatal rather than
+  degrading, and the message does not say what was actually short, so a player
+  whose GPU is busy sees "WebGPU error 3" and nothing about memory. Not fixed —
+  the honest fix and the smaller-attachment fallback both belong in vendored
+  Aurora.
+
+
 ## The "unidentified memory card" is a misreading (2026-09-26)
 
 A fresh card was reported as *unidentified* in the Android front end, and

@@ -129,6 +129,63 @@ treat it as roughly a second rather than a precise figure. The existing F1
 Performance tab still reports the steady-state render and simulation rates once
 running.
 
+### Frame pacing
+
+Measured on Linux with `MP_TRACE_TIMING=1`, sampling the frame log by arrival
+time so the wall-clock interval is what is measured rather than the frame's own
+cost (`build/frame-pace.sh`):
+
+| | presented | throughput | mean interval | p99 | jitter p99-p50 | late by >1 ms |
+|---|---|---|---|---|---|---|
+| capped (default) | 60.00 FPS | 1282.8 FPS | 16.667 ms | 16.672 ms | 5.6 us | 0 of 24 |
+| uncapped (`F10`) | 137.0 FPS | 137.0 FPS | 7.126 ms | 10.534 ms | 3277 us | 0 of 48 |
+
+Two rates are reported because they answer different questions, and the gap
+between them is the useful part:
+
+- **presented** — frames that reached the screen per second of wall time. What a
+  player perceives.
+- **throughput** — what the machine could produce, with the pacing wait excluded.
+
+At the default cap the two differ by 21x, so stutter here is never the CPU
+running out of budget. Uncapped they converge, which is the check that the two
+really are measuring different things: once nothing is waiting, they must agree.
+Simulation stays at 60 ticks/s either way, because it is fixed-step — uncapped
+presentation renders the same simulation more often rather than advancing it
+faster.
+
+Under **Xvfb with `SDL_AUDIO_DRIVER=dummy`**, so treat the throughput figure as a
+best case. The presented rate and the jitter are the parts that transfer.
+
+### Running out of device memory
+
+A Vulkan allocation that does not fit is fatal:
+
+```
+[fatal] [aurora::gpu] WebGPU error 3: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY
+ - While calling [Device].CreateTexture([TextureDescriptor ""GX Static Texture""]).
+```
+
+and the process stops. The message names an allocation and nothing else, so the
+first reading of it is that the port is holding too much. **It usually is not.**
+The port's own process uses about **118 MiB** of device memory while running, a
+full eight-world tour does not accumulate allocations, and the failure reproduces
+**23 frames into a one-area tour** — immediately after the tour completes and
+never during it, which is the opposite of cumulative exhaustion. What actually
+caused the failure observed here was an LM Studio model holding **15124 of
+16303 MiB**, leaving about 1.1 GB for everything else.
+
+So the first thing to check is what else is on the GPU:
+
+```sh
+nvidia-smi --query-compute-apps=pid,used_memory --format=csv
+```
+
+Not fixed: the port aborts on a fatal allocation with a message that does not say
+what was short, which a player on a busy GPU would see as an unexplained crash.
+The honest fix and the smaller-attachment fallback both belong in vendored Aurora,
+so they are better decided there than worked around from the port.
+
 ### HD texture replacements
 
 `MP_TEXTURES` (default `<executable dir>/textures`) points at a folder of
