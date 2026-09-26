@@ -37,6 +37,19 @@ release still has to settle the second question — what may be done with a
 working copy of decompiled game code — and only the copyright holder can answer
 it. The licence here is not evidence that they may.
 
+### Where saves live, and the per-build-directory card
+
+The memory card is placed with `CARDSetBasePath(SDL_GetBasePath())`, so **the card
+belongs to the directory the executable is in** — not to `MP_USER_PATH`, which
+controls only the dawn cache and the game profile. On desktop that is next to the
+binary; on Android it is the app's storage, because the APK is read-only.
+
+The practical consequence is that every build directory has its own card, so a
+save written by one build is invisible to another. That is worth knowing when
+comparing runs, and worth saying in a support answer, because "my save vanished"
+is otherwise inexplicable. It is a deliberate choice — a copied build stays
+self-contained — and it is why `MP_USER_PATH` cannot be used to move saves.
+
 ### Notices must travel with a build
 
 - **All four do.** Each ships the port's own `LICENSE` and `NOTICE` alongside
@@ -126,20 +139,37 @@ under GNOME unless the port's own X11 preference applies — see
 
 ## What still blocks a real release
 
-1. **No answer for the decompiled game source.** The port's own work is MIT
+1. **Saving writes an empty save, on every platform.** The highest-priority item,
+   and it is a defect rather than a missing feature. A save completes and the
+   file it produces is structurally perfect — correct CRC, comment stamped with
+   the time, banner and icon fully drawn — but its 3004-byte save-data region is
+   **all zeros**. So the file is valid and carries nothing, the front end's file
+   list has no real save to offer, and Continue has nothing to load. The slot is
+   never built: `CMemoryCardDriver::BuildNewFileSlot` is what populates one, its
+   only caller is `CSaveGameScreen::StartGame`, and the observed flow never reaches
+   the file-select list that would call it. It is in the port's card path rather
+   than a platform backend, so one fix covers Linux, Windows and Android together.
+   A closely related symptom is that a card with no save gets a file created for
+   it, that file reads back as zeros, and the game calls the card *corrupt* — on a
+   genuinely fresh card it should be offering to create a save instead. Evidence
+   and the full correction history are in `PORT_NOTES.md`; the short version is
+   that two of my own earlier conclusions here were wrong, once because I compared
+   against zlib's CRC rather than the port's raw one, and once because I validated
+   the container and not the contents.
+2. **No answer for the decompiled game source.** The port's own work is MIT
    (`LICENSE`, scoped) and `NOTICE` says so, but what may be done with a working
    copy of decompiled game code is a question for the copyright holder, and no
    part of this tree answers it.
-2. **The AppImage only *names* the shared libraries it copies** rather than
+3. **The AppImage only *names* the shared libraries it copies** rather than
    reproducing their terms. Windows, AppImage, APK and the Flatpak manifest all
    collect the rest.
-3. **Android on-device behaviour is unverified** — boot, render, save, play a
+4. **Android on-device behaviour is unverified** — boot, render, save, play a
    seed and connect all need a device.
-4. **`wss://` does not work on Android**: the NDK has no OpenSSL, so the
+5. **`wss://` does not work on Android**: the NDK has no OpenSSL, so the
    build has no `MP_HAVE_OPENSSL` and a `wss://` server is refused rather than
    downgraded. A JNI `SSLSocket` backend or a vendored TLS library is what that
    needs.
-5. **The Flatpak path has never been built.** Its manifest is now correct — the
+6. **The Flatpak path has never been built.** Its manifest is now correct — the
    project's own install rules put a runnable tree in `/app`, and the notices
    are collected — but nothing here has ever run `flatpak-builder`, so the
    manifest is unproven against a real runtime. Three things also remain before
