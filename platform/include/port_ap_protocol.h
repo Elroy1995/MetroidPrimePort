@@ -147,6 +147,12 @@ public:
   // Records a collected location. False when the key has no id, or was already
   // checked; otherwise `id` is the AP location id to send.
   bool MarkLocationChecked(const std::string& locationKey, int64_t& id);
+  // Whether the location table has an id for this key at all, as opposed to it
+  // being a key that was already checked. Both cases are a false return from
+  // MarkLocationChecked, but only one is a problem, and it is a silent one: a
+  // key with no id is dropped on the floor, so the session plays normally and
+  // the server simply never records the check.
+  bool KnowsLocation(const std::string& locationKey) const;
   // Every configured location id, for the MP_AP_SEND_ALL debug path.
   std::vector< int64_t > AllLocationIds() const;
 

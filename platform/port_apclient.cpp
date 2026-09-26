@@ -180,6 +180,9 @@ struct Runtime {
   std::deque<std::string> notifications;
   int itemCount = 0;
   int checkCount = 0;
+  // Locations collected in game that the table has no id for. Counted and
+  // reported once, because dropping them is otherwise invisible.
+  int unmappedCount = 0;
   // DeathLink: whether this client's death has already been announced, so a
   // death is sent once rather than on every tick the flag stays clear for.
   bool deathAnnounced = false;
@@ -645,8 +648,28 @@ void QueueCheck(const char* locationKey) {
     if (!runtime.enabled || runtime.session == nullptr)
       return;
     int64_t id = 0;
-    if (!runtime.session->MarkLocationChecked(locationKey, id))
+    if (!runtime.session->MarkLocationChecked(locationKey, id)) {
+      // Two things come back false here and only one of them is a problem. A key
+      // the table knows but has already recorded is the ordinary case. A key the
+      // table has never heard of means this location will never be reported, and
+      // that fails silently: the session plays fine, items arrive, and the server
+      // just never records a check. For a multiworld that is the worst shape a
+      // failure can take, so name it once instead of dropping it quietly. The
+      // usual cause is a location table whose keys are not the world:area:entity
+      // form the game produces - see the note in docs/ARCHIPELAGO.md.
+      if (!runtime.session->KnowsLocation(locationKey)) {
+        if (runtime.unmappedCount == 0) {
+          PortLog::Write(
+              "archipelago: location '%s' has no id in the location table, so it was not "
+              "reported. The session still works and the server will simply never record "
+              "this check; if none ever arrives, the world's location keys are probably "
+              "not world:area:entity (see docs/ARCHIPELAGO.md).\n",
+              locationKey);
+        }
+        ++runtime.unmappedCount;
+      }
       return;
+    }
     runtime.SaveStateLocked();
     runtime.queuedChecks.push_back(id);
   } catch (...) {

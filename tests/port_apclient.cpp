@@ -151,6 +151,18 @@ int main() {
         "mapped location returns its ID and records it");
   Check(!session.MarkLocationChecked("39F2DE28:B2701146:0000007E", checkedId),
         "a recorded location cannot be checked twice");
+
+  // MarkLocationChecked answers false for two different reasons, and only one is
+  // a fault. KnowsLocation is what tells them apart, and the client uses it to
+  // report a location the table has never heard of instead of dropping it in
+  // silence - a session that collects everything and reports nothing looks, from
+  // the player's side, exactly like a session that is working.
+  Check(!session.KnowsLocation("unknown"),
+        "a location absent from the table is not known");
+  Check(session.KnowsLocation("39F2DE28:B2701146:0000007E"),
+        "a location in the table stays known after being recorded");
+  Check(!session.KnowsLocation(""),
+        "an empty key is not known");
   const std::vector<int64_t> allIds = session.AllLocationIds();
   Check(allIds == std::vector<int64_t>({123456, 123457}),
         "all location IDs are deduplicated and sorted");

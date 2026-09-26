@@ -252,6 +252,40 @@ not include Aurora's UI layer, so an F1 screenshot will not show it.
   AP `Locations.py` shape plus a real Chozo Ruins dump mapped 5 locations, with
   the clean areas at a uniform `+1` delta and Main Plaza flagged for review.
 
+### What the 100/100 join does and does not prove
+
+The fixture check (`ctest -R port_ap_fixture`, 100/100 mapped, nothing missing)
+is worth stating precisely, because it is easy to over-read. **The fixture is
+generated from the same port dump that produces the keys.**
+`tools/make_ap_fixture.py` reads `randomizer_locations.log` and writes both the
+`Locations.py` and the `PICKUP_LOCATIONS` list, so the table's keys and the
+game's keys come from one source. The 100/100 therefore proves the port's
+**internal consistency** — that a key the game produces resolves to exactly the
+id the table assigns, with nothing lost in between — and it pins the join against
+regressions. It does **not** prove that a real Archipelago world uses the same
+key scheme.
+
+That is the live risk, and it is not hypothetical: if the upstream world keys its
+locations by anything other than `world:area:entity` — a room name, a tuple, a
+different hash — then every location the player collects fails to resolve. Before
+this was fixed that failure was **silent**. `MarkLocationChecked` answers false
+both for a key it has already recorded and for a key it has never heard of;
+`QueueCheck` treated both as "nothing to do" and returned. The session connects,
+items arrive, the HUD updates, the seed plays — and the server records zero
+checks, with nothing in any log to explain why.
+
+`Session::KnowsLocation` now separates the two cases and `QueueCheck` reports the
+second one once, naming the offending key and pointing here. It does not spam per
+pickup, because a legitimate session can touch an unconfigured location and that
+should not become noise. So the failure mode is gone, but the underlying
+assumption is still unverified: it can only be closed against a real world file,
+which is why the gap below is still a gap and not a done item.
+
+What *is* now pinned, device-free and in CI: the key format itself
+(`tests/port_randomizer.cpp` asserts `FormatLocationKey(1,2,3)` produces
+`00000001:00000002:00000003`), and the distinction between "already recorded" and
+"never configured" (`tests/port_apclient.cpp`).
+
 ## Not done yet
 
 Each entry says whether it is a decision or a gap, and why. "Descoped" means
@@ -294,7 +328,12 @@ still works; anything marked as a gap still limits a session.
   clearing the alive flag, which is what drives the death sequence in the game.
 - **Mapping verification — a gap in one direction only.** The join itself is
   checked against the spec-shaped fixture (`ctest -R port_ap_fixture`): 100/100
-  mapped, no area for review, no area missing. What is still unverified is the
-  game side - that a pickup touched in game reports the location the table claims
-  it is. That needs a played seed, and the join remains a candidate for any
-  world whose table differs from the fixture.
+  mapped, no area for review, no area missing. But that fixture is generated from
+  the same dump that produces the keys, so the check proves internal consistency
+  rather than agreement with a real world — see "What the 100/100 join does and
+  does not prove" above. What remains unverified is whether a real
+  Archipelago world keys its locations the way this port does. It does not need
+  a played seed to narrow: the key format is a pure function of
+  (world, area, entity) and is already pinned by a test against real dumped
+  keys. It needs a real world file. Until one is reachable, the client now at
+  least says so out loud rather than dropping every check silently.

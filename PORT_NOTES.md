@@ -1,3 +1,55 @@
+## Found: a location the table does not know was dropped in total silence (2026-09-26)
+
+The last AP gap said the game side of the mapping is unverified and "needs a
+played seed". **That is too pessimistic about the test and too optimistic about
+the consequence.** Reading the path, the consequence is worse than an unverified
+gap: it fails silently, in a way that looks like success.
+
+- **The path.** `CScriptPickup` on collection
+  (`src/MetroidPrime/ScriptObjects/CScriptPickup.cpp:179`) builds the key with
+  `PortRandomizer::FormatLocationKey(world, area, entity)` — `%08X:%08X:%08X`,
+  the same form the dump's `LOC` lines carry — and hands it to
+  `PortAp::QueueCheck`, which calls `Session::MarkLocationChecked`. That returns
+  **false for two entirely different reasons**: the key has no id in the table,
+  or the key was already recorded. `QueueCheck` treated both as "nothing to do"
+  and returned.
+- **So what a key mismatch looks like.** The session connects, the handshake
+  succeeds, items arrive, the HUD updates, the seed plays, and **the server
+  records zero checks**. Nothing appears in any log. A player cannot tell this
+  from a working session, and neither could I from the outside. For a multiworld
+  that is the worst shape a failure can take, and it is the one failure the
+  objective explicitly cares about — "plays a shuffled seed" is not true if no
+  check is ever reported.
+- **This is not hypothetical.** The upstream world's file has been unreachable
+  throughout, and the fixture the 100/100 join is checked against is *generated
+  from the same dump that produces the keys* (`tools/make_ap_fixture.py` reads
+  `randomizer_locations.log` and writes both the table and `PICKUP_LOCATIONS`).
+  So the check proves internal consistency and pins the join against regressions,
+  but it **cannot** prove a real world uses the same key scheme. If it keys
+  locations by a room name, a tuple or a different hash, every location the
+  player collects fails to resolve. I have been reading 100/100 as more than it
+  is.
+- **Fixed: the two cases are now told apart.** `Session::KnowsLocation` answers
+  whether the table has ever heard of a key, and `QueueCheck` uses it to report
+  the unconfigured case once, naming the key and pointing at
+  `docs/ARCHIPELAGO.md`. It deliberately does not log per pickup, because a
+  legitimate session can touch a location that is not in the table and that
+  should not become noise. The count is kept so it can be surfaced.
+- **What is verified, and what is not.** `tests/port_apclient.cpp` covers
+  `KnowsLocation` for an unknown key, a known key after it has been recorded,
+  and an empty key — and I checked the new assertion is not vacuous by inverting
+  it and watching the test fail. `tests/port_randomizer.cpp` already pins the key
+  format. **The log line firing in a live session is not verified**: it needs a
+  pickup actually collected against a config whose table lacks that key, and fast
+  boot collects nothing, so triggering it would take a played seed — the thing I
+  said was not needed. I am not going to manufacture a harness that reports a
+  constant to cover that; the predicate is tested and the path compiles, and
+  that is the honest state of it.
+- **The gap is still a gap.** This makes the failure *visible*; it does not make
+  the assumption *true*. Closing it needs a real Archipelago world file, and
+  until one is reachable the correct claim is "the client tells you when its keys
+  do not match", not "the mapping is verified".
+
 ## RETRACTED: the "badly corrupted frame" is the visor HUD working (2026-09-26)
 
 I left an open item saying a captured frame was a corruption bug and might be the

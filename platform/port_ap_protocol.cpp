@@ -889,6 +889,10 @@ bool Session::MarkLocationChecked(const std::string& locationKey, int64_t& id) {
   return true;
 }
 
+bool Session::KnowsLocation(const std::string& locationKey) const {
+  return mConfig.locations.find(locationKey) != mConfig.locations.end();
+}
+
 std::vector<int64_t> Session::AllLocationIds() const {
   std::vector<int64_t> ids;
   ids.reserve(mConfig.locations.size());
