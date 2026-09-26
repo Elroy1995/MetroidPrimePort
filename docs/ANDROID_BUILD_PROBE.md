@@ -135,14 +135,21 @@ building and running it:
   POCO F8 Ultra, the release build holds a steady 60 FPS where the debug build
   stutters badly.
 - The memory card lives in app storage, so saves survive reinstall of the same
-  data and need no storage permission. A fresh card still reports as
-  unidentified in the front end and needs further work.
+  data and need no storage permission. A fresh card has been reported as
+  unidentified in the front end and **the cause is still unknown** — see
+  `PORT_NOTES.md`. What the port now does is log the directory it resolved the
+  card to on every platform, so the next device run answers it in one line:
+  `memory card: storing under <path>`. That line is in logcat, and the same
+  code also falls back to the app's internal storage if `SDL_GetPrefPath` cannot
+  answer, instead of letting the card land in the process's working directory,
+  which on Android is not writable.
 - Distribution obligations remain. Aurora and MusyX are MIT snapshots and the
   button prompt icons are Kenney CC0; if any GPL-covered code ends up in the
   final combined work, the required corresponding source and build material must
   be provided under the applicable GPL terms. The separate GPL recompilation
-  toolchain is not part of this native link, and this repository currently has no
-  top-level license grant. Never package a disc image or extracted copyrighted
+  toolchain is not part of this native link. The port's own work is MIT — see
+  `LICENSE` and `NOTICE`, which also state that the grant does not cover the
+  decompiled game code. Never package a disc image or extracted copyrighted
   game assets.
 
 ## Probe history

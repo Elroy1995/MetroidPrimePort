@@ -1,5 +1,40 @@
 # Metroid Prime port — working notes
 
+## The memory card now says where it is (2026-09-26)
+
+- A fresh card was reported as **unidentified** in the Android front end. **I did
+  not find the cause.** What follows is what was ruled out, and what was done
+  about it anyway.
+- Ruled out on desktop: a fresh card works. With no card at all, a run reaches
+  49+ frames, logs the two expected "Failed to open file: MetroidPrime A/B"
+  lines for a save that does not exist yet, and creates
+  `USA/Card A/01-GM8E-MetroidPrime A.gci`. The same run with a card already
+  present behaves identically.
+- Ruled out as the cause: the `__ANDROID__` branch. It is genuinely compiled -
+  `__ANDROID__` is a Clang predefine for every NDK target, checked with `-dM`,
+  and the string that only exists inside that branch is present in the arm64
+  `.so` from the built APK.
+- The silent failure I *did* find: a slot's card path is default-constructed,
+  and `CARDInit` fills an empty one from aurora's user path - which is the
+  `MP_USER_PATH` environment variable, **unset on Android** - or failing that
+  from the process's working directory. On Android the working directory is not
+  writable. A card under `/` is not a card: every write fails, the front end
+  shows one it cannot identify, and nothing logs where it was meant to be. This
+  is a real hole, but nothing observed suggests it is *this* report's cause.
+- What changed: the resolved directory is logged on every platform
+  (`memory card: storing under <path>`, which reaches logcat via `PortLog`), the
+  Android branch falls back to `SDL_GetAndroidInternalStoragePath()` when
+  `SDL_GetPrefPath` cannot answer, and if no directory can be resolved at all it
+  says so and leaves the card uninitialised so a later call retries rather than
+  leaving the card permanently unavailable.
+- The next device run should start with that one log line. If it names a
+  directory the app can write, the cause is elsewhere and this is a dead end;
+  if it does not appear at all, the card is never reaching this code.
+- I also corrected a comment I had written here first. I claimed the paths stay
+  empty without `CARDSetBasePath`; `CARDInit` does fill them, just from somewhere
+  worse.
+
+
 ## A licence, and the Flatpak could not have worked (2026-09-26)
 
 Two release blockers, and the second turned out to be hiding a third.

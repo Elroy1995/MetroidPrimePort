@@ -6,9 +6,13 @@
 
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
+#if defined(__ANDROID__)
+#include <SDL3/SDL_system.h>
+#endif
 
 #include "Kyoto/MemoryCopy.hpp"
 #include "Kyoto/Basics/CBasics.hpp"
+#include "port_log.h"
 
 bool CMemoryCardSys::mIsInitialized;
 bool CMemoryCardSys::mIsCardSysExists;
@@ -218,18 +222,49 @@ void CMemoryCardSys::Initialize() {
   if (!mIsInitialized) {
     // Port: keep the memory card next to the executable so a copied build is
     // self-contained. CARDSetBasePath must run before CARDInit.
+    //
+    // This has to end with a directory, not merely with a path. A slot's path
+    // is default-constructed, and CARDInit fills an empty one from aurora's
+    // user path - which is the MP_USER_PATH environment variable and is unset on
+    // Android - or, failing that, from the process's working directory, which on
+    // Android is not writable. A card under "/" is not a card: every write
+    // fails, the front end shows a card it cannot identify, and nothing anywhere
+    // says where the card was supposed to be.
+    //
+    // So the resolved directory is logged on every platform. A save that went
+    // somewhere unexpected is otherwise unanswerable from a black screen, and on
+    // Android this line is the one that says where.
+    const char* base = nullptr;
+    // Only SDL_GetPrefPath allocates, and only it has to be freed; the internal
+    // storage path is owned by SDL.
+    char* ownedBase = nullptr;
 #if defined(__ANDROID__)
-    // The card file is created under this path, and on Android the executable
-    // directory lives inside the read-only APK, so use the app's storage.
-    if (char* base = SDL_GetPrefPath(nullptr, "Metroid Prime")) {
-      CARDSetBasePath(base, 2);
-      SDL_free(base);
+    // The executable lives inside the read-only APK, so the app's own storage is
+    // the only writable place. SDL_GetPrefPath normally creates it; when it
+    // cannot answer, the internal storage root is that same directory reached
+    // another way, and is much better than falling back to the working
+    // directory.
+    ownedBase = SDL_GetPrefPath(nullptr, "Metroid Prime");
+    base = ownedBase;
+    if (base == nullptr) {
+      base = SDL_GetAndroidInternalStoragePath();
+      if (base != nullptr) {
+        PortLog::Write("memory card: SDL_GetPrefPath gave nothing, using internal storage\n");
+      }
     }
 #else
-    if (const char* base = SDL_GetBasePath()) {
-      CARDSetBasePath(base, 2);
-    }
+    base = SDL_GetBasePath();
 #endif
+    if (base == nullptr) {
+      // Deliberately leaving mIsInitialized false so a later call retries rather
+      // than leaving the card permanently unavailable.
+      PortLog::Write("memory card: no writable directory for the card; the front end "
+                     "will report it as unidentified\n");
+      return;
+    }
+    CARDSetBasePath(base, 2);
+    SDL_free(ownedBase);
+    PortLog::Write("memory card: storing under %s\n", base);
     // Aurora's CARDInit takes the game id and maker code.
     CARDInit("GM8E", "01");
     mIsInitialized = true;
