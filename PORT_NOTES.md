@@ -1,3 +1,44 @@
+## RETRACTED: the "badly corrupted frame" is the visor HUD working (2026-09-26)
+
+I left an open item saying a captured frame was a corruption bug and might be the
+same class of problem as the old "intermittent skinned geometry explosion".
+**It is neither. It is the in-game visor, rendering correctly.** I chased it on
+the strength of a text description and a filename, and I should have opened the
+image before writing it down as a defect.
+
+- **What the frame actually is.** `docs/images/front-end-file-select.png` is the
+  first-person view *through Samus's visor*: the visor frame and its struts, the
+  energy bar, the missile readout, the radar, her arm and cannon at bottom right,
+  and "ENTERING" as the room-entry text. The magenta/orange cast is the visor
+  tint and the horizontal banding is the visor's scanline effect. Every HUD
+  element is legible and correctly placed. Nothing is broken.
+- **The decisive argument, and it is worth keeping as a rule.** **Memory
+  corruption does not produce clean, evenly-spaced horizontal scanlines.** Garbage
+  from a bad upload or a mismatched array size shows up as blocky, irregular,
+  structureless mush. Uniform periodic banding is a deliberate post effect, full
+  stop. I had the evidence in front of me — the screenshot — and described it as
+  "a magenta/orange wash with heavy scanlines" without asking why the corruption
+  had a *period*.
+- **The port adds no scanline effect, which settles where they come from.**
+  `grep -ri 'scanline' src/ platform/` matches only `src/NESemu/` — the hidden
+  NES emulator that ships on the Prime disc, not the render path. The banding is
+  the game's. The visor is the game's too: `LoadVisorParameters` /
+  `CVisorParameters` in `ScriptLoader.cpp:253`, carrying a mask and a
+  `scanPassthrough` flag, and "ENTERING" is `kPBS_Entering`, a `CPlayerGun`
+  beam state (`CPlayerGun.cpp:465`).
+- **What the frame was doing there.** The capture was *meant* to be file select
+  and caught the visor instead, which is what the surrounding note half-said at
+  the time ("consistent with the attract movie or a file-select transition, but
+  it is not the main menu"). So the real finding is a mistimed capture, not a
+  rendering fault. Which is a smaller, duller, more believable thing.
+- **What this does NOT close.** The older "intermittent skinned geometry
+  explosion" item is a separate claim from a much earlier note, about array-based
+  draws uploading zero bytes. That cause was found and fixed — the array section
+  sizes are now threaded through to `GXSetArray` — and a draw-sync fence was
+  added, with "confirm the fence removed it" still listed as a to-do. This
+  screenshot is **not** evidence either way about that item; it is simply not
+  evidence about it, and I should not have implied it was.
+
 ## The Android APK runs on the x86_64 emulator (2026-09-26)
 
 I have been recording "no on-device testing for now" as if Android were entirely
