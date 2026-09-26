@@ -1,3 +1,32 @@
+## A valid save survives a front-end run; Continue still not shown (2026-09-26)
+
+With the CRC retraction settled, the experiment is finally clean: a save the game
+itself wrote (4898 non-zero payload bytes, raw CRC matching the stored value) is
+put on the card, and the front end is run with `MP_FAST_BOOT` **off** without
+touching the card.
+
+- **The save survives.** After 20000 frames the card still holds 8192 payload
+  bytes, 4898 of them non-zero, raw CRC `C2C18A63` equal to the stored value. So
+  an earlier front-end run leaving a zeroed file behind was a consequence of
+  *those* runs being killed at the card dialog, not something the front end does
+  to a good save unconditionally.
+- **Saving is therefore sound**: written, read back, CRC-verified, and untouched by
+  a front-end pass. The write and read paths agree.
+- **What the front end did**: title, then a frame carrying the in-game visor HUD,
+  then a badly corrupted frame, then back to `[ PRESS START ]`. The HUD frame is
+  consistent with the attract movie or a file-select transition, but it is not the
+  main menu, and no Continue was demonstrated in this run.
+- **A new observation worth chasing**: frame 16000 is a magenta/orange wash with
+  heavy scanlines over otherwise plausible geometry - not a transient fade. The
+  notes already carry an open item about an "intermittent skinned geometry
+  explosion"; this may be the same class of problem, and it appeared without fast
+  boot, on a path that had not shown it before. Screenshot kept as
+  `docs/images/front-end-file-select.png`.
+- **Still open:** the main menu and its Continue. Everything that made the earlier
+  attempts untrustworthy is now fixed - real GPU headroom, a real display or a
+  fast Xvfb path, scripted input that is not discarded by the focus gate, and a
+  card that holds a real save - so what remains is the walk itself.
+
 ## RETRACTED: there is no CRC bug, and I claimed there was (2026-09-26)
 
 Two commits ago I reported that "a save the port writes fails the game's own CRC
