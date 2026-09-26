@@ -460,6 +460,65 @@ void CheckTlsEndToEnd() {
           "TLS rejects an unverifiable server with a readable error");
   }
 
+  // caDirs, laid out the way Android lays out its store: one PEM per file,
+  // named <hash>.0, each followed by a text dump of the certificate. The names
+  // are deliberately not the subject hash OpenSSL would look up, so these pass
+  // only if every file is read. The junk file, the subdirectory and the dump
+  // must be skipped rather than fatal.
+  namespace fs = std::filesystem;
+  auto caDir = [&](const std::string& name, const std::string& pem) {
+    const fs::path path = fs::path(dir) / name;
+    fs::create_directories(path);
+    if (!pem.empty()) {
+      std::ifstream source(fs::path(dir) / pem, std::ios::binary);
+      std::ofstream target(path / "00000000.0", std::ios::binary);
+      target << source.rdbuf() << "Certificate:\n    Data:\n        Version: 3 (0x2)\n";
+    }
+    return path.string();
+  };
+  const std::string goodDir = caDir("dir-good", "ca.pem");
+  const std::string wrongDir = caDir("dir-wrong", "wrong-ca.pem");
+  const std::string emptyDir = caDir("dir-empty", "");
+  const std::string junkDir = caDir("dir-junk", "");
+  const std::string missingDir = (fs::path(dir) / "dir-missing").string();
+  for (const std::string& junkIn : {goodDir, junkDir}) {
+    std::ofstream(fs::path(junkIn) / "README") << "not a certificate\n-----BEGIN NOTHING-----\n";
+    fs::create_directories(fs::path(junkIn) / "subdir");
+  }
+  auto connectWith = [&](std::vector<std::string> dirs, const std::string& caFile, std::string& error) {
+    PortWs::TlsOptions options;
+    options.caFile = caFile;
+    options.caDirs = std::move(dirs);
+    PortWs::Client tlsClient;
+    std::string first;
+    const bool ok = tlsClient.Connect("127.0.0.1", port, "/", 3000, true, options) &&
+                    tlsClient.ReceiveText(first, 3000) && Contains(first, "\"RoomInfo\"");
+    error = tlsClient.Error();
+    tlsClient.Close();
+    return ok;
+  };
+  std::string dirError;
+  Check(connectWith({goodDir}, "", dirError),
+        "caDirs: a <hash>.0 CA beside a junk file and a text dump loads and verifies");
+  Check(!connectWith({emptyDir, missingDir}, "", dirError) &&
+            Contains(dirError, "no TLS root certificates") && Contains(dirError, emptyDir.c_str()) &&
+            Contains(dirError, missingDir.c_str()) && Contains(dirError, "loaded 0") &&
+            !Contains(dirError, "certificate verification failed"),
+        "caDirs: no certificate anywhere is a loud error naming every directory");
+  std::printf("[ws-tests] tls empty caDirs rejected: %s\n", dirError.c_str());
+  Check(!connectWith({junkDir}, "", dirError) && Contains(dirError, "no TLS root certificates"),
+        "caDirs: a directory of junk holds no certificates");
+  Check(!connectWith({wrongDir}, "", dirError) && Contains(dirError, "certificate verification failed"),
+        "caDirs: the wrong CA fails verification");
+  Check(connectWith({emptyDir, goodDir}, "", dirError),
+        "caDirs: an empty directory falls through to the next");
+  Check(!connectWith({wrongDir, goodDir}, "", dirError) &&
+            Contains(dirError, "certificate verification failed"),
+        "caDirs: the first directory with a certificate wins; later ones are not merged");
+  Check(!connectWith({goodDir}, dir + "/wrong-ca.pem", dirError) &&
+            Contains(dirError, "certificate verification failed"),
+        "caFile takes precedence over caDirs");
+
   // The server is still healthy after turning away bad handshakes.
   PortWs::Client again;
   Check(again.Connect("127.0.0.1", port, "/", 3000, true, goodCa) && again.ReceiveText(roomInfo, 3000),

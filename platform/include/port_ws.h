@@ -35,9 +35,16 @@ bool ParseUrl(const std::string& url, std::string& host, uint16_t& port, std::st
 
 // Settings for wss:// connections. Verification is not optional.
 struct TlsOptions {
-  // PEM CA bundle to verify the server against; empty uses the system trust
-  // store.
+  // PEM CA bundle to verify the server against. It takes precedence over
+  // caDirs; with both empty the platform default is used.
   std::string caFile;
+  // Directories of PEM certificate files, one or more per file under any name.
+  // Every file of the first directory that yields a certificate is loaded; the
+  // rest are not consulted, so a later directory cannot add to an earlier one.
+  // No certificate in any of them is an error naming each directory. Empty on
+  // Android means Conscrypt's store, then /system's; elsewhere the default is
+  // OpenSSL's own.
+  std::vector<std::string> caDirs;
 };
 
 // Whether this build can connect to wss:// servers.

@@ -113,13 +113,27 @@ endif()
 if(WIN32)
     target_link_libraries(metroid_prime_port PRIVATE ws2_32)
 endif()
-# OpenSSL gives the Archipelago WebSocket client wss://. It is optional: without
-# it the port still builds and a wss:// server fails with a clear error.
-find_package(OpenSSL)
+# OpenSSL gives the Archipelago WebSocket client wss://. On the desktop it is
+# optional: without it the port still builds and a wss:// server fails with a
+# clear error. On Android it is built from source (cmake/AndroidOpenSSL.cmake),
+# because the NDK has no TLS library and a find_package that quietly finds
+# nothing is how an APK ends up refusing every wss:// server. Leaving it out
+# there has to be asked for.
+option(MP_ALLOW_NO_TLS "Android: build without OpenSSL, so wss:// is refused" OFF)
+if(ANDROID)
+    if(NOT MP_ALLOW_NO_TLS)
+        include(cmake/AndroidOpenSSL.cmake)
+    endif()
+else()
+    find_package(OpenSSL)
+endif()
 function(mp_websocket_tls target)
     if(OpenSSL_FOUND)
         target_compile_definitions(${target} PRIVATE MP_HAVE_OPENSSL)
         target_link_libraries(${target} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+        if(MP_OPENSSL_BUILD_TARGET)
+            add_dependencies(${target} ${MP_OPENSSL_BUILD_TARGET})
+        endif()
     endif()
 endfunction()
 if(OpenSSL_FOUND)
@@ -128,6 +142,13 @@ else()
     message(STATUS "OpenSSL not found: wss:// disabled")
 endif()
 mp_websocket_tls(metroid_prime_port)
+if(ANDROID AND OpenSSL_FOUND)
+    # The OpenSSL linked in is private to the game library. Exporting its
+    # symbols would let them interpose on, or be interposed by, another copy in
+    # the process. Only its archives are named: excluding ALL would also hide
+    # the JNI entry points in the static SDL archive, which Java looks up by name.
+    target_link_options(metroid_prime_port PRIVATE "-Wl,--exclude-libs,libssl.a:libcrypto.a")
+endif()
 mp_signed_char(metroid_prime_port)
 add_custom_target(port_build_info
     COMMAND ${CMAKE_COMMAND}

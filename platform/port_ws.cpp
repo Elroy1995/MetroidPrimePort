@@ -34,7 +34,12 @@
 #endif
 
 #ifdef MP_HAVE_OPENSSL
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <openssl/bio.h>
 #include <openssl/err.h>
+#include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 #if !defined(_WIN32)
@@ -326,6 +331,61 @@ std::string TlsQueueText() {
   char text[256];
   ERR_error_string_n(code, text, sizeof(text));
   return text;
+}
+
+// Where the system trust store is when TlsOptions names none. Android's OpenSSL
+// default (SSL_CTX_set_default_verify_paths) points at a compiled-in directory
+// that does not exist there, and succeeds anyway having loaded nothing, so its
+// CA directories are named instead. Conscrypt's APEX copy comes first: from API
+// 34 it is the authoritative store, and it can drop a CA that /system still
+// carries.
+std::vector<std::string> DefaultCaDirs() {
+#ifdef __ANDROID__
+  return {"/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts"};
+#else
+  return {};
+#endif
+}
+
+// Adds every PEM certificate in the files of `dir` to `store` and returns how
+// many were added. Files are read whole and in any order, so their names do
+// not matter: Android names its CA files by the old subject hash, which
+// OpenSSL's hashed-directory lookup would never find. A file with no
+// certificate in it is skipped, not fatal. `note` says what was found, for the
+// error when no directory yields anything.
+size_t LoadCaDir(X509_STORE* store, const std::string& dir, std::string& note) {
+  // A CA file is a few kilobytes; anything past this is not one.
+  constexpr std::uintmax_t kMaxCaFileSize = 1u << 20;
+  std::error_code error;
+  std::filesystem::directory_iterator entries(std::filesystem::path(dir), error);
+  if (error) {
+    note = "cannot open: " + error.message();
+    return 0;
+  }
+  size_t files = 0;
+  size_t loaded = 0;
+  for (const std::filesystem::directory_entry& entry : entries) {
+    std::error_code entryError;
+    if (!entry.is_regular_file(entryError) || entry.file_size(entryError) > kMaxCaFileSize || entryError)
+      continue;
+    ++files;
+    std::ifstream file(entry.path(), std::ios::binary);
+    const std::string pem{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    BIO* bio = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
+    if (bio == nullptr)
+      continue;
+    while (X509* certificate = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr)) {
+      if (X509_STORE_add_cert(store, certificate) == 1)
+        ++loaded;
+      X509_free(certificate);
+    }
+    BIO_free(bio);
+    // The read that ends each file fails with "no start line"; that is not an
+    // error worth keeping.
+    ERR_clear_error();
+  }
+  note = std::to_string(files) + (files == 1 ? " file" : " files");
+  return loaded;
 }
 
 // Describes a fatal SSL_get_error result. `closed` reports that the peer
@@ -887,11 +947,28 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
       return fail("could not create TLS context: " + TlsQueueText());
     SSL_CTX_set_min_proto_version(mSslContext, TLS1_2_VERSION);
     SSL_CTX_set_verify(mSslContext, SSL_VERIFY_PEER, nullptr);
-    if (tls.caFile.empty()) {
-      if (SSL_CTX_set_default_verify_paths(mSslContext) != 1)
-        return fail("could not load the system TLS trust store: " + TlsQueueText());
-    } else if (SSL_CTX_load_verify_locations(mSslContext, tls.caFile.c_str(), nullptr) != 1) {
-      return fail("could not load TLS CA file " + tls.caFile + ": " + TlsQueueText());
+    const std::vector<std::string> caDirs =
+        tls.caFile.empty() && tls.caDirs.empty() ? DefaultCaDirs() : tls.caDirs;
+    if (!tls.caFile.empty()) {
+      if (SSL_CTX_load_verify_locations(mSslContext, tls.caFile.c_str(), nullptr) != 1)
+        return fail("could not load TLS CA file " + tls.caFile + ": " + TlsQueueText());
+    } else if (!caDirs.empty()) {
+      // The first directory with a certificate in it wins. An empty trust
+      // store would fail every server with an obscure verification error, so
+      // it is an error of its own that says where it looked.
+      size_t loaded = 0;
+      std::string tried;
+      for (const std::string& dir : caDirs) {
+        std::string note;
+        loaded = LoadCaDir(SSL_CTX_get_cert_store(mSslContext), dir, note);
+        if (loaded > 0)
+          break;
+        tried += (tried.empty() ? "" : ", ") + dir + " (" + note + ")";
+      }
+      if (loaded == 0)
+        return fail("no TLS root certificates: loaded 0 from " + tried);
+    } else if (SSL_CTX_set_default_verify_paths(mSslContext) != 1) {
+      return fail("could not load the system TLS trust store: " + TlsQueueText());
     }
     mSsl = SSL_new(mSslContext);
     if (mSsl == nullptr)

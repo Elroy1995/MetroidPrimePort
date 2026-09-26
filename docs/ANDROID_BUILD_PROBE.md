@@ -123,6 +123,94 @@ E/ndk_translation: Unknown function is used with vkGetInstanceProcAddr:
   vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR
 ```
 
+## wss:// on Android, proven end to end
+
+`wss://` works in the APK. OpenSSL 3.5.8 is built from source for the NDK by
+`cmake/AndroidOpenSSL.cmake` — pinned version and SHA-256, `no-shared`, so it is
+linked statically — and `MP_HAVE_OPENSSL` is defined. OpenSSL is Apache-2.0; its
+`LICENSE.txt` is copied into the APK by the existing `syncLicenseNotices` task.
+
+`find_package(OpenSSL)` stays optional on the desktop but is **required** on
+Android, because a lookup that quietly finds nothing is how an APK ends up
+refusing every `wss://` server. `-DMP_ALLOW_NO_TLS=ON` builds without it on
+purpose. Perl and `make` must be on the machine that builds the APK;
+`cmake/AndroidOpenSSL.cmake` stops with that message if they are not.
+
+To reproduce the whole thing, including the proof:
+
+```sh
+# 1. A CA and a server certificate for 127.0.0.1, so the hostname check holds.
+openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.pem -days 2 \
+  -subj "/CN=MP Test CA"
+openssl req -newkey rsa:2048 -nodes -keyout srv.key -out srv.csr -subj "/CN=127.0.0.1"
+printf 'subjectAltName=IP:127.0.0.1,DNS:localhost\n' > san.ext
+openssl x509 -req -in srv.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
+  -out srv.pem -days 2 -extfile san.ext
+
+# 2. The fake server. The device reaches the host's loopback through adb
+#    reverse, so the certificate's 127.0.0.1 SAN still applies.
+python3 tools/ap_fake_server.py --port 38391 --slot P --tls \
+  --cert srv.pem --key srv.key &
+adb reverse tcp:38391 tcp:38391
+
+# 3. The app reads its config from its own private files directory.
+adb push ca.pem /data/local/tmp/ && adb push archipelago.json /data/local/tmp/
+adb shell "run-as org.metroidprime.port cp /data/local/tmp/ca.pem \
+  /data/data/org.metroidprime.port/files/ca.pem"
+adb shell "run-as org.metroidprime.port cp /data/local/tmp/archipelago.json \
+  /data/data/org.metroidprime.port/files/archipelago.json"
+
+# 4. Run it. The pass condition is a completed handshake, not a clean build.
+adb shell am start -n org.metroidprime.port/.MetroidPrimeActivity
+adb logcat -d | grep -i archipelago
+```
+
+`archipelago.json` is `{"server":"wss://127.0.0.1:38391","slot":"P",
+"tls_ca":"/data/data/org.metroidprime.port/files/ca.pem", ...}`.
+
+Two results, and the second is the one that matters:
+
+```
+archipelago: connecting to wss://127.0.0.1:38391
+archipelago: connected as P                        <- a real wss:// session
+```
+
+and with `tls_ca` removed, so the **system** store is used:
+
+```
+archipelago: TLS certificate verification failed: unable to get local issuer certificate
+```
+
+That second one is a pass, not a failure. The test server's CA is not in
+Conscrypt's store, so a correct outcome is a verification error naming the
+issuer. The failure it rules out is `no TLS root certificates: loaded 0 from
+/apex/com.android.conscrypt/cacerts ...`, which would mean the enumeration found
+nothing. Getting the verification error proves the store was read, populated and
+offered to the server.
+
+### Checking the built library
+
+Link statically with `--exclude-libs,libssl.a:libcrypto.a`, which is narrower
+than `ALL` on purpose: excluding `ALL` would also hide the JNI entry points in
+the static SDL archive, which Java looks up by name. On a stripped release `.so`,
+`nm -D` will not show `SSL_connect`, so check strings instead:
+
+```sh
+unzip -p android/app/build/outputs/apk/release/app-release.apk \
+  lib/arm64-v8a/libmetroid_prime_port.so > /tmp/port.so
+strings /tmp/port.so | grep -m1 '^OpenSSL 3\.'
+strings /tmp/port.so | grep -c 'built without OpenSSL'          # must be 0
+strings /tmp/port.so | grep -c 'no TLS root certificates'       # must be > 0
+llvm-readelf -d /tmp/port.so | grep -cE 'NEEDED.*lib(ssl|crypto)\.so'   # must be 0
+```
+
+All four were checked on the release APK. The `NEEDED` check is the important
+one: a dynamic link would build cleanly and then fail on a device, because the
+system `libcrypto` is private BoringSSL that an app may not use.
+
+The release APK is 13.46 MB with OpenSSL and 11.19 MB without, so **+2.17 MB,
++20.3%** — more than double the 0.8–1.2 MB first estimated for this.
+
 ## The Conscrypt trust store, verified readable
 
 This was the open question behind the Android `wss://` plan, and it is settled.

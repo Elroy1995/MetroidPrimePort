@@ -38,11 +38,37 @@ store or the `tls_ca` file from the configuration (a relative path is resolved
 against the configuration file's directory), TLS 1.2 as the floor, and the
 certificate checked against the host name.
 
-OpenSSL is an optional build dependency: CMake enables it when it finds it and
-prints `OpenSSL <version> found: wss:// enabled`. Android's NDK ships no
-OpenSSL, so Android builds refuse `wss://` with `wss:// is not supported: this
-build has no TLS (built without OpenSSL)` rather than downgrading to plaintext;
-Windows needs OpenSSL provided to CMake.
+On the desktop, OpenSSL is an optional build dependency: CMake enables it when
+it finds it and prints `OpenSSL <version> found: wss:// enabled`. Windows needs
+OpenSSL provided to CMake. On **Android it is required**, and
+`cmake/AndroidOpenSSL.cmake` builds OpenSSL 3.5.8 from a pinned, hash-checked
+source and links it statically — the NDK has none, and a `find_package` that
+quietly finds nothing is exactly how an APK ends up refusing every `wss://`
+server. `-DMP_ALLOW_NO_TLS=ON` is the deliberate way to build without it.
+
+Android also loads the trust store itself, which is the part that would
+otherwise cost a device to find. `SSL_CTX_set_default_verify_paths` points at a
+compiled-in `OPENSSLDIR` that does not exist there, **returns success, and loads
+nothing** — so the usual "could not load the system TLS trust store" check never
+fires and every public server then fails with `unable to get local issuer
+certificate`. The port therefore enumerates the certificates itself, from
+`/apex/com.android.conscrypt/cacerts` first (authoritative from API 34, and it
+can drop a CA that `/system` still carries) and `/system/etc/security/cacerts`
+as a fallback. **The first directory that yields a certificate wins; they are
+never merged**, because merging could resurrect a CA that a Conscrypt update
+deliberately removed.
+
+Every file of that directory is read directly rather than handing the directory
+to OpenSSL. Hashed-directory lookup is lazy, so there is nothing to count and
+nothing to fail on, and Android names its files by the old subject hash, which
+OpenSSL 3's lookup would never find — the same silent trap as above. Files are
+read whole and in any order, so their names do not matter, and a file with no
+certificate in it is skipped rather than being fatal. **Zero certificates
+anywhere is a loud error naming every directory tried and the count**, not an
+obscure verification failure later.
+
+Both halves are proven on the Android emulator; the recipe and the expected log
+lines are in [ANDROID_BUILD_PROBE.md](ANDROID_BUILD_PROBE.md#wss-on-android-proven-end-to-end).
 
 ## Configuration
 
@@ -292,13 +318,11 @@ Each entry says whether it is a decision or a gap, and why. "Descoped" means
 the port deliberately does not do this, and a multiworld session without it
 still works; anything marked as a gap still limits a session.
 
-- **TLS on Android — a gap, and the only one that stops a session.** `wss://`
-  needs OpenSSL found at configure time. Linux and Windows are both verified
-  against a real TLS server, including every rejection case, in CI. Android's
-  NDK has no OpenSSL, so a JNI `SSLSocket` backend or a vendored TLS library is
-  what that platform needs. Plain `ws://` works on Android today, so an Android
-  player can join a multiworld on a server that offers no TLS, but not one that
-  requires it.
+- **TLS on Android — done.** Was the only gap that stopped a session. OpenSSL
+  3.5.8 is now built for the NDK and linked statically, the system trust store
+  is enumerated by hand because Android's default verify-path lookup silently
+  loads nothing, and a real `wss://` handshake from the APK is proven on the
+  emulator. It costs 2.17 MB of APK (+20.3%).
 - **Compression — descoped.** The client does not offer `permessage-deflate`.
   Archipelago still accepts uncompressed connections and only marks them
   deprecated, so a session is not limited by it; the cost is bandwidth on large

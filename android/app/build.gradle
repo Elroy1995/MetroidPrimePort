@@ -20,7 +20,7 @@ def cmakeArguments = [
 
 if (dependencyCache.isPresent()) {
     def cache = file(dependencyCache.get())
-    ["DAWN_PREBUILT", "SDL", "ABSEIL-CPP", "XXHASH", "FMT", "ZLIB", "PNG", "FREETYPE", "IMGUI", "SQLITE3", "ZSTD", "TRACY", "AURORA_NOD", "CORROSION"].each { name ->
+    ["DAWN_PREBUILT", "SDL", "ABSEIL-CPP", "XXHASH", "FMT", "ZLIB", "PNG", "FREETYPE", "IMGUI", "SQLITE3", "ZSTD", "TRACY", "AURORA_NOD", "CORROSION", "OPENSSL"].each { name ->
         def source = new File(cache, name.toLowerCase())
         if (source.isDirectory()) {
             cmakeArguments.add("-DFETCHCONTENT_SOURCE_DIR_${name}=${source}")
@@ -216,7 +216,9 @@ tasks.register("syncLicenseNotices", Sync) {
     // after its package: the same notice appears in several build variants, and
     // a glob rename would not flatten those paths, leaving notices buried in
     // assets/<variant>/<abi>/ where nothing would find them.
-    ["sdl-src", "imgui-src", "fmt-src", "zstd-src"].each { dep ->
+    // openssl-license is a copy cmake/AndroidOpenSSL.cmake makes, because the
+    // OpenSSL source may come from the dependency cache rather than _deps.
+    ["sdl-src", "imgui-src", "fmt-src", "zstd-src", "openssl-license"].each { dep ->
         from(layout.projectDirectory.dir(".cxx")) {
             include "**/_deps/${dep}/LICENSE*"
             include "**/_deps/${dep}/COPYING*"
@@ -244,5 +246,14 @@ tasks.register("syncLicenseNotices", Sync) {
 
 tasks.named("preBuild").configure {
     dependsOn("syncPortAssets")
+}
+// The notices of fetched packages exist only once the native build has fetched
+// them, so they are gathered after it and before anything reads the asset
+// directories: the asset merge, and lint, which scans them. Run earlier, a
+// clean build packages none of them.
+tasks.named("syncLicenseNotices").configure {
+    mustRunAfter(tasks.matching { it.name.startsWith("buildCMake") || it.name.startsWith("externalNativeBuild") })
+}
+tasks.matching { it.name ==~ /merge\w*Assets/ || it.name.toLowerCase().contains("lint") }.configureEach {
     dependsOn("syncLicenseNotices")
 }

@@ -1,3 +1,64 @@
+## Android wss:// works, and it cost more than I said it would (2026-09-26)
+
+The last AP gap that stopped a session is closed. A real `wss://` handshake from
+the APK, on the emulator, proven in logcat rather than inferred from a build.
+
+- **What was built.** `cmake/AndroidOpenSSL.cmake` builds OpenSSL 3.5.8 from a
+  pinned, SHA-256-checked source for the NDK and links it statically. Perl and
+  make are checked for at configure time with a message that says what to do,
+  because OpenSSL's build is Perl and make and not CMake. The source is fetched
+  through `FetchContent` so `FETCHCONTENT_SOURCE_DIR_OPENSSL` gives an offline
+  build the same escape hatch every other dependency has; a local copy skips the
+  hash check, so the version is read out of `VERSION.dat` instead. The licence
+  travels in the APK through the existing `syncLicenseNotices` task, not a new
+  mechanism.
+- **On Android, OpenSSL is now required.** `find_package(OpenSSL)` stays
+  optional on the desktop, but on Android a lookup that quietly finds nothing is
+  precisely how an APK ends up refusing every `wss://` server — that is the
+  whole reason this problem existed. `-DMP_ALLOW_NO_TLS=ON` is now the
+  deliberate way to build without it.
+- **The trust store, which was the part that would have cost a device.** As
+  recorded earlier, `SSL_CTX_set_default_verify_paths` on Android points at a
+  compiled-in `OPENSSLDIR` that does not exist, **returns success and loads
+  nothing**, so the existing "could not load the system TLS trust store" check
+  never fires. The port now enumerates the certificates itself and fails loudly
+  on zero. The proof that this works is the *second* emulator result, not the
+  first: with `tls_ca` the app connects (`connected as P`), and with `tls_ca`
+  removed it reports
+  `TLS certificate verification failed: unable to get local issuer certificate`.
+  That is a **pass**. The test server's CA is not in Conscrypt's store, so a
+  verification error naming the issuer is the correct outcome; the failure it
+  rules out is `no TLS root certificates: loaded 0 from /apex/...`, which would
+  mean the enumeration found nothing at all.
+- **A better answer than the one I specified.** I asked for
+  `-Wl,--exclude-libs,ALL` so OpenSSL's symbols would not be exported. The
+  implementation narrowed it to
+  `-Wl,--exclude-libs,libssl.a:libcrypto.a`, because `ALL` would also hide the
+  JNI entry points in the static SDL archive, which Java looks up by name — so
+  the version I asked for would have broken the launch. Worth remembering that
+  the general form of a flag is not always the right form of it.
+- **The APK cost is worse than estimated: +2.17 MB, +20.3%**, measured by
+  building release both ways on the same tree (11,189,585 without, 13,464,781
+  with). The first estimate was +0.8–1.2 MB. Static OpenSSL links more of
+  itself into a binary this size than the estimate assumed. It is a real cost
+  and it is a fair trade for `wss://` working, but it should be a number I
+  measured rather than one I guessed.
+- **Verified on the release `.so`**, since a stripped static link cannot be
+  checked with `nm`: it contains `OpenSSL 3.5.8 25 Aug 2026`, does **not**
+  contain `built without OpenSSL`, does contain the loud trust-store error, has
+  **no** `NEEDED libssl.so` or `libcrypto.so`, and exports **no** OpenSSL
+  symbols. That `NEEDED` check is the one that matters: a dynamic link builds
+  cleanly and then fails on a device, because the system `libcrypto` is private
+  BoringSSL.
+- **The lane died on a session limit before reporting**, so I reviewed the diff,
+  finished the link, ran the checks and did the emulator work myself. The code
+  it left was good; the verification was simply not done.
+- **Still not proven, and I am not claiming it:** a real phone. The emulator is
+  ARM-translated onto x86_64 with a software rasteriser, so it says nothing
+  about performance, a real GPU driver, or touch. What it *did* settle is
+  everything about packaging, TLS and lifecycle — which is what it was worth
+  using it for.
+
 ## Found: a location the table does not know was dropped in total silence (2026-09-26)
 
 The last AP gap said the game side of the mapping is unverified and "needs a

@@ -168,14 +168,17 @@ under GNOME unless the port's own X11 preference applies — see
    under ARM translation (see `docs/ANDROID_BUILD_PROBE.md`), so packaging and
    lifecycle are checkable without hardware. Performance and touch input are not,
    and those still need a device.
-5. **`wss://` does not work on Android**: the NDK has no OpenSSL, so the
-   build has no `MP_HAVE_OPENSSL` and a `wss://` server is refused rather than
-   downgraded. **Now scoped and planned, not yet built:** vendor OpenSSL 3.5 LTS
-   for the NDK and keep `MP_HAVE_OPENSSL` as it is. The trap that would otherwise
-   cost a device to find is confirmed and documented — Android's
-   `SSL_CTX_set_default_verify_paths` returns success while loading nothing, so
-   the trust store must be enumerated by hand, and it has been verified readable
-   from inside the app's sandbox (`docs/ANDROID_BUILD_PROBE.md`).
+5. **~~`wss://` does not work on Android~~ — resolved.** OpenSSL 3.5.8 is built
+   from a pinned, hash-checked source for the NDK and linked statically, so
+   `MP_HAVE_OPENSSL` is defined in the APK and a `wss://` server connects. On
+   Android the port now loads the system trust store itself, because
+   `SSL_CTX_set_default_verify_paths` points at a compiled-in `OPENSSLDIR` that
+   does not exist there and returns success having loaded nothing; the store is
+   enumerated by hand from `/apex/com.android.conscrypt/cacerts`, and zero
+   certificates is a loud error naming the directories rather than an obscure
+   verification failure later. Both halves are proven on the emulator — see
+   `docs/ANDROID_BUILD_PROBE.md`. **Costs 2.17 MB of APK, +20.3%** (11.19 MB ->
+   13.46 MB), which is more than the 0.8-1.2 MB first estimated.
 6. **The Flatpak path has never been built.** Its manifest is now correct — the
    project's own install rules put a runnable tree in `/app`, and the notices
    are collected — but nothing here has ever run `flatpak-builder`, so the
