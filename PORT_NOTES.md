@@ -1,3 +1,92 @@
+## Virtual gamepad review: the threading worry was wrong, the comment was too (2026-09-26)
+
+A second opinion on the Android touch overlay's virtual gamepad. It overturned my
+main hypothesis and found one thing that does affect a player.
+
+- **Thread safety: I was wrong, and the reviewer was right.** I expected the JNI
+  writes from Java's UI thread to race SDL's reads on the game thread. They do
+  not. `SDL_SetJoystickVirtualAxis` and `SDL_SetJoystickVirtualButton` both take
+  `SDL_LockJoysticks()` around the inner call, and the inner functions assert the
+  lock. The update path and the game's readers (`SDL_GetGamepadAxis`,
+  `SDL_GetGamepadButton`) take the same lock. I checked this myself in
+  `SDL_joystick.c:1529-1540,1569-1580` rather than taking it on trust. So no
+  tearing, no half-written button, and no ARM-specific concern.
+- **What *is* real: a short tap can be missed.** Not a race — the virtual
+  joystick API is **state-sampling, not event-queueing**. Setting a button stores
+  the latest value and marks it changed (`SDL_virtualjoystick.c:401`); the change
+  is delivered at the next update, which sends the value *as it is then* (`:742`).
+  A press and release that both land between two updates leave only the release,
+  and the game never sees the press. So a quick tap on A or Start can do nothing,
+  most visibly while a game frame is stalled. Sustained presses and ordinary
+  releases are fine, which is exactly why it has never shown up as "the controls
+  don't work". Fixing it means latching a press until the game has sampled it, and
+  the latch must be released on an update the port does not control — a real
+  design problem, so it is now documented at the code rather than half-solved.
+- **The leak I suspected is real but minor, and is fixed.** If attach succeeds
+  and `SDL_OpenJoystick` then fails, the id was discarded while
+  `g_virtualPad` stayed null, so every later call attached another device. SDL
+  has **no small fixed limit** on virtual joysticks — they are a linked list
+  (`SDL_virtualjoystick.c:315`) — so this accumulates rather than hitting a
+  ceiling. It needs an allocation failure to reach (`SDL_joystick.c:1360,1394`),
+  which makes it a robustness fix rather than an ordinary-play bug. It now
+  detaches before returning.
+- **Lifecycle: not a bug, and SDL is why.** I expected a stale native pointer on
+  activity recreation. It does not happen: `SDLActivity.java:426-439` checks a
+  native run counter and calls `System.exit(0)` on a second creation in the same
+  process, and `allow_recreate_activity` defaults to false
+  (`SDL_android.c:784`). The manifest also handles configuration changes itself.
+  Worth recording that the cached pointer would *not* survive a full `SDL_Quit()`
+  (`main.cpp:368`), so anyone enabling same-process recreation later needs
+  explicit close/detach/reset. Recorded, not fixed, because it is not reachable.
+- **The mapping is correct — and the comment explaining it was factually wrong.**
+  Every entry is right: `start` is b6 because **b5 is Guide** and b8 is
+  right-stick click, and the triggers are correctly axes a4/a5, which is what
+  Aurora's binding expects (`dolphin/pad/pad.cpp:243`). But the old comment
+  claimed SDL's built-in Xbox mapping binds `rightx:a3, righty:a4, start:b8` and
+  shoulders to b4/b5. That table is in SDL_gamepad_db.h's **macOS** section
+  (`:483`); the Android `045e:02ea` entry (`:816`) already says `start:b6,
+  rightx:a2, righty:a3`. Further, a virtual device gets a GUID with the virtual
+  bus and a `'v'` signature, so the vendor/product ids do not select a table by
+  GUID match at all, and an unmatched virtual device falls through to the
+  virtual driver's own generated mapping — which is this same enum order
+  (`:803, :933`). So the explicit mapping is belt and braces, not a correction.
+  **The mapping was always right; the reason given for it was not.** That is the
+  same failure mode as the fast-boot comment I had to fix earlier: a comment that
+  confidently describes a mechanism that does not exist, which sends the next
+  person hunting a fault that was never there.
+- **The numeric conversion is correct.** Clamp, asymmetric scale, `std::lround`:
+  `-1 -> -32768`, `0 -> 0`, `+1 -> +32767`, `±0.5 -> ±16384`, and exactly zero
+  stays exactly zero. The Java side has a radial 0.12 dead zone, so there is no
+  centre jitter, and a trigger release correctly sends `-1` rather than zero.
+  A partially-sampled X/Y frame is possible — the two setters take the lock
+  separately — but release sends both zeros on the UI thread and the final zero
+  stays pending, so **an axis cannot stick**.
+- **The `caDir`/AP work in `f28c580c` is unrelated and unaffected.** Noting it
+  only because both touched `platform/` in the same session.
+- **Not done, and the reviewer is right that it is the real remaining gap:**
+  this code is inside `#if defined(__ANDROID__)`, so it is **never compiled on
+  Linux or Windows and has no test at all**. The mapping, the conversion and the
+  attach/detach logic are all platform-independent and could be extracted into a
+  host test that drives a real SDL virtual pad and asserts what the game would
+  read through `SDL_GetGamepadButton`/`SDL_GetGamepadAxis`. That would be the
+  first time this code is ever compiled outside Android, and it is a genuine
+  behaviour test rather than a comparison of constants. Deliberately not started
+  here: it is a refactor, and doing it in the same change as a four-line
+  robustness fix would bury both.
+- **A build that proved nothing.** The first `assembleDebug` after the edit
+  reported `BUILD SUCCESSFUL in 10s` having touched no C++ at all — the `.so` was
+  older than the edit and the log never mentioned the file. A green build that
+  built nothing is worth less than no build. Re-run with `--rerun-tasks`, and
+  confirmed properly: the object file postdates the edit and carries
+  `U SDL_DetachVirtualJoystick`, a reference that only exists because of the new
+  code. Gradle suppresses ninja output unless it fails, so "successful" is not
+  evidence that anything compiled.
+- **The attach path was not exercised on the emulator.** `VirtualPad()` is lazy
+  and nothing touched the overlay — on a fresh install the SAF picker is in
+  front — so logcat had no `touchpad` lines at all. That costs little: the change
+  only adds behaviour on the *failure* branch, and the success path is otherwise
+  byte-identical. Stated rather than glossed.
+
 ## Found: no icon is shipped, at all (2026-09-26)
 
 Chasing the Flatpak app id turned up something that was not on any list,

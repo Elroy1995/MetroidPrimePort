@@ -2174,14 +2174,29 @@ SDL_Joystick* VirtualPad() {
     __android_log_print(ANDROID_LOG_ERROR, "touchpad", "attach failed: %s", SDL_GetError());
     return nullptr;
   }
-  // Install our own mapping even though SDL recognises those Xbox ids. The
-  // overlay writes SDL_Gamepad* indices straight into
-  // SDL_SetJoystickVirtualAxis/SDL_SetJoystickVirtualButton, which describe the
-  // right controls only when the pad's mapping is this plain layout. SDL's
-  // built-in Xbox mapping binds rightx:a3, righty:a4, start:b8 and the
-  // shoulders to b4/b5, so the right stick, Start and the beams landed on the
-  // wrong controls. An API mapping outranks the built-in table and is reloaded
-  // onto the already-attached pad.
+  // State the mapping explicitly. The overlay writes SDL_Gamepad* indices
+  // straight into SDL_SetJoystickVirtualAxis/SDL_SetJoystickVirtualButton, so
+  // what the game reads back depends entirely on this string. Every entry is the
+  // plain enum order from SDL_gamepad.h:152-181 - start is b6 because b5 is
+  // Guide, b8 is right-stick click, and the shoulders are b9/b10 - and the
+  // triggers are axes a4/a5, which is what Aurora's binding expects
+  // (dolphin/pad/pad.cpp:243).
+  //
+  // It is kept even though SDL would probably supply this layout anyway. A
+  // virtual device gets a GUID with the virtual bus and a 'v' signature
+  // (SDL_virtualjoystick.c:234), so the vendor/product ids above do not select a
+  // built-in table by GUID match, and an unmatched virtual device falls through
+  // to the virtual driver's own generated mapping - which happens to be this
+  // same enum order (SDL_virtualjoystick.c:803, 933). So the explicit mapping is
+  // belt and braces, not a correction.
+  //
+  // An earlier version of this comment claimed SDL's built-in Xbox mapping binds
+  // rightx:a3, righty:a4, start:b8 and the shoulders to b4/b5. That was wrong,
+  // and wrong in a way that mattered: the start:b8 table is in SDL_gamepad_db.h's
+  // macOS section (:483), while the Android 045e:02ea entry (:816) already says
+  // start:b6, rightx:a2, righty:a3. The mapping was always correct; the reason
+  // given for it was not, and would have sent the next person looking for a
+  // fault that was not there.
   {
     char guid[64];
     SDL_GUIDToString(SDL_GetJoystickGUIDForID(id), guid, sizeof(guid));
@@ -2194,10 +2209,39 @@ SDL_Joystick* VirtualPad() {
     SDL_AddGamepadMapping(mapping);
   }
   g_virtualPad = SDL_OpenJoystick(id);
+  if (g_virtualPad == nullptr) {
+    // Detach before returning. SDL has no fixed limit on virtual devices - they
+    // are a linked list - so without this every later input call would attach
+    // another one and accumulate them, because g_virtualPad stays null and
+    // nothing else holds the id. Reachable when the SDL_Joystick or its axis and
+    // button state fails to allocate (SDL_joystick.c:1360, 1394).
+    SDL_DetachVirtualJoystick(id);
+  }
   __android_log_print(ANDROID_LOG_INFO, "touchpad", "attached id=%d gamepad=%d open=%d", id,
                       SDL_IsGamepad(id) ? 1 : 0, g_virtualPad != nullptr ? 1 : 0);
   return g_virtualPad;
 }
+
+// KNOWN LIMITATION: a short tap can be missed.
+//
+// The virtual joystick API is state-sampling, not event-queueing. Setting a
+// button stores the latest value and marks it changed (SDL_virtualjoystick.c:401);
+// the change is only delivered at the next update, which sends whatever the
+// value is *then* (:742). So a press and release that both land between two
+// updates leave only the release, and the game never sees the press. A quick tap
+// on A or Start can therefore do nothing, most visibly while a game frame is
+// stalled. Triggers behave the same way.
+//
+// This is not a data race - the setters hold SDL's joystick mutex, so nothing
+// tears - and it is not specific to this port; it is how SDL's virtual joystick
+// works. Sustained presses and ordinary releases are unaffected, which is why it
+// has not shown up as "controls don't work".
+//
+// Fixing it properly means latching a press until the game has sampled it, and
+// the latch has to be released on an update the port does not control. That is a
+// real design problem, not a two-line patch, so it is recorded rather than
+// half-solved. A missed tap is recoverable by tapping again; a control that fires
+// when it should not is not.
 } // namespace
 
 extern "C" JNIEXPORT void JNICALL

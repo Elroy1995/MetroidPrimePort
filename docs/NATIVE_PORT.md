@@ -393,7 +393,7 @@ prebuilt Rust library behind Aurora's disc access - which would need either an
 older nod build or a build on an older base to remove.
 
 A Flatpak sidesteps the whole question: `tools/make_flatpak.sh` builds one from
-`flatpak/org.metroidprime.MetroidPrimePort.yml`, and glibc then comes from the
+`flatpak/io.github.odrannnn.metroidprimeport.yml`, and glibc then comes from the
 runtime (24.08) rather than the host, so the floor above does not apply. The GPU
 driver still comes from the host, the disc is not bundled, and the sandbox sees
 the home directory read-only. It needs flatpak and flatpak-builder and compiles
