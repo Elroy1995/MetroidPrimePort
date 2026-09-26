@@ -65,6 +65,12 @@ android {
     }
 
     sourceSets.main.assets.srcDir(generatedAssets)
+    // Third-party notices, gathered from the tree and from whatever the native
+    // build fetched, so an installed app carries the terms of what it links
+    // rather than nothing. The file is listed in the app's own docs; the
+    // notices travel as an asset because assets are the only place a build
+    // reliably reaches an installed package.
+    sourceSets.main.assets.srcDir(layout.buildDirectory.dir("generatedLicenses"))
 
     packagingOptions {
         jniLibs.useLegacyPackaging = true
@@ -93,6 +99,51 @@ tasks.register("syncPortAssets", Sync) {
     from("../../assets/initial_pipeline_cache.db")
 }
 
+// Gathers the licence of every third-party component the native build links:
+// the two vendored snapshots in the tree, and whatever CMake fetched. An
+// installed app then carries the terms of what it contains, which an APK
+// otherwise would not.
+tasks.register("syncLicenseNotices", Sync) {
+    def outputDir = layout.buildDirectory.dir("generatedLicenses")
+    into outputDir
+    // zstd ships both LICENSE and COPYING, and several packages appear under
+    // every build variant, so more than one source can land on a name. They
+    // are the same terms, so the first one wins rather than failing the build.
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from("../../extern/aurora/LICENSE") { rename { "aurora.txt" } }
+    from("../../extern/musyx/LICENSE") { rename { "musyx.txt" } }
+    // The fetched packages live beside the native build output, so they are
+    // only present once a native build has run at least once. Each is named
+    // after its package: the same notice appears in several build variants, and
+    // a glob rename would not flatten those paths, leaving notices buried in
+    // assets/<variant>/<abi>/ where nothing would find them.
+    ["sdl-src", "imgui-src", "fmt-src", "zstd-src"].each { dep ->
+        from(layout.projectDirectory.dir(".cxx")) {
+            include "**/_deps/${dep}/LICENSE*"
+            include "**/_deps/${dep}/COPYING*"
+            // A FileTree carries only files, so the copy spec never sees a
+            // directory: naming one in eachFile is what produced the empty
+            // path. The notice goes to the root of the asset dir, because the
+            // same notice appears under every build variant and nested paths
+            // would ship it several times in places nothing would look.
+            eachFile { details ->
+                details.relativePath = new RelativePath(true, ".")
+                details.path = "${dep}.txt"
+            }
+            includeEmptyDirs = false
+        }
+    }
+    doLast {
+        def out = outputDir.get().asFile
+        if (!out.exists() || out.listFiles()?.length == 0) {
+            logger.warn("no third-party notices found; the APK will carry none")
+        } else {
+            logger.lifecycle("collected ${out.listFiles().length} third-party notice(s) for the APK")
+        }
+    }
+}
+
 tasks.named("preBuild").configure {
     dependsOn("syncPortAssets")
+    dependsOn("syncLicenseNotices")
 }
