@@ -81,6 +81,79 @@ permission - it reads only the single persisted document URI. The bundled
 `textures` and `initial_pipeline_cache.db` are copied on launch from the APK
 assets into private app storage (`files/`).
 
+## Running the arm64 APK on the x86_64 emulator
+
+The APK is `abiFilters "arm64-v8a"` only, and the machine's Android image is
+x86_64. It still works: Android 11+ x86_64 system images carry ARM translation,
+so the real arm64 APK installs and runs.
+
+```sh
+export ANDROID_HOME=~/android/sdk
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+~/android/sdk/emulator/emulator -avd dkc1 -no-window -no-audio -no-boot-anim \
+  -gpu swiftshader_indirect
+adb wait-for-device
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -W -n org.metroidprime.port/.MetroidPrimeActivity
+adb logcat -d | grep -i 'metroidprime\|aurora\|vulkan'
+```
+
+The AVD is `dkc1` (API 34, `google_apis`, x86_64). It boots in about 40 s on
+KVM. Confirm translation is present before trusting a result:
+
+```sh
+adb shell getprop ro.dalvik.vm.native.bridge      # libndk_translation.so
+adb shell getprop ro.product.cpu.abilist          # x86_64,arm64-v8a
+```
+
+**What this does and does not prove.** It proves the APK is well-formed, links,
+loads its native library, brings up WebGPU, and has a working Java/SAF
+lifecycle — `SDL_main` runs from `lib/arm64/libmetroid_prime_port.so`, the Dawn
+cache and pipeline cache are seeded, and on a fresh install the app correctly
+opens the SAF document picker and waits. It does **not** measure performance:
+everything is ARM-translated onto an x86_64 CPU and rendered by SwiftShader, so
+frame rates say nothing about a real phone. Nor does it prove a real GPU driver
+behaves, or that touch input feels right. Use it for lifecycle, packaging and
+network questions; use a device for performance and input.
+
+One benign line is expected and is not an error:
+
+```
+E/ndk_translation: Unknown function is used with vkGetInstanceProcAddr:
+  vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR
+```
+
+## The Conscrypt trust store, verified readable
+
+This was the open question behind the Android `wss://` plan, and it is settled.
+Android's `SSL_CTX_set_default_verify_paths` points at a compiled-in
+`OPENSSLDIR` that does not exist, returns success, and loads nothing — so the
+port's "could not load the system TLS trust store" check never fires and every
+public server then fails obscurely. The port must enumerate the certificates
+itself. From inside the app's own sandbox on API 34:
+
+```sh
+adb shell run-as org.metroidprime.port ls /apex/com.android.conscrypt/cacerts | wc -l
+# 134
+adb shell "run-as org.metroidprime.port head -c 4 \
+  /apex/com.android.conscrypt/cacerts/\$(ls /apex/com.android.conscrypt/cacerts | head -1)"
+# ----            i.e. the start of -----BEGIN CERTIFICATE-----
+```
+
+So the app can both list and read them, under SELinux: the files carry
+`u:object_r:system_security_cacerts_file:s0` and the app runs in
+`untrusted_app`. `/system/etc/security/cacerts` holds the same 134 as a
+fallback. The names are 8 hex digits plus `.0` (`01419da9.0`).
+
+That naming is why the loader must read each file directly rather than hand the
+directory to OpenSSL: hashed-directory lookup is lazy, so there is nothing to
+count and nothing to fail on, and a hash-convention mismatch would surface only
+as a verification error — the same silent trap as above. Enumerating also makes
+it possible to **fail loudly when zero certificates load**, naming the
+directories tried. On API 34+ the APEX copy is authoritative and replaces the
+`/system` one, so use the first directory that yields at least one certificate
+rather than merging them.
+
 ## Nod stub
 
 `-PandroidNodStub=true` (the default) builds a `nod` ABI shim that provides only

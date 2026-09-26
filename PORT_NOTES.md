@@ -1,3 +1,58 @@
+## The Android APK runs on the x86_64 emulator (2026-09-26)
+
+I have been recording "no on-device testing for now" as if Android were entirely
+unverifiable here. **That was too pessimistic, and I should have checked the SDK
+on the machine before writing it off.** The arm64-only APK installs, launches and
+survives on the x86_64 emulator.
+
+- **The obstacle looked fatal.** `android/app/build.gradle:135` is
+  `abiFilters "arm64-v8a"` and the only system image on this box is
+  `android-34/google_apis/x86_64`. A lane claimed the emulator could run it; I did
+  not believe that, and I was right to check — but the claim turned out to be
+  **true**. Android 11+ x86_64 images carry ARM translation:
+  `ro.dalvik.vm.native.bridge = libndk_translation.so`,
+  `ro.enable.native.bridge.exec = 1`, and
+  `ro.product.cpu.abilist = x86_64,arm64-v8a`. `adb install` of the existing
+  debug APK returns **Success**. `/dev/kvm` is accessible, and the AVD boots in
+  about 40 s.
+- **It genuinely runs, and reaches its own UI.** Launched
+  `org.metroidprime.port/.MetroidPrimeActivity` (note: a custom activity, *not*
+  SDL's `SDLActivity`, which is what I guessed first and got
+  `Error type 3` from). Logcat shows `SDL_main` running from
+  `lib/arm64/libmetroid_prime_port.so`, the Dawn cache in use, the pipeline cache
+  seeded with 444 rows, 11 texture replacements loaded, and
+  `Displayed ... MetroidPrimeActivity for user 0: +853ms`. The process was still
+  alive at t=100 s, and on a fresh install the top activity is
+  `com.google.android.documentsui/.picker.PickActivity` — the app is correctly
+  asking for the disc through SAF. That is the right behaviour, and it is *not*
+  the "exits on a remembered `content://` URI" symptom from the earlier device
+  run, which was a different situation: an install that already had a stale
+  remembered URI.
+- **What it does not prove, and the distinction matters.** Everything is
+  ARM-translated onto an x86_64 CPU and rasterised by SwiftShader. So this
+  settles packaging, native loading, WebGPU initialisation and the Java/SAF
+  lifecycle. It settles **nothing** about frame rate, about how a real phone GPU
+  driver behaves, or about whether touch input feels right. Performance and input
+  still need a device, and I should not let this finding quietly turn into a
+  claim that Android is "verified".
+- **The trust store question is settled, and it was the one that mattered.** The
+  plan for Android `wss://` needs to enumerate the CA certificates itself,
+  because `SSL_CTX_set_default_verify_paths` on Android points at a compiled-in
+  `OPENSSLDIR` that does not exist, returns success, and loads nothing — so the
+  port's existing "could not load the system TLS trust store" check never fires
+  and every public server then fails obscurely. From inside the app's own
+  sandbox: `/apex/com.android.conscrypt/cacerts` lists **134** certificates and a
+  real read returns the `-----BEGIN` PEM header. The files are
+  `u:object_r:system_security_cacerts_file:s0` and the app runs in
+  `untrusted_app`, so SELinux permits it. `/system/etc/security/cacerts` has the
+  same 134 as a fallback, and the names are 8 hex digits plus `.0`
+  (`01419da9.0`).
+- **Consequence for the remaining work.** The last device-free engineering item
+  is now buildable *and* verifiable, and the emulator is the vehicle:
+  `docs/ANDROID_BUILD_PROBE.md` has the commands, what to conclude from them, and
+  the one expected-benign `ndk_translation` log line. Recipe for reuse:
+  `build/emu-probe.sh` (can it install?) and `build/emu-launch.sh`.
+
 ## ANSWERED: the corrupt save was MP_FAST_BOOT stranding a half-written file (2026-09-26)
 
 The question left open by `51ab7244` — why the in-game save screen finds a corrupt

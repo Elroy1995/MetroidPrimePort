@@ -163,11 +163,19 @@ under GNOME unless the port's own X11 preference applies — see
    reproducing their terms. Windows, AppImage, APK and the Flatpak manifest all
    collect the rest.
 4. **Android on-device behaviour is unverified** — boot, render, save, play a
-   seed and connect all need a device.
+   seed and connect all need a device. Partly narrowed: the arm64 APK installs,
+   launches, brings up WebGPU and opens the SAF picker on the x86_64 emulator
+   under ARM translation (see `docs/ANDROID_BUILD_PROBE.md`), so packaging and
+   lifecycle are checkable without hardware. Performance and touch input are not,
+   and those still need a device.
 5. **`wss://` does not work on Android**: the NDK has no OpenSSL, so the
    build has no `MP_HAVE_OPENSSL` and a `wss://` server is refused rather than
-   downgraded. A JNI `SSLSocket` backend or a vendored TLS library is what that
-   needs.
+   downgraded. **Now scoped and planned, not yet built:** vendor OpenSSL 3.5 LTS
+   for the NDK and keep `MP_HAVE_OPENSSL` as it is. The trap that would otherwise
+   cost a device to find is confirmed and documented — Android's
+   `SSL_CTX_set_default_verify_paths` returns success while loading nothing, so
+   the trust store must be enumerated by hand, and it has been verified readable
+   from inside the app's sandbox (`docs/ANDROID_BUILD_PROBE.md`).
 6. **The Flatpak path has never been built.** Its manifest is now correct — the
    project's own install rules put a runnable tree in `/app`, and the notices
    are collected — but nothing here has ever run `flatpak-builder`, so the
