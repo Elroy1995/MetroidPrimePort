@@ -1,5 +1,31 @@
 # Metroid Prime port — working notes
 
+## Item tracker, and the on-disc rewrite re-verified (2026-09-26)
+
+- An item arriving while the player was not looking at the HUD used to be lost
+  for good: the notification queue is capped at 32 and drained by whoever shows
+  it. The session now keeps the receipts - display name, sender, progressive
+  step - and the F1 overlay's Archipelago section lists them. No protocol change
+  was needed; the data was already in `Session`, and the sender alias was already
+  resolved for the notification text.
+- One subtlety worth recording: an `ItemEntry`'s flat `display` field mirrors
+  step 0, so reading it directly labelled every copy of a progressive item
+  "Power Beam". The tracker resolves the step the grant actually used. Eight new
+  assertions cover names, step numbering, an unknown item id, copies past the
+  last step, and sender attribution.
+- The 100-location randomizer path was re-verified end to end with the current
+  binary: the full dump feeds `tools/rando_seed.py` (100 locations, 33 models),
+  and a seeded run of the game rewrites pickups on disc, logging e.g.
+  `PLACE 39F2DE28:B2701146:0000007E Missiles -> Wavebuster amount=1 capacity=1
+  model=74A39FE6 acs=7C04E388` and an energy tank replacing a missile at
+  `B9ABCD56:000801FB`. Six such rewrites across fourteen areas of the Tallon
+  Overworld, each carrying a model and animation from the seed.
+- Worth remembering when testing this by hand: `MP_RANDO_DUMP` takes precedence
+  over `MP_RANDO_SEED`, and dump mode returns before any placement is applied.
+  Running both makes the run look like it ignored the seed. A seed run wants
+  `MP_RANDO_SWEEP=1` and no `MP_RANDO_DUMP`.
+
+
 ## A spec-shaped AP world table, so the location join is exercisable (2026-09-26)
 
 - The join tool had nothing to run against: the upstream world's repository
