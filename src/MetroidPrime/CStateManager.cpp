@@ -1110,6 +1110,7 @@ void CStateManager::Update(float dt) {
   PortSmokeAreaReload(*this);
   PortSmokeWorldTeleport(*this);
   PortSmokeVisor(*this);
+  PortSmokeSave(*this);
   PortSmokeStick(*this);
   PortSmokeWalk(*this);
   PortSmokeMouseBeforeUpdate(*this);

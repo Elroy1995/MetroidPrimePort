@@ -141,9 +141,12 @@ building and running it:
   beacon has been transmitted" as part of its story setup, and that sentence is
   not about the card. Captured and confirmed — see `PORT_NOTES.md`. The card
   itself is found, and a save on it is opened, both on desktop and through the
-  same code path Android uses. The one thing still unverified is loading a save
-  through the front-end menu, which needs menu-level input driving rather than
-  a card check.
+  same code path Android uses.
+- **Saving works**, verified end to end on that same path: a real save is written
+  to the card carrying its comment and a timestamp, and the next boot opens it
+  without reporting corruption. Only slot B fails, which is correct — nothing has
+  ever been written there. Loading a save from the **title screen's Continue** is
+  still unverified; see `PORT_NOTES.md`.
 - The port logs the directory it resolved the card to on every platform, so a
   device run can confirm where saves go in one line:
   `memory card: storing under <path>`. The same code falls back to the app's

@@ -199,6 +199,184 @@ void PortSmokeWorldTeleport(CStateManager& mgr) {
                mgr.World()->GetCurrentAreaId().Value(), sRestarts, restartCount);
 }
 
+// When the save screen's confirm press is due. Zero means not scheduled. Shared
+// between the game-side hook that requests the screen and the frame loop that
+// injects the press, because they run in different places at different times.
+unsigned sSaveConfirmAt = 0;
+
+// Schedules the A press that confirms the save screen. Called from
+// PortSmokeFrame, not from the save hook, because a menu stops the game think
+// loop that the hook lives in. $1 is the frame the request happened on.
+void PortSmokeSaveConfirm() {
+  if (sSaveConfirmAt != 0)
+    return;
+  sSaveConfirmAt = PortSmokeCurrentFrame() + 90;
+  std::fputs("[save-smoke] will confirm the save screen shortly\n", stderr);
+}
+
+// The frame loop's counter, so a hook that is not handed a frame can still ask
+// what frame it is on.
+namespace {
+unsigned sSmokeFrame = 0;
+}
+unsigned PortSmokeCurrentFrame() { return sSmokeFrame; }
+void PortSmokeCurrentFrameSet(unsigned frame) { sSmokeFrame = frame; }
+
+// MP_SMOKE_SAVE=<ticks>: open the real in-game save screen, then confirm it.
+//
+// Saving in Metroid Prime happens at a save station, not from the pause menu -
+// CPauseScreen's sub-screens are LogBook, Options, Inventory, ToGame and ToMap,
+// with no save among them. A save station's trigger is a script special
+// function that calls CStateManager::EnterSaveGameScreen(), deferring
+// kSMT_SaveGame, which CMFGame::Think turns into CMFGame::SaveGame() and then a
+// CSaveGameScreen(kSC_InGame). Calling EnterSaveGameScreen() takes exactly that
+// path, so this exercises the real save - the screen, the file write, the card -
+// and only skips the walk to the trigger, which is the part that needs a player.
+void PortSmokeSave(CStateManager& mgr) {
+  static const unsigned afterTicks = [] {
+    const char* value = std::getenv("MP_SMOKE_SAVE");
+    return value != nullptr ? static_cast<unsigned>(std::strtoul(value, nullptr, 10)) : 0;
+  }();
+  static unsigned sTicks = 0;
+  static unsigned sStage = 0;
+  if (afterTicks == 0)
+    return;
+  if (sStage == 0) {
+    // Only the *request* needs the game in its first-person state. Once the save
+    // screen is up the game is paused and no longer in that state, so requiring
+    // it afterwards is what stopped the confirm from ever happening - and a save
+    // screen opened and never confirmed leaves an 8192-byte file of zeroes on
+    // the card, which the game then quite correctly calls corrupt.
+    const bool inGame = mgr.GetGameState() == CStateManager::kGS_Running &&
+                        mgr.GetCameraManager()->IsInFPCamera() &&
+                        !mgr.GetCameraManager()->IsInCinematicCamera();
+    if (!inGame) {
+      sTicks = 0;
+      return;
+    }
+    if (++sTicks < afterTicks)
+      return;
+    std::fputs("[save-smoke] requesting the in-game save screen\n", stderr);
+    mgr.EnterSaveGameScreen();
+    // Scheduled here, in the same invocation, because this hook will not be
+    // called again: it lives in CStateManager::Update, which only runs from the
+    // kSMT_InGame branch of CMFGame::Think, and opening a menu takes the game out
+    // of that state. The press itself is injected from PortSmokeFrame, which
+    // runs from the main loop whatever state the game is in.
+    PortSmokeSaveConfirm();
+  }
+}
+
+// MP_SMOKE_SCRIPT=<at>:<buttons>[:<hold>],... : press buttons at a given frame.
+//
+// The menus cannot be walked any other way. Every other hook either calls the
+// game into a screen or presses one button for a fixed window, and reaching
+// "Save Game" needs a sequence: leave the Inventory with Z, take a menu row with
+// A, then confirm. The format is a comma-separated list of
+// <frame>:<buttons>[:<hold frames>], where <buttons> is a sum of the names
+// below, and a press lasts <hold> frames (default 8) so a menu registers it as
+// a press rather than a tap it can miss.
+//
+// A button set that is still held from an earlier step wins over a later
+// release, so overlapping steps are not a way to release a button early.
+void PortSmokeScript(unsigned frame) {
+  static const char* script = std::getenv("MP_SMOKE_SCRIPT");
+  if (script == nullptr)
+    return;
+  static unsigned sHoldUntil = 0;
+  static unsigned sHeld = 0;
+  static unsigned sNext = 0;
+  // A small fixed table, parsed once. The list is a test script, not user input,
+  // so a bound is enough and refusing to overrun it is better than growing an
+  // allocation.
+  static const int kMaxSteps = 32;
+  static int sFrame[kMaxSteps];
+  static unsigned sButtons[kMaxSteps];
+  static unsigned sHold[kMaxSteps];
+  static int sCount = -1;
+  if (sCount < 0) {
+    sCount = 0;
+    char* p = const_cast< char* >(script);
+    while (*p != '\0' && sCount < kMaxSteps) {
+      const long at = std::strtol(p, &p, 10);
+      if (*p != ':')
+        break;
+      ++p;
+      long mask = 0;
+      while (*p != '\0' && *p != ',' && *p != ':') {
+        if (std::strncmp(p, "start", 5) == 0)
+          mask |= PAD_BUTTON_START;
+        else if (std::strncmp(p, "a", 1) == 0)
+          mask |= PAD_BUTTON_A;
+        else if (std::strncmp(p, "b", 1) == 0)
+            mask |= PAD_BUTTON_B;
+          else if (std::strncmp(p, "x", 1) == 0)
+            mask |= PAD_BUTTON_X;
+          else if (std::strncmp(p, "y", 1) == 0)
+            mask |= PAD_BUTTON_Y;
+          else if (std::strncmp(p, "up", 2) == 0)
+            mask |= PAD_BUTTON_UP;
+          else if (std::strncmp(p, "down", 4) == 0)
+            mask |= PAD_BUTTON_DOWN;
+          else if (std::strncmp(p, "left", 4) == 0)
+            mask |= PAD_BUTTON_LEFT;
+          else if (std::strncmp(p, "right", 5) == 0)
+            mask |= PAD_BUTTON_RIGHT;
+          else if (std::strncmp(p, "z", 1) == 0)
+            mask |= PAD_TRIGGER_Z;
+          else if (std::strncmp(p, "l", 1) == 0)
+            mask |= PAD_TRIGGER_L;
+          else if (std::strncmp(p, "r", 1) == 0)
+            mask |= PAD_TRIGGER_R;
+          else
+            break;
+          while (*p != '\0' && *p != ',' && *p != ':')
+            ++p;
+          if (*p == '+')
+            ++p;
+        }
+        unsigned hold = 8;
+        if (*p == ':') {
+          ++p;
+          hold = static_cast< unsigned >(std::strtoul(p, &p, 10));
+        }
+        sFrame[sCount] = static_cast< int >(at);
+        sButtons[sCount] = static_cast< unsigned >(mask);
+        sHold[sCount] = hold;
+        ++sCount;
+      if (*p == ',')
+        ++p;
+      else
+        break;
+    }
+    // Anything past the bound is dropped rather than half-applied.
+    if (*p != '\0')
+      std::fprintf(stderr, "[smoke] script truncated at %d steps\n", kMaxSteps);
+    std::fprintf(stderr, "[smoke] script parsed %d step(s)\n", sCount);
+  }
+  // Steps run in order and each fires once, at or after its frame. This has to
+  // be straight-line rather than inside the parse block: with the loop guard
+  // still on sNext, the second and later steps were never reached at all.
+  if (sNext >= sCount)
+    return;
+  if (static_cast< int >(frame) >= sFrame[sNext]) {
+    sHeld = sButtons[sNext];
+    sHoldUntil = frame + sHold[sNext];
+    std::fprintf(stderr, "[smoke] frame %u: pressing 0x%04x for %u frame(s)\n", frame, sHeld, sHold[sNext]);
+    ++sNext;
+  } else {
+    return;
+  }
+  if (frame < sHoldUntil) {
+    PADStatus status{};
+    status.err = PAD_ERR_NONE;
+    status.button = static_cast< u16 >(sHeld);
+    PADSetVirtualStatus(0, &status);
+  } else if (sHeld != 0) {
+    sHeld = 0;
+  }
+}
+
 // MP_SMOKE_STICK=1: hold the right stick and report the aim yaw change, to
 // verify twin-stick aiming (run with MP_TWIN_STICK=1).
 void PortSmokeStick(CStateManager& mgr) {
@@ -392,6 +570,24 @@ void PortSmokeMouseGunView(const CStateManager& mgr, const CPlayerGun& gun, cons
 
 bool PortSmokeFrame(unsigned frame) {
   if (PortSmokeMouseEnabled() && frame == 1) PortDebug::SetMouseAim(true);
+  PortSmokeCurrentFrameSet(frame);
+  // Before the other input hooks, so a script step and a hook press cannot
+  // fight over the same virtual pad status in one frame.
+  PortSmokeScript(frame);
+  // The save screen's confirm, held long enough for the screen to register a
+  // press rather than a tap it can miss.
+  if (sSaveConfirmAt != 0 && frame >= sSaveConfirmAt) {
+    if (frame == sSaveConfirmAt)
+      std::fputs("[save-smoke] confirming the save screen\n", stderr);
+    if (frame < sSaveConfirmAt + 12) {
+      PADStatus status{};
+      status.err = PAD_ERR_NONE;
+      status.button = PAD_BUTTON_A;
+      PADSetVirtualStatus(0, &status);
+    } else {
+      sSaveConfirmAt = 0;
+    }
+  }
   static const unsigned limit = [] {
     const char* value = std::getenv("MP_SMOKE_FRAMES");
     return value != nullptr ? static_cast<unsigned>(std::strtoul(value, nullptr, 10)) : 0;

@@ -1,5 +1,62 @@
 # Metroid Prime port — working notes
 
+## Saving works; loading through the title menu does not (yet) (2026-09-26)
+
+The last unverified part of "saves and reloads" was the save path itself. It is
+now exercised end to end, and one part of the load path is still open.
+
+- **Where saving happens, and why that matters.** Not from the pause menu:
+  `CPauseScreen::ESubScreen` is LogBook, Options, Inventory, ToGame, ToMap, with
+  no save among them, which matches retail — Prime saves at a save station. A
+  save station's trigger is a script special function calling
+  `CStateManager::EnterSaveGameScreen()`, deferring `kSMT_SaveGame`, which
+  `CMFGame::Think` turns into `CMFGame::SaveGame()` and a
+  `CSaveGameScreen(kSC_InGame)`. So `MP_SMOKE_SAVE=<ticks>` calls
+  `EnterSaveGameScreen()` and takes exactly that path: real screen, real file
+  write, real card. Only the walk to the trigger is skipped.
+- **A save is genuinely written.** With an empty card, the run creates the file
+  and writes it: the payload stops being 8192 zero bytes and its comment field
+  reads `Metroid Prime                   09.26.26  15:18`. On the next boot the
+  card layer opens slot A and the game does **not** call the file corrupt — only
+  slot B fails, which is correct, nothing has ever been written to it.
+- **A mistake I made, and what it looked like.** My first run opened the save
+  screen and never confirmed it, and the game then reported "The Metroid Prime
+  save file on the Memory Card in Slot A is corrupt and must be deleted." That
+  is not a port bug: the file was an 8192-byte buffer of zeroes with a stored CRC
+  of 0, created by `CARDCreate` and never written. The game was right. Worth
+  recording because the symptom — a fresh card reporting a corrupt save — looks
+  exactly like the bug the objective asks about, and I nearly wrote it up as one.
+- **Why the confirm could not be injected where I first put it.** The port hooks
+  live in `CStateManager::Update`, which only runs from the `kSMT_InGame` branch
+  of `CMFGame::Think`. Opening a menu takes the game out of that state, so a hook
+  is never called again while a menu is up — the confirm could not happen from
+  there at all. The press now comes from `PortSmokeFrame`, which runs from the
+  main loop whatever state the game is in, and the request schedules it in the
+  same invocation that makes it.
+- **Tooling added**, all opt-in and off by default:
+  - `MP_SMOKE_SCRIPT=<at>:<buttons>[:<hold>],...` — scripted button presses at
+    chosen frames, because menus cannot be walked any other way. Names are
+    `start a b x y up down left right z l r`, summed with `+`.
+  - `MP_SMOKE_SAVE=<ticks>` — request the in-game save screen and confirm it.
+  - `PortSmokeCurrentFrame` — the frame loop's counter, so a hook that is not
+    handed a frame can ask what frame it is on.
+- **Menu facts established by looking rather than guessing.** `EnterPauseScreen()`
+  opens the **Inventory**, not a list. **B** leaves it; **Z** does nothing, even
+  though the on-screen prompt says Z is BACK. The Inventory itself renders
+  correctly — Samus, Arm Cannon, Morph Ball, Suits, Visors, Secondary Items,
+  Power Beam, and the button prompts.
+- Two bugs in my own script parser, both caught by checking the log rather than
+  the exit code: `strtol` needs a mutable `char*` for its end pointer, and a loop
+  guard on the step index meant the second and later steps were never reached at
+  all. A third "failure" was my `grep | head` truncating the output while the
+  steps had in fact all fired.
+- **Still open: the title screen's Continue.** A save on the card is accepted by
+  the card layer and by the in-game save screen, but the game resuming a loaded
+  save from the front end is not demonstrated. A Start-tapping script runs past
+  the title menu into the intro before a shot can catch it, so this needs a more
+  deliberate walk than a repeated press, and has resisted a first attempt here.
+
+
 ## Frame pacing, measured — and the number that was not what it said (2026-09-26)
 
 - Measured over 24 samples of 60 frames each, under Xvfb with the dummy audio
