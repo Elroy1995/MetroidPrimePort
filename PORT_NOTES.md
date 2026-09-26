@@ -1,3 +1,43 @@
+## CORRECTED AGAIN: the save file is intact and the save is EMPTY (2026-09-26)
+
+Two commits ago I wrote "saving is sound - written, read back, CRC-verified". The
+file is sound. **The save is empty, and that is the real blocker.**
+
+- **The payload, region by region**, from the file the port had just written:
+
+  | region | bytes | non-zero |
+  |---|---|---|
+  | CRC | 4 | 4 |
+  | comment | 64 | 47 |
+  | banner/icon | 5120 | 4847 |
+  | **save data** | **3004** | **0** |
+
+  4 + 47 + 4847 = 4898 - exactly the "4898 non-zero bytes" I reported two commits
+  ago. The number was right and I read it as "the save is substantial". It is
+  entirely the banner and the icon. **The 3004 bytes of actual save data are
+  zeros.**
+- **So the CRC retraction was necessary but not sufficient.** A valid CRC proves
+  the container is intact; it says nothing about the contents. I asked "is this
+  file self-consistent?" when the question was "does it contain a save?" Two
+  different questions, and only the second one matters here.
+- **Confirmed independently** by instrumentation of
+  `CMemoryCardDriver::InitializeFileInfo`, which reported
+  `slots 000, 0 of 3004 bytes non-zero`, and `BuildCardBuffer`, which reported
+  `save 3004 bytes (0 non-zero)`.
+- **What that means.** A save "succeeds" - the file is created, the banner and icon
+  are drawn, the comment is stamped, the CRC validates - and carries nothing. So
+  the front end's file list has no real save to offer, Continue has nothing to
+  load, and "saves and reloads" is broken on all three platforms. The slot is
+  never built: `CMemoryCardDriver::BuildNewFileSlot` is what populates one, its
+  only caller is `CSaveGameScreen::StartGame` (`CSaveGameScreen.cpp:437`), and at
+  the moment of the write-back `InitializeFileInfo` found all three slots null.
+- **On the delegation.** Handing this to a second lane was the right call. It
+  pushed past the container and asked the serialiser what it had produced, which is
+  the question that mattered, and it built a walker that presses from the front
+  end's own screen state instead of guessed frame numbers - the correct shape of
+  fix for a problem I had been losing runs to. Its first run timed out mid-rebuild;
+  its work was in the tree and legible, which is how the diagnosis was recovered.
+
 ## A valid save survives a front-end run; Continue still not shown (2026-09-26)
 
 With the CRC retraction settled, the experiment is finally clean: a save the game
