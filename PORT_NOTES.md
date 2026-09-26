@@ -1,134 +1,49 @@
-## A save the port writes fails the game's own CRC check (2026-09-26)
+## RETRACTED: there is no CRC bug, and I claimed there was (2026-09-26)
 
-This is the real blocker behind "saves and reloads", found by writing a save and
-checking the bytes rather than trusting the dialog.
+Two commits ago I reported that "a save the port writes fails the game's own CRC
+check", and then localised it. **Both were wrong**, and the error was mine, in the
+measurement rather than in the port.
 
-- **The evidence.** A scripted save (`MP_SMOKE_SAVE`) onto an empty card produces
-  a file that is plainly complete: 8256 bytes, an 8192-byte payload with **4898
-  non-zero bytes**, the comment `Metroid Prime                   09.26.26  18:02`,
-  and a non-zero stored CRC. It is stable across repeated reads, with no process
-  running.
-- **It still fails validation.** The stored CRC matches `crc32` over the payload
-  in **no byte order** (the read path accepts either, per
-  `SMemoryCardFileInfo::FileRead`, so one of them must hit) and over **no range**
-  of the payload at all - I searched every start offset in the first 128 bytes
-  against four plausible end offsets. The game therefore takes the
-  `kCR_CRC_MISMATCH` branch at `CMemoryCardDriver.cpp:258`, marks the file
-  `kFS_BadFile`, and the front end says *"the save file ... is corrupt and must be
-  deleted"*. That is the dialog I twice attributed to a half-created file. On a
-  file this complete, that attribution was wrong and the mismatch is real.
-- **The card layer is not transforming anything.** `CardGciFolder::fileWrite` and
-  `::fileRead` copy the payload verbatim with no endian swap; only the 64-byte
-  `File` header is swapped, on commit and on open. So the bytes on disk are the
-  bytes the game handed the card.
-- **So the discrepancy is in the game's own accounting**, between the write in
-  `CMemoryCardSys::CCardFileInfo::BuildCardBuffer` and the read in
-  `SMemoryCardFileInfo::FileRead`:
+- **What I did.** I read the saved `.gci` file and compared its stored CRC against
+  `zlib.crc32` of the payload. It did not match in any byte order, so I concluded
+  the write and the read covered different bytes.
+- **Why that was wrong.** `CCRC32::Calculate`
+  (`src/Kyoto/CCrc32.cpp:38-45`) is a **raw** CRC-32: it seeds `0xFFFFFFFF` and
+  iterates the reflected table, but it never applies the final complement.
 
   ```cpp
-  // write:  over the whole rounded buffer
-  const uint totalSize = (bannerSize + xf4_saveBuffer.size() + 8191) & ~8191;
-  const uint crc = CBasics::SwapBytes(CCRC32::Calculate(data + 4, totalSize - 4));
-
-  // read:   over whatever the card reports the file length to be
-  const uint size = stat.GetFileLength();
-  const uint crc = CCRC32::Calculate(data + 4, size - 4);
+  uint checksum = 0xFFFFFFFF;
+  while (length-- > 0)
+    checksum = (checksum >> 8) ^ gkCRC32Table[(checksum ^ *(buf++)) & 0xFF];
+  return checksum;      // no ^ 0xFFFFFFFF
   ```
 
-  If `totalSize` on write and `GetFileLength()` on read ever differ, or if the
-  buffer is transformed between the two, the CRCs cover different bytes. The
-  payload is 8192 on disk, so `totalSize` was 8192 too, which leaves the
-  transform as the remaining suspect. Not localised further here.
-- **Localised further, with numbers.** One instrumented run of `BuildCardBuffer`
-  and `FileRead` (the probe was removed afterwards; it is not in the tree) gave:
+  `zlib.crc32()` *does* apply it, so the two differ by exactly `0xFFFFFFFF`.
+- **The check that settles it**, on the file the port had just written:
 
   ```
-  [probe] write totalSize=8192 bannerSize=5188 saveSize=3004 crc=02EDCA14
-  [probe] read  size=8192 storedLE=00000000 storedBE=00000000 calc=553E7B06
+  zlib crc32(payload[4:])      : 3D3E759C
+  raw  = zlib ^ 0xFFFFFFFF      : C2C18A63   <- CCRC32::Calculate
+  stored, big-endian read       : C2C18A63
   ```
 
-  So `totalSize` is 8192 and `bannerSize + saveSize` is 5188 + 3004 = 8192
-  exactly, with no rounding — the write and read ranges really are the same 8188
-  bytes. And the file on disk after that run has `storedBE = 02EDCA14`, matching
-  the write probe exactly. **But `crc32(payload[4:])` of that same file is
-  `FD1235EB`, not `02EDCA14`.** The bytes the CRC was taken over are therefore
-  not the bytes that reached the file.
-- **That is the localisation.** It is a *write-side* problem inside
-  `BuildCardBuffer`'s neighbourhood, not a read-side or card-layer one: the CRC is
-  computed over `x104_cardBuffer`, and something between that and
-  `CARDWrite` changes bytes inside the region the CRC already covers. The
-  candidates are the writes that follow the buffer being built — a status, banner,
-  icon or comment write landing inside the payload rather than in the GCI header,
-  which is where those belong. Reading the on-disk file and diffing it against the
-  buffer at the same offsets would name it immediately.
-- **What this means for the objective.** Saving and reloading is *not* working on
-  any platform, and the cause is in the port's card path rather than in a
-  platform backend — so this is a single fix that unblocks Linux, Windows and
-  Android together. It outranks the remaining front-end work.
-
-## Scripted input was being discarded, and it looked like the front end ignoring it (2026-09-26)
-
-Last turn I concluded "the front end does not get past the Dolby screen on Start
-or A, and that may be the original blank-front-end bug". **That was wrong**, and
-the reason it was wrong is worth more than the conclusion.
-
-- **The mechanism.** `CDolphinController::ReadDevices`
-  (`src/Kyoto/Input/CDolphinController.cpp:105-110`) zeroes the entire pad status
-  when `SDL_GetKeyboardFocus()` is null, and then *preserves the error code*:
-
-  ```cpp
-  if (status[i].err != PAD_ERR_NONE || PortDebug::Visible() || !inputFocused) {
-    const auto error = status[i].err;
-    status[i] = {};
-    status[i].err = error;
-  }
-  ```
-
-  So the controller still reports **present** — `SetDeviceIsPresent(true)` at
-  `:157` keys off `err == PAD_ERR_NONE` — while every button has been discarded.
-  `CInputGenerator` (`src/MetroidPrime/CInputGenerator.cpp:29-36`) then dutifully
-  posts a user-input message for that present-but-buttonless controller, and the
-  front end gets a message every frame containing no buttons at all.
-- **Why it looked like a game bug.** `PADSetVirtualStatus` does set
-  `err = PAD_ERR_NONE` and `g_virtualPadActive`, and `PADRead` does merge the
-  virtual status (`extern/aurora/lib/dolphin/pad/pad.cpp:943`), so the injection
-  is sound. The window simply had no keyboard focus, because it was launched
-  from a detached script onto a live desktop. A press thrown away before anything
-  reads it is indistinguishable from a button that does nothing.
-- **The fix**, the same shape as an existing one: the mouse hook already claimed
-  focus for itself (`inputFocused = inputFocused || PortSmokeMouseEnabled()`), so
-  `PortSmokeScriptedInput()` now does the same for `MP_SMOKE_SCRIPT` and
-  `MP_SMOKE_FRONTEND`. Opt-in, off by default, no effect on a player.
-- **What changed once it was fixed.** The front end immediately got past the
-  attract movie and reached the title with its **`[ PRESS START ]`** prompt —
-  26000 frames, 0 fatal, 0 out-of-memory on the AMD adapter. The Dolby screen was
-  never stuck, and this is not the blank-front-end bug.
-
-## The card dialog's "corrupt save" is the same artefact again, not a save bug (2026-09-26)
-
-Past the title, the front end offered:
-
-> The Metroid Prime save file on the Memory Card in Slot A is corrupt and must
-> be deleted. — Delete Corrupt File / Continue Without Saving / Retry
-
-The file on the card at that moment was **8192 zero bytes, stored CRC 0, empty
-comment**: created by an earlier run that reached the card dialog and was killed
-before deciding what to do with it. Same created-but-unwritten artefact as two
-turns ago, one level up, and the game is right to call it corrupt. **No save
-defect is claimed.** What it does show is a testing trap worth stating plainly:
-*every* front-end run touches the card and leaves a half-created file, so the
-dialog will always find a bad one. A positive Continue result needs a completed
-save on the card and a run allowed to finish its decision, which is why it is
-still open.
-
-## The main menu is still ahead, and the attract loop makes presses a lottery (2026-09-26)
-
-The front end loops between the title and the attract movie, and at roughly 3 FPS
-presentation on the AMD/XWayland path a single scripted press is a lottery — one
-during a fade-in is ignored, and continuous tapping appears to blow through
-whatever appears in between. The next attempt should time a press from the *fade*
-rather than a fixed frame number, because the loop's phase drifts with how fast
-the machine happens to be.
+  An exact match. The write and the read agree, and the earlier run's pair agreed
+  the same way (`0xFD1235EB ^ 0xFFFFFFFF == 0x02EDCA14`, the value the instrumented
+  build printed). **The save path is correct.**
+- **So the "corrupt" dialog was right all along.** Every front-end run creates the
+  save slot and then dies before deciding what to do with it, leaving 8192 zero
+  bytes with a stored CRC of 0. Against a computed raw CRC of `0x553E7B06` that is
+  a mismatch, and the game is correct to say so. My *first* diagnosis — a
+  half-created file, not a save bug — was right, and I discarded it on the strength
+  of a comparison against the wrong CRC function.
+- **The lesson worth keeping:** I had a plausible mechanism, an instrumented run
+  with real numbers, and a write-up, and it was still wrong, because the one
+  assumption I never checked was that `CCRC32` is zlib's. I compared against a
+  library function instead of the one the code actually calls. Reading the
+  function would have taken a minute and saved two commits.
+- **Consequence for the objective:** nothing here blocks saving. What is still
+  unproven is the *front end's* Continue, and the obstacle is unchanged and
+  mundane: front-end runs clobber the card, so the dialog always finds a bad file.
 
 ## The Flatpak has an AppStream description (2026-09-26)
 
