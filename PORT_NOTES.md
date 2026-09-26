@@ -1062,10 +1062,14 @@ Further host bring-up fixes now sustain the main loop through at least frame 48,
 - Native text rendering checks explicit string lengths before dereferencing the
   next character. Palette entries, MREA section buffers, and map buffers now return
   to the allocator that created them during runtime and delayed shutdown cleanup.
-- AGSC group buffers are retained for the session on PC. `hwSaveSample` never copies
-  samples into ARAM here, and the MusyX 2.0.0 `sndPopGroup` path can leave voices
-  referencing sample data after a group is popped, so freeing the buffer left the
-  audio thread reading unmapped memory (confirmed with AddressSanitizer).
+- ~~AGSC group buffers are retained for the session on PC.~~ **No longer true.**
+  This was fixed in `f2888a72` and the note above it had gone stale. The history,
+  because it explains why the code looks the way it does: `hwSaveSample` never
+  copies samples into ARAM here, and MusyX **2.0.0**'s `sndPopGroup` could leave
+  voices referencing sample data after a group was popped, so freeing the buffer
+  left the audio thread reading unmapped memory (confirmed with AddressSanitizer).
+  The deliberate leak (`RetainAudioGroupBuffer`) that papered over it is gone from
+  the tree.
 - `CCameraFilterPass::DrawRandomStatic` previously faked a random main-memory
   address as its texture source (the GameCube renderer ignored the pointer, the PC
   renderer hashes it). It now samples a real scratch buffer of noise, sized for the
@@ -1220,7 +1224,10 @@ Remaining:
    PCM16-endianness fixes; verify pitch/tempo and that spaceship music starts.
 3. Confirm the draw-sync fence removed the intermittent skinned geometry
    explosion with an F12 capture at the failing frame if it still occurs.
-4. Replace the session-long AGSC buffer retention with a bounded lifetime.
+4. ~~Replace the session-long AGSC buffer retention with a bounded lifetime.~~
+   **Already done**, in `f2888a72`. The buffers are now held exactly as long as
+   MusyX has their group pushed, and no longer. See the entry above. The item was
+   on this list for weeks after it was finished.
 5. Verify CARD saves and the remaining menu flows. The card itself is confirmed
    read; loading a save through the front-end menu is not, and needs driven menu
    input.
