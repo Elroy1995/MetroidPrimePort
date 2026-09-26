@@ -145,6 +145,9 @@ struct WorldSweep {
   int layer = 0;
   int layerCount = 1;
   unsigned layerPasses = 0;
+  // Set between the hop away from an area and the hop back to it: the area has
+  // to be gone before it is rebuilt with the next layer.
+  bool revisiting = false;
 } sWorldSweep;
 
 std::string SettingsFilePath() {
@@ -940,7 +943,9 @@ bool ConsumeWorldSweepRequest(CStateManager& mgr) {
   }();
   (void)envChecked;
   WorldSweep& sweep = sWorldSweep;
-  if ((!sWorldSweepRequested && !sweep.active) || mgr.GetWantsToQuit()) return false;
+  if ((!sWorldSweepRequested && !sweep.active) || mgr.GetWantsToQuit()) {
+    return false;
+  }
   if (sHasWorldTeleport || sPendingTeleport >= 0 || sResetRequested) {
     // A manual debug request wins; do not resume the tour behind the user's back.
     if (sweep.active) std::fputs("[sweep] cancelled: another debug teleport/reset\n", stderr);
@@ -1057,31 +1062,41 @@ bool ConsumeWorldSweepRequest(CStateManager& mgr) {
                    sweep.areas.empty() ? 0u : sweep.areas[sweep.area], sweep.area + 1,
                    sweep.areas.size());
     }
-    if (++sweep.stalledTicks == 60 * 30) {
-      std::fprintf(stderr, "[sweep] still waiting after 30s; giving up on this pass\n");
+    // 10 seconds of simulation. A pass that has not settled by then is not
+    // going to: the loading chain stays put while the area is alive and
+    // nothing else moves it. The window is short because the wait is measured
+    // in ticks and a throttled run reaches a tick slowly.
+    if (++sweep.stalledTicks == 600) {
+      // One area that will not settle must not end a whole tour: the rest of
+      // the world is still worth dumping, and this area's objects were built on
+      // the way in even if the settle check never agreed. Report it, skip the
+      // pass, and carry on from the next one.
+      std::fprintf(stderr, "[sweep] giving up on %08X after 10s: %s%s%s%s%s\n",
+                   sweep.areas.empty() ? 0u : sweep.areas[sweep.area],
+                   areaExists ? "" : "no-area ", areaValid ? "" : "unvalidated ",
+                   loadingIdle ? "" : "loading ", freeingIdle ? "" : "freeing ",
+                   mapIdle ? "" : "map-streaming ");
       sweep.stalledTicks = 0;
-      // Move on rather than sit here: a later area may settle where this one
-      // does not, and the dump is worth more than one area.
+      sweep.settledTicks = 0;
+      sweep.revisiting = false;
       if (sweep.waiting) {
         ++sweep.completedAreas;
-        if (++sweep.layer >= sweep.layerCount) {
-          sweep.layer = 0;
-          ++sweep.area;
-          if (sweep.area >= sweep.areas.size()) {
-            sweep.areas.clear();
-            sweep.area = 0;
-            ++sweep.world;
-          }
+        ++sweep.area;
+        sweep.layer = 0;
+        if (sweep.area >= sweep.areas.size()) {
+          sweep.areas.clear();
+          sweep.area = 0;
+          ++sweep.world;
         }
         sweep.waiting = false;
-        sweep.settledTicks = 0;
-        if (sweep.world >= sweep.worlds.size() && sweep.areas.empty()) {
-          std::fprintf(stderr, "[sweep] complete: %zu worlds, %u areas\n", sweep.worlds.size(),
-                       sweep.completedAreas);
-          sweep = {};
-          return false;
-        }
       }
+      if (sweep.area >= sweep.areas.size() || sweep.world >= sweep.worlds.size()) {
+        std::fprintf(stderr, "[sweep] complete: %zu worlds, %u areas\n", sweep.worlds.size(),
+                     sweep.completedAreas);
+        sweep = {};
+        return false;
+      }
+      return true;
     }
     sweep.settledTicks = 0;
     return false;
@@ -1091,6 +1106,16 @@ bool ConsumeWorldSweepRequest(CStateManager& mgr) {
   sweep.settledTicks = 0;
   if (sweep.waiting) {
     const uint32_t settled = world->IGetAreaAlways(current)->IGetAreaAssetId();
+    if (sweep.revisiting) {
+      // This is the hop away from the area being re-layered: its objects have
+      // been dumped, so all that matters is that it is gone by the time we go
+      // back. Wait here, then return to it with the new layer active.
+      sweep.revisiting = false;
+      std::fprintf(stderr, "[sweep] left %08X for layer %d; returning\n", settled,
+                   sweep.layer + 1);
+      RequestWorldTeleport(sweep.worlds[sweep.world], sweep.areas[sweep.area]);
+      return true;
+    }
     if (settled != sweep.areas[sweep.area]) {
       // The destination's own scripts moved the player on (Impact Crater's
       // spawn points do). Its objects, and so its dump, were already built.
@@ -1112,9 +1137,13 @@ bool ConsumeWorldSweepRequest(CStateManager& mgr) {
       SetSweepLayer(mgr, world, current, sweep.layer);
       std::fprintf(stderr, "[sweep] re-entering %08X with layer %d active\n",
                    sweep.areas[sweep.area], sweep.layer);
-      // Back to the same area, not to the world's first one: the layer was just
-      // set on this area, and the point is to rebuild this area with it.
-      RequestWorldTeleport(sweep.worlds[sweep.world], sweep.areas[sweep.area]);
+      // The area has to be unloaded before it is rebuilt: SetLayerActive is a
+      // bit flip, and travelling straight back onto a live area re-enters it
+      // without ever scheduling its load again, so the pass never settles. Two
+      // hops: out to the world's first area, which unloads this one, and the
+      // return below lands on it with the new layer active.
+      sweep.revisiting = true;
+      RequestWorldTeleport(sweep.worlds[sweep.world], 0u);
       return true;
     }
     sweep.layer = 0;

@@ -1,5 +1,30 @@
 # Metroid Prime port — working notes
 
+## Layer sweep: the stall is the game leaving kSMT_InGame, not the sweep (2026-09-26)
+
+- The layer-cycling sweep works - Chozo Ruins has up to 7 layers per area, and
+  each pass over an area with a different layer active finds pickups the
+  one-layer dump did not (5 new keys in the first multi-layered area alone). The
+  give-up diagnostic and the wait reasons are worth keeping for that reason.
+- What it does not survive is a world area that leaves the game out of
+  `kSMT_InGame`. `CStateManager::Update` - and therefore every port hook,
+  including this sweep - only runs from the `kSMT_InGame` branch of
+  `CMFGame::Think`. When the layer flip on one area pushes the game into another
+  deferred state (a save, message or map screen), the tour stops receiving
+  ticks entirely: frames keep going, nothing else does, and no guard in the
+  sweep can notice because the sweep is never called. Instrumenting each of the
+  three early returns showed none of them firing, which is what identified it -
+  the absence of a message, not a message, was the evidence.
+- So the fix is not in the sweep. It needs the area to be *unloaded* before its
+  layer is changed - a real area teardown, not a bit flip - and the game to be
+  back in `kSMT_InGame` while it happens. Until that exists, the reliable way to
+  dump every layer is several seeded runs with the save in a different state,
+  merged, which is the same reason `docs/RANDOMIZER.md` says to merge dumps.
+- Left in place: the layer cycling, the wait reasons, and the 10s give-up. All
+  are off by default or inert without `MP_RANDO_SWEEP_LAYERS`, and each of them
+  turned "the tour is stuck" into a sentence naming what was outstanding.
+
+
 ## Layer-cycling sweep: it works, and it exposes why the dump was short (2026-09-26)
 
 - `MP_RANDO_SWEEP_LAYERS=1` visits each area once per layer with only that
