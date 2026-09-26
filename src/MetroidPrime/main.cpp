@@ -839,6 +839,12 @@ int CMain::RsMain(int argc, const char* const* argv) {
     double dt = 1.0 / 60.0;
     constexpr uint64_t framePeriodNs = 1000000000ull / 60;
     uint64_t nextFrameDeadline = SDL_GetTicksNS();
+    // When the first frame was actually presented, and when the process started.
+    // Startup is a number people ask about and the frame log is only a counter,
+    // so nothing could report it. The process clock is taken here rather than at
+    // entry because the interesting part is from the first real frame, and this
+    // point is where the game's own loading is done.
+    uint64_t firstFrameNs = 0;
     unsigned s_frameLog = 0;
     while (!x160_24_finished) {
       const uint64_t loopStartNs = SDL_GetTicksNS();
@@ -1051,7 +1057,15 @@ int CMain::RsMain(int argc, const char* const* argv) {
         nextFrameDeadline = SDL_GetTicksNS();
       }
       PortDebug::RecordFrame(SDL_GetTicksNS() - loopStartNs, sTicksAdvanced, presented);
+      if (firstFrameNs == 0 && presented)
+        firstFrameNs = SDL_GetTicksNS();
     }
+  // What the run cost. The frame log is only a counter, so nothing could report
+  // this before; a run that never reached the loop has nothing to say.
+  if (firstFrameNs != 0) {
+    fprintf(stderr, "MP startup: first frame %llu ms after the main loop began, %u frames run\n",
+            static_cast< unsigned long long >(firstFrameNs / 1000000ull), s_frameLog);
+  }
   }
   ShutdownSubsystems();
   gameGlobalObjects = nullptr;

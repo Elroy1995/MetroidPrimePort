@@ -108,6 +108,27 @@ about to hang rather than leaving only the frozen frame to go on. Neither backen
 is a workaround for missing functionality — the only difference is which window
 system draws the window.
 
+### Time to first frame
+
+The port prints what startup cost, once a frame has been presented:
+
+```
+MP startup: first frame 913 ms after the main loop began, 2349 frames run
+```
+
+This is the time from entering the main loop to the first presented frame, which
+is where shader compilation, pipeline creation and the first texture uploads
+happen. It is **not** time from launching the process: the disc image is read,
+mounted and identified before the loop is entered, and a cold shader cache or a
+slow disc will dominate that part instead.
+
+Measured on the development machine (RTX 5070 Ti, warm pipeline cache, cutscenes
+skipped, `SDL_VIDEODRIVER=x11`): **913 ms, 1180 ms, 1526 ms** over three runs.
+The spread is the first-frame work varying with what the driver had cached, so
+treat it as roughly a second rather than a precise figure. The existing F1
+Performance tab still reports the steady-state render and simulation rates once
+running.
+
 ### HD texture replacements
 
 `MP_TEXTURES` (default `<executable dir>/textures`) points at a folder of
