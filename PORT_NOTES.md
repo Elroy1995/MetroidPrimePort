@@ -1,5 +1,31 @@
 # Metroid Prime port — working notes
 
+## DeathLink, both directions (2026-09-26)
+
+- A `Bounce` from another player now kills this one, and this client's deaths
+  are announced. It needed no new mechanism: the world's own client reacts to a
+  bounce by clearing the high bit of the player state's alive flag, which is
+  `SetPlayerAlive(false)` here, and that already drives the whole death
+  sequence in the game - `CPlayer::Think` keys the music, sound and morph-ball
+  handling off it.
+- Three details that were each a bug first:
+  - A bounce was *owed* to the game rather than applied on the socket thread, so
+    one arriving during a load or at the title screen is not lost. Taking the
+    owed count clears it, so it cannot be applied twice.
+  - A bounce whose `source` is this client's own slot is the echo of a death it
+    already announced. The first version still counted those, so DeathLink would
+    have killed the player a second time per death.
+  - The pending announce was moved-from rather than cleared, and a
+    moved-from-but-not-cleared string is still non-empty. The socket loop runs
+    every iteration, so the same death was announced on every pass: four times
+    in a twenty-second run, once after the fix.
+- Opt-in through `"death_link": true`; `BuildBounce()` returns nothing when it
+  is off, so a session that never asked for it emits nothing. Eleven new
+  assertions in `port_apclient_tests`, and verified end to end against
+  `tools/ap_fake_server.py --bounce`: a live run receives a bounce from another
+  slot, dies, and announces exactly one death.
+
+
 ## Layer sweep: the stall is the game leaving kSMT_InGame, not the sweep (2026-09-26)
 
 - The layer-cycling sweep works - Chozo Ruins has up to 7 layers per area, and

@@ -285,12 +285,13 @@ still works; anything marked as a gap still limits a session.
   over chat (`!hint <name>`), so hint support needs the chat input above before
   it can mean anything. Without it the F1 tracker shows which items have arrived
   and in what order, which is the part a solo player actually uses.
-- **DeathLink — a gap, and a deliberate one.** `Bounce`/DeathLink is neither
-  received nor sent. It is the one descoped item that changes what a session
-  *feels* like: other players' deaths are not shown, and this client's deaths
-  are not announced. It is not a limitation on whether the port can join or
-  complete a multiworld, which is why it is left out rather than built, but it
-  is a real missing feature and not an oversight.
+- **DeathLink — done, opt-in.** Set `"death_link": true` in `archipelago.json`
+  and a `Bounce` from another player kills this one, naming them; this client's
+  own deaths are announced once. A bounce is owed to the game rather than
+  applied on the socket thread, so one that arrives during a load is not lost,
+  and an echo of this client's own death is ignored rather than killing the
+  player twice. The mechanism is the same one the world's own client uses:
+  clearing the alive flag, which is what drives the death sequence in the game.
 - **Mapping verification — a gap in one direction only.** The join itself is
   checked against the spec-shaped fixture (`ctest -R port_ap_fixture`): 100/100
   mapped, no area for review, no area missing. What is still unverified is the
