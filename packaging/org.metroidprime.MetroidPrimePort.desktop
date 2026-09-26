@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Metroid Prime
+GenericName=Metroid Prime port
+Comment=Metroid Prime running natively, with the randomizer and Archipelago support
+Exec=metroid_prime_port %f
+Icon=org.metroidprime.MetroidPrimePort
+Terminal=false
+Categories=Game;ActionGame;
+Keywords=Metroid;Prime;
+StartupNotify=true

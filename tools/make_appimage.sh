@@ -62,6 +62,11 @@ collect_notice() {
 }
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 build_dir=${build_dir:-$(dirname -- "$BIN")}
+# The port's own grant and notice first. A build that links MIT and zlib
+# components has to carry their terms, and a grant nobody can read inside the
+# package is not much of a grant.
+collect_notice "$repo_root/LICENSE" port-license.txt
+collect_notice "$repo_root/NOTICE" port-notice.txt
 collect_notice "$repo_root/extern/aurora/LICENSE" aurora.txt
 collect_notice "$repo_root/extern/musyx/LICENSE" musyx.txt
 for dep in sdl-src imgui-src fmt-src zstd-src; do

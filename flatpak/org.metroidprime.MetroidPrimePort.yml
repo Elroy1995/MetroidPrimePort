@@ -29,6 +29,32 @@ modules:
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DMP_BUILD_TESTS=OFF
+    post-install:
+      # The binary, its data files, the desktop entry and the port's own grant
+      # and notice are all installed by the project's own install rules, so
+      # there is nothing here to put a binary in place. What is left is the
+      # third-party notices: the two vendored snapshots come out of the tree,
+      # and the fetched ones are collected here because they only exist once
+      # cmake-ninja has run.
+      - install -Dm644 extern/aurora/LICENSE /app/share/licenses/metroid-prime-port/aurora.txt
+      - install -Dm644 extern/musyx/LICENSE /app/share/licenses/metroid-prime-port/musyx.txt
+      - |
+        for dep in sdl-src imgui-src fmt-src zstd-src; do
+            for notice in _deps/$dep/LICENSE* _deps/$dep/COPYING*; do
+                [ -f "$notice" ] || continue
+                install -Dm644 "$notice" /app/share/licenses/metroid-prime-port/$dep.txt
+                break
+            done
+        done
+      # The shared libraries come from the Flatpak runtime rather than out of
+      # this build, so their terms cannot be collected here; they are named the
+      # way the AppImage names the ones it copies off the build host.
+      - |
+        {
+            echo "Shared libraries come from the Flatpak runtime, not from this"
+            echo "build. Their licences are those of the runtime and the"
+            echo "extensions it pulls in; see the runtime's own sources."
+        } > /app/share/licenses/metroid-prime-port/BUNDLED_LIBRARIES.txt
     sources:
       # The repository itself. A git source keeps the build directory, disc
       # images and other untracked files out of the sandbox.

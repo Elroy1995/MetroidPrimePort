@@ -25,29 +25,39 @@ the port asks for the image on first launch when it cannot find one.
 | zstd | BSD | fetched, `zstd-src/LICENSE` |
 | Button prompt icons | Kenney CC0 | `tools/prompt_icons/`, built into `textures/` |
 
-**The repository has no top-level licence grant.** That is the one thing that
-must be settled before this is distributed: a build links the MIT and zlib
-components above, whose notices have to accompany it, and the decompiled game
-source is a separate question this document does not answer. Anyone packaging
-a release should treat that as an open legal question and get it answered,
-rather than inferring permission from the absence of a `LICENSE` file.
+**The repository's own work is MIT, and the game code is not.** `LICENSE` grants
+MIT over the platform layer, the build and packaging scripts, the tests, `tools/`
+and `docs/`. `NOTICE` states what that deliberately does not cover: `src/` and
+`include/` are a recompilation of the retail game, no permission to redistribute
+them is asserted anywhere in this tree, and the grant stops at the repository's
+own code rather than sweeping those directories in.
+
+That is a grant over the port, not an answer about the game. Anyone packaging a
+release still has to settle the second question — what may be done with a
+working copy of decompiled game code — and only the copyright holder can answer
+it. The licence here is not evidence that they may.
 
 ### Notices must travel with a build
 
-- **Windows** already does this: `windows.yml` copies Aurora's and MusyX's
-  licences plus every `LICENSE*`/`COPYING*`/`NOTICE*` from the fetched packages
-  into `dist/licenses/`, preserving the dependency path, and puts
+- **All four do.** Each ships the port's own `LICENSE` and `NOTICE` alongside
+  the third-party terms, because a grant nobody can read inside the package is
+  not much of a grant.
+- **Windows**: `windows.yml` copies the port's grant and notice, Aurora's and
+  MusyX's licences, and every `LICENSE*`/`COPYING*`/`NOTICE*` from the fetched
+  packages into `dist/licenses/`, preserving the dependency path, and puts
   `docs/NATIVE_PORT.md` in as the `README`.
-- **The AppImage and the APK now do.** `tools/make_appimage.sh` collects the
-  vendored and fetched notices into `usr/share/licenses/metroid-prime-port/`
-  and records which shared libraries it bundled in `BUNDLED_LIBRARIES.txt`, so
-  a reader can tell what came from where. The APK's `syncLicenseNotices` task
-  gathers the same set into `assets/`, verified present in a built package:
+- **The AppImage and the APK**: `tools/make_appimage.sh` collects them into
+  `usr/share/licenses/metroid-prime-port/` and records which shared libraries it
+  bundled in `BUNDLED_LIBRARIES.txt`, so a reader can tell what came from where.
+  The APK's `syncLicenseNotices` task gathers the same set into `assets/`,
+  verified present in a built package: `port-license.txt`, `port-notice.txt`,
   `aurora.txt`, `musyx.txt`, `sdl-src.txt`, `imgui-src.txt`, `fmt-src.txt` and
   `zstd-src.txt`. The notices for the libraries an AppImage copies from the
   build host are still named rather than reproduced — see below.
-- **The Flatpak still does not.** Nothing in `tools/make_apppak.sh`'s manifest
-  collects notices, and the Flatpak has never been built here.
+- **The Flatpak** collects them in the manifest's `post-install`: the two
+  vendored snapshots out of the tree, and the four fetched packages by glob,
+  because the fetched ones only exist once `cmake-ninja` has run. It has still
+  never been built here — see below.
 - **The shared libraries an AppImage copies are named, not reproduced.** They
   come off the build host rather than out of the tree, so their terms cannot be
   collected automatically; `BUNDLED_LIBRARIES.txt` says which were bundled and a
@@ -92,9 +102,9 @@ The port targets `versionName "0.1.0"` and `versionCode 1`.
 
 | Platform | Builds from | Produces | State |
 |---|---|---|---|
-| Linux | `cmake -S . -B build-gcc` | executable | works; tests green |
+| Linux | `cmake -S . -B build-gcc` | executable | works; tests green. `cmake --install` also produces a complete tree, verified by running it |
 | Linux | `tools/make_appimage.sh` | AppImage | builds; **notices missing** |
-| Linux | `tools/make_flatpak.sh` | Flatpak | **never built here** — no `flatpak-builder` on the development machine; the app id in the manifest must be changed before publishing |
+| Linux | `tools/make_flatpak.sh` | Flatpak | manifest installs a working tree and collects notices; **never built here** — no `flatpak-builder` on the development machine. The app id is a placeholder, and there is no AppStream metainfo |
 | Windows | `.github/workflows/windows.yml` | zipped `dist/` | green in CI, artifact uploaded, packaged startup checked |
 | Android | `tools/android_apk.sh :app:assembleRelease` | APK | builds, signed with this project's own key; **on-device behaviour unverified** |
 
@@ -116,14 +126,22 @@ under GNOME unless the port's own X11 preference applies — see
 
 ## What still blocks a real release
 
-1. **No top-level licence grant**, and no answer for the decompiled game source.
-2. **Notices still missing from the Flatpak**, and the AppImage only *names*
-   the shared libraries it copies rather than reproducing their terms. Windows,
-   AppImage and APK all collect the rest.
+1. **No answer for the decompiled game source.** The port's own work is MIT
+   (`LICENSE`, scoped) and `NOTICE` says so, but what may be done with a working
+   copy of decompiled game code is a question for the copyright holder, and no
+   part of this tree answers it.
+2. **The AppImage only *names* the shared libraries it copies** rather than
+   reproducing their terms. Windows, AppImage, APK and the Flatpak manifest all
+   collect the rest.
 3. **Android on-device behaviour is unverified** — boot, render, save, play a
    seed and connect all need a device.
 4. **`wss://` does not work on Android**: the NDK has no OpenSSL, so the
    build has no `MP_HAVE_OPENSSL` and a `wss://` server is refused rather than
    downgraded. A JNI `SSLSocket` backend or a vendored TLS library is what that
    needs.
-5. **The Flatpak path has never been built**, and its app id is a placeholder.
+5. **The Flatpak path has never been built.** Its manifest is now correct — the
+   project's own install rules put a runnable tree in `/app`, and the notices
+   are collected — but nothing here has ever run `flatpak-builder`, so the
+   manifest is unproven against a real runtime. Two things also remain before it
+   could be published: the app id is a placeholder, and there is no AppStream
+   metainfo, which Flathub requires.

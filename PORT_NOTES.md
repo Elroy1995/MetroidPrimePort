@@ -1,5 +1,61 @@
 # Metroid Prime port — working notes
 
+## A licence, and the Flatpak could not have worked (2026-09-26)
+
+Two release blockers, and the second turned out to be hiding a third.
+
+### The licence
+
+- `LICENSE` is an MIT grant over **this project's own work** - `platform/`, the
+  build and packaging scripts, `tests/`, `tools/`, `docs/` - and `NOTICE` states
+  what that deliberately leaves out: `src/` and `include/` are a recompilation of
+  the retail game, no permission to redistribute them is asserted anywhere, and
+  the grant stops at the repository's own code rather than sweeping those
+  directories in.
+- A blanket licence over the whole tree would have been a false claim, and a
+  grant over nothing would have been no claim at all. The grant now also travels
+  with every package - `port-license.txt` and `port-notice.txt` in the AppImage,
+  the APK's `assets/` (verified: 8 notices) and the Windows `dist/licenses/` -
+  because a grant nobody can read inside the package is not much of a grant.
+- What the licence does **not** do is answer what may be done with a working copy
+  of decompiled game code. That stays an open question for the copyright holder,
+  and the docs now say so rather than implying the file settled it.
+
+### The Flatpak was not merely unbuilt, it was broken
+
+- The manifest declares `command: metroid_prime_port` and
+  `buildsystem: cmake-ninja`, whose only install step is the build system's own.
+  **The project had no `install()` rules at all.** So a Flatpak build would have
+  succeeded and produced an application with no executable in it, and anything
+  else installing this project would have got an empty tree. The docs described
+  it as "never built here", which was true and understated.
+- Fixed with install rules in `CMakeLists.txt` and a desktop entry in
+  `packaging/`. The data files go to `bin/` beside the executable because that is
+  where the port looks for them: `DefaultTexturesPath()` resolves
+  `SDL_GetBasePath() + "textures"` and Aurora opens `initial_pipeline_cache.db`
+  by name beside the binary. They are there by design, not by accident.
+- **Verified by running the installed tree**, not the build tree, because that is
+  the layout a Flatpak, a package manager and the AppImage all get: 44 frames,
+  no texture errors, and `Seeded pipeline cache from
+  '<prefix>/bin/initial_pipeline_cache.db' (444 rows merged)`. If the port could
+  only find its data in a build tree, the install rules would be wrong and no
+  packaging of it would work.
+- The manifest's `post-install` collects the third-party notices, and the desktop
+  entry is installed by CMake rather than patched with `desktop-file-edit` after
+  the fact - which would have failed, since no desktop file existed to patch.
+- Still unproven: nothing here has run `flatpak-builder`, there is no AppStream
+  metainfo, and the app id is a placeholder.
+
+### A regression caught while checking the docs
+
+- Claiming "the opt-in produces an installable package" without building it hid a
+  regression. With no key, the opt-in permitted the debug key but named no
+  signing config at all, so AGP emitted `app-release-unsigned.apk` - which Android
+  will not install. That is precisely the path a device test uses, so it was the
+  worst possible place for it to be wrong. Setting *no* config is not a softer
+  alternative to the debug key; it is a package that cannot be sideloaded.
+
+
 ## Android release signing has an identity of its own (2026-09-26)
 
 - The `release` variant was signed with the shared debug key. It is now signed

@@ -172,9 +172,14 @@ android {
             // slow to play, so the release variant is the one worth installing.
             // It is signed with this project's own key when one is configured,
             // and never with the shared debug key unless that was asked for
-            // explicitly - see the signing resolution above.
+            // explicitly - see the signing resolution above. Setting *no*
+            // signing config is not an alternative: AGP then emits an unsigned
+            // APK, which Android will not install, so the opt-in has to name
+            // the debug key rather than merely permit it.
             if (signingValues != null) {
                 signingConfig signingConfigs.release
+            } else if (allowDebugSigning) {
+                signingConfig signingConfigs.debug
             }
         }
     }
@@ -199,6 +204,11 @@ tasks.register("syncLicenseNotices", Sync) {
     // every build variant, so more than one source can land on a name. They
     // are the same terms, so the first one wins rather than failing the build.
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // The port's own grant and notice come first: an installed app that links
+    // MIT and zlib components has to carry their terms, and a grant nobody can
+    // read inside the package is not much of a grant.
+    from("../../LICENSE") { rename { "port-license.txt" } }
+    from("../../NOTICE") { rename { "port-notice.txt" } }
     from("../../extern/aurora/LICENSE") { rename { "aurora.txt" } }
     from("../../extern/musyx/LICENSE") { rename { "musyx.txt" } }
     // The fetched packages live beside the native build output, so they are

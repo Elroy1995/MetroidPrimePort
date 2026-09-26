@@ -176,6 +176,27 @@ add_custom_command(TARGET metroid_prime_port POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/initial_pipeline_cache.db
         $<TARGET_FILE_DIR:metroid_prime_port>/initial_pipeline_cache.db)
 
+# Install rules. Without these a `cmake --install` installs nothing at all, which
+# is not a cosmetic problem: flatpak-builder's only install step is the build
+# system's own, so the Flatpak manifest built an application with no executable
+# in it, and a package manager installing this project would get an empty tree.
+#
+# The data files go next to the executable because that is where the port looks
+# for them: DefaultTexturesPath() in platform/main.cpp resolves
+# <SDL_GetBasePath()> + "textures", and Aurora's pipeline cache is opened by name
+# beside the binary. They are installed to bin/ for that reason, not by accident.
+include(GNUInstallDirs)
+install(TARGETS metroid_prime_port RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/textures/
+    DESTINATION ${CMAKE_INSTALL_BINDIR}/textures)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/assets/initial_pipeline_cache.db
+    DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/org.metroidprime.MetroidPrimePort.desktop
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+              ${CMAKE_CURRENT_SOURCE_DIR}/NOTICE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/metroid-prime-port)
+
 if(MP_BUILD_TESTS)
     enable_testing()
     add_test(NAME port_version COMMAND metroid_prime_port --version)
