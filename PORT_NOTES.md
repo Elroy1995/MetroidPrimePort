@@ -39,10 +39,28 @@ checking the bytes rather than trusting the dialog.
   buffer is transformed between the two, the CRCs cover different bytes. The
   payload is 8192 on disk, so `totalSize` was 8192 too, which leaves the
   transform as the remaining suspect. Not localised further here.
-- **Next step, one run:** log `totalSize`, the banner and icon sizes and the
-  computed CRC in `BuildCardBuffer`, and `size` plus the computed CRC in
-  `FileRead`, then compare. That either localises it immediately or shows the
-  buffer being altered after the CRC is taken.
+- **Localised further, with numbers.** One instrumented run of `BuildCardBuffer`
+  and `FileRead` (the probe was removed afterwards; it is not in the tree) gave:
+
+  ```
+  [probe] write totalSize=8192 bannerSize=5188 saveSize=3004 crc=02EDCA14
+  [probe] read  size=8192 storedLE=00000000 storedBE=00000000 calc=553E7B06
+  ```
+
+  So `totalSize` is 8192 and `bannerSize + saveSize` is 5188 + 3004 = 8192
+  exactly, with no rounding — the write and read ranges really are the same 8188
+  bytes. And the file on disk after that run has `storedBE = 02EDCA14`, matching
+  the write probe exactly. **But `crc32(payload[4:])` of that same file is
+  `FD1235EB`, not `02EDCA14`.** The bytes the CRC was taken over are therefore
+  not the bytes that reached the file.
+- **That is the localisation.** It is a *write-side* problem inside
+  `BuildCardBuffer`'s neighbourhood, not a read-side or card-layer one: the CRC is
+  computed over `x104_cardBuffer`, and something between that and
+  `CARDWrite` changes bytes inside the region the CRC already covers. The
+  candidates are the writes that follow the buffer being built — a status, banner,
+  icon or comment write landing inside the payload rather than in the GCI header,
+  which is where those belong. Reading the on-disk file and diffing it against the
+  buffer at the same offsets would name it immediately.
 - **What this means for the objective.** Saving and reloading is *not* working on
   any platform, and the cause is in the port's card path rather than in a
   platform backend — so this is a single fix that unblocks Linux, Windows and
