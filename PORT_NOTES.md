@@ -1,3 +1,40 @@
+## Reading the save screen's UI trace: it never offers a slot (2026-09-26)
+
+`CSaveGameScreen::EUIType` (include/MetroidPrime/CSaveGameScreen.hpp:23) makes the
+instrumented trace readable: 0 Empty, 1 BusyReading, 2 BusyWriting, 11 SaveCorrupt,
+16 SaveReady. The in-game run logged
+
+    ui type 1 -> 11   BusyReading  -> SaveCorrupt
+    advance: ui type 11, choice 0   the corrupt dialog answered with choice 0
+    ui type 11 -> 0                 back to Empty
+    ui type 0 -> 2                  Empty -> BusyWriting
+    ui type 2 -> 16                 BusyWriting -> SaveReady
+
+So the flow completes — read, report corrupt, delete, write, ready — and the file
+that comes out has a 3004-byte save region of zeros. **The slot is never built.**
+
+- **The likely shape of it.** `CMemoryCardDriver::BuildNewFileSlot` is what
+  populates a slot, and its only caller is `CSaveGameScreen::StartGame`
+  (`CSaveGameScreen.cpp:437`), reached from the file-select list once the player
+  picks a slot. The trace never shows a slot list at all: the blind A press
+  answers "delete corrupt file" (choice 0) and the screen then goes straight to
+  BusyWriting. Answering the corrupt dialog is not the same as choosing a slot, so
+  `StartGame` is never called and `InitializeFileInfo` later finds all three slots
+  null.
+- **This is very likely the real "fresh card" problem**, and I dismissed the
+  original report too quickly two turns ago. The distress-beacon reading was right
+  about the *message* and wrong to conclude there was nothing behind it. A card
+  with no save gets a file created for it, the file reads back as all zeros, the
+  CRC is 0 against a computed `0x553E7B06`, and the game says *corrupt*. On a
+  genuinely fresh card the game should be offering to create a save, not
+  apologising for a broken one.
+- **What I am not claiming:** that `BuildNewFileSlot` is broken, or that the port
+  cannot write a real save. The trace is consistent with the *automation* bypassing
+  the slot-selection step rather than with a defect in the save writer. Separating
+  those needs a run that actually selects slot 1, which is what the second lane is
+  building - a walker that drives the front end from its own screen state instead of
+  pressing A blindly.
+
 ## CORRECTED AGAIN: the save file is intact and the save is EMPTY (2026-09-26)
 
 Two commits ago I wrote "saving is sound - written, read back, CRC-verified". The
