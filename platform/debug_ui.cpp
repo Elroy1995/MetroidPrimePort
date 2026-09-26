@@ -1681,6 +1681,39 @@ void DrawSessionTab() {
     const char* lastMessage = PortAp::LastMessage();
     if (lastMessage != nullptr && lastMessage[0] != '\0')
       ImGui::TextWrapped("Last message: %s", lastMessage);
+
+    // Item tracker: the session's receipts, so an item that arrived while the
+    // player was not looking at the HUD is still readable here.
+    const std::vector< PortAp::TrackedItem > tracked = PortAp::TrackedItems();
+    ImGui::SeparatorText("Received items");
+    if (tracked.empty()) {
+      ImGui::TextDisabled("Nothing yet.");
+    } else {
+      // Half the space the section has left, so the table does not push the
+      // settings below it off the tab.
+      ImGui::BeginTable("apTracked", 3,
+                        ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
+                            ImGuiTableFlags_BordersInnerH,
+                        ImVec2(0.0f, ImGui::GetContentRegionAvail().y * 0.5f));
+      ImGui::TableSetupColumn("Item");
+      ImGui::TableSetupColumn("From");
+      ImGui::TableSetupColumn("Step");
+      ImGui::TableHeadersRow();
+      for (const PortAp::TrackedItem& item : tracked) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(item.name.c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(item.from.empty() ? "(your item)" : item.from.c_str());
+        ImGui::TableNextColumn();
+        if (item.total > 1) {
+          ImGui::Text("%d of %d", item.step, item.total);
+        } else {
+          ImGui::TextDisabled("-");
+        }
+      }
+      ImGui::EndTable();
+    }
   }
 }
 

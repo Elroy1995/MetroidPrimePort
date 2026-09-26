@@ -539,6 +539,28 @@ int ItemCount() {
   return runtime.itemCount;
 }
 
+std::vector< TrackedItem > TrackedItems() {
+  EnsureLoaded();
+  std::vector< TrackedItem > result;
+  Runtime& runtime = GetRuntime();
+  {
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (runtime.session == nullptr)
+      return result;
+    const std::vector< Protocol::TrackedItem >& tracked = runtime.session->Tracked();
+    result.reserve(tracked.size());
+    for (const Protocol::TrackedItem& item : tracked) {
+      TrackedItem entry;
+      entry.name = item.name;
+      entry.from = item.from;
+      entry.step = static_cast< int >(item.step);
+      entry.total = static_cast< int >(item.total);
+      result.push_back(std::move(entry));
+    }
+  }
+  return result;
+}
+
 int CheckCount() {
   EnsureLoaded();
   Runtime& runtime = GetRuntime();

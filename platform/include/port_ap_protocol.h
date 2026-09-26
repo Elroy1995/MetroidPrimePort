@@ -24,6 +24,16 @@ struct ItemGrant {
   std::string display; // name shown to the player; the item name when unset
 };
 
+// One item as the tracker shows it: the name a player reads, where it came
+// from, and which step of a progressive sequence it was. A flat item is step 1.
+struct TrackedItem {
+  int64_t itemId = 0;
+  std::string name;
+  std::string from;  // player alias, empty when the item is the player's own
+  int64_t step = 1;  // 1-based; the last step repeats for later copies
+  int64_t total = 1; // steps in the sequence, 1 for a flat item
+};
+
 // A configured item: one grant, or a progressive sequence where the Nth copy
 // received grants step N and later copies repeat the last step. The inherited
 // fields are the flat grant, and mirror step 0 for a progressive item.
@@ -106,6 +116,12 @@ public:
   static std::string BuildLocationChecks(const std::vector< int64_t >& ids);
   static std::string BuildSync();
 
+  // Everything received this session, oldest first, for the item tracker. The
+  // notification queue is the same information but capped and drained by
+  // whoever displays it, so a player who misses a HUD line loses it for good;
+  // this is the whole session and is bounded by its own cap.
+  const std::vector< TrackedItem >& Tracked() const { return mTracked; }
+
   // Records a collected location. False when the key has no id, or was already
   // checked; otherwise `id` is the AP location id to send.
   bool MarkLocationChecked(const std::string& locationKey, int64_t& id);
@@ -127,6 +143,10 @@ public:
   // Why the loaded progress was thrown away on the last RoomInfo, empty when
   // nothing was. The state itself is already reset when this is set.
   const std::string& ResetReason() const { return mResetReason; }
+  // Copies the tail of the tracked receipts, newest last, into `out`, replacing
+  // its contents. The HUD only cares about the last few; the F1 tracker calls
+  // Tracked() directly for the whole session.
+  void CopyRecentTracked(std::vector< TrackedItem >& out, size_t cap) const;
 
 private:
   Config mConfig;
@@ -141,6 +161,7 @@ private:
   int64_t mOwnSlot = 0;
   std::map< int64_t, std::string > mPlayers;
   std::vector< std::string > mNotifications;
+  std::vector< TrackedItem > mTracked;
 };
 
 } // namespace Protocol

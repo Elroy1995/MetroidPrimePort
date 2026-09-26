@@ -419,6 +419,51 @@ int main() {
                          notification == expected && notificationsMatch;
   Check(notificationsMatch, "notifications name the progressive step actually granted");
 
+  // The tracker keeps the session's receipts so one that arrived while the
+  // player was not watching the HUD is still readable. It is the same five
+  // grants, with the step of a progressive sequence and who sent it.
+  const std::vector< TrackedItem >& tracked = progressive.Tracked();
+  Check(tracked.size() == 5, "the tracker records every grant, including unknown items");
+  Check(tracked[0].name == "Power Beam" && tracked[0].step == 1 && tracked[0].total == 3 &&
+            tracked[1].name == "Missile Expansion" && tracked[1].total == 1 &&
+            tracked[2].name == "Charge Beam" && tracked[2].step == 2 && tracked[2].total == 3 &&
+            tracked[3].name == "item 999" && tracked[4].name == "Super Missile" &&
+            tracked[4].step == 3 && tracked[4].total == 3,
+        "the tracker names each grant and its progressive step");
+  bool noSender = true;
+  for (const TrackedItem& item : tracked)
+    noSender = item.from.empty() && noSender;
+  Check(noSender, "items the player sent themselves have no sender");
+  // A copy past the last step repeats it rather than counting past the end.
+  // A fresh session, because the state carries the count of 3 across.
+  {
+    Session repeated(progressiveConfig, State{});
+    std::vector<ItemGrant> repeatedGrants;
+    repeated.HandlePacket(Packet(
+        R"({"cmd":"ReceivedItems","index":0,"items":[[5031043,1,1,0],[5031043,2,1,0],)"
+        R"([5031043,3,1,0],[5031043,4,1,0],[5031043,5,1,0]]})"),
+        outgoing, repeatedGrants);
+    const std::vector< TrackedItem >& more = repeated.Tracked();
+    Check(more.size() == 5 && more[0].step == 1 && more[2].step == 3 && more[3].step == 3 &&
+              more[4].step == 3 && more[4].name == "Super Missile",
+          "copies past the last step stay on it");
+  }
+  {
+    // Another player's item records who sent it, using the alias from Connected.
+    Session shared(progressiveConfig, State{});
+    std::vector<ItemGrant> sharedGrants;
+    shared.HandlePacket(Packet(
+                            R"({"cmd":"Connected","slot":1,"team":0,"players":)"
+                            R"([{"slot":1,"alias":"Me"},{"slot":2,"alias":"Bob"}]})"),
+                        outgoing, sharedGrants);
+    shared.HandlePacket(
+        Packet(R"({"cmd":"ReceivedItems","index":0,"items":[[5031004,1,2,0],[5031004,2,1,0]]})"),
+        outgoing, sharedGrants);
+    const std::vector< TrackedItem >& fromOthers = shared.Tracked();
+    Check(fromOthers.size() == 2 && fromOthers[0].from == "Bob" && fromOthers[1].from.empty(),
+          "an item from another player names them, one's own does not");
+  }
+
   const std::filesystem::path progressiveStatePath = testDir / "progressive-state.json";
   State progressiveState = progressive.GetState();
   progressiveState.slot = "P";

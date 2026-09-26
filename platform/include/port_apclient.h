@@ -2,6 +2,7 @@
 #define METROID_PRIME_PORT_PORT_APCLIENT_H
 #include <cstdint>
 #include <string>
+#include <vector>
 
 class CStateManager;
 
@@ -44,6 +45,18 @@ const char* LastMessage();
 // PrintJSON line) into `text`. False when the queue is empty. Call from the
 // game thread.
 bool TakeNotification(std::string& text);
+// One line of the item tracker: the item's display name, who sent it, and the
+// step of a progressive sequence. `step` and `total` describe a flat item as
+// 1 of 1. `from` is empty for an item the player sent themselves. The tracker
+// list, oldest first; this reads the session's records and is safe from the
+// overlay's thread.
+struct TrackedItem {
+  std::string name;
+  std::string from;
+  int step = 1;
+  int total = 1;
+};
+std::vector< TrackedItem > TrackedItems();
 // Seed name from the server's RoomInfo, or "" before it arrives.
 const char* SeedName();
 

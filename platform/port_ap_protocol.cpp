@@ -223,6 +223,26 @@ void AppendNotification(std::vector<std::string>& notifications, std::string tex
   notifications.push_back(std::move(text));
 }
 
+// How much of a session's receipts the tracker keeps. Comfortably more than a
+// play session sends, and bounded so a long one cannot grow without limit.
+constexpr size_t kMaxTrackedItems = 256;
+
+// The name to show for an item: the display name of the step that copy grants,
+// falling back to the item's own name when the config gave none.
+std::string ItemDisplay(const ItemEntry& entry, int64_t count) {
+  const ItemGrant& step = entry.Step(count);
+  if (!step.display.empty())
+    return step.display;
+  if (!entry.display.empty())
+    return entry.display;
+  if (step.itemType >= 0) {
+    const char* name = PortRandomizer::ItemName(step.itemType);
+    if (name != nullptr)
+      return name;
+  }
+  return "item";
+}
+
 
 } // namespace
 
@@ -636,6 +656,10 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
         continue;
       const auto found = mConfig.items.find(itemId);
       std::string notification;
+      // Copies of this item already processed, which is what makes a
+      // progressive grant a step rather than a repeat of the first one. Needed
+      // by the tracker below, which is outside the entry branch.
+      int64_t seenBefore = 0;
       if (found != mConfig.items.end()) {
         const ItemEntry& entry = found->second;
         int64_t count = 0;
@@ -647,6 +671,7 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
         }
         ItemGrant grant = entry.Step(count);
         grant.itemId = itemId;
+        seenBefore = count;
         notification = grant.display;
         granted.push_back(std::move(grant));
       } else {
@@ -668,6 +693,34 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       if (hasPlayer && mOwnSlot != 0 && itemPlayer != mOwnSlot)
         notification += " from " + PlayerName(itemPlayer);
       AppendNotification(mNotifications, std::move(notification));
+      // The tracker keeps the same receipt with its parts separated, so a
+      // session's worth of items stays readable after the HUD line is gone.
+      {
+        TrackedItem tracked;
+        tracked.itemId = itemId;
+        const auto entryIt = mConfig.items.find(itemId);
+        if (entryIt != mConfig.items.end()) {
+          // The step's own display name, which is what the grant resolves to.
+          // The entry's flat fields mirror step 0, so a progressive item needs
+          // the step rather than the entry to be named correctly.
+          tracked.name = ItemDisplay(entryIt->second, seenBefore);
+          if (entryIt->second.IsProgressive()) {
+            tracked.total = static_cast< int64_t >(entryIt->second.progressive.size());
+            tracked.step = seenBefore + 1;
+            if (tracked.step > tracked.total)
+              tracked.step = tracked.total;
+          }
+        } else {
+          tracked.name = "item " + std::to_string(itemId);
+        }
+        if (hasPlayer && mOwnSlot != 0 && itemPlayer != mOwnSlot)
+          tracked.from = PlayerName(itemPlayer);
+        // A long session can send a lot of items; keep the tail, which is what
+        // a player is still looking at.
+        mTracked.push_back(std::move(tracked));
+        if (mTracked.size() > kMaxTrackedItems)
+          mTracked.erase(mTracked.begin(), mTracked.end() - kMaxTrackedItems);
+      }
     }
     int64_t endIndex = index;
     if (itemList.size() <= static_cast<size_t>(std::numeric_limits<int64_t>::max()) &&
@@ -724,6 +777,14 @@ bool Session::TakeNotification(std::string& text) {
   } catch (...) {
     return false;
   }
+}
+
+void Session::CopyRecentTracked(std::vector< TrackedItem >& out, size_t cap) const {
+  out.clear();
+  if (cap == 0)
+    return;
+  const size_t count = std::min(cap, mTracked.size());
+  out.assign(mTracked.end() - static_cast< ptrdiff_t >(count), mTracked.end());
 }
 
 std::string Session::PlayerName(int64_t slot) const {
