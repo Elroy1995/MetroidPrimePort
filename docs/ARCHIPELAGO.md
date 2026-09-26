@@ -226,20 +226,46 @@ not include Aurora's UI layer, so an F1 screenshot will not show it.
 
 ## Not done yet
 
-- **TLS on Android only.** `wss://` needs OpenSSL found at configure time.
-  Linux and Windows are both verified against a real TLS server, including every
-  rejection case, in CI. Android's NDK has no OpenSSL, so a JNI `SSLSocket`
-  backend or a vendored TLS library is what that platform needs.
-- **Compression.** No `permessage-deflate`; Archipelago accepts uncompressed
-  connections but marks them deprecated.
-- **DeathLink, hints, chat, tracker.** Bounce/DeathLink, hint creation and the
-  item tracker are unimplemented; `PrintJSON` is queued for the HUD and overlay
-  but chat input does not exist.
-- **Tracking UI.** The item tracker, hints and DeathLink are absent, so the
-  progressive steps below are only visible through the HUD notification.
-- **Mapping verification.** The join itself is now checked against the
-  spec-shaped fixture (`ctest -R port_ap_fixture`): 100/100 mapped, no area for
-  review, no area missing. What is still unverified is the game side - that a
-  pickup touched in game reports the location the table claims it is. That needs
-  a played seed, and the join remains a candidate for any world whose table
-  differs from the fixture.
+Each entry says whether it is a decision or a gap, and why. "Descoped" means
+the port deliberately does not do this, and a multiworld session without it
+still works; anything marked as a gap still limits a session.
+
+- **TLS on Android — a gap, and the only one that stops a session.** `wss://`
+  needs OpenSSL found at configure time. Linux and Windows are both verified
+  against a real TLS server, including every rejection case, in CI. Android's
+  NDK has no OpenSSL, so a JNI `SSLSocket` backend or a vendored TLS library is
+  what that platform needs. Plain `ws://` works on Android today, so an Android
+  player can join a multiworld on a server that offers no TLS, but not one that
+  requires it.
+- **Compression — descoped.** The client does not offer `permessage-deflate`.
+  Archipelago still accepts uncompressed connections and only marks them
+  deprecated, so a session is not limited by it; the cost is bandwidth on large
+  seeds, not correctness. Adding it would mean inflating and deflating message
+  frames in `PortWs`, which is the one part of this client written for
+  correctness rather than size, and a compression bug is a desync rather than a
+  failed connection. It is the cheapest item here to add later and the least
+  valuable.
+- **Item tracker — done.** The F1 overlay's Archipelago section lists what the
+  session received: display name, who sent it, and the step of a progressive
+  sequence. A receipt no longer disappears because the player was not looking
+  at the HUD when it arrived.
+- **Chat — descoped.** `PrintJSON` is received, queued and shown on the HUD and
+  in the overlay, so what the server says reaches the player. What is missing is
+  sending: there is no text input, so the client cannot answer a hint request or
+  talk to other players. A session plays without it.
+- **Hints — descoped, and it depends on chat.** Archipelago hints are requested
+  over chat (`!hint <name>`), so hint support needs the chat input above before
+  it can mean anything. Without it the F1 tracker shows which items have arrived
+  and in what order, which is the part a solo player actually uses.
+- **DeathLink — a gap, and a deliberate one.** `Bounce`/DeathLink is neither
+  received nor sent. It is the one descoped item that changes what a session
+  *feels* like: other players' deaths are not shown, and this client's deaths
+  are not announced. It is not a limitation on whether the port can join or
+  complete a multiworld, which is why it is left out rather than built, but it
+  is a real missing feature and not an oversight.
+- **Mapping verification — a gap in one direction only.** The join itself is
+  checked against the spec-shaped fixture (`ctest -R port_ap_fixture`): 100/100
+  mapped, no area for review, no area missing. What is still unverified is the
+  game side - that a pickup touched in game reports the location the table claims
+  it is. That needs a played seed, and the join remains a candidate for any
+  world whose table differs from the fixture.
