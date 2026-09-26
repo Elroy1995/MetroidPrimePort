@@ -1,3 +1,40 @@
+## CORRECTED: the empty save is my automation, not the port (2026-09-26)
+
+My last entry said the slot is never built and implied a port defect. **That
+premise was wrong.** A focused read of the code says the in-game save never needs a
+file-select list, and every reference checks out.
+
+- **`StartGame` is not on the in-game path at all.** Its only callers are the
+  title screen's file list (`CFrontEndUI.cpp:973`) and the new-game popup
+  (`:1307`, `:1315`). The in-game save goes somewhere else entirely.
+- **The in-game save confirms at `kUIT_SaveReady`.** `CSaveGameScreen.cpp:599`:
+  when the context is not the front end and `userSel == 0`, it calls
+  `BuildExistingFileSlot(gpGameState->GetFileIdx())` and then
+  `StartFileCreateTransactional()`. `BuildExistingFileSlot`
+  (`CMemoryCardDriver.cpp:782`) creates the slot from the live game state when it
+  is empty.
+- **So the blank file is created *by the screen itself*, with no user input.**
+  `CSaveGameScreen.cpp:392`: when the driver reports `kS_FileBad` with
+  `kE_FileMissing`, the screen calls `StartFileCreate()` directly. That path calls
+  `InitializeFileInfo()` with no slots built - which is exactly the
+  `slots 000, 0 of 3004 bytes non-zero` I kept seeing - and it is the 0->2 write.
+- **Which means my driver was one press short.** It pressed A once, at the
+  "corrupt" dialog, which is choice 0 - *delete the bad file*. That produced the
+  self-service blank create, and the run ended before the screen reached
+  `kUIT_SaveReady`, so the real confirm never happened. A second press, at type 16,
+  is all it takes: my trace ends at `2->16` with no `advance: ui type 16` line.
+- **The fix is in the tree already**, written by the lane before it timed out:
+  `PortSmokeSaveScreenUI` watches the screen's own UI type and confirms at
+  `kUIT_SaveCorrupt` and again at `kUIT_SaveReady`. My own run of it reached the
+  delete and the self-service create, then was SIGKILLed at exit 137 because the
+  investigation lanes were running the same binary and `pkill`ing it.
+- **What I got wrong, precisely.** I assumed the missing piece was a file-select
+  list, because that is how the *front end* loads a save, and I carried that
+  assumption into the in-game path without checking. Two different screens, two
+  different flows. The evidence was all there - the trace showed the flow
+  *completing* - and I read "the slot is never built" instead of "the automation
+  never chose a slot, because on this screen there is no slot to choose".
+
 ## Reading the save screen's UI trace: it never offers a slot (2026-09-26)
 
 `CSaveGameScreen::EUIType` (include/MetroidPrime/CSaveGameScreen.hpp:23) makes the
