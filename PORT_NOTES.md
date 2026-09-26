@@ -1,4 +1,22 @@
-# Metroid Prime port — working notes
+## The Flatpak has an AppStream description (2026-09-26)
+
+- `packaging/org.metroidprime.MetroidPrimePort.metainfo.xml`, installed to
+  `share/metainfo/` by the project's own install rules, so the AppImage and a
+  package-manager install carry it as well as the Flatpak. It passes
+  `appstreamcli validate --no-net`; the only remaining complaint is the component
+  id's uppercase, which is the placeholder app id and has to change anyway.
+- Two things the validator caught that would have shipped: `Mixed` is not an SPDX
+  identifier, so `project_license` is now `LicenseRef-mixed` — which is also the
+  only honest value, since the port's own code is MIT, the linked components
+  carry their own terms, and the decompiled game code is not redistributable at
+  all, and no single SPDX id can say that. And a component with no `url` is a
+  warning, so the repository is now linked as the homepage.
+- **The two remaining Flathub blockers are not code.** The app id must change and
+  be lowercased, and there can be no screenshots: any screenshot of the running
+  game shows Nintendo's game, which this package may not redistribute. That one
+  cannot be fixed by writing a file, and pretending otherwise would put
+  copyrighted imagery in a release.
+
 
 ## Every "front end" capture this session was the game's intro, not the front end (2026-09-26)
 

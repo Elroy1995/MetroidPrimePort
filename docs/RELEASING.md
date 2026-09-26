@@ -142,6 +142,15 @@ under GNOME unless the port's own X11 preference applies — see
 5. **The Flatpak path has never been built.** Its manifest is now correct — the
    project's own install rules put a runnable tree in `/app`, and the notices
    are collected — but nothing here has ever run `flatpak-builder`, so the
-   manifest is unproven against a real runtime. Two things also remain before it
-   could be published: the app id is a placeholder, and there is no AppStream
-   metainfo, which Flathub requires.
+   manifest is unproven against a real runtime. Three things also remain before
+   it could be published, all of them decisions rather than code:
+   - **The app id is a placeholder**, and it has to change. It also contains
+     uppercase, which AppStream rejects for a component id
+     (`cid-contains-uppercase-letter`), so the rename has to lowercase it.
+   - **No screenshots.** Flathub requires them, and any screenshot of the running
+     game shows Nintendo's game, which this package may not redistribute. This
+     one cannot be fixed by writing a file.
+   - The metainfo itself is in place at
+     `packaging/org.metroidprime.MetroidPrimePort.metainfo.xml`, installed to
+     `share/metainfo/` and passing `appstreamcli validate`; its only outstanding
+     complaint is the component id's uppercase.

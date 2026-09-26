@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.metroidprime.MetroidPrimePort</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>LicenseRef-mixed</project_license>
+
+  <name>Metroid Prime Port</name>
+  <summary>Metroid Prime running natively, with randomizer and Archipelago support</summary>
+
+  <description>
+    <p>
+      A native recompilation of Metroid Prime. The game is played as it was
+      released, on the host's own Vulkan driver, with no emulator in the loop and
+      no disc image bundled: the port asks for your own copy of the disc on first
+      launch.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Randomizer, with a full world and layer sweep covering every area</li>
+      <li>Archipelago multiworld, over ws:// and wss://</li>
+      <li>DeathLink, opt-in</li>
+      <li>Controller button prompts rebuilt for the device in use</li>
+      <li>Memory card saves in the GCI format the series used</li>
+    </ul>
+    <p>
+      This package contains no game assets. It will not play without a disc image
+      you supply, and none is distributed with it.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">org.metroidprime.MetroidPrimePort.desktop</launchable>
+
+  <url type="homepage">https://github.com/Odrannnn/MetroidPrimePort</url>
+  <url type="bugtracker">https://github.com/Odrannnn/MetroidPrimePort/issues</url>
+
+  <developer id="org.metroidprime">
+    <name>The Metroid Prime Port contributors</name>
+  </developer>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-09-26">
+      <description>
+        <p>First packaged release.</p>
+      </description>
+    </release>
+  </releases>
+
+  <requires>
+    <display_length compare="ge">640</display_length>
+  </requires>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>gamepad</control>
+  </recommends>
+
+  <!--
+    Deliberately absent: screenshots and a project URL. Screenshots would show
+    Nintendo's game, which this package may not redistribute, and there is no
+    public project page to point at. Both are Flathub requirements, so this
+    component is not publishable as-is - see docs/RELEASING.md.
+  -->
+</component>
