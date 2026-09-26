@@ -1,5 +1,28 @@
 # Metroid Prime port — working notes
 
+## Layer-cycling sweep: it works, and it exposes why the dump was short (2026-09-26)
+
+- `MP_RANDO_SWEEP_LAYERS=1` visits each area once per layer with only that
+  layer active. Chozo Ruins reports up to **7 layers** per area, and the extra
+  passes are what the old one-layer-per-area tour could not do: `CGameArea`
+  builds the objects of the layers that are active *when the area is
+  constructed*, so a pickup behind an inactive layer was never in the dump.
+  After eight areas the new dump has 5 keys the old one did not, all in the
+  first multi-layered area (`D5CDB809`: 0002035C, 0002035F, 00020361, 00020365,
+  00020367).
+- The tour then stalls, and the new diagnostics say why in one line:
+  `[sweep] waiting on area 8: loading (target 165A4DE9, pass 9/64)`. The layer
+  state is only a bit flip (`CScriptLayerManager::SetLayerActive`), so
+  re-entering the *same* area re-enters an area that is already alive: its load
+  was never scheduled again, and the loading chain head never advances. Cycling
+  layers needs the area unloaded first, not re-entered, so the next pass has to
+  travel away and come back rather than teleport onto the area it is changing.
+  That is the outstanding work, and the diagnostic is what found it - a tour
+  that never settles was previously invisible, just frames.
+- 14/14 tests pass. The layer cycling is off by default and changes nothing for
+  a normal sweep.
+
+
 ## The AP world was reachable all along; the join maps 95 of its 100 locations (2026-09-26)
 
 - I had recorded the Archipelago world as unreachable and built a spec-shaped

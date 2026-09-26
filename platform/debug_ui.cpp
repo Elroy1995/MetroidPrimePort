@@ -133,6 +133,7 @@ struct WorldSweep {
   size_t world = 0;
   size_t area = 0;
   unsigned settledTicks = 0;
+  unsigned stalledTicks = 0;
   unsigned completedAreas = 0;
   bool active = false;
   bool waiting = false;
@@ -1036,14 +1037,56 @@ bool ConsumeWorldSweepRequest(CStateManager& mgr) {
   // clock timeout. Current-area construction alone does not imply that adjacent
   // areas, map tiles and factory requests have finished streaming.
   const TAreaId current = world->GetCurrentAreaId();
-  const bool ready = world->DoesAreaExist(current) && world->GetArea(current)->IsValidated() &&
-      world->GetChainHead(CWorld::kC_Loading) == CWorld::GetAliveAreasEnd() &&
-      world->GetChainHead(CWorld::kC_ToDeallocate) == CWorld::GetAliveAreasEnd() &&
-      !world->GetMapWorld()->IsMapAreasStreaming() && !gpResourceFactory->HasPendingLoads();
+  const bool areaExists = world->DoesAreaExist(current);
+  const bool areaValid = areaExists && world->GetArea(current)->IsValidated();
+  const bool loadingIdle = world->GetChainHead(CWorld::kC_Loading) == CWorld::GetAliveAreasEnd();
+  const bool freeingIdle = world->GetChainHead(CWorld::kC_ToDeallocate) == CWorld::GetAliveAreasEnd();
+  const bool mapIdle = !world->GetMapWorld()->IsMapAreasStreaming();
+  const bool loadsIdle = !gpResourceFactory->HasPendingLoads();
+  const bool ready = areaExists && areaValid && loadingIdle && freeingIdle && mapIdle && loadsIdle;
   if (!ready) {
+    // A tour that never settles is otherwise invisible: no output, no
+    // progress, just frames. Say what is still outstanding, and how long it has
+    // been that way, so the stall names itself instead of looking like work.
+    if (sweep.settledTicks == 0) {
+      std::fprintf(stderr,
+                   "[sweep] waiting on area %d: %s%s%s%s%s (target %08X, pass %zu/%zu)\n",
+                   static_cast<int>(current.Value()), areaExists ? "" : "no-area ",
+                   areaValid ? "" : "unvalidated ", loadingIdle ? "" : "loading ",
+                   freeingIdle ? "" : "freeing ", mapIdle ? "" : "map-streaming ",
+                   sweep.areas.empty() ? 0u : sweep.areas[sweep.area], sweep.area + 1,
+                   sweep.areas.size());
+    }
+    if (++sweep.stalledTicks == 60 * 30) {
+      std::fprintf(stderr, "[sweep] still waiting after 30s; giving up on this pass\n");
+      sweep.stalledTicks = 0;
+      // Move on rather than sit here: a later area may settle where this one
+      // does not, and the dump is worth more than one area.
+      if (sweep.waiting) {
+        ++sweep.completedAreas;
+        if (++sweep.layer >= sweep.layerCount) {
+          sweep.layer = 0;
+          ++sweep.area;
+          if (sweep.area >= sweep.areas.size()) {
+            sweep.areas.clear();
+            sweep.area = 0;
+            ++sweep.world;
+          }
+        }
+        sweep.waiting = false;
+        sweep.settledTicks = 0;
+        if (sweep.world >= sweep.worlds.size() && sweep.areas.empty()) {
+          std::fprintf(stderr, "[sweep] complete: %zu worlds, %u areas\n", sweep.worlds.size(),
+                       sweep.completedAreas);
+          sweep = {};
+          return false;
+        }
+      }
+    }
     sweep.settledTicks = 0;
     return false;
   }
+  sweep.stalledTicks = 0;
   if (++sweep.settledTicks < 30) return false;
   sweep.settledTicks = 0;
   if (sweep.waiting) {
