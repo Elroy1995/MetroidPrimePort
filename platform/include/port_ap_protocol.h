@@ -56,6 +56,9 @@ struct Config {
   // resolved against the config file's directory by the client.
   std::string tlsCa;
   int itemsHandling = 7;
+  // DeathLink: when another player dies, this one dies too. Off unless the
+  // configuration asks for it, so a session that never opted in is unaffected.
+  bool deathLink = false;
   std::vector< std::string > tags;
   int versionMajor = 0;
   int versionMinor = 6;
@@ -122,6 +125,25 @@ public:
   // this is the whole session and is bounded by its own cap.
   const std::vector< TrackedItem >& Tracked() const { return mTracked; }
 
+  // DeathLink. `DeathsPending` is a count of bounces the server has sent that
+  // the game has not applied yet, so one that arrives at the title screen is
+  // not lost. `TakeDeathPending` returns how many are owed and clears them,
+  // which the client calls once it has killed the player. `LastDeathSource` is
+  // who to name, empty when the packet did not say or it was this client.
+  int DeathsPending() const { return mDeathsReceived; }
+  int TakeDeathPending() {
+    const int owed = mDeathsReceived;
+    mDeathsReceived = 0;
+    return owed;
+  }
+  const std::string& LastDeathSource() const { return mLastDeathSource; }
+  // The Bounce packet for a death of this client's own, or "" when the
+  // configuration does not enable DeathLink.
+  std::string BuildBounce(const std::string& reason = "DeathLink") const;
+  // Whether the configuration asked for DeathLink at all, which the world's
+  // RoomInfo is what actually agrees to; both must say yes.
+  static bool DeathLinkEnabled(const Config& config);
+
   // Records a collected location. False when the key has no id, or was already
   // checked; otherwise `id` is the AP location id to send.
   bool MarkLocationChecked(const std::string& locationKey, int64_t& id);
@@ -162,6 +184,9 @@ private:
   std::map< int64_t, std::string > mPlayers;
   std::vector< std::string > mNotifications;
   std::vector< TrackedItem > mTracked;
+  // DeathLink bookkeeping: bounces owed to the game, and who to blame.
+  int mDeathsReceived = 0;
+  std::string mLastDeathSource;
 };
 
 } // namespace Protocol

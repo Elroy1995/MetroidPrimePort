@@ -120,7 +120,7 @@ def packet_command(packet):
     return packet.get("cmd", "?") if isinstance(packet, dict) else "?"
 
 
-def handle_client(sock, address, args, item_ids):
+def handle_client(sock, address, args, item_ids, bounce_sources=()):
     with sock:
         sock.settimeout(None)
         if not websocket_upgrade(sock):
@@ -177,6 +177,15 @@ def handle_client(sock, address, args, item_ids):
                     "index": 0,
                     "items": [[item_id, 0, 1, 0] for item_id in item_ids],
                 })
+                # DeathLink: a bounce from another player, so the client's
+                # reaction to one can be exercised without a second session.
+                # It is sent after the items, which is when a real server would
+                # deliver it too.
+                for bounce_source in bounce_sources:
+                    send_json(sock, {
+                        "cmd": "Bounce",
+                        "data": {"reason": "DeathLink", "source": bounce_source, "cause": None},
+                    })
 
 
 def parse_item_ids(text):
@@ -193,6 +202,9 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="interface to listen on (default: %(default)s)")
     parser.add_argument("--port", type=int, default=38281, help="TCP port (default: %(default)s)")
     parser.add_argument("--slot", default="Player1", help="accepted slot name (default: %(default)s)")
+    parser.add_argument("--bounce", type=int, action="append", default=[],
+                        help="send a DeathLink bounce from this slot after the items "
+                             "(repeat for several)")
     parser.add_argument("--item", type=parse_item_ids, default=parse_item_ids("1234:5678"),
                         metavar="ID[:ID...]", help="item IDs sent in ReceivedItems (default: 1234:5678)")
     parser.add_argument("--tls", action="store_true", help="serve wss:// (requires --cert and --key)")
@@ -227,7 +239,7 @@ def main():
                         print(f"[server] TLS handshake with {address} failed: {error}", flush=True)
                         client.close()
                         continue
-                handle_client(client, address, args, args.item)
+                handle_client(client, address, args, args.item, args.bounce)
         except KeyboardInterrupt:
             print("\n[server] shutting down", flush=True)
     return 0

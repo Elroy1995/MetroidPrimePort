@@ -464,6 +464,53 @@ int main() {
           "an item from another player names them, one's own does not");
   }
 
+  // DeathLink. A bounce from the server is owed to the game rather than applied
+  // here, so one that arrives while nothing is running is not lost, and it is
+  // cleared once taken so it is not applied twice.
+  {
+    const std::string deathConfigText = R"json({
+      "server":"ws://localhost", "slot":"P", "death_link":true,
+      "items":{"5031004":{"item":"Missiles","amount":5,"capacity":5}}
+    })json";
+    const Config deathConfig = ParseConfig(deathConfigText);
+    Check(deathConfig.valid && deathConfig.deathLink, "death_link parses and is on");
+    const Config noDeath = ParseConfig(R"json({"server":"ws://localhost","slot":"P"})json");
+    Check(noDeath.valid && !noDeath.deathLink, "death_link is off unless asked for");
+    const Config badDeath = ParseConfig(R"json({"server":"w","slot":"P","death_link":"yes"})json");
+    Check(!badDeath.valid && badDeath.error.find("death_link") != std::string::npos,
+          "a non-boolean death_link is rejected with a reason");
+
+    Session deaths(deathConfig, State{});
+    std::vector<ItemGrant> deathGrants;
+    deaths.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,"players":)"
+                               R"([{"slot":1,"alias":"Me"},{"slot":2,"alias":"Bob"}]})"),
+                        outgoing, deathGrants);
+    Check(deaths.DeathsPending() == 0, "no death is owed before a bounce arrives");
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounce","data":{"reason":"DeathLink","source":2}})"),
+                        outgoing, deathGrants);
+    Check(deaths.DeathsPending() == 1, "a bounce from another player is owed to the game");
+    Check(deaths.LastDeathSource() == "Bob", "the bounce names who died");
+    Check(deaths.TakeDeathPending() == 1 && deaths.DeathsPending() == 0,
+          "taking a death clears it so it is not applied twice");
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounce","data":{"reason":"DeathLink","source":1}})"),
+                        outgoing, deathGrants);
+    Check(deaths.DeathsPending() == 0, "a bounce from this client is not a death of its own");
+    Check(deaths.TakeNotification(notification) && notification.find("Bob") != std::string::npos,
+          "a bounce raises a notification naming who died");
+
+    // Two bounces before the game runs are two deaths, not one.
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounce","data":{"source":2}})"), outgoing, deathGrants);
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounce","data":{"source":2}})"), outgoing, deathGrants);
+    Check(deaths.TakeDeathPending() == 2, "bounces that arrive together are all owed");
+
+    const std::string bounce = deaths.BuildBounce();
+    Check(bounce.find("\"cmd\":\"Bounce\"") != std::string::npos &&
+              bounce.find("DeathLink") != std::string::npos,
+          "an enabled client builds a Bounce packet naming a source");
+    Check(Session(noDeath, State{}).BuildBounce().empty(),
+          "a client without death_link sends no Bounce");
+  }
+
   const std::filesystem::path progressiveStatePath = testDir / "progressive-state.json";
   State progressiveState = progressive.GetState();
   progressiveState.slot = "P";

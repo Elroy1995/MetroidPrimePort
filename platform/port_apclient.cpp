@@ -174,9 +174,15 @@ struct Runtime {
   std::unique_ptr<Session> session;
   std::deque<ItemGrant> grants;
   std::deque<int64_t> queuedChecks;
+  // DeathLink: a death noticed on the game thread, waiting for the socket
+  // thread to announce it. Non-empty means one is owed.
+  std::string pendingBounce;
   std::deque<std::string> notifications;
   int itemCount = 0;
   int checkCount = 0;
+  // DeathLink: whether this client's death has already been announced, so a
+  // death is sent once rather than on every tick the flag stays clear for.
+  bool deathAnnounced = false;
 };
 
 Runtime& GetRuntime() {
@@ -388,11 +394,24 @@ void Worker(Runtime& runtime) {
         }
 
         std::vector<int64_t> pendingChecks;
+        std::string pendingBounce;
         if (apConnected) {
           std::lock_guard<std::mutex> lock(runtime.mutex);
           while (!runtime.queuedChecks.empty()) {
             pendingChecks.push_back(runtime.queuedChecks.front());
             runtime.queuedChecks.pop_front();
+          }
+          // DeathLink: a death the game thread noticed, announced once. The
+          // pending flag is *cleared* rather than moved-from, because this block
+          // runs on every loop iteration and a moved-from-but-not-cleared
+          // string is still non-empty, which announced the same death again on
+          // every pass round the socket loop.
+          if (!runtime.pendingBounce.empty()) {
+            runtime.pendingBounce.clear();
+            if (runtime.session != nullptr)
+              pendingBounce = runtime.session->BuildBounce();
+            if (pendingBounce.empty())
+              runtime.deathAnnounced = false; // not in DeathLink; do not latch
           }
         }
         if (!pendingChecks.empty()) {
@@ -401,6 +420,13 @@ void Worker(Runtime& runtime) {
             break;
           }
           CountChecks(runtime, pendingChecks.size());
+        }
+        if (!pendingBounce.empty()) {
+          if (!SendPacket(client, pendingBounce, connectionError)) {
+            connectionFailed = true;
+            break;
+          }
+          PortLog::Write("archipelago: announced a death to the multiworld\n");
         }
 
         if (!received && !client.IsOpen()) {
@@ -656,6 +682,31 @@ void Poll(CStateManager& mgr) {
       if (type == CPlayerState::kIT_EnergyTanks)
         player->HealthInfo()->SetHP(player->CalculateHealth());
     }
+
+    // DeathLink, inbound. A bounce the server sent is applied by clearing the
+    // alive flag, which is what the world's own client does and what drives
+    // the whole death sequence here. Bounces that arrive while the game is not
+    // running are left pending by the session and picked up on a later tick,
+    // so one sent during a load is not lost.
+    int deathsOwed = 0;
+    {
+      std::lock_guard<std::mutex> lock(runtime.mutex);
+      if (runtime.enabled && runtime.session != nullptr) {
+        deathsOwed = runtime.session->TakeDeathPending();
+        // Outbound: a death is announced once. The flag stays cleared for
+        // several seconds of the death animation, so this is latched rather
+        // than sent on every tick, and cleared when the player is alive again.
+        const bool alive = player->IsAlive();
+        if (alive) {
+          runtime.deathAnnounced = false;
+        } else if (!runtime.deathAnnounced) {
+          runtime.deathAnnounced = true;
+          runtime.pendingBounce = "death";
+        }
+      }
+    }
+    for (int i = 0; i < deathsOwed; ++i)
+      player->SetPlayerAlive(false);
 
     if (mgr.GetGameState() != CStateManager::kGS_Running)
       return;

@@ -321,6 +321,14 @@ Config ParseConfig(const std::string& text) {
       }
       config.itemsHandling = static_cast<int>(integer);
     }
+    value = Member(root, "death_link");
+    if (value != nullptr) {
+      if (!value->IsBool()) {
+        config.error = "death_link must be a boolean";
+        return config;
+      }
+      config.deathLink = value->AsBool();
+    }
     value = Member(root, "version");
     if (value != nullptr) {
       if (!value->IsObject()) {
@@ -760,6 +768,30 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
   } else if (command == "InvalidPacket") {
     const PortJson::Value* text = Member(packet, "text");
     mLastError = text != nullptr && text->IsString() ? text->AsString() : std::string();
+  } else if (command == "Bounce") {
+    // DeathLink: someone else in the multiworld died. The data carries a
+    // reason, a source and an optional cause, none of which the game needs -
+    // what it needs is to know it should die too, and who to say so.
+    //
+    // A bounce whose source is this client's own slot is the echo of a death
+    // it already announced, and acting on it would kill the player a second
+    // time. An unknown source (0, or a slot not in Connected) is still
+    // somebody else's death and still counts.
+    const PortJson::Value* data = Member(packet, "data");
+    int64_t source = 0;
+    const bool hasSource = data != nullptr && data->IsObject() &&
+                           IntegerMember(*data, "source", source);
+    if (hasSource && source != 0 && source == mOwnSlot)
+      return; // our own death, coming back to us
+    if (hasSource && source != 0)
+      mLastDeathSource = PlayerName(source);
+    ++mDeathsReceived;
+    // Counted even when the game is not running: a bounce that arrives at the
+    // title screen must not be lost, or the next run would neither die nor show
+    // it. Poll applies it and clears the counter.
+    AppendNotification(mNotifications,
+                       mLastDeathSource.empty() ? "Someone died"
+                                                : mLastDeathSource + " died");
   }
   } catch (...) {
     // Malformed packets and allocation failures must not escape into the client.
@@ -827,6 +859,24 @@ std::string Session::BuildLocationChecks(const std::vector<int64_t>& ids) {
 }
 
 std::string Session::BuildSync() { return "{\"cmd\":\"Sync\"}"; }
+
+bool Session::DeathLinkEnabled(const Config& config) {
+  return config.deathLink;
+}
+
+std::string Session::BuildBounce(const std::string& reason) const {
+  // The world's own client sends no Bounce of its own - it only reacts to one -
+  // but a client that dies in DeathLink is expected to announce it, and a
+  // server that is not in DeathLink simply ignores the packet. Sent only when
+  // the configuration asked for DeathLink, so a normal session never emits one.
+  if (!mConfig.deathLink)
+    return std::string();
+  std::string packet = "{\"cmd\":\"Bounce\",\"data\":{\"reason\":";
+  packet += Quote(reason);
+  packet += ",\"source\":" + std::to_string(mOwnSlot);
+  packet += ",\"cause\":null}}";
+  return packet;
+}
 
 bool Session::MarkLocationChecked(const std::string& locationKey, int64_t& id) {
   const auto found = mConfig.locations.find(locationKey);
