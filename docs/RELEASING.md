@@ -139,23 +139,22 @@ under GNOME unless the port's own X11 preference applies — see
 
 ## What still blocks a real release
 
-1. **Saving writes an empty save, on every platform.** The highest-priority item,
-   and it is a defect rather than a missing feature. A save completes and the
-   file it produces is structurally perfect — correct CRC, comment stamped with
-   the time, banner and icon fully drawn — but its 3004-byte save-data region is
-   **all zeros**. So the file is valid and carries nothing, the front end's file
-   list has no real save to offer, and Continue has nothing to load. The slot is
-   never built: `CMemoryCardDriver::BuildNewFileSlot` is what populates one, its
-   only caller is `CSaveGameScreen::StartGame`, and the observed flow never reaches
-   the file-select list that would call it. It is in the port's card path rather
-   than a platform backend, so one fix covers Linux, Windows and Android together.
-   A closely related symptom is that a card with no save gets a file created for
-   it, that file reads back as zeros, and the game calls the card *corrupt* — on a
-   genuinely fresh card it should be offering to create a save instead. Evidence
-   and the full correction history are in `PORT_NOTES.md`; the short version is
-   that two of my own earlier conclusions here were wrong, once because I compared
-   against zlib's CRC rather than the port's raw one, and once because I validated
-   the container and not the contents.
+1. ~~**Saving writes an empty save, on every platform.**~~ **Not a defect — it was
+   the test harness, and saving and reloading both work.** The empty save came from
+   a *card repair*, not a save: the in-game save screen found a file it considered
+   corrupt, and answering that dialog deletes the file and re-creates it blank, with
+   no save data. A save needs a second confirmation, at the screen's `SaveReady`
+   state, and the driver was only ever pressing once. With that fixed, a save
+   writes real data and the front end loads it — evidence in
+   `docs/images/save-main-menu.png` (the main menu showing
+   `[Samus A] 00% | Space Pirate Frigate | 00:00 Elapsed`) and
+   `docs/images/save-loaded.png` (the loaded game, on the Frigate). The saved
+   file's 3004-byte data region has 134 non-zero bytes, a valid CRC and slot 1
+   flagged present.
+
+   The one thing still unexplained is **why the in-game screen finds a corrupt
+   file at all** on a card that was supposed to be empty. That is not a shipping
+   blocker, but it is not understood, and `PORT_NOTES.md` records it as open.
 2. **No answer for the decompiled game source.** The port's own work is MIT
    (`LICENSE`, scoped) and `NOTICE` says so, but what may be done with a working
    copy of decompiled game code is a question for the copyright holder, and no

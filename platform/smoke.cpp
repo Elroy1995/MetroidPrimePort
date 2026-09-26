@@ -14,6 +14,7 @@
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
+#include "MetroidPrime/CSaveGameScreen.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include <dolphin/pad.h>
 #include <SDL3/SDL.h>
@@ -207,9 +208,16 @@ unsigned sSaveConfirmAt = 0;
 // Schedules the A press that confirms the save screen. Called from
 // PortSmokeFrame, not from the save hook, because a menu stops the game think
 // loop that the hook lives in. $1 is the frame the request happened on.
+// A request made while an earlier press is still pending is queued, not
+// dropped: the "Save" dialog can come up during the hold that answered "file
+// corrupt", and dropping it left the save unconfirmed.
+unsigned sSaveConfirmQueued = 0;
 void PortSmokeSaveConfirm() {
-  if (sSaveConfirmAt != 0)
+  if (sSaveConfirmAt != 0) {
+    ++sSaveConfirmQueued;
+    std::fputs("[save-smoke] will confirm again after the current press\n", stderr);
     return;
+  }
   sSaveConfirmAt = PortSmokeCurrentFrame() + 90;
   std::fputs("[save-smoke] will confirm the save screen shortly\n", stderr);
 }
@@ -258,11 +266,34 @@ void PortSmokeSave(CStateManager& mgr) {
       return;
     std::fputs("[save-smoke] requesting the in-game save screen\n", stderr);
     mgr.EnterSaveGameScreen();
-    // Scheduled here, in the same invocation, because this hook will not be
-    // called again: it lives in CStateManager::Update, which only runs from the
-    // kSMT_InGame branch of CMFGame::Think, and opening a menu takes the game out
-    // of that state. The press itself is injected from PortSmokeFrame, which
-    // runs from the main loop whatever state the game is in.
+    // The confirm is not scheduled here: a press at a fixed delay landed on the
+    // card's "file corrupt" dialog instead of "Save", so the file was repaired
+    // with no game in it and the save itself was never confirmed. The save
+    // screen reports its dialogs to PortSmokeSaveScreenUI, which confirms them.
+    sStage = 1;
+  }
+}
+
+// Called by CSaveGameScreen whenever its dialog changes, so the confirm lands on
+// the dialog it is meant for. Every change is logged, since the dialog sequence
+// is what tells a card repair apart from a save. Under MP_SMOKE_SAVE the card has
+// just been wiped by the script, and fast boot leaves the file it created but
+// never wrote behind, so "file corrupt" is expected once and is answered with
+// its first choice (delete the bad file); "Save" is then confirmed once.
+void PortSmokeSaveScreenUI(int saveCtx, int oldUiType, int uiType, int driverState) {
+  std::fprintf(stderr, "[card] save screen (%s) ui type %d -> %d, driver state %d\n",
+               saveCtx == kSC_InGame ? "in game" : "front end", oldUiType,
+               uiType, driverState);
+  if (saveCtx != kSC_InGame || std::getenv("MP_SMOKE_SAVE") == nullptr)
+    return;
+  static bool sCorruptAnswered = false;
+  static bool sSaveConfirmed = false;
+  if (uiType == CSaveGameScreen::kUIT_SaveCorrupt && !sCorruptAnswered) {
+    sCorruptAnswered = true;
+    std::fputs("[save-smoke] deleting the unwritten file fast boot left behind\n", stderr);
+    PortSmokeSaveConfirm();
+  } else if (uiType == CSaveGameScreen::kUIT_SaveReady && !sSaveConfirmed) {
+    sSaveConfirmed = true;
     PortSmokeSaveConfirm();
   }
 }
@@ -357,16 +388,15 @@ void PortSmokeScript(unsigned frame) {
   // Steps run in order and each fires once, at or after its frame. This has to
   // be straight-line rather than inside the parse block: with the loop guard
   // still on sNext, the second and later steps were never reached at all.
-  if (sNext >= sCount)
-    return;
-  if (static_cast< int >(frame) >= sFrame[sNext]) {
+  if (sNext < sCount && static_cast< int >(frame) >= sFrame[sNext]) {
     sHeld = sButtons[sNext];
     sHoldUntil = frame + sHold[sNext];
     std::fprintf(stderr, "[smoke] frame %u: pressing 0x%04x for %u frame(s)\n", frame, sHeld, sHold[sNext]);
     ++sNext;
-  } else {
-    return;
   }
+  // The virtual status is sticky, so the release has to be written too; without
+  // it a step's buttons stayed held until the next step, and two steps with the
+  // same button never produced a second press.
   if (frame < sHoldUntil) {
     PADStatus status{};
     status.err = PAD_ERR_NONE;
@@ -374,6 +404,64 @@ void PortSmokeScript(unsigned frame) {
     PADSetVirtualStatus(0, &status);
   } else if (sHeld != 0) {
     sHeld = 0;
+    PADStatus status{};
+    status.err = PAD_ERR_NONE;
+    PADSetVirtualStatus(0, &status);
+  }
+}
+
+// MP_SMOKE_CONTINUE=1: CFrontEndUI drives itself to Continue from its own
+// screen state (see CFrontEndUI::Update), rather than from frame numbers that
+// drift with machine speed. These are the press and screenshot primitives it
+// uses; both are applied from PortSmokeFrame.
+namespace {
+unsigned sPressButtons = 0;
+unsigned sPressUntil = 0;
+bool sPressActive = false;
+const int kMaxPendingShots = 16;
+unsigned sPendingShots[kMaxPendingShots];
+int sPendingShotCount = 0;
+} // namespace
+
+bool PortSmokeContinueEnabled() {
+  static const bool enabled = std::getenv("MP_SMOKE_CONTINUE") != nullptr;
+  return enabled;
+}
+
+bool PortSmokePressPending() { return sPressActive; }
+
+void PortSmokePress(unsigned buttons, unsigned hold) {
+  sPressButtons = buttons;
+  sPressUntil = PortSmokeCurrentFrame() + hold;
+  sPressActive = true;
+}
+
+void PortSmokeShotAfter(unsigned frames, const char* why) {
+  const unsigned at = PortSmokeCurrentFrame() + frames;
+  std::fprintf(stderr, "[continue] screenshot at frame %u: %s\n", at, why);
+  if (sPendingShotCount < kMaxPendingShots)
+    sPendingShots[sPendingShotCount++] = at;
+}
+
+static void ApplyContinuePressAndShots(unsigned frame) {
+  if (sPressActive) {
+    PADStatus status{};
+    status.err = PAD_ERR_NONE;
+    if (frame < sPressUntil) {
+      status.button = static_cast< u16 >(sPressButtons);
+    } else {
+      sPressActive = false;
+    }
+    PADSetVirtualStatus(0, &status);
+  }
+  for (int i = 0; i < sPendingShotCount;) {
+    if (frame >= sPendingShots[i]) {
+      aurora::request_screenshot();
+      std::fprintf(stderr, "[smoke] screenshot requested at frame %u\n", frame);
+      sPendingShots[i] = sPendingShots[--sPendingShotCount];
+    } else {
+      ++i;
+    }
   }
 }
 
@@ -448,7 +536,8 @@ bool PortSmokeMouseEnabled() {
 // since a press that is thrown away before it is read cannot test anything.
 bool PortSmokeScriptedInput() {
   static const bool enabled = std::getenv("MP_SMOKE_SCRIPT") != nullptr ||
-                              std::getenv("MP_SMOKE_FRONTEND") != nullptr;
+                              std::getenv("MP_SMOKE_FRONTEND") != nullptr ||
+                              PortSmokeContinueEnabled();
   return enabled;
 }
 
@@ -589,6 +678,7 @@ bool PortSmokeFrame(unsigned frame) {
   // Before the other input hooks, so a script step and a hook press cannot
   // fight over the same virtual pad status in one frame.
   PortSmokeScript(frame);
+  ApplyContinuePressAndShots(frame);
   // The save screen's confirm, held long enough for the screen to register a
   // press rather than a tap it can miss.
   if (sSaveConfirmAt != 0 && frame >= sSaveConfirmAt) {
@@ -600,7 +690,15 @@ bool PortSmokeFrame(unsigned frame) {
       status.button = PAD_BUTTON_A;
       PADSetVirtualStatus(0, &status);
     } else {
+      // The virtual status is sticky; release A so the next press is an edge.
+      PADStatus status{};
+      status.err = PAD_ERR_NONE;
+      PADSetVirtualStatus(0, &status);
       sSaveConfirmAt = 0;
+      if (sSaveConfirmQueued != 0) {
+        --sSaveConfirmQueued;
+        sSaveConfirmAt = frame + 90;
+      }
     }
   }
   static const unsigned limit = [] {

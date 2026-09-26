@@ -35,6 +35,9 @@
 #include "MetroidPrime/CQuitGameScreen.hpp"
 
 #include "port_debug.h"
+#ifdef MP_ENABLE_SMOKE_DRIVER
+#include "port_smoke.h"
+#endif
 #include "MetroidPrime/CSaveGameScreen.hpp"
 #include "MetroidPrime/CSaveWorldMemory.hpp"
 #include "MetroidPrime/CSlideShow.hpp"
@@ -1716,10 +1719,97 @@ CIOWin::EMessageReturn CFrontEndUI::Update(float dt, CArchitectureQueue& queue) 
     }
   }
 
+#ifdef MP_ENABLE_SMOKE_DRIVER
+  // MP_SMOKE_CONTINUE: walk Title -> File Select -> Continue on slot 1 by
+  // reading this screen's own state, so a press lands only when the screen
+  // takes input. Only A on a ready file list is ever pressed at file select:
+  // a card dialog (corrupt, format, ...) is logged and left alone, never
+  // answered, so the driver cannot erase or format the card.
+  if (PortSmokeContinueEnabled() && x14_phase == kP_DisplayFrontEnd) {
+    static int sLastCur = -1, sLastNext = -1, sLastUi = -1;
+    static unsigned sTitleAt = 0, sReadyAt = 0, sPresses = 0;
+    static bool sPressedA = false;
+    const unsigned frame = PortSmokeCurrentFrame();
+    if (x50_curScreen != sLastCur || x54_nextScreen != sLastNext) {
+      fprintf(stderr, "[continue] frame %u: screen %d -> %d\n", frame, x50_curScreen,
+              x54_nextScreen);
+      sLastCur = x50_curScreen;
+      sLastNext = x54_nextScreen;
+    }
+    const int ui = xdc_saveUI.get() != nullptr ? xdc_saveUI->GetUIType() : -1;
+    if (x50_curScreen >= kS_FileSelect && ui != sLastUi) {
+      fprintf(stderr, "[continue] frame %u: save UI type %d\n", frame, ui);
+      sLastUi = ui;
+    }
+    if (IsInScreenNotTransitioning(kS_Title) &&
+        x58_fadeBlackTimer < 30.f - gpTweakGame->GetPressStartDelay()) {
+      if (sTitleAt == 0) {
+        sTitleAt = frame;
+        PortSmokeShotAfter(0, "title accepting Start");
+      } else if (frame >= sTitleAt + 20 && !PortSmokePressPending() && sPresses < 8) {
+        fprintf(stderr, "[continue] frame %u: title accepts input; pressing Start\n", frame);
+        PortSmokePress(PAD_BUTTON_START, 8);
+        sTitleAt = frame + 60;
+        ++sPresses;
+      }
+    }
+    SNewFileSelectFrame* files = xe0_frontendCardFrme.get();
+    if (IsInScreenNotTransitioning(kS_FileSelect) && files != nullptr &&
+        xf0_optionsFrme.get() == nullptr && ui == CSaveGameScreen::kUIT_SaveReady &&
+        files->x10c_saveReady && files->x108_curTime >= 0.5f) {
+      if (sReadyAt == 0) {
+        sReadyAt = frame;
+        for (int i = 0; i < 3; ++i) {
+          const CGameState::GameFileStateInfo* info = xdc_saveUI->GetGameData(i);
+          if (info == nullptr) {
+            fprintf(stderr, "[continue] slot %d: empty\n", i + 1);
+          } else {
+            fprintf(stderr,
+                    "[continue] slot %d: world %08x play %.2fs items %u%% energy tanks %u "
+                    "health %.1f hard %d\n",
+                    i + 1, static_cast< unsigned >(info->x8_mlvlId), info->x0_playTime,
+                    info->x18_itemPercent, info->x10_energyTanks, info->xc_health,
+                    info->x20_hardMode ? 1 : 0);
+          }
+        }
+        fprintf(stderr, "[continue] frame %u: file select ready, selection %d\n", frame,
+                files->x20_tablegroup_fileselect->GetUserSelection());
+        // Let the slot text finish typing before the evidence shot.
+        PortSmokeShotAfter(240, "file select with slot data");
+      } else if (frame >= sReadyAt + 300 && !sPressedA) {
+        sPressedA = true;
+        if (xdc_saveUI->GetGameData(0) != nullptr &&
+            files->x20_tablegroup_fileselect->GetUserSelection() == 0) {
+          fprintf(stderr, "[continue] frame %u: pressing A on slot 1\n", frame);
+          PortSmokePress(PAD_BUTTON_A, 8);
+        } else {
+          fprintf(stderr, "[continue] frame %u: slot 1 has no save or is not selected; "
+                          "not pressing\n", frame);
+        }
+      }
+    }
+  }
+#endif
+
   // Update save UI if active and past file select phase
   if (xdc_saveUI.get() != nullptr && x50_curScreen >= kS_FileSelect) {
     int saveResult = xdc_saveUI->Update(dt);
     if (saveResult == 1) {
+#ifdef MP_ENABLE_SMOKE_DRIVER
+      // The slot is already loaded into gpGameState here (StartGame ->
+      // BuildNewFileSlot -> LoadGameState); a new game would read 0 play time.
+      static bool sReported = false;
+      if (PortSmokeContinueEnabled() && !sReported) {
+        sReported = true;
+        fprintf(stderr, "[continue] frame %u: save UI returned Continue: file %u world %08x "
+                        "play %.2fs\n", PortSmokeCurrentFrame(), gpGameState->GetFileIdx(),
+                static_cast< unsigned >(gpGameState->CurrentWorldAssetId()),
+                gpGameState->GetTotalPlayTime());
+        PortSmokeShotAfter(1, "transition to play");
+        PortSmokeShotAfter(1500, "loaded game");
+        PortSmokeShotAfter(3000, "loaded game");
+      }
+#endif
       TransitionToFive();
     } else if (saveResult == 3 || saveResult == 2) {
       xe0_frontendCardFrme = nullptr;

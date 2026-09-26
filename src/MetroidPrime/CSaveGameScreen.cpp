@@ -11,6 +11,9 @@
 #include "MetroidPrime/CMain.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "rstl/StringExtras.hpp"
+#ifdef MP_ENABLE_SMOKE_DRIVER
+#include "port_smoke.h"
+#endif
 
 static const char* const skSaveBanner = "TXTR_SaveBanner";
 static const char* const skSaveIcon0 = "TXTR_SaveIcon0";
@@ -365,6 +368,10 @@ CIOWin::EMessageReturn CSaveGameScreen::Update(float dt) {
 
   EUIType oldTp = x10_uiType;
   x10_uiType = SelectUIType();
+#ifdef MP_ENABLE_SMOKE_DRIVER
+  if (oldTp != x10_uiType)
+    PortSmokeSaveScreenUI(x0_saveCtx, oldTp, x10_uiType, state);
+#endif
   if (oldTp != x10_uiType || x91_uiTextDirty) {
     SetUIText();
   }
