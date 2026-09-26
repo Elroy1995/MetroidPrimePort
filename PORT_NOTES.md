@@ -1231,10 +1231,11 @@ Remaining:
 5. Verify CARD saves and the remaining menu flows. The card itself is confirmed
    read; loading a save through the front-end menu is not, and needs driven menu
    input.
-6. The reported blank front-end screen has not been reproduced, and the front end
-   itself has not been seen: every capture so far had `MP_FAST_BOOT=1`, which
-   drives straight from the title into a new game. Re-check with fast boot off
-   and a save on the card.
+6. ~~The reported blank-front-end screen has not been reproduced.~~ **Seen, and
+   it does not reproduce** — the title, publisher and Dolby screens all render
+   correctly with `MP_FAST_BOOT` off. What replaced it is a sharper question: the
+   front end does not get past the Dolby screen on Start or A, which may be the
+   same report seen from the other side.
 
 Wayland presentation keeps the game EFB locked to its configured 640x480 with
 `VISetFrameBufferScale(1)`, while Aurora scales that image to the native high-DPI

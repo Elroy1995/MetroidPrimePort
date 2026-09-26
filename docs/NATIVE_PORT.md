@@ -157,6 +157,44 @@ faster.
 Under **Xvfb with `SDL_AUDIO_DRIVER=dummy`**, so treat the throughput figure as a
 best case. The presented rate and the jitter are the parts that transfer.
 
+### Seeing the front end, and where it stops
+
+With `MP_FAST_BOOT` **off** the real front end runs and waits for input. The
+screens captured on the real session, on the AMD adapter, are in
+`docs/images/`:
+
+| Screen | File |
+|---|---|
+| Metroid Prime title | `front-end-title.png` |
+| Nintendo publisher logo | `front-end-publisher.png` |
+| Dolby Surround Pro Logic II | `front-end-dolby.png` |
+
+All three render correctly, so **the reported blank front end does not
+reproduce**. Note that `MP_FAST_BOOT=1` never shows any of them: it drives
+`Title -> FileSelect -> TransitionToFive()` into a new game, which is why
+captures taken with it set are pictures of the *game's* opening, not the front
+end.
+
+**The front end does not get past the Dolby screen.** With Start tapped every 300
+frames from frame 200, and separately with fourteen A presses spread over 16000
+frames, the last screen reached is the Dolby logo. The title screen *does* respond
+to Start, so input reaches the front end; this one screen does not respond to
+either button. Whether that is the game's front end waiting on something else or
+an input path that stops at that screen has not been isolated, and it matters:
+`MP_FAST_BOOT` is the only way currently known to get past it, and a player who
+has not set it may have nowhere to go. It is the most promising lead on the
+original blank-front-end report.
+
+Two things to know when reproducing this:
+
+- **The card follows the executable, not `MP_USER_PATH`.** `CARDSetBasePath` is
+  given `SDL_GetBasePath()`, so each build directory has its own card. A save
+  written by one build is invisible to another.
+- **A single press at a guessed frame is not enough.** The title takes ~2000
+  frames to fade in on this path, and a press during the fade is silently
+  ignored, which is indistinguishable from "the button does not work". Use
+  `MP_SMOKE_FRONTEND=<frame>`, which taps repeatedly.
+
 ### Audio
 
 A run reports which backend it got, and with what:
