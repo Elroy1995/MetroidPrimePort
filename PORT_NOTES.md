@@ -1,5 +1,43 @@
 # Metroid Prime port — working notes
 
+## Every "front end" capture this session was the game's intro, not the front end (2026-09-26)
+
+`MP_FAST_BOOT=1` does not merely skip loading. In `CFrontEndUI::Update` it drives
+the front end forward without waiting for input:
+
+```
+OpenCredits -> Title -> FileSelect -> TransitionToFive()   // straight into a new game
+```
+
+`TransitionToFive()` goes to `kP_ToPlayGame`, so **no run with fast boot set can
+ever reach Continue**, and none of them shows the front end at all. Every capture
+I took this session had `MP_FAST_BOOT=1` in it.
+
+- What I described as the front end — the publisher screen, the Dolby logo, the
+  "Unidentified distress beacon" text, the landing site — is the **game's**
+  opening. The distress-beacon conclusion survives, and is if anything
+  strengthened: it is game narration, and the differential showed the frames
+  byte-identical with and without a save on the card.
+- What does **not** survive: "the front end renders correctly, the only black
+  frame is a fade". I never saw the front end. The old note that "GPU captures
+  show the publisher screen, [ PRESS START ] title screen, and no-memory-card
+  dialog rendering correctly" should be read as *the game's intro* until
+  re-checked without fast boot.
+- The card made no difference to the front-end runs for the same reason. A
+  differential with a save and without one produced **byte-identical mean RGB at
+  every captured frame**, which is what a bypassed menu looks like.
+- The pause-screen and save-screen captures are unaffected: those are reached
+  through `EnterPauseScreen()` and `EnterSaveGameScreen()`, not through the front
+  end, and they render the real screens.
+- **Blocked on the GPU right now.** With fast boot off, the front end needs more
+  device memory than the fast-boot path and fails as
+  `VK_ERROR_OUT_OF_DEVICE_MEMORY` on `GX Static Texture` with about 1.1 GB free —
+  a stale LM Studio `llama-server` on the development machine is holding 15124 of
+  16303 MiB. Software Vulkan (lavapipe) segfaults inside Dawn's surface setup, so
+  that is not a way round it. Retrying once the board is free is all that is
+  needed; nothing about this is a port defect.
+
+
 ## Saving works; loading through the title menu does not (yet) (2026-09-26)
 
 The last unverified part of "saves and reloads" was the save path itself. It is
@@ -1163,10 +1201,10 @@ Remaining:
 5. Verify CARD saves and the remaining menu flows. The card itself is confirmed
    read; loading a save through the front-end menu is not, and needs driven menu
    input.
-6. The reported blank front-end screen has not been reproduced. This run walked
-   the whole front end and captured nine frames; the only fully black one is the
-   fade at frame 900, between the narration and the cutscene, and every other
-   frame renders.
+6. The reported blank front-end screen has not been reproduced, and the front end
+   itself has not been seen: every capture so far had `MP_FAST_BOOT=1`, which
+   drives straight from the title into a new game. Re-check with fast boot off
+   and a save on the card.
 
 Wayland presentation keeps the game EFB locked to its configured 640x480 with
 `VISetFrameBufferScale(1)`, while Aurora scales that image to the native high-DPI
