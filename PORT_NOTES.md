@@ -1,3 +1,38 @@
+## Checked the rest of the prompts; the C-stick one is still a gap (2026-09-27)
+
+Having fixed the pause menu, the obvious question was whether the other prompt
+screens were also wrong. They mostly were not, and the one that is has a
+different cause than I first assumed.
+
+- **Pause menu, after the fix: correct.** `Q OPTIONS`, `X NEXT`, the game's
+  sphere for `EXIT`, `Z BACK`, `E LOG BOOK`. Photographed, not assumed.
+- **Map screen: the three replaced prompts are correct.** `F Exit`, `Q Zoom`,
+  `E Move` all draw proper key caps, which matches the bindings: L->Q, R->E and
+  Z->F. `MP_SMOKE_MAP` reaches it; `build/map-capture.sh` is the recipe, made
+  from `build/pause-capture.sh` with `MP_SMOKE_PAUSE` swapped for
+  `MP_SMOKE_MAP`.
+- **The map's `Rotate` prompt shows the game's own art, and that is NOT the size
+  guard's doing.** I said it was: the only C-stick entry is 64x32 while every
+  binding was 32x32, so I expected the new guard to be refusing it. It is not.
+  The entry's hash simply does not match the texture the game draws there, so no
+  replacement is attempted either way, before or after. **I was wrong, and the
+  photograph corrected it.** The C-stick prompt has never appeared on that
+  screen; it is a coverage gap, not a regression.
+- **So the 64x32 handling is correct but currently unexercised.** The guard and
+  the sized bindings it needs (`make_prompt_glyphs.py` now writes
+  `<stem>_64x32.dds` alongside `<stem>.dds`, 52 of them, correctly 8320 bytes)
+  are worth keeping, because the table does contain 64x32 slots and the old code
+  would have served them 32x32 bytes. But I should be plain: **no reachable
+  prompt currently exercises the path**, so it is insurance, not a verified fix.
+  Presenting it as the second half of a two-bug story would overstate it.
+- **What would actually settle the C-stick entry**, and why I stopped: it needs
+  the texture hash the game really uses for the map's Rotate prompt, which means
+  a texture dump this project does not have tooling for. The pause-menu sphere
+  was the same class of error - a hash transcribed from a dump into the wrong
+  row - so this one is plausibly a second transcription mistake. But "plausibly"
+  is not "confirmed", and guessing a hash is how the first one happened.
+- **Evidence.** `docs/images/prompt-screens-checked.png` has the pause bar and
+  the map bar, both after the fix. 15/15 ctest.
 ## The wrong prompt art on the pause menu's Exit, and why the first two fixes failed (2026-09-26)
 
 Reported as "the textures for button presses that are getting replaced in game are

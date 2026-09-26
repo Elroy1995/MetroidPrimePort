@@ -320,21 +320,29 @@ void Apply(size_t index, const std::string& stem) {
   char keyName[80];
   std::snprintf(keyName, sizeof(keyName), "tex1_%ux%u_%016llx_%s.dds", key.width, key.height,
                 static_cast<unsigned long long>(key.hash), key.format);
-  reg.iconPath = (std::filesystem::path(sBindingsDir) / (stem + ".dds")).string();
-  // A device with no generated icon for this action keeps the game's own art
-  // rather than registering a source that would fail to load and blank it.
+  // Prefer the binding generated at exactly this texture's size, then the
+  // unsuffixed one. A single stem can serve textures of different sizes - the
+  // C-stick prompts here are one 32x32 and one 64x32 - and a mismatch is not
+  // scaled by the game: it reads 64x32 of pixels out of 32x32 of data and draws
+  // the right-hand half as noise. tools/make_prompt_glyphs.py writes the sized
+  // variants for exactly this reason.
+  char sized[160];
+  std::snprintf(sized, sizeof(sized), "%s_%ux%u.dds", stem.c_str(), key.width, key.height);
+  const std::filesystem::path base(sBindingsDir);
   std::error_code existsError;
-  if (!std::filesystem::is_regular_file(reg.iconPath, existsError)) {
+  if (std::filesystem::is_regular_file(base / sized, existsError)) {
+    reg.iconPath = (base / sized).string();
+  } else if (std::filesystem::is_regular_file(base / (stem + ".dds"), existsError)) {
+    reg.iconPath = (base / (stem + ".dds")).string();
+  } else {
+    // A device with no generated icon for this action keeps the game's own art
+    // rather than registering a source that would fail to load and blank it.
     reg.activeStem.clear();
     return;
   }
-  // Refuse art of the wrong size. The generated bindings are all written 32x32
-  // (tools/make_prompt_glyphs.py calls make_icon(icon) with no dimensions),
-  // but a single stem can serve textures of different sizes - the C-stick
-  // prompts here are one 32x32 and one 64x32. Serving 32x32 bytes under a name
-  // that says 64x32 does not scale the image: the game reads 64x32 worth of
-  // pixels out of half the data and draws the right-hand half as noise. Keeping
-  // the game's own art is the correct outcome, not a fallback to apologise for.
+  // Last line of defence, in case a sized file is ever wrong: refuse art whose
+  // dimensions do not match the texture it is standing in for. Keeping the
+  // game's own art is the correct outcome, not a fallback to apologise for.
   uint32_t iconWidth = 0;
   uint32_t iconHeight = 0;
   if (!IconDimensions(reg.iconPath, iconWidth, iconHeight) ||

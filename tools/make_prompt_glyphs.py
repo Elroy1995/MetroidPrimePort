@@ -181,10 +181,20 @@ def main():
     bindings = os.path.join(OUT, "bindings")
     os.makedirs(bindings, exist_ok=True)
     padCount = 0
+    # One binding stem can serve textures of more than one size - the C-stick
+    # prompts here are one 32x32 and one 64x32 - so each binding is also written
+    # with its size in the name. platform/port_prompts.cpp looks for the exact
+    # size first and falls back to the unsuffixed 32x32 file. Without this a
+    # 64x32 slot gets 32x32 bytes: the game does not scale the image, it reads
+    # 64x32 of pixels out of half the data and draws the rest as noise.
+    sizes = sorted({(w, h) for _, w, h, _, _ in keys})
     for device, icons in PAD_ICONS.items():
         for key, icon in icons.items():
-            write_dds(make_icon(icon), os.path.join(bindings, f"{device}_{key}.dds"))
-            padCount += 1
+            for w, h in sizes:
+                suffix = "" if (w, h) == (SIZE, SIZE) else f"_{w}x{h}"
+                write_dds(make_icon(icon, w, h),
+                          os.path.join(bindings, f"{device}_{key}{suffix}.dds"))
+                padCount += 1
     missing = []
     for stem in BINDING_ICONS:
         src = os.path.join(ICONS_DIR, stem + ".png")
