@@ -15,6 +15,7 @@
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
+#include "MetroidPrime/CScriptLayerManager.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "Kyoto/CResFactory.hpp"
@@ -135,6 +136,14 @@ struct WorldSweep {
   unsigned completedAreas = 0;
   bool active = false;
   bool waiting = false;
+  // An area can hold several layers, and only the active ones are built, so a
+  // pickup behind a layer the save has not unlocked is not in the dump at all.
+  // The tour revisits each area once per layer with a different one active,
+  // which is what makes the dump cover the whole area rather than the state the
+  // save happens to be in.
+  int layer = 0;
+  int layerCount = 1;
+  unsigned layerPasses = 0;
 } sWorldSweep;
 
 std::string SettingsFilePath() {
@@ -901,6 +910,25 @@ void RequestWorldSweep() {
   sWorldSweepRequested = true;
 }
 
+// Activates one layer of the current area and deactivates the rest, so the
+// area's objects are built for that layer when it is next reconstructed.
+// Layer 0 is the one a fresh save has, which is why a plain tour never sees
+// anything behind another layer.
+void SetSweepLayer(CStateManager& mgr, CWorld* world, TAreaId area, int layer) {
+  rstl::rc_ptr< CScriptLayerManager >& layers = mgr.WorldLayerState();
+  if (layers.IsNull())
+    return;
+  const int count = layers->GetAreaLayerCount(area);
+  for (int i = 0; i < count; ++i)
+    layers->SetLayerActive(area, TLayerId(i), i == layer);
+  (void)world;
+}
+
+bool SweepLayersEnabled() {
+  const char* value = std::getenv("MP_RANDO_SWEEP_LAYERS");
+  return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
 bool ConsumeWorldSweepRequest(CStateManager& mgr) {
   // This entry point is called only by gameplay, never the frontend or UI.
   static const bool envChecked = [] {
@@ -987,6 +1015,21 @@ bool ConsumeWorldSweepRequest(CStateManager& mgr) {
     }
     std::fprintf(stderr, "[sweep] world %zu/%zu: %08X, %zu areas\n", sweep.world + 1,
                  sweep.worlds.size(), sweep.worlds[sweep.world], sweep.areas.size());
+    if (SweepLayersEnabled()) {
+      // How many layers the widest area has, so every area gets a pass per
+      // layer even where its own count is lower. An area with fewer layers
+      // simply rebuilds the same thing, which costs a restart and nothing else.
+      int widest = 1;
+      for (int i = 0; i < world->IGetAreaCount(); ++i) {
+        const int count = mgr.WorldLayerState()
+                              ? mgr.WorldLayerState()->GetAreaLayerCount(TAreaId(i))
+                              : 1;
+        if (count > widest)
+          widest = count;
+      }
+      sweep.layerCount = widest;
+      std::fprintf(stderr, "[sweep] layers: up to %d per area\n", widest);
+    }
   }
 
   // Count consecutive quiet simulation ticks, not rendered frames or a wall
@@ -1011,9 +1054,27 @@ bool ConsumeWorldSweepRequest(CStateManager& mgr) {
       std::fprintf(stderr, "[sweep] note: %08X moved the player to %08X; continuing\n",
                    sweep.areas[sweep.area], settled);
     }
+    // One area, one layer: the count reports passes, not distinct areas, so a
+    // multi-layered area is visibly a few.
     ++sweep.completedAreas;
-    std::fprintf(stderr, "[sweep] area %zu/%zu: %08X (total %u)\n", sweep.area + 1,
-                 sweep.areas.size(), sweep.areas[sweep.area], sweep.completedAreas);
+    std::fprintf(stderr, "[sweep] area %zu/%zu: %08X layer %d/%d (total %u)\n", sweep.area + 1,
+                 sweep.areas.size(), sweep.areas[sweep.area], sweep.layer + 1, sweep.layerCount,
+                 sweep.completedAreas);
+    if (++sweep.layer < sweep.layerCount) {
+      // Another layer of the area just built. The layer state has to be set
+      // before the area is reconstructed, because CGameArea builds the objects
+      // of the layers that are active at construction time - which is why a
+      // pickup behind an inactive layer is not in the dump at all.
+      ++sweep.layerPasses;
+      SetSweepLayer(mgr, world, current, sweep.layer);
+      std::fprintf(stderr, "[sweep] re-entering %08X with layer %d active\n",
+                   sweep.areas[sweep.area], sweep.layer);
+      // Back to the same area, not to the world's first one: the layer was just
+      // set on this area, and the point is to rebuild this area with it.
+      RequestWorldTeleport(sweep.worlds[sweep.world], sweep.areas[sweep.area]);
+      return true;
+    }
+    sweep.layer = 0;
     if (++sweep.area == sweep.areas.size()) {
       if (++sweep.world == sweep.worlds.size()) {
         std::fprintf(stderr, "[sweep] complete: %zu worlds, %u areas\n", sweep.worlds.size(),
