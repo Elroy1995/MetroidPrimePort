@@ -135,14 +135,21 @@ building and running it:
   POCO F8 Ultra, the release build holds a steady 60 FPS where the debug build
   stutters badly.
 - The memory card lives in app storage, so saves survive reinstall of the same
-  data and need no storage permission. A fresh card has been reported as
-  unidentified in the front end and **the cause is still unknown** — see
-  `PORT_NOTES.md`. What the port now does is log the directory it resolved the
-  card to on every platform, so the next device run answers it in one line:
-  `memory card: storing under <path>`. That line is in logcat, and the same
-  code also falls back to the app's internal storage if `SDL_GetPrefPath` cannot
-  answer, instead of letting the card land in the process's working directory,
-  which on Android is not writable.
+  data and need no storage permission.
+- **There is no "unidentified" card bug.** The report was a misreading of
+  Metroid Prime's opening narration: the game displays "Unidentified distress
+  beacon has been transmitted" as part of its story setup, and that sentence is
+  not about the card. Captured and confirmed — see `PORT_NOTES.md`. The card
+  itself is found, and a save on it is opened, both on desktop and through the
+  same code path Android uses. The one thing still unverified is loading a save
+  through the front-end menu, which needs menu-level input driving rather than
+  a card check.
+- The port logs the directory it resolved the card to on every platform, so a
+  device run can confirm where saves go in one line:
+  `memory card: storing under <path>`. The same code falls back to the app's
+  internal storage if `SDL_GetPrefPath` cannot answer, instead of letting the
+  card land in the process's working directory, which on Android is not
+  writable.
 - Distribution obligations remain. Aurora and MusyX are MIT snapshots and the
   button prompt icons are Kenney CC0; if any GPL-covered code ends up in the
   final combined work, the required corresponding source and build material must

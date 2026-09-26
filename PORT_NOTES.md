@@ -1,5 +1,49 @@
 # Metroid Prime port — working notes
 
+## The "unidentified memory card" is a misreading (2026-09-26)
+
+A fresh card was reported as *unidentified* in the Android front end, and
+`docs/ANDROID_BUILD_PROBE.md` carried that as an open bug. It is not a bug.
+
+- **What the text actually says.** Capturing the front-end sequence
+  (`MP_SMOKE_FRONTEND` to walk it, `MP_SMOKE_SHOT` to shoot it) shows the screen
+  reading **"Unidentified distress beacon has been transmitted"**. That is
+  Metroid Prime's opening narration — the premise of the game is a distress
+  beacon — and the sentence has nothing to do with the memory card. It is not in
+  any source file in this tree, because it comes from the disc's string table.
+  Screenshots kept at `build/distress-beacon-frame.png` and
+  `build/front-end-landed.png`.
+- **It does not depend on the card at all.** The capture was run twice, once with
+  no card and once with a real save on it. Frames 1, 3 and 5 — including the
+  distress-beacon frame — are **byte-identical** between the two. Only the last
+  shot differs, which is the game loading further.
+- **The card is genuinely read.** The card layer distinguishes the two states on
+  its own: with a save present it opens slot A silently, and with an empty card
+  it logs `Failed to open file: MetroidPrime A`. Same code path Android uses,
+  because `__ANDROID__` is a Clang predefine for every NDK target — checked with
+  `-dM`, and the string that only exists inside that branch is present in the
+  arm64 `.so` from the built APK.
+- **Three plausible "is there a save?" checks all failed**, each caught by the
+  same negative control (delete the save, expect the answer to change):
+  - `gpMemoryCard->GetMemoryWorlds()` — 8 worlds with or without a save. It is
+    the set of worlds the *game* knows about, not the set it has saves for.
+    `MP_SMOKE_WORLD=auto` picks its target from this list, so it looks like a
+    card test and is not: it chose the same world `13D79165` from an empty card.
+  - `CSaveWorldMemory::GetSaveWorldAssetId() != kInvalidAssetId` — non-invalid
+    for all 8 worlds either way, so it does not mean "a save was loaded".
+  - `CMemoryCardSys::GetNumFreeBytes` — 16728064 bytes and 126 files free either
+    way, because GCI-folder mode does not account usage that way.
+  The reliable discriminator is the one the front end uses, a null file slot in
+  `CMemoryCardDriver::GetGameFileStateInfo`, and the driver only exists while the
+  save screen is up, so it is not reachable from a per-frame hook.
+- I wrote a `MP_SMOKE_CARD` hook around the first two, then **deleted it**: it
+  printed the same thing in both states, which is worse than no hook because it
+  looks like a check and is not one. The negative control is what caught it.
+- **Still unverified:** loading a save *through the front-end menu*. That needs
+  driven menu input, not a card query, and it is the remaining part of
+  "saves and reloads".
+
+
 ## The memory card now says where it is (2026-09-26)
 
 - A fresh card was reported as **unidentified** in the Android front end. **I did
@@ -1014,9 +1058,13 @@ Remaining:
 3. Confirm the draw-sync fence removed the intermittent skinned geometry
    explosion with an F12 capture at the failing frame if it still occurs.
 4. Replace the session-long AGSC buffer retention with a bounded lifetime.
-5. Verify CARD saves and the remaining menu flows.
-6. Reproduce the reported blank front-end screen using `F12`; current automated
-   captures do not reproduce it.
+5. Verify CARD saves and the remaining menu flows. The card itself is confirmed
+   read; loading a save through the front-end menu is not, and needs driven menu
+   input.
+6. The reported blank front-end screen has not been reproduced. This run walked
+   the whole front end and captured nine frames; the only fully black one is the
+   fade at frame 900, between the narration and the cutscene, and every other
+   frame renders.
 
 Wayland presentation keeps the game EFB locked to its configured 640x480 with
 `VISetFrameBufferScale(1)`, while Aurora scales that image to the native high-DPI
