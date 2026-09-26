@@ -1710,9 +1710,34 @@ CIOWin::EMessageReturn CFrontEndUI::Update(float dt, CArchitectureQueue& queue) 
       case kS_Title:
         StartStateTransition(kS_FileSelect);
         break;
-      case kS_FileSelect:
-        TransitionToFive();
+      case kS_FileSelect: {
+        // Do not leave file select while the card is mid-write. On an empty
+        // card the save UI creates the file and then writes it in a second
+        // async step; leaving between the two strands a zero-filled file with
+        // a bad CRC that every later run reports as a corrupt save. A player
+        // cannot get here that early, because file select takes no input
+        // until the save UI reports SaveReady, so wait for the same thing.
+        // A card dialog (no card, corrupt, format...) means no write is in
+        // flight, so go on without answering it. The bound is 600 front-end
+        // frames, not wall time: card I/O runs on the main thread and advances
+        // one step per Update, so with frame_limit=0 it passes far faster than
+        // 10 s. A measured create plus write takes about 10-12 frames; the
+        // margin is deliberately large. It only stops a card that never
+        // settles from hanging fast boot.
+        static int sSaveWaitFrames = 0;
+        const CSaveGameScreen* saveUI = xdc_saveUI.get();
+        const bool cardSettled =
+            saveUI == nullptr || saveUI->GetUIType() == CSaveGameScreen::kUIT_SaveReady ||
+            CSaveGameScreen::IsHiddenFromFrontEnd(saveUI->GetUIType());
+        if (!cardSettled && ++sSaveWaitFrames == 600) {
+          fprintf(stderr, "[fast-boot] gave up waiting for the memory card after 600 frames; "
+                          "proceeding may strand a half-written save file\n");
+        }
+        if (cardSettled || sSaveWaitFrames >= 600) {
+          TransitionToFive();
+        }
         break;
+      }
       default:
         break;
       }

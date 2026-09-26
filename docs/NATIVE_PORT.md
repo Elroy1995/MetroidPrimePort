@@ -608,6 +608,11 @@ Combine with `MP_SMOKE_SHOT` to capture them.
 `MP_SMOKE_FRONTEND=<frame>` taps Start every 300 frames from that frame, so the
 front-end screens (title, save dialogs, main menu) are reached without a player;
 Start alone leaves dialogs on screen rather than dismissing them.
+`MP_SMOKE_CONTINUE=1` walks the title and file select to Continue on slot 1. It
+does not combine with `MP_FAST_BOOT`: the walker only acts at file select, and
+fast boot is what leaves file select, so with both set the run quietly becomes a
+new game instead. This has always been so; set only `MP_SMOKE_CONTINUE` to test
+the Continue path.
 
 For audio reports, `MP_AUDIO_STATS=1` logs MusyX's generated samples/second, queued
 audio, peak output and clipping. Nominal output is 32,000 stereo frames/second;

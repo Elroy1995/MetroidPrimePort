@@ -1,3 +1,56 @@
+## ANSWERED: the corrupt save was MP_FAST_BOOT stranding a half-written file (2026-09-26)
+
+The question left open by `51ab7244` — why the in-game save screen finds a corrupt
+file on a card that should be empty — was mine, and the answer is the port's own
+test flag. **It is a harness artefact, not a port defect.**
+
+- **The mechanism.** On an empty card the front end's save screen makes the file in
+  two async steps: `StartFileCreate()`, and when the create finishes
+  `UpdateFileCreate()` calls `StartFileWrite()` (`CMemoryCardDriver.cpp:302`).
+  `MP_FAST_BOOT=1` called `TransitionToFive()` the moment file select was current
+  (`CFrontEndUI.cpp:1699`), which dropped the save screen after the create had
+  produced a zero-filled file but before the write landed — a two-frame window.
+  The stranded file reads back with a stored CRC of `0` against a computed
+  `0x553E7B06`, and the **next** run reports `kUIT_SaveCorrupt`.
+- **The differential** — card wiped before each run, nothing else changed:
+  - fast boot, 1800 frames → `MetroidPrime A.gci`, save region **0 / 3004**,
+    CRC **invalid** (`00000000` vs `553e7b06`)
+  - front end with no fast boot → **no file at all**; it never gets past the
+    title, so it never touches the card. A weak control, kept only for symmetry.
+  - the player's path — press Start, then wait at file select → `MetroidPrime
+    A.gci`, save region 0 / 3004, CRC **valid**. This is the real comparison, and
+    the same create-then-write there leaves a good file.
+  - fast boot **twice, no wipe between** → the same stranded file, and the second
+    run logs `ui type 1 -> 11`. That is the sequence I actually hit.
+- **A player cannot reach it.** File select only reads input
+  (`CFrontEndUI.cpp:909`) and draws (`:936`) once `x10c_saveReady` is set, which
+  is `GetUIType() == kUIT_SaveReady` (`:871`) and is reached only after the write
+  completes, with `BusyWriting` shown in between. Fast boot was the only thing
+  skipping that gate. The console had the same exposure to power loss mid-create,
+  and no input can trigger it here — so this closes the item, though it does not
+  make the two-frame window disappear, only unreachable.
+- **Fixed rather than documented.** Fast boot now waits at file select for the
+  same thing the player waits for: `SaveReady`, or a card dialog (where nothing is
+  in flight, so it goes on without answering it), or no save UI at all. Confined to
+  the `PortDebug::FastBoot()` guard — one hunk, and no other file under `src/`
+  touched. After the fix, a wiped card and a fast-boot run leaves a blank file
+  with a **valid** CRC, and a second fast-boot run reaches `1 -> 16` (SaveReady)
+  where it used to reach `1 -> 11` (SaveCorrupt). The player's path is unchanged.
+- **The 600-frame bound is in front-end frames, not seconds.** Card I/O is
+  main-thread and advances one step per `Update`, so with `frame_limit=0` it passes
+  far faster than 10 s. A measured create plus write is 10–12 frames, so the margin
+  is ~60×. If the bound ever fires it prints to stderr, because a fallback that
+  quietly reintroduces this bug must not be silent — it did not fire in any run.
+- **`tools/card_inspect.py`** is now in the tree, because the evidence above rests
+  on it and it was in gitignored `build/`. It reports the save region's non-zero
+  bytes and checks the CRC the right way. Note `CCRC32::Calculate` is a **raw**
+  CRC-32 with no final complement, so the check is
+  `(zlib.crc32(payload[4:]) & 0xFFFFFFFF) ^ 0xFFFFFFFF` against the payload's
+  first 4 bytes big-endian. Comparing against plain `zlib.crc32` makes a good file
+  look corrupt; that mistake cost two commits and is now stated in the tool.
+- **Loose end, harmless:** `build/card-fastboot-leftover/` holds a blank test file
+  from a fast-boot run. Safe to delete.
+
 ## CORRECTED: the empty save is my automation, not the port (2026-09-26)
 
 My last entry said the slot is never built and implied a port defect. **That
