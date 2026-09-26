@@ -1,5 +1,36 @@
 # Metroid Prime port — working notes
 
+## The AP world was reachable all along; the join maps 95 of its 100 locations (2026-09-26)
+
+- I had recorded the Archipelago world as unreachable and built a spec-shaped
+  stand-in for it. That was wrong, and the reason is worth remembering: the
+  repository is `UltiNaruto/MetroidAPrime` — **one "P" in Prime**. The name I
+  had, `MetroidAPPrime`, is a different repository, and GitHub answers a request
+  for a name that does not exist with the same 404 it uses for a repository you
+  cannot see. Every probe I ran used the double-P spelling, so "the repo is
+  private" was the only conclusion the evidence supported, and it was wrong.
+  `git ls-remote` on the single-P name returns refs immediately.
+- Against the real `src/Locations.py` and the full port dump, `make_ap_config.py
+  --strict` maps **95 of 100 locations across 75 clean areas**, and the five it
+  does not map are all dump coverage rather than pairing:
+  - `Chozo Ruins: Main Plaza - Locked Door` and `Chozo Ruins: Ruined Shrine -
+    Plated Beetle` have no counterpart in the dump at the area's delta (+1):
+    those pickups live in layers a plain area tour does not build, which is the
+    limit `docs/RANDOMIZER.md` already describes.
+  - Three more are count mismatches — an area holding more AP locations than the
+    dump has pickups (Chozo Ruins 0x0025, Phazon Mines 0x001A).
+  - Five areas with a mixed delta stay flagged **review** (Chozo Ruins 0x001C,
+    0x0031, Phendrana Drifts 0x0035 and the two above), which is why `--strict`
+    refuses to write a config from this dump rather than pairing on rank.
+- The real table confirms the id-delta design the tool was built around: the
+  measured delta is a per-area constant (Tallon Overworld Life Grove pairs at
+  **+1**, and 75 areas are clean), and a wrong pairing would report another
+  player's check, so reporting these five is the correct behaviour rather than a
+  shortfall.
+- Closing the five needs a dump that visits those layers, not a better join.
+  `--extra` can name them by hand for a session that does not include them.
+
+
 ## Item tracker, and the on-disc rewrite re-verified (2026-09-26)
 
 - An item arriving while the player was not looking at the HUD used to be lost
