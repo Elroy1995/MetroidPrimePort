@@ -1,5 +1,43 @@
 # Metroid Prime port — working notes
 
+## Android release signing has an identity of its own (2026-09-26)
+
+- The `release` variant was signed with the shared debug key. It is now signed
+  with a key of this project's own, created by `tools/make_android_keystore.sh`,
+  and the build *refuses* the debug key unless it is asked for. The reason the
+  refusal is worth having: Android treats a signature change as a different app,
+  so a debug-signed release has to be uninstalled before a properly signed one
+  will install. That is a much worse thing to learn after shipping than at build
+  time.
+- `tools/android_apk.sh` still opts in on the caller's behalf when no key is
+  configured, because a build that is only going to be sideloaded should not
+  need a key to exist first, but it announces it on stderr. `--strict-signing`
+  turns that into a refusal. The rule is Gradle's, so calling Gradle directly
+  with no key stops the build regardless of the script.
+- Three things that were each a bug while getting there:
+  - `signingConfigs` only exists inside the `android { }` block, so the values
+    are resolved outside and the config is built inside. Calling
+    `signingConfigs.create` at the top level fails to evaluate the project.
+  - Naming the script-level variables `keyAlias` and `keyPassword` shadowed
+    `SigningConfig`'s own accessors of those names, and Groovy resolved
+    `keyAlias <value>` as calling the local String: `No signature of method:
+    java.lang.String.call()`. They are now `configuredKeyAlias` and
+    `configuredKeyPassword`.
+  - `--strict-signing` has to be *consumed* by the script, not forwarded:
+    Gradle rejects an option it does not know, so the first version failed with
+    a usage dump instead of doing what it said. The POSIX way to drop one
+    positional parameter without an array is to rotate `$@`.
+- Also fixed while here: a half-configured key (three of the four values) was
+  going to fall back to the debug key silently. It is now an error naming which
+  values are missing, and a `storeFile` that is not there names the path.
+- Verified by building and inspecting the package: signer
+  `CN=Metroid Prime Port, OU=Port, O=Metroid Prime Port` (SHA-256 `d8814c79...`),
+  not the debug key's `CN=Android Debug` (`edd22fdb...`); arm64 `.so` 29 MB; all
+  six third-party notices in `assets/`; no `.iso`, `.pak` or `.strg`. A dry run
+  of `assembleDebug` with no key at all still configures, so the rule is scoped
+  to release and does not get in the way of a normal debug build.
+
+
 ## DeathLink, both directions (2026-09-26)
 
 - A `Bounce` from another player now kills this one, and this client's deaths

@@ -31,12 +31,97 @@ if (!useNodStub.toBoolean()) {
     cmakeArguments.add("-DRust_CARGO_TARGET=aarch64-linux-android")
 }
 
+// Release signing. A release package needs an identity of its own: the debug
+// key is shared, is not private, and says nothing about who built the package.
+// The four values come from android/keystore.properties - untracked, generated
+// by tools/make_android_keystore.sh - or from the environment, so a CI secret
+// and a local file take the same path. All four are required; a partial set is
+// an error rather than a silent fall back to debug, because a half-configured
+// release that builds with the wrong key is worse than one that stops.
+def signingProperties = new Properties()
+def signingPropertiesFile = rootProject.file("keystore.properties")
+if (signingPropertiesFile.exists()) {
+    signingPropertiesFile.withInputStream { signingProperties.load(it) }
+}
+def signingValue = { String key, String envName ->
+    def fromProperties = signingProperties.getProperty(key)
+    if (fromProperties != null && !fromProperties.trim().isEmpty()) {
+        return fromProperties.trim()
+    }
+    def fromEnvironment = System.getenv(envName)
+    return (fromEnvironment != null && !fromEnvironment.trim().isEmpty()) ? fromEnvironment.trim() : null
+}
+def configuredKeystore = signingValue("storeFile", "MP_APK_KEYSTORE")
+def configuredStorePassword = signingValue("storePassword", "MP_APK_KEYSTORE_PASSWORD")
+def configuredKeyAlias = signingValue("keyAlias", "MP_APK_KEY_ALIAS")
+def configuredKeyPassword = signingValue("keyPassword", "MP_APK_KEY_PASSWORD")
+// A relative storeFile is resolved against android/, which is where
+// make_android_keystore.sh puts it.
+if (configuredKeystore != null && !configuredKeystore.startsWith("/")) {
+    configuredKeystore = rootProject.file(configuredKeystore).absolutePath
+}
+
+def allowDebugSigning = providers.gradleProperty("mpDebugSigning").getOrElse("false").toBoolean()
+// Null means "no key of this project's own". A signingConfigs entry can only be
+// created inside the android block, so the values are carried here and the
+// config is built there; whether there is one is decided here, where the
+// failure message can be about the key rather than about Gradle.
+def signingValues = null
+if (configuredKeystore != null && configuredStorePassword != null && configuredKeyAlias != null && configuredKeyPassword != null) {
+    if (!file(configuredKeystore).exists()) {
+        throw new GradleException(
+            "keystore not found at ${configuredKeystore}\n" +
+            "  storeFile in ${signingPropertiesFile} or MP_APK_KEYSTORE points at a file that is not there.")
+    }
+    signingValues = [
+        storeFile    : configuredKeystore,
+        storePassword: configuredStorePassword,
+        keyAlias     : configuredKeyAlias,
+        keyPassword  : configuredKeyPassword,
+    ]
+} else if ([configuredKeystore, configuredStorePassword, configuredKeyAlias, configuredKeyPassword].any { it != null }) {
+    throw new GradleException(
+        "release signing is half configured; all four of storeFile, storePassword, keyAlias and " +
+        "keyPassword are needed.\n" +
+        "  found: " + [configuredKeystore != null, configuredStorePassword != null, configuredKeyAlias != null, configuredKeyPassword != null]
+            .collect { it ? "present" : "missing" }.join(", ") + "\n" +
+        "  run tools/make_android_keystore.sh to create a key and write ${signingPropertiesFile}")
+}
+
+// Signing a release with the debug key is a decision someone has to make, not a
+// default. A package signed with the shared debug key installs anywhere and
+// cannot be replaced later by a real identity, because Android treats a
+// signature change as a different app - so a debug-signed release has to be
+// uninstalled before a properly signed one will install. That is why this stops
+// instead of warning, and why the way through is one command.
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { releaseBuild ->
+    if (signingValues == null && !allowDebugSigning) {
+        throw new GradleException(
+            "refusing to sign the release with the shared debug key.\n" +
+            "  create this project's own key:  tools/make_android_keystore.sh\n" +
+            "  (it writes android/keystore.properties, which is not tracked)\n" +
+            "  for a build you only intend to sideload, pass -PmpDebugSigning=true,\n" +
+            "  which is what tools/android_apk.sh does when no key is configured")
+    }
+}
+
 android {
     namespace "org.metroidprime.port"
     compileSdk 34
     ndkVersion "29.0.14206865"
     if (configuredNdk) {
         ndkPath configuredNdk
+    }
+
+    signingConfigs {
+        if (signingValues != null) {
+            create("release") {
+                storeFile file(signingValues.storeFile)
+                storePassword signingValues.storePassword
+                keyAlias signingValues.keyAlias
+                keyPassword signingValues.keyPassword
+            }
+        }
     }
 
     defaultConfig {
@@ -84,9 +169,13 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             // The debug variant builds the native code with -O0 and is far too
-            // slow to play. Sign release with the debug key so an optimized
-            // build can be installed locally; this is not a release identity.
-            signingConfig signingConfigs.debug
+            // slow to play, so the release variant is the one worth installing.
+            // It is signed with this project's own key when one is configured,
+            // and never with the shared debug key unless that was asked for
+            // explicitly - see the signing resolution above.
+            if (signingValues != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

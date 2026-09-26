@@ -66,4 +66,45 @@ escape_property() {
     printf 'sdk.dir=%s\n' "$(escape_property "$sdk")"
 } > "$root_dir/android/local.properties"
 
+# A release is normally signed with this project's own key, configured in
+# android/keystore.properties (see tools/make_android_keystore.sh). When there
+# is no key, :app:assembleRelease stops rather than quietly signing with the
+# shared debug key, so this script opts in on the caller's behalf for a build
+# that is only going to be sideloaded - and says so, because a debug-signed
+# package cannot be replaced by a properly signed one without uninstalling it
+# first. A build that must not produce a debug-signed package passes
+# --strict-signing and gets the refusal instead.
+strict=0
+# Consumed here rather than forwarded: Gradle rejects an option it does not
+# know, so leaving --strict-signing in the argument list fails the build with a
+# usage dump instead of doing what it says. Rotating the positional parameters
+# is the POSIX way to drop one without an array.
+remaining_count=$#
+index=0
+while [ "$index" -lt "$remaining_count" ]; do
+    argument=$1
+    shift
+    if [ "$argument" = "--strict-signing" ]; then
+        strict=1
+    else
+        set -- "$@" "$argument"
+    fi
+    index=$((index + 1))
+done
+
+key_configured=0
+[ -f "$root_dir/android/keystore.properties" ] && key_configured=1
+[ -n "${MP_APK_KEYSTORE:-}" ] && key_configured=1
+if [ "$key_configured" -eq 0 ]; then
+    if [ "$strict" -eq 1 ]; then
+        echo "error: --strict-signing and no release key configured." >&2
+        echo "       run tools/make_android_keystore.sh first." >&2
+        exit 1
+    fi
+    echo "note: no release key configured; signing with the shared debug key." >&2
+    echo "      This build is only good for sideloading. To sign it properly," >&2
+    echo "      run tools/make_android_keystore.sh. Use --strict-signing to refuse instead." >&2
+    set -- "$@" -PmpDebugSigning=true
+fi
+
 exec "$gradle" --project-dir "$root_dir/android" --no-daemon "$@"

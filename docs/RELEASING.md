@@ -55,13 +55,36 @@ rather than inferring permission from the absence of a `LICENSE` file.
 
 ## Signing identity
 
-**Android signs release builds with the debug key.** `android/app/build.gradle`
-sets `signingConfig signingConfigs.debug` for the `release` variant, which is
-what makes `:app:assembleRelease` installable without extra setup — and is
-exactly what a real release must not do. The debug key is not an identity: it
-is shared, it is not private, and it offers no assurance about who built the
-package. A real release needs its own keystore, kept out of the repository,
-supplied at build time.
+**Android release signing is this project's own key.** `tools/make_android_keystore.sh`
+creates it and writes `android/keystore.properties`; the file and the `.jks` are
+both untracked, and `.gitignore` says so. The build refuses to sign a release
+with the shared debug key unless that is asked for explicitly, because the debug
+key is not an identity: it is public, it is the same on every machine, and it
+says nothing about who built the package.
+
+The refusal matters more than it looks. Android treats a signature change as a
+different app, so a debug-signed release has to be **uninstalled** before a
+properly signed one will install. Finding that out after shipping is worse than
+being told at build time.
+
+Where the four values come from: `android/keystore.properties`, then
+`MP_APK_KEYSTORE` / `MP_APK_KEYSTORE_PASSWORD` / `MP_APK_KEY_ALIAS` /
+`MP_APK_KEY_PASSWORD` — so a CI secret and a local file take the same path. All
+four are required. A partial set is an error naming which are missing, and a
+`storeFile` that is not there is an error naming the path, rather than a silent
+fall back to the debug key.
+
+`tools/android_apk.sh` opts in on the caller's behalf **only** when no key is
+configured, and says so on stderr, because a build that is merely going to be
+sideloaded should not need a key to exist first. `--strict-signing` turns that
+into a refusal. The rule itself is Gradle's, not the script's: calling Gradle
+directly with no key stops the build.
+
+Verified on a release build: the package's signer is
+`CN=Metroid Prime Port, OU=Port, O=Metroid Prime Port` (SHA-256 `d8814c79…`),
+not the debug key's `CN=Android Debug` (`edd22fdb…`), the arm64 `.so` is 29 MB,
+all six third-party notices are in `assets/`, and no `.iso`, `.pak` or `.strg`
+is in the package.
 
 The port targets `versionName "0.1.0"` and `versionCode 1`.
 
@@ -73,7 +96,7 @@ The port targets `versionName "0.1.0"` and `versionCode 1`.
 | Linux | `tools/make_appimage.sh` | AppImage | builds; **notices missing** |
 | Linux | `tools/make_flatpak.sh` | Flatpak | **never built here** — no `flatpak-builder` on the development machine; the app id in the manifest must be changed before publishing |
 | Windows | `.github/workflows/windows.yml` | zipped `dist/` | green in CI, artifact uploaded, packaged startup checked |
-| Android | `tools/android_apk.sh :app:assembleRelease` | APK | builds a signed debug-key APK; **on-device behaviour unverified** |
+| Android | `tools/android_apk.sh :app:assembleRelease` | APK | builds, signed with this project's own key; **on-device behaviour unverified** |
 
 The Linux binary is the only one with a test suite attached: 14 `port`-labelled
 ctest targets, all run by both CI jobs.
@@ -97,11 +120,10 @@ under GNOME unless the port's own X11 preference applies — see
 2. **Notices still missing from the Flatpak**, and the AppImage only *names*
    the shared libraries it copies rather than reproducing their terms. Windows,
    AppImage and APK all collect the rest.
-3. **Android release signing** is the debug key.
-4. **Android on-device behaviour is unverified** — boot, render, save, play a
+3. **Android on-device behaviour is unverified** — boot, render, save, play a
    seed and connect all need a device.
-5. **`wss://` does not work on Android**: the NDK has no OpenSSL, so the
+4. **`wss://` does not work on Android**: the NDK has no OpenSSL, so the
    build has no `MP_HAVE_OPENSSL` and a `wss://` server is refused rather than
    downgraded. A JNI `SSLSocket` backend or a vendored TLS library is what that
    needs.
-6. **The Flatpak path has never been built**, and its app id is a placeholder.
+5. **The Flatpak path has never been built**, and its app id is a placeholder.

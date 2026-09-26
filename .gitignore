@@ -36,3 +36,8 @@ screenshots/
 
 # Claude Code personal settings (per-machine allow/deny rules)
 .claude/settings.local.json
+
+# Release signing identity: a private key and the properties that name it.
+android/keystore.properties
+android/*.jks
+android/*.keystore

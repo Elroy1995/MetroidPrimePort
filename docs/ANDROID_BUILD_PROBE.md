@@ -127,11 +127,13 @@ building and running it:
   lifecycle, audio, controller, and SAF/disc-access paths have been wired up but
   still need device verification.
 - Build an optimized APK to play. The `debug` variant compiles the native code
-  with `-O0` and is far too slow; `:app:assembleRelease` builds `RelWithDebInfo`
-  and is signed with the debug key so it can be installed locally. That key is
-  not a release identity, and the release variant is not suitable for
-  distribution. Measured on a POCO F8 Ultra, the release build holds a steady
-  60 FPS where the debug build stutters badly.
+  with `-O0` and is far too slow; `:app:assembleRelease` builds `RelWithDebInfo`.
+  It is signed with this project's own key once one exists
+  (`tools/make_android_keystore.sh`); until then `tools/android_apk.sh` signs
+  with the debug key for a local sideload and says so, and the build itself
+  refuses that unless it is asked for — see `docs/RELEASING.md`. Measured on a
+  POCO F8 Ultra, the release build holds a steady 60 FPS where the debug build
+  stutters badly.
 - The memory card lives in app storage, so saves survive reinstall of the same
   data and need no storage permission. A fresh card still reports as
   unidentified in the front end and needs further work.
