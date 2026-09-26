@@ -168,6 +168,7 @@ screens captured on the real session, on the AMD adapter, are in
 | Metroid Prime title | `front-end-title.png` |
 | Nintendo publisher logo | `front-end-publisher.png` |
 | Dolby Surround Pro Logic II | `front-end-dolby.png` |
+| Title with `[ PRESS START ]` | `front-end-press-start.png` |
 
 All three render correctly, so **the reported blank front end does not
 reproduce**. Note that `MP_FAST_BOOT=1` never shows any of them: it drives
@@ -175,15 +176,22 @@ reproduce**. Note that `MP_FAST_BOOT=1` never shows any of them: it drives
 captures taken with it set are pictures of the *game's* opening, not the front
 end.
 
-**The front end does not get past the Dolby screen.** With Start tapped every 300
-frames from frame 200, and separately with fourteen A presses spread over 16000
-frames, the last screen reached is the Dolby logo. The title screen *does* respond
-to Start, so input reaches the front end; this one screen does not respond to
-either button. Whether that is the game's front end waiting on something else or
-an input path that stops at that screen has not been isolated, and it matters:
-`MP_FAST_BOOT` is the only way currently known to get past it, and a player who
-has not set it may have nowhere to go. It is the most promising lead on the
-original blank-front-end report.
+**Input is discarded when the window is not focused**, which is worth knowing
+before concluding that a screen is unresponsive. `CDolphinController::ReadDevices`
+(`src/Kyoto/Input/CDolphinController.cpp:105`) zeroes the whole pad status when
+`SDL_GetKeyboardFocus()` is null and then preserves the error code, so the
+controller still reports *present* while every button is dropped, and the front
+end receives input messages containing no buttons. A scripted press launched into
+an unfocused window on a live desktop is therefore thrown away before anything
+reads it. `MP_SMOKE_SCRIPT` and `MP_SMOKE_FRONTEND` now claim focus the way
+`MP_SMOKE_MOUSE` already did; with that fixed the front end reaches the title and
+its `[ PRESS START ]` prompt (`front-end-press-start.png`).
+
+The front end then loops between the title and the attract movie. The main menu,
+and the Continue option on it, has not been reached: at the few frames per second
+this path presents, a single scripted press is a lottery — one during a fade-in
+is ignored — and the loop's phase drifts with machine speed, so a press timed
+from a fixed frame number does not land. Not a suspected defect, just not done.
 
 Two things to know when reproducing this:
 

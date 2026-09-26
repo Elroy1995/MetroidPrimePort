@@ -1,3 +1,67 @@
+## Scripted input was being discarded, and it looked like the front end ignoring it (2026-09-26)
+
+Last turn I concluded "the front end does not get past the Dolby screen on Start
+or A, and that may be the original blank-front-end bug". **That was wrong**, and
+the reason it was wrong is worth more than the conclusion.
+
+- **The mechanism.** `CDolphinController::ReadDevices`
+  (`src/Kyoto/Input/CDolphinController.cpp:105-110`) zeroes the entire pad status
+  when `SDL_GetKeyboardFocus()` is null, and then *preserves the error code*:
+
+  ```cpp
+  if (status[i].err != PAD_ERR_NONE || PortDebug::Visible() || !inputFocused) {
+    const auto error = status[i].err;
+    status[i] = {};
+    status[i].err = error;
+  }
+  ```
+
+  So the controller still reports **present** — `SetDeviceIsPresent(true)` at
+  `:157` keys off `err == PAD_ERR_NONE` — while every button has been discarded.
+  `CInputGenerator` (`src/MetroidPrime/CInputGenerator.cpp:29-36`) then dutifully
+  posts a user-input message for that present-but-buttonless controller, and the
+  front end gets a message every frame containing no buttons at all.
+- **Why it looked like a game bug.** `PADSetVirtualStatus` does set
+  `err = PAD_ERR_NONE` and `g_virtualPadActive`, and `PADRead` does merge the
+  virtual status (`extern/aurora/lib/dolphin/pad/pad.cpp:943`), so the injection
+  is sound. The window simply had no keyboard focus, because it was launched
+  from a detached script onto a live desktop. A press thrown away before anything
+  reads it is indistinguishable from a button that does nothing.
+- **The fix**, the same shape as an existing one: the mouse hook already claimed
+  focus for itself (`inputFocused = inputFocused || PortSmokeMouseEnabled()`), so
+  `PortSmokeScriptedInput()` now does the same for `MP_SMOKE_SCRIPT` and
+  `MP_SMOKE_FRONTEND`. Opt-in, off by default, no effect on a player.
+- **What changed once it was fixed.** The front end immediately got past the
+  attract movie and reached the title with its **`[ PRESS START ]`** prompt —
+  26000 frames, 0 fatal, 0 out-of-memory on the AMD adapter. The Dolby screen was
+  never stuck, and this is not the blank-front-end bug.
+
+## The card dialog's "corrupt save" is the same artefact again, not a save bug (2026-09-26)
+
+Past the title, the front end offered:
+
+> The Metroid Prime save file on the Memory Card in Slot A is corrupt and must
+> be deleted. — Delete Corrupt File / Continue Without Saving / Retry
+
+The file on the card at that moment was **8192 zero bytes, stored CRC 0, empty
+comment**: created by an earlier run that reached the card dialog and was killed
+before deciding what to do with it. Same created-but-unwritten artefact as two
+turns ago, one level up, and the game is right to call it corrupt. **No save
+defect is claimed.** What it does show is a testing trap worth stating plainly:
+*every* front-end run touches the card and leaves a half-created file, so the
+dialog will always find a bad one. A positive Continue result needs a completed
+save on the card and a run allowed to finish its decision, which is why it is
+still open.
+
+## The main menu is still ahead, and the attract loop makes presses a lottery (2026-09-26)
+
+The front end loops between the title and the attract movie, and at roughly 3 FPS
+presentation on the AMD/XWayland path a single scripted press is a lottery — one
+during a fade-in is ignored, and continuous tapping appears to blow through
+whatever appears in between. The next attempt should time a press from the *fade*
+rather than a fixed frame number, because the loop's phase drifts with how fast
+the machine happens to be.
+
 ## The Flatpak has an AppStream description (2026-09-26)
 
 - `packaging/org.metroidprime.MetroidPrimePort.metainfo.xml`, installed to

@@ -437,6 +437,21 @@ bool PortSmokeMouseEnabled() {
   return enabled;
 }
 
+// Whether scripted input is in use, which also implies the window has focus.
+//
+// CDolphinController::ReadDevices zeroes the whole pad status when
+// SDL_GetKeyboardFocus() is null, and keeps the error code, so the controller
+// still reports *present* while every button is discarded. A scripted press is
+// then silently dropped and the screen never advances, which is indistinguishable
+// from the button doing nothing. The mouse hook already claims focus for itself
+// (PortSmokeMouseEnabled is OR'd into inputFocused); the script needs the same,
+// since a press that is thrown away before it is read cannot test anything.
+bool PortSmokeScriptedInput() {
+  static const bool enabled = std::getenv("MP_SMOKE_SCRIPT") != nullptr ||
+                              std::getenv("MP_SMOKE_FRONTEND") != nullptr;
+  return enabled;
+}
+
 unsigned PortSmokeMouseButtons(unsigned realButtons) {
   if (!PortSmokeMouseEnabled()) return realButtons;
   if (sMouseComplete) return 0;

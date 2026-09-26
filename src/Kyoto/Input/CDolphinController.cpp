@@ -85,7 +85,7 @@ void CDolphinController::ReadDevices() {
   bool inputFocused = SDL_GetKeyboardFocus() != nullptr;
 #ifdef MP_ENABLE_SMOKE_DRIVER
   held = PortSmokeMouseButtons(held);
-  inputFocused = inputFocused || PortSmokeMouseEnabled();
+  inputFocused = inputFocused || PortSmokeMouseEnabled() || PortSmokeScriptedInput();
 #endif
   const unsigned mouse = PortDebug::MouseWeaponButtons(held);
   if (PortDebug::MouseGameplayActive() && PortDebug::MouseCaptured() && PortDebug::MouseButtons()) {
