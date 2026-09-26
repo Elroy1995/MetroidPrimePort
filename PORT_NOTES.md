@@ -1,3 +1,53 @@
+## A save the port writes fails the game's own CRC check (2026-09-26)
+
+This is the real blocker behind "saves and reloads", found by writing a save and
+checking the bytes rather than trusting the dialog.
+
+- **The evidence.** A scripted save (`MP_SMOKE_SAVE`) onto an empty card produces
+  a file that is plainly complete: 8256 bytes, an 8192-byte payload with **4898
+  non-zero bytes**, the comment `Metroid Prime                   09.26.26  18:02`,
+  and a non-zero stored CRC. It is stable across repeated reads, with no process
+  running.
+- **It still fails validation.** The stored CRC matches `crc32` over the payload
+  in **no byte order** (the read path accepts either, per
+  `SMemoryCardFileInfo::FileRead`, so one of them must hit) and over **no range**
+  of the payload at all - I searched every start offset in the first 128 bytes
+  against four plausible end offsets. The game therefore takes the
+  `kCR_CRC_MISMATCH` branch at `CMemoryCardDriver.cpp:258`, marks the file
+  `kFS_BadFile`, and the front end says *"the save file ... is corrupt and must be
+  deleted"*. That is the dialog I twice attributed to a half-created file. On a
+  file this complete, that attribution was wrong and the mismatch is real.
+- **The card layer is not transforming anything.** `CardGciFolder::fileWrite` and
+  `::fileRead` copy the payload verbatim with no endian swap; only the 64-byte
+  `File` header is swapped, on commit and on open. So the bytes on disk are the
+  bytes the game handed the card.
+- **So the discrepancy is in the game's own accounting**, between the write in
+  `CMemoryCardSys::CCardFileInfo::BuildCardBuffer` and the read in
+  `SMemoryCardFileInfo::FileRead`:
+
+  ```cpp
+  // write:  over the whole rounded buffer
+  const uint totalSize = (bannerSize + xf4_saveBuffer.size() + 8191) & ~8191;
+  const uint crc = CBasics::SwapBytes(CCRC32::Calculate(data + 4, totalSize - 4));
+
+  // read:   over whatever the card reports the file length to be
+  const uint size = stat.GetFileLength();
+  const uint crc = CCRC32::Calculate(data + 4, size - 4);
+  ```
+
+  If `totalSize` on write and `GetFileLength()` on read ever differ, or if the
+  buffer is transformed between the two, the CRCs cover different bytes. The
+  payload is 8192 on disk, so `totalSize` was 8192 too, which leaves the
+  transform as the remaining suspect. Not localised further here.
+- **Next step, one run:** log `totalSize`, the banner and icon sizes and the
+  computed CRC in `BuildCardBuffer`, and `size` plus the computed CRC in
+  `FileRead`, then compare. That either localises it immediately or shows the
+  buffer being altered after the CRC is taken.
+- **What this means for the objective.** Saving and reloading is *not* working on
+  any platform, and the cause is in the port's card path rather than in a
+  platform backend — so this is a single fix that unblocks Linux, Windows and
+  Android together. It outranks the remaining front-end work.
+
 ## Scripted input was being discarded, and it looked like the front end ignoring it (2026-09-26)
 
 Last turn I concluded "the front end does not get past the Dolby screen on Start
