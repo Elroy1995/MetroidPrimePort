@@ -54,18 +54,26 @@ constexpr PromptKey kKeys[] = {
     // Stick prompts. Not a button, so there is no binding to follow; the icon
     // is the device's own stick (or the direction keys for a keyboard).
     //
-    // There is one of these, not two. This table used to carry a second entry,
-    // 0x1ff9d2b310c0b706 at 32x32 format 14, and it was wrong: that texture is
-    // the pause menu's Exit prompt, not a stick. Because the table said stick,
-    // tools/make_prompt_glyphs.py wrote the C-stick's four-square arrow glyph
-    // into it and shipped that to all four device folders, so the Exit prompt
-    // drew a cluster of white squares where the game draws a plain sphere. It
-    // was the only 32x32 entry here with format 14 while the other eight are
-    // format 5, which is the tell that the row had been transcribed carelessly.
-    // Caught by A/B capture: with the replacement off the sphere is clean, and
-    // removing just that one file - not the whole bindings directory, and not
-    // the table row - restores it.
-    {PAD_AXIS_CSTICK, 64, 32, 0xe14dc493b5513d14ull, "5"},
+    // There is one of these, not two, and it was the second transcription error
+    // in this table.
+    //
+    // 0x1ff9d2b310c0b706 at 32x32 was not a stick prompt at all: it is the pause
+    // menu's Exit sphere, and calling it a stick made the generator write the
+    // C-stick's four-square arrow glyph into it and ship that to all four device
+    // folders. It was also the only 32x32 entry here with format 14 while the
+    // other eight are format 5, which is the tell.
+    //
+    // This row was wrong too, in the same quiet way. 0xe14dc493b5513d14 is a
+    // 64x32 texture the map screen loads, but it is not the map's Rotate
+    // prompt, so the stick prompt never appeared there. Found with
+    // MP_LOG_TEX_HASH (see extern/README.md): diffing the textures loaded with
+    // the map screen open against those loaded without it gives the map's own
+    // textures, and giving each unclaimed one a flat colour and photographing
+    // the result names them. Rotate is
+    // 64x32 2d26352b420db007 format 5 - it turned lime in that capture. 0xe14dc493
+    // is left out rather than carried as an unverified row, because an
+    // unverified row is exactly what caused the Exit-sphere bug.
+    {PAD_AXIS_CSTICK, 64, 32, 0x2d26352b420db007ull, "5"},
 };
 constexpr size_t kKeyCount = sizeof(kKeys) / sizeof(kKeys[0]);
 
@@ -335,19 +343,29 @@ void Apply(size_t index, const std::string& stem) {
   } else if (std::filesystem::is_regular_file(base / (stem + ".dds"), existsError)) {
     reg.iconPath = (base / (stem + ".dds")).string();
   } else {
-    // A device with no generated icon for this action keeps the game's own art
-    // rather than registering a source that would fail to load and blank it.
-    reg.activeStem.clear();
+    // Nothing generated for this action, so nothing is registered. Note that
+    // what stays on screen is not necessarily "the game's own art": the static
+    // per-device set in <textures>/<device>/ is registered separately, by
+    // filename, so if it has a file for this texture then that is what shows -
+    // art for the default bindings. Saying "the game's own art" here would be
+    // wrong in the common case.
+    //
+    // activeStem is deliberately NOT cleared. Poll() skips a key whose stem
+    // already matches, so clearing it made Poll re-run Apply on this key every
+    // single frame: a stat, a DDS open and a stderr line, 60 times a second,
+    // for the rest of the session. Two runs of the map screen logged 4200 of
+    // them. Leaving the stem recorded means one attempt and then silence.
     return;
   }
   // Last line of defence, in case a sized file is ever wrong: refuse art whose
-  // dimensions do not match the texture it is standing in for. Keeping the
-  // game's own art is the correct outcome, not a fallback to apologise for.
+  // dimensions do not match the texture it is standing in for. As above,
+  // activeStem is left recorded so Poll does not retry, and as above what
+  // remains on screen is the static device set if it has one, not necessarily
+  // the game's own art.
   uint32_t iconWidth = 0;
   uint32_t iconHeight = 0;
   if (!IconDimensions(reg.iconPath, iconWidth, iconHeight) ||
       (iconWidth != key.width || iconHeight != key.height)) {
-    reg.activeStem.clear();
     return;
   }
   reg.handle = aurora::texture::register_virtual_replacement(

@@ -306,6 +306,13 @@ In-game button prompts are ordinary textures (`CFontImageDef` holds one texture
 per glyph), so they can be swapped the same way. To re-author them: dump the
 textures from a screen that shows the prompt, find the glyph by its size and
 contents, then write a replacement with the same stem into the device folder.
+`MP_DUMP_TEXTURES=1` is the supported way to do this and needs no code change:
+textures that already have a replacement are not dumped, so the result is
+exactly the unclaimed set, and the images can simply be looked at. The prompt
+table in `platform/port_prompts.cpp` is the authority on which textures are
+claimed, and every hash in it should be one that appears in a dump from the
+screen that shows it - two rows were transcribed into the wrong action and that
+is how the pause menu's Exit prompt ended up drawing the C-stick's glyph.
 `tools/make_prompt_glyphs.py <dir>` builds a set for the A and B prompts (xbox,
 playstation, switch, keyboard) into `<dir>/<device>/`, compositing the CC0 icons
 vendored in `tools/prompt_icons/` (Kenney's Input Prompts pack); the keyboard

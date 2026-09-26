@@ -1,3 +1,53 @@
+## Review found a busy-loop I introduced, and a tool that already existed (2026-09-27)
+
+A second opinion on the prompt work. It was right about all three things I
+asked it to doubt, and one of them is a process failure worth more than the bug.
+
+- **I introduced a per-frame retry loop.** The size guard called
+  `reg.activeStem.clear()` when it refused art, and `Poll()` skips a key whose
+  stem already matches - so clearing it made `Poll` re-run `Apply` on that key
+  **every frame**: a `stat`, a DDS open and a stderr line, 60 times a second for
+  the rest of the session. Two map-screen runs logged 4200 and 4199 of them.
+  `activeStem` is now left recorded on both refusal paths, so there is one
+  attempt and then silence. Verified: 4200 -> 1 and 4199 -> 1.
+- **The comment I wrote was wrong.** It said a refusal "keeps the game's own
+  art". It does not: `PortTextures` registers the static per-device set by
+  filename, so if it has a file for that texture then *that* is what remains -
+  art for the **default** bindings. So on the map a rebound Z would still have
+  read "F". The photographs of the map bar were never evidence about the
+  bindings path at all; they were the static set.
+- **I had only written the sized bindings for pad stems, not key stems.** The
+  key stems serve the same actions, so both 64x32 rows fell back to a 32x32
+  file, were refused on size, and were left showing the static set. The key
+  stems are now generated at every size in the table, like the pads.
+- **I repeated the exact mistake I had diagnosed.** I removed the `0xe14dc493`
+  row from the table but left the four `tex1_64x32_e14dc493b5513d14_5.dds`
+  files in `textures/`, which still replace that map texture with the stick
+  glyph. Deleting a table row changes nothing about the static set - that was
+  the entire insight of the Exit-sphere bug, and I then failed to apply it.
+  Four files removed.
+- **THE PROCESS FAILURE, and it is the one that matters.** I added a
+  `MP_LOG_TEX_HASH` hook to `extern/aurora/lib/gx/texture.cpp` to enumerate
+  loaded textures. **Aurora already had exactly that**, gated on
+  `MP_DUMP_TEXTURES=1`, wired in `platform/main.cpp:235` and documented at
+  `docs/NATIVE_PORT.md:302` - in this repo, which I was already reading, with a
+  worked description of the workflow I was about to reinvent: "dump the textures
+  from a screen that shows the prompt, find the glyph by its size and contents".
+  I should have read our own documentation before writing a hook into vendored
+  code. The hook is reverted; `extern/` is untouched. The replacement is better
+  than what I built in two specific ways: it does not dump textures that already
+  have a replacement, so what it yields is exactly the unclaimed set, and it
+  writes the images themselves, so a candidate can be **looked at** instead of
+  being identified by which prompt turns lime.
+- **What survives, and what finally works.** The C-stick row now points at
+  `0x2d26352b420db007`, the map's Rotate prompt, and the stick glyph now actually
+  appears there - photographed - via the bindings path, at the right size, with
+  one log line instead of 4200. So the 64x32 route is genuinely exercised for
+  the first time, rather than being insurance.
+- **Still not verified:** the HUD hint memo prompt, the front end A/B prompts,
+  and anything on a device. And I still do not know what the `0xe14dc493`
+  texture is; leaving it replaced was the same class of mistake, so its files are
+  gone and the game's own art shows there again.
 ## Checked the rest of the prompts; the C-stick one is still a gap (2026-09-27)
 
 Having fixed the pause menu, the obvious question was whether the other prompt

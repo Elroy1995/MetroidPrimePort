@@ -201,7 +201,15 @@ def main():
         if not os.path.exists(src):
             missing.append(stem)
             continue
-        write_dds(make_icon(stem + ".png"), os.path.join(bindings, stem + ".dds"))
+        # At every size in the table, not just 32x32. The key stems serve the
+        # same actions as the pad stems, so the two 64x32 rows need 64x32 key
+        # art; writing only 32x32 made Apply fall back to it, refuse it on size,
+        # and leave the key showing the static set for the default bindings -
+        # so a rebound Z still read "F" on the map.
+        for w, h in sizes:
+            suffix = "" if (w, h) == (SIZE, SIZE) else f"_{w}x{h}"
+            write_dds(make_icon(stem + ".png", w, h),
+                      os.path.join(bindings, f"{stem}{suffix}.dds"))
     print(f"bindings: {len(BINDING_ICONS) - len(missing)} key icons, {padCount} pad icons -> {bindings}")
     if missing:
         print("  missing from tools/prompt_icons: " + ", ".join(missing))
