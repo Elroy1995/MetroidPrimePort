@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Application icon for the Metroid Prime port.
+
+  Deliberately NOT the Varia Suit's own "S" item icon. That artwork is Nintendo's
+  and ships inside the disc image; copying it into a redistributable package
+  would put a copyrighted asset in the package, which this project does not do.
+  What is here is an original mark drawn for this project: a stylised helmet
+  silhouette in the suit's amber, built from primitives. It is not a trace of the
+  model, and no pixel of Nintendo's art is reproduced.
+
+  The 1s prompt glyphs come from Kenney's CC0 Input Prompts pack, so the project
+  already has a public-domain icon precedent; this is the same idea, made here.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd24a"/>
+      <stop offset="0.55" stop-color="#f59f1a"/>
+      <stop offset="1" stop-color="#d4760a"/>
+    </linearGradient>
+    <linearGradient id="visor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9fe8ff"/>
+      <stop offset="1" stop-color="#2b7fb8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Disc, so the mark reads at 16px as well as at 256. -->
+  <circle cx="64" cy="64" r="60" fill="#1b1712"/>
+  <circle cx="64" cy="64" r="60" fill="none" stroke="#4a3f31" stroke-width="2"/>
+
+  <!-- Helmet: a dome with a raised crest, in the suit's amber. -->
+  <path d="M64 22c-20 0-34 14-34 33v21c0 9 7 15 15 15h38c8 0 15-6 15-15V55c0-19-14-33-34-33z"
+        fill="url(#shell)"/>
+  <!-- Crest ridge. -->
+  <path d="M64 22c-3 0-6 1-8 2 6 4 9 11 9 20v14h14V44c0-9 3-16 9-20-2-1-5-2-8-2z"
+        fill="#ffe9a8" opacity="0.85"/>
+  <!-- Visor band, angled the way the suit's is. -->
+  <path d="M42 56c8-6 36-6 44 0 2 2 2 10 0 12-8 6-36 6-44 0-2-2-2-10 0-12z"
+        fill="url(#visor)"/>
+  <!-- Cheek vents. -->
+  <rect x="38" y="76" width="8" height="5" rx="2" fill="#b9640a"/>
+  <rect x="82" y="76" width="8" height="5" rx="2" fill="#b9640a"/>
+</svg>
