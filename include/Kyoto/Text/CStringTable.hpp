@@ -15,7 +15,7 @@
 class CInputStream;
 class CStringTable {
   int x0_stringCount;
-  rstl::single_ptr< uchar > x4_data;
+  rstl::single_ptr< uchar[] > x4_data;
 #if TARGET_LITTLE_ENDIAN || WCHAR_MAX > 0xffff
   rstl::vector< rstl::vector< wchar_t > > mNativeStrings;
 #endif

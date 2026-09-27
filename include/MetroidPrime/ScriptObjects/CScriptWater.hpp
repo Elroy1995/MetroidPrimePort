@@ -142,10 +142,10 @@ private:
   int x2cc_gridCellCount;
   int x2d0_patchDimX;
   int x2d4_patchDimY;
-  rstl::single_ptr< char > x2d8_tileIntersects;
-  rstl::single_ptr< bool > x2dc_vertIntersects;
+  rstl::single_ptr< char[] > x2d8_tileIntersects;
+  rstl::single_ptr< bool[] > x2dc_vertIntersects;
   // 0: all clear, 1: all intersect, 2: partial intersect
-  rstl::single_ptr< char > x2e0_patchIntersects;
+  rstl::single_ptr< char[] > x2e0_patchIntersects;
   int x2e4_computedGridCellCount;
   bool x2e8_24_b4 : 1;
   bool x2e8_25_morphIn : 1;
