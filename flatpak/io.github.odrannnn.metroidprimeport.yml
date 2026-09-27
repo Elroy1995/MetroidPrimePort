@@ -82,11 +82,11 @@ modules:
       # reproducible rather than whatever the release host serves that day.
       # Versions match AuroraDependencyVersions.cmake: Dawn v20260807.225922 and
       # nod v2.0.0-alpha.12.
-      - type: file
+      - type: archive
         url: https://github.com/encounter/dawn/releases/download/v20260807.225922/dawn-linux-x86_64.tar.gz
         sha256: 2a4523426ab9b3a8970b4e151c3b005304ad37c2c01bcff80c78fffe486fc768
         dest: dawn_prebuilt
-      - type: file
+      - type: archive
         url: https://github.com/encounter/nod/releases/download/v2.0.0-alpha.12/libnod-linux-x86_64.tar.gz
         sha256: 920adb1d2386c8728e0521f8d52809057c04bd46913433a0000ee0931d08d69f
         dest: nod_prebuilt
