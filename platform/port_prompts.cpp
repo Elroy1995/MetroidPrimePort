@@ -63,17 +63,25 @@ constexpr PromptKey kKeys[] = {
     // folders. It was also the only 32x32 entry here with format 14 while the
     // other eight are format 5, which is the tell.
     //
-    // This row was wrong too, in the same quiet way. 0xe14dc493b5513d14 is a
-    // 64x32 texture the map screen loads, but it is not the map's Rotate
-    // prompt, so the stick prompt never appeared there. Found with
-    // MP_LOG_TEX_HASH (see extern/README.md): diffing the textures loaded with
-    // the map screen open against those loaded without it gives the map's own
-    // textures, and giving each unclaimed one a flat colour and photographing
-    // the result names them. Rotate is
-    // 64x32 2d26352b420db007 format 5 - it turned lime in that capture. 0xe14dc493
-    // is left out rather than carried as an unverified row, because an
-    // unverified row is exactly what caused the Exit-sphere bug.
+    // There are two of these after all, and getting to that took two wrong
+    // answers. 0x1ff9d2b310c0b706 at 32x32 was never a stick prompt at all: it
+    // is the pause menu's Exit sphere, and calling it a stick made the
+    // generator write the arrow glyph over the game's sphere. It was also the
+    // only 32x32 entry here with format 14 while the other eight are format 5,
+    // which is the tell.
+    //
+    // 0x2d26352b420db007 is the map screen's Rotate prompt. It was missing, so
+    // the map showed no stick icon at all. Found by MP_DUMP_TEXTURES=1, which
+    // dumps only the textures that have no replacement, and then LOOKING at
+    // them - Rotate turned out to be a grey spiral emblem.
+    //
+    // 0xe14dc493b5513d14 was in the table from the start and I wrongly removed
+    // it, on the reasoning that an unverified row is what caused the sphere
+    // bug. Dumping it shows a yellow "C" badge: it is a C-stick prompt, just
+    // not the map's. Unverified is not the same as wrong, and treating it as
+    // wrong threw away a real prompt. Both are kept.
     {PAD_AXIS_CSTICK, 64, 32, 0x2d26352b420db007ull, "5"},
+    {PAD_AXIS_CSTICK, 64, 32, 0xe14dc493b5513d14ull, "5"},
 };
 constexpr size_t kKeyCount = sizeof(kKeys) / sizeof(kKeys[0]);
 
