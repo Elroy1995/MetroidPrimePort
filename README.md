@@ -1,11 +1,12 @@
 # Metroid Prime — native port
 
-A native build of **Metroid Prime** (GameCube, `GM8E01_00`, USA v1.00) for Linux
-and Windows. The game is statically recompiled from the retail executable and
-runs directly on the GPU through Aurora, with no emulator involved.
+A native build of **Metroid Prime** (GameCube, `GM8E01_00`, USA v1.00) for Linux,
+Windows and Android. The game is statically recompiled from the retail
+executable and runs directly on the GPU through Aurora, with no emulator involved.
 
 **No game content is included.** You need your own copy of the game: the port
-reads it from a disc image and never ships any of its assets.
+reads it from a disc image and never ships any of its assets. This repository
+ships no disc image, and neither does any package or release built from it.
 
 ## What it adds over the console release
 
@@ -19,6 +20,43 @@ reads it from a disc image and never ships any of its assets.
   input actually bound to each action
 - An F1 debug overlay: performance, render, audio, voices, input, and a debug
   tab with abilities, teleport and world selection
+- A touch overlay on Android, with a virtual controller for the sticks, triggers,
+  shoulders and face buttons
+
+## Randomizer and Archipelago
+
+Both are supported, on all three platforms.
+
+- **Randomizer** — item placement is driven by a seed file. `tools/rando_seed.py`
+  generates one and `docs/RANDOMIZER.md` covers the format.
+- **Archipelago multiworld** — connect to a server and play in a multiworld
+  session over `wss://`. Put `archipelago.json` beside the settings file:
+
+  ```json
+  { "address": "ws.example.org", "port": 38281, "password": "anything" }
+  ```
+
+  `wss://` needs no extra setup on any platform: OpenSSL is vendored and linked
+  statically on Android, and the trust store is enumerated by hand, so the
+  system CA bundle is not required. See `docs/ARCHIPELAGO.md`.
+
+## Downloads
+
+Releases are published on the
+[GitHub releases page](https://github.com/Odrannnn/MetroidPrimePort/releases).
+Every build needs your own disc image; none of them contains one.
+
+| Platform | Artefact | Notes |
+| --- | --- | --- |
+| Linux | AppImage | Self-contained, no install. `chmod +x` and run. |
+| Linux | Flatpak | `io.github.odrannnn.metroidprimeport` |
+| Linux | `metroid_prime_port` | The bare binary, plus its shared libraries |
+| Windows | `metroid_prime_port.exe` | Needs a Visual C++ redistributable |
+| Android | `.apk` | Sideload; enable install from unknown sources |
+
+Android APKs are signed with a project release key. An app signed with one key
+cannot be updated by one signed with another, so keep the key — see
+`docs/RELEASING.md`.
 
 ## Building
 
@@ -38,6 +76,19 @@ On Windows, run from an MSVC developer shell and add
 Linux (GCC 14 and Clang 18) and Windows (clang-cl); see
 `.github/workflows/`.
 
+### Android
+
+```sh
+tools/make_android_keystore.sh          # once; writes android/keystore.properties
+tools/android_apk.sh :app:assembleRelease
+```
+
+Both files it writes name a private key and are deliberately untracked. The
+build needs a Rust toolchain on `PATH`, because the disc layer is `nod`
+cross-compiled for `aarch64-linux-android`. Without one the build still
+succeeds but links a stub that cannot open a disc — see
+`docs/ANDROID_BUILD_PROBE.md`.
+
 ## Running
 
 ```sh
@@ -46,7 +97,12 @@ Linux (GCC 14 and Clang 18) and Windows (clang-cl); see
 
 The disc can also be set with `MP_DISC`, kept beside the executable, or picked
 through a file dialog the first time you launch without one — the choice is
-remembered in the settings. The image must be `GM8E01`, disc 0, revision 0.
+remembered in the settings. The image must be `GM8E01`, disc 0, revision 0. If a
+remembered disc stops opening — the file moved, or on Android the system revoked
+its access grant — the port asks again rather than exiting.
+
+On Android the first pick is copied into app storage, so later launches need no
+permission and there is nothing to grant again.
 
 `--version` prints the source revision without starting graphics; include it in
 bug reports. The F1 overlay holds the rest of the settings, and the same flags
@@ -58,10 +114,6 @@ are available as `MP_*` environment variables.
 `tools/make_flatpak.sh` a Flatpak. Neither bundles the disc. See
 `docs/NATIVE_PORT.md` for what each one expects from the host.
 
-A first Android port builds an installable debug APK for `arm64-v8a`; see
-`docs/ANDROID_BUILD_PROBE.md`. Android is a development probe, not a
-production-supported target yet.
-
 ## Credits and licensing
 
 This is a fork of the [PrimeDecomp/prime](https://github.com/PrimeDecomp/prime)
@@ -70,6 +122,11 @@ MusyX (`extern/musyx`) are MIT-licensed vendored snapshots, and the button
 prompt icons come from Kenney's Input Prompts pack (CC0), vendored under
 `tools/prompt_icons`. Their licences are kept alongside them and are copied into
 release packages.
+
+`LICENSE` covers this project's own work — the platform layer, the build and
+packaging scripts, and the Android and Flatpak integration. It does **not** cover
+the game code under `src/` and `include/`, which comes from the decompilation
+and remains Nintendo's. See `NOTICE`.
 
 Metroid Prime is a trademark of Nintendo. This project is unaffiliated with
 Nintendo and Retro Studios, and ships no game data.
