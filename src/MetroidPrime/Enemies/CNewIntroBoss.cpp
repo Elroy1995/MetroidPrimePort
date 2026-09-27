@@ -217,7 +217,9 @@ void CNewIntroBoss::Think(float dt, CStateManager& mgr) {
     x628_firingTime += dt;
     const CTransform4f xf = GetLctrTransform(x5dc_damageLocator);
     if (IsAlive()) {
-      const float& weight = rstl::min_val(1.f, x628_firingTime / 1.5f);
+      // Port: by value. min_val returns a reference to one of its arguments,
+      // and both are temporaries here, so a reference dangles past this line.
+      const float weight = rstl::min_val(1.f, x628_firingTime / 1.5f);
       const CVector3f target =
           x610_lookPos + weight * (x61c_startPlayerPos - x610_lookPos) - xf.GetTranslation();
       const CQuaternion rotation = CQuaternion::ClampedRotateTo(CUnitVector3f(xf.GetForward()),

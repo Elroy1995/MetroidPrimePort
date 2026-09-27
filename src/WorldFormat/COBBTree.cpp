@@ -8,9 +8,10 @@
 COBBTree::CSimpleAllocator* COBBTree::CNode::spAllocator = nullptr;
 
 // Port: route the unqualified allocation through the host allocator. TODO: use
-// spAllocator (the game's pool) once it is wired up.
+// spAllocator (the game's pool) once it is wired up. The array form matches the
+// delete[] in CNode::operator delete below.
 void* COBBTree::CNode::operator new(size_t size) {
-    return ::operator new(size);
+    return ::operator new[](size);
 }
 
 COBBTree::SIndexData::SIndexData(CInputStream& in)

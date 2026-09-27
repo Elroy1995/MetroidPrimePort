@@ -638,6 +638,13 @@ MSTEP* dataGetMacro(u16 mid) {
   static MAC_SUBTAB* result;
 
   main = MUSY_VERSION >= MUSY_VERSION_CHECK(2, 0, 2) ? (mid >> 6) : ((mid >> 6) & 0x3fff);
+  // Port: ids from 0x8000 up (0xFFFF means "no macro"; a Parasite Queen sound
+  // macro plays it) index past the 512-entry table. On GameCube
+  // the stray read was harmless; here it can hand sndBSearch a garbage count and
+  // crash the audio thread.
+  if (main >= 512) {
+    return NULL;
+  }
 
   if (dataMacMainTab[main].num != 0) {
     base = dataMacMainTab[main].subTabIndex;
