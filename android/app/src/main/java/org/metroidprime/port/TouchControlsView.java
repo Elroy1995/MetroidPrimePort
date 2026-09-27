@@ -151,7 +151,11 @@ final class TouchControlsView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         // The debug overlay is drawn into the surface below; stay out of its way.
+        // It is usually closed from its own Close button, which this view never
+        // hears about, so keep checking; otherwise the controls stayed invisible
+        // until the next touch happened to redraw them.
         if (nativeDebugOverlayVisible()) {
+            postInvalidateDelayed(150);
             return;
         }
         if (hidden) {

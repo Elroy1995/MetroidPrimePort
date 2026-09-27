@@ -27,6 +27,7 @@
 #include <dolphin/pad.h>
 #include <dolphin/vi.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <musyx/port_voices.h>
 
 #include <SDL3/SDL_filesystem.h>
@@ -1214,6 +1215,52 @@ void SaveSettingsNow() {
   SaveSettings();
 }
 
+// The overlay was laid out for a mouse. On a touchscreen it gets a full-screen
+// panel with a page list instead of tabs, bigger targets and drag scrolling.
+// MP_TOUCH_UI forces that layout on the desktop, to try it without a phone.
+bool TouchUi() {
+#if defined(__ANDROID__)
+  return true;
+#else
+  static const bool sTouchUi = std::getenv("MP_TOUCH_UI") != nullptr;
+  return sTouchUi;
+#endif
+}
+
+SDL_Window* MainWindow() {
+  static SDL_Window* sWindow = nullptr;
+  if (sWindow == nullptr) {
+    int windowCount = 0;
+    if (SDL_Window** windows = SDL_GetWindows(&windowCount)) {
+      if (windowCount > 0) {
+        sWindow = windows[0];
+      }
+      SDL_free(windows);
+    }
+  }
+  return sWindow;
+}
+
+// Sizes in unscaled pixels; UpdateUiScale multiplies them by the display scale
+// like the defaults. A fingertip covers far more than a cursor does, so frames,
+// grabs and scrollbars grow, and TouchExtraPadding widens every hit box a
+// little beyond what is drawn.
+void ApplyTouchStyle(ImGuiStyle& style) {
+  style.WindowPadding = ImVec2(10.f, 10.f);
+  style.FramePadding = ImVec2(10.f, 7.f);
+  style.ItemSpacing = ImVec2(10.f, 8.f);
+  style.ItemInnerSpacing = ImVec2(8.f, 6.f);
+  style.CellPadding = ImVec2(6.f, 4.f);
+  style.TouchExtraPadding = ImVec2(3.f, 3.f);
+  style.IndentSpacing = 22.f;
+  style.ScrollbarSize = 18.f;
+  style.GrabMinSize = 18.f;
+  style.FrameRounding = 5.f;
+  style.GrabRounding = 5.f;
+  style.ScrollbarRounding = 9.f;
+  style.TabRounding = 5.f;
+}
+
 // Phones report a density of roughly 3, which leaves ImGui's default 13px font
 // unreadably small, so scale the overlay to match the display. The scale is not
 // known on the first frame, so keep watching for it instead of latching once.
@@ -1223,26 +1270,21 @@ void UpdateUiScale() {
   }
   static bool sInitialized = false;
   static float sAppliedScale = 1.f;
-  static SDL_Window* sWindow = nullptr;
   if (!sInitialized) {
     sInitialized = true;
     // The overlay has to size itself to the scaled font, so do not restore a
     // window size remembered from a previous, smaller run.
     ImGui::GetIO().IniFilename = nullptr;
-  }
-  if (sWindow == nullptr) {
-    int windowCount = 0;
-    if (SDL_Window** windows = SDL_GetWindows(&windowCount)) {
-      if (windowCount > 0) {
-        sWindow = windows[0];
-      }
-      SDL_free(windows);
-    }
-    if (sWindow == nullptr) {
-      return;
+    // Before any scaling, so the scaling applies to these sizes too.
+    if (TouchUi()) {
+      ApplyTouchStyle(ImGui::GetStyle());
     }
   }
-  const float displayScale = SDL_GetWindowDisplayScale(sWindow);
+  SDL_Window* window = MainWindow();
+  if (window == nullptr) {
+    return;
+  }
+  const float displayScale = SDL_GetWindowDisplayScale(window);
   const float uiScale = std::clamp(displayScale, 1.f, 4.f);
   if (uiScale == sAppliedScale) {
     return;
@@ -1660,6 +1702,9 @@ void PollControlCapture() {
 
 void DrawControlsTab() {
   PollControlCapture();
+  // Wide enough for the longer label, so the rows line up at any font scale.
+  const float bindWidth =
+      ImGui::CalcTextSize("Press...").x + ImGui::GetStyle().FramePadding.x * 2.f;
 
   ImGui::TextUnformatted("Pad 1. Click Bind, then press the input to assign it.");
   if (ImGui::Button("Restore controller defaults")) {
@@ -1691,12 +1736,12 @@ void DrawControlsTab() {
       const PADButton button = kControlPadButtons[i].button;
       const bool listening =
           sControlCapture == EControlCapture::kKeyButton && sControlCaptureIndex == i;
-      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(70.f, 0.f))) {
+      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(bindWidth, 0.f))) {
         sControlCapture = EControlCapture::kKeyButton;
         sControlCaptureIndex = i;
       }
       ImGui::SameLine();
-      if (ImGui::Button("Clear", ImVec2(60.f, 0.f))) {
+      if (ImGui::Button("Clear")) {
         PADKeyButtonBinding binding{};
         binding.scancode = PAD_KEY_INVALID;
         binding.padButton = button;
@@ -1711,12 +1756,12 @@ void DrawControlsTab() {
     for (int i = 0; i < PAD_AXIS_COUNT; ++i) {
       ImGui::PushID(100 + i);
       const bool listening = sControlCapture == EControlCapture::kKeyAxis && sControlCaptureIndex == i;
-      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(70.f, 0.f))) {
+      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(bindWidth, 0.f))) {
         sControlCapture = EControlCapture::kKeyAxis;
         sControlCaptureIndex = i;
       }
       ImGui::SameLine();
-      if (ImGui::Button("Clear", ImVec2(60.f, 0.f))) {
+      if (ImGui::Button("Clear")) {
         PADKeyAxisBinding binding{};
         binding.scancode = PAD_KEY_INVALID;
         binding.padAxis = static_cast< PADAxis >(i);
@@ -1737,7 +1782,7 @@ void DrawControlsTab() {
       const PADButton button = kControlPadButtons[i].button;
       const bool listening =
           sControlCapture == EControlCapture::kPadButton && sControlCaptureIndex == i;
-      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(70.f, 0.f))) {
+      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(bindWidth, 0.f))) {
         sControlCapture = EControlCapture::kPadButton;
         sControlCaptureIndex = i;
       }
@@ -1752,7 +1797,7 @@ void DrawControlsTab() {
     for (int i = 0; i < PAD_AXIS_COUNT; ++i) {
       ImGui::PushID(300 + i);
       const bool listening = sControlCapture == EControlCapture::kPadAxis && sControlCaptureIndex == i;
-      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(70.f, 0.f))) {
+      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(bindWidth, 0.f))) {
         sControlCapture = EControlCapture::kPadAxis;
         sControlCaptureIndex = i;
       }
@@ -1863,28 +1908,29 @@ void DrawSessionTab() {
     } else {
       // Half the space the section has left, so the table does not push the
       // settings below it off the tab.
-      ImGui::BeginTable("apTracked", 3,
-                        ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
-                            ImGuiTableFlags_BordersInnerH,
-                        ImVec2(0.0f, ImGui::GetContentRegionAvail().y * 0.5f));
-      ImGui::TableSetupColumn("Item");
-      ImGui::TableSetupColumn("From");
-      ImGui::TableSetupColumn("Step");
-      ImGui::TableHeadersRow();
-      for (const PortAp::TrackedItem& item : tracked) {
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::TextUnformatted(item.name.c_str());
-        ImGui::TableNextColumn();
-        ImGui::TextUnformatted(item.from.empty() ? "(your item)" : item.from.c_str());
-        ImGui::TableNextColumn();
-        if (item.total > 1) {
-          ImGui::Text("%d of %d", item.step, item.total);
-        } else {
-          ImGui::TextDisabled("-");
+      if (ImGui::BeginTable("apTracked", 3,
+                            ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
+                                ImGuiTableFlags_BordersInnerH,
+                            ImVec2(0.0f, ImGui::GetContentRegionAvail().y * 0.5f))) {
+        ImGui::TableSetupColumn("Item");
+        ImGui::TableSetupColumn("From");
+        ImGui::TableSetupColumn("Step");
+        ImGui::TableHeadersRow();
+        for (const PortAp::TrackedItem& item : tracked) {
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted(item.name.c_str());
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted(item.from.empty() ? "(your item)" : item.from.c_str());
+          ImGui::TableNextColumn();
+          if (item.total > 1) {
+            ImGui::Text("%d of %d", item.step, item.total);
+          } else {
+            ImGui::TextDisabled("-");
+          }
         }
+        ImGui::EndTable();
       }
-      ImGui::EndTable();
     }
   }
 }
@@ -2045,6 +2091,236 @@ void DrawDebugTab() {
   }
 }
 
+struct DebugPage {
+  const char* name;
+  void (*draw)();
+};
+
+const DebugPage kDebugPages[] = {
+    {"Performance", DrawPerformanceTab}, {"Cutscenes", DrawCutscenesTab},
+    {"Input", DrawInputTab},             {"Controls", DrawControlsTab},
+    {"Render", DrawRenderTab},           {"Audio", DrawAudioTab},
+    {"Voices", DrawVoicesTab},           {"Debug", DrawDebugTab},
+    {"Session", DrawSessionTab},
+};
+
+// The innermost window under the finger that can actually scroll vertically,
+// climbing out of child windows (a table, the page list) that cannot.
+ImGuiWindow* ScrollableWindowAt(ImGuiWindow* window) {
+  for (; window != nullptr; window = window->ParentWindow) {
+    if (window->ScrollMax.y > 0.f && (window->Flags & ImGuiWindowFlags_NoScrollWithMouse) == 0) {
+      return window;
+    }
+    if ((window->Flags & ImGuiWindowFlags_ChildWindow) == 0) {
+      break;
+    }
+  }
+  return nullptr;
+}
+
+bool IsResizeGrip(ImGuiWindow* window, ImGuiID id) {
+  for (int n = 0; n < 4; ++n) {
+    if (id == ImGui::GetWindowResizeCornerID(window, n) ||
+        id == ImGui::GetWindowResizeBorderID(window, static_cast< ImGuiDir >(n))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ImGui has no touch scrolling: a finger dragged down a page presses whatever
+// it landed on and scrolls nothing. A mostly vertical drag is taken away from
+// the widget it began on (so a button under it does not fire on release) and
+// scrolls the window instead, and the finger's speed carries on as a fling
+// after it lifts. A mostly horizontal drag is left alone, so sliders still
+// work, and so are the scrollbar, a window being moved or resized, and drags
+// that start outside the content area. Runs after NewFrame, before any window.
+struct TouchScroll {
+  ImGuiWindow* window = nullptr;
+  bool decided = false;
+  bool dragging = false;
+  float velocity = 0.f; // pixels per second, positive scrolls down
+};
+TouchScroll sTouchScroll;
+
+void UpdateTouchScroll() {
+  ImGuiContext& g = *ImGui::GetCurrentContext();
+  const ImGuiIO& io = g.IO;
+  TouchScroll& scroll = sTouchScroll;
+  const bool touch = io.MouseSource == ImGuiMouseSource_TouchScreen;
+
+  if (io.MouseClicked[0]) {
+    scroll = TouchScroll{};
+    if (touch) {
+      ImGuiWindow* window = ScrollableWindowAt(g.HoveredWindow);
+      if (window != nullptr && window->InnerClipRect.Contains(io.MouseClickedPos[0])) {
+        scroll.window = window;
+      }
+    }
+  }
+  if (scroll.window == nullptr) {
+    return;
+  }
+
+  if (io.MouseDown[0]) {
+    if (!scroll.decided) {
+      const ImVec2 delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.f);
+      // A share of the font size rather than io.MouseDragThreshold's fixed
+      // pixels, which on a dense phone screen is a jitter, not a drag.
+      const float threshold = g.FontSize * 0.6f;
+      if (delta.x * delta.x + delta.y * delta.y < threshold * threshold) {
+        return;
+      }
+      scroll.decided = true;
+      ImGuiWindow* activeWindow = g.ActiveIdWindow;
+      const bool ownDrag =
+          g.MovingWindow != nullptr ||
+          (g.ActiveId != 0 && activeWindow != nullptr &&
+           (g.ActiveId == ImGui::GetWindowScrollbarID(activeWindow, ImGuiAxis_X) ||
+            g.ActiveId == ImGui::GetWindowScrollbarID(activeWindow, ImGuiAxis_Y) ||
+            IsResizeGrip(activeWindow, g.ActiveId)));
+      if (std::fabs(delta.y) <= std::fabs(delta.x) || ownDrag) {
+        scroll.window = nullptr;
+        return;
+      }
+      scroll.dragging = true;
+    }
+    if (!scroll.dragging) {
+      return;
+    }
+    if (g.ActiveId != 0) {
+      ImGui::ClearActiveID();
+    }
+    ImGui::SetScrollY(scroll.window, scroll.window->Scroll.y - io.MouseDelta.y);
+    if (io.DeltaTime > 0.f) {
+      // Smoothed, so the last jittery frame before the finger lifts does not
+      // decide the whole fling.
+      const float instant = -io.MouseDelta.y / io.DeltaTime;
+      scroll.velocity += (instant - scroll.velocity) * 0.4f;
+    }
+    return;
+  }
+
+  // Released: keep scrolling at the finger's speed, easing off.
+  if (!scroll.dragging) {
+    scroll.window = nullptr;
+    return;
+  }
+  const float y = scroll.window->Scroll.y;
+  const bool atEdge = (scroll.velocity < 0.f && y <= 0.f) ||
+                      (scroll.velocity > 0.f && y >= scroll.window->ScrollMax.y);
+  if (atEdge || std::fabs(scroll.velocity) < g.FontSize) {
+    scroll = TouchScroll{};
+    return;
+  }
+  ImGui::SetScrollY(scroll.window, y + scroll.velocity * io.DeltaTime);
+  scroll.velocity *= std::exp(-4.f * io.DeltaTime);
+}
+
+// A finger that lifts leaves ImGui's cursor where it was, so whatever was last
+// tapped stays drawn as hovered. Move the cursor off-screen once the release
+// has been seen; queued now, it lands on the next frame.
+void ClearTouchHover() {
+  ImGuiIO& io = ImGui::GetIO();
+  if (io.MouseSource == ImGuiMouseSource_TouchScreen && io.MouseReleased[0] &&
+      !ImGui::IsAnyMouseDown()) {
+    io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+  }
+}
+
+// Full screen inside the display's safe area (clear of the notch and the
+// gesture bars), no title bar to drag, a Close button a thumb can hit, and a
+// page list down the side in place of a tab strip too narrow to tap.
+bool DrawTouchWindow() {
+  const ImGuiViewport* viewport = ImGui::GetMainViewport();
+  ImVec2 pos = viewport->WorkPos;
+  ImVec2 size = viewport->WorkSize;
+  SDL_Window* window = MainWindow();
+  SDL_Rect safe;
+  int windowWidth = 0, windowHeight = 0;
+  if (window != nullptr && SDL_GetWindowSafeArea(window, &safe) &&
+      SDL_GetWindowSize(window, &windowWidth, &windowHeight) && windowWidth > 0 &&
+      windowHeight > 0 && safe.w > 0 && safe.h > 0) {
+    // ImGui's display size need not be in window coordinates.
+    const float sx = size.x / static_cast< float >(windowWidth);
+    const float sy = size.y / static_cast< float >(windowHeight);
+    pos = ImVec2(pos.x + safe.x * sx, pos.y + safe.y * sy);
+    size = ImVec2(safe.w * sx, safe.h * sy);
+  }
+  ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+  ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+  constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
+                                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
+                                      ImGuiWindowFlags_NoSavedSettings |
+                                      ImGuiWindowFlags_NoScrollbar |
+                                      ImGuiWindowFlags_NoScrollWithMouse;
+  bool open = true;
+  if (ImGui::Begin("Metroid Prime Port##touch", nullptr, kFlags)) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const char* const kClose = "Close";
+    const float closeWidth = ImGui::CalcTextSize(kClose).x + style.FramePadding.x * 4.f;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Metroid Prime Port");
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - closeWidth);
+    if (ImGui::Button(kClose, ImVec2(closeWidth, 0.f))) {
+      open = false;
+    }
+    ImGui::Separator();
+
+    static int sPage = 0;
+    float listWidth = 0.f;
+    for (const DebugPage& page : kDebugPages) {
+      listWidth = std::max(listWidth, ImGui::CalcTextSize(page.name).x);
+    }
+    listWidth += style.FramePadding.x * 2.f + style.WindowPadding.x * 2.f;
+    const float rowHeight = ImGui::GetFrameHeight() * 1.2f;
+    if (ImGui::BeginChild("##pages", ImVec2(listWidth, 0.f), ImGuiChildFlags_Borders)) {
+      for (int i = 0; i < static_cast< int >(ARRAY_SIZE(kDebugPages)); ++i) {
+        if (ImGui::Selectable(kDebugPages[i].name, sPage == i, ImGuiSelectableFlags_None,
+                              ImVec2(0.f, rowHeight))) {
+          sPage = i;
+        }
+      }
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+    // Keyed by page, so each page keeps its own scroll position.
+    ImGui::PushID(sPage);
+    if (ImGui::BeginChild("##page", ImVec2(0.f, 0.f), ImGuiChildFlags_Borders)) {
+      kDebugPages[sPage].draw();
+    }
+    ImGui::EndChild();
+    ImGui::PopID();
+  }
+  ImGui::End();
+  return open;
+}
+
+bool DrawDesktopWindow() {
+  ImGui::SetNextWindowPos(ImVec2(8.f, 8.f), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(440.f, 200.f), ImGuiCond_FirstUseEver);
+  bool open = true;
+  if (ImGui::Begin("Metroid Prime Port", &open, ImGuiWindowFlags_MenuBar)) {
+    if (ImGui::BeginMenuBar()) {
+      ImGui::TextUnformatted("F1: hide   F10: frame limit   F12: screenshot");
+      ImGui::EndMenuBar();
+    }
+
+    if (ImGui::BeginTabBar("##debug_tabs", ImGuiTabBarFlags_FittingPolicyScroll)) {
+      for (const DebugPage& page : kDebugPages) {
+        if (ImGui::BeginTabItem(page.name)) {
+          page.draw();
+          ImGui::EndTabItem();
+        }
+      }
+      ImGui::EndTabBar();
+    }
+  }
+  ImGui::End();
+  return open;
+}
+
 void DrawUI() {
   EnsureInitialized();
   if (!sAudioSettingsApplied) {
@@ -2060,59 +2336,13 @@ void DrawUI() {
     aurora_enable_vsync(sVsyncEnabled);
   }
   if (!sVisible) {
+    sTouchScroll = TouchScroll{};
     return;
   }
 
-  ImGui::SetNextWindowPos(ImVec2(8.f, 8.f), ImGuiCond_FirstUseEver);
-  ImGui::SetNextWindowSize(ImVec2(440.f, 200.f), ImGuiCond_FirstUseEver);
-  bool open = true;
-  if (ImGui::Begin("Metroid Prime Port", &open, ImGuiWindowFlags_MenuBar)) {
-    if (ImGui::BeginMenuBar()) {
-      ImGui::TextUnformatted("F1: hide   F10: frame limit   F12: screenshot");
-      ImGui::EndMenuBar();
-    }
-
-    if (ImGui::BeginTabBar("##debug_tabs", ImGuiTabBarFlags_FittingPolicyScroll)) {
-      if (ImGui::BeginTabItem("Performance")) {
-        DrawPerformanceTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Cutscenes")) {
-        DrawCutscenesTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Input")) {
-        DrawInputTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Controls")) {
-        DrawControlsTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Render")) {
-        DrawRenderTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Audio")) {
-        DrawAudioTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Voices")) {
-        DrawVoicesTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Debug")) {
-        DrawDebugTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Session")) {
-        DrawSessionTab();
-        ImGui::EndTabItem();
-      }
-      ImGui::EndTabBar();
-    }
-  }
-  ImGui::End();
+  UpdateTouchScroll();
+  const bool open = TouchUi() ? DrawTouchWindow() : DrawDesktopWindow();
+  ClearTouchHover();
 
   if (!open) {
     sVisible = false;

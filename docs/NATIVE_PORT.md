@@ -486,6 +486,10 @@ a temporary directory instead of mounting.
 - `MP_FAST_BOOT=1`, `MP_SKIP_CUTSCENES=1`, `MP_CUTSCENE_SPEED=8`,
   `MP_SHOW_DEBUG_UI=1`: development controls. Presence flags are enabled by
   being set; unset them to disable them. Cutscene speed is restricted to 1–32.
+- `MP_TOUCH_UI=1`: use the touch layout for the debug overlay on desktop (always
+  on for Android): a full-screen window inside the safe area, with a page list
+  instead of tabs, larger hit targets, drag-to-scroll with fling and a Close
+  button.
 - `MP_VALIDATE_SAMPLES=1`: log MusyX sample-directory validation.
 - `MP_SIM_RATE=<hz>`: experimental simulation tick rate (30–480, default 60).
   60 is console-accurate; higher values step the game logic at the display rate
