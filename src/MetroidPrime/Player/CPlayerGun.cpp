@@ -406,8 +406,13 @@ void CPlayerGun::PreRender(CStateManager& mgr, const CFrustumPlanes& frustum,
 }
 
 static void CopyScreenTex() {
-  GXSetTexCopySrc(0x140, 0xe0, 0x140, 0xe0);
-  GXSetTexCopyDst(0x140, 0xe0, GX_TF_RGBA8, false);
+  // Port: copy the lower-right quarter of the actual viewport rather than of a
+  // 640x448 one, so the beam-change wipe matches the widescreen framebuffer.
+  // Identical to the original at 4:3.
+  int left, top, width, height;
+  CGraphics::GetViewport(left, top, width, height);
+  GXSetTexCopySrc(left + width / 2, top + height / 2, width / 2, height / 2);
+  GXSetTexCopyDst(width / 2, height / 2, GX_TF_RGBA8, false);
   GXCopyTex(CGraphics::GetDolphinSpareBuffer(), false);
   GXPixModeSync();
 }
@@ -423,7 +428,7 @@ void DrawScreenTex(float z) {
   gpRender->SetBlendMode_AlphaBlended();
   CGraphics::SetDepthWriteMode(true, kE_GEqual, true);
 
-  CGraphics::LoadDolphinSpareTexture(0x140, 0xe0, GX_TF_RGBA8, NULL,
+  CGraphics::LoadDolphinSpareTexture(width / 2, height / 2, GX_TF_RGBA8, NULL,
                                      CGraphics::kSpareBufferTexMapID);
 
   const GXVtxDescList vtxDesc[3] = {
@@ -439,16 +444,19 @@ void DrawScreenTex(float z) {
   CGX::SetChanCtrl(CGX::Channel0, false, GX_SRC_REG, GX_SRC_REG, GX_LIGHT_NULL, GX_DF_NONE,
                    GX_AF_NONE);
 
-  const float screenWidth = 640.f;
-  const float& screenRight = screenWidth;
+  // Port: place the quad from the viewport (was 320..640 x 0..224).
+  const float quadLeft = static_cast< float >(left + width / 2);
+  const float quadRight = static_cast< float >(left + width);
+  const float quadBottom = static_cast< float >(top);
+  const float quadTop = static_cast< float >(top + height / 2);
   CGX::Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, 4);
-  RSPosition3f32(screenWidth / 2.f, z, 0.f);
+  RSPosition3f32(quadLeft, z, quadBottom);
   GXTexCoord2f32(0.f, 1.f);
-  RSPosition3f32(screenRight, z, 0.f);
+  RSPosition3f32(quadRight, z, quadBottom);
   GXTexCoord2f32(1.f, 1.f);
-  RSPosition3f32(screenWidth / 2.f, z, 224.f);
+  RSPosition3f32(quadLeft, z, quadTop);
   GXTexCoord2f32(0.f, 0.f);
-  RSPosition3f32(screenRight, z, 224.f);
+  RSPosition3f32(quadRight, z, quadTop);
   GXTexCoord2f32(1.f, 0.f);
   CGX::End();
 

@@ -2254,7 +2254,9 @@ void CFrontEndUI::Draw() const {
     gpRender->SetBlendMode_AdditiveAlpha();
     gpRender->SetDepthReadWrite(false, false);
     const CColor& color = CColor::White().WithAlphaOf(x64_pressStartAlpha);
-    CGraphics::Render2D(*tex, 320 - width / 2, 72 - height / 2, width, height, color);
+    // Port: centre on the viewport, not on a 640-wide screen.
+    CGraphics::Render2D(*tex, CGraphics::GetViewport().mWidth / 2 - width / 2, 72 - height / 2,
+                        width, height, color);
   }
 
   if (GetHasAttractMovies()) {

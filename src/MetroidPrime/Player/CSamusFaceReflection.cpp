@@ -19,6 +19,8 @@
 #include "Kyoto/Graphics/CModelFlags.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
 
+#include "port_debug.h"
+
 static const char* const skFaceAssetIdName = "ACS_SamusFace";
 static const CTransform4f skFaceModelViewAdjust =
     CTransform4f::Scale(0.3f) * CTransform4f::Translate(CVector3f(0.f, 0.5f, 0.f));
@@ -121,8 +123,13 @@ void CSamusFaceReflection::Draw(const CStateManager& mgr) const {
                            skFaceModelViewAdjust;
 
     CGraphics::SetViewPointMatrix(fpCam->GetTransform());
-    CGraphics::SetOrtho(aspect * -orthoWidth, aspect * orthoWidth, orthoHeight, -orthoHeight, -10.f,
-                        10.f);
+    // Port: the ortho spans the whole viewport; widen it with the viewport so
+    // the face keeps its shape in widescreen. 1 at 4:3.
+    const CViewport& vp = CGraphics::GetViewport();
+    const float wide = static_cast< float >(vp.mWidth) /
+                       static_cast< float >(PortDebug::FourThreeWidth(vp.mWidth, vp.mHeight));
+    CGraphics::SetOrtho(wide * aspect * -orthoWidth, wide * aspect * orthoWidth, orthoHeight,
+                        -orthoHeight, -10.f, 10.f);
 
     CActorLights* lights = x6c_ == 1 ? nullptr : x4c_lights.get();
     if (x6c_ == 3) {

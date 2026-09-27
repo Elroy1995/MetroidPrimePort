@@ -516,7 +516,9 @@ void CWorldTransManager::UpdateText(float dt) {
 }
 void CWorldTransManager::DrawText() const {
   gpRender->SetViewportOrtho(false, -4096.f, 4096.f);
-  gpRender->SetModelMatrix(CTransform4f::Translate(0.f, 0.f, 448.f));
+  // Port: the text box is 640 wide; centre it on a wider viewport.
+  const float textLeft = static_cast< float >(CGraphics::GetViewport().mWidth - 640) * 0.5f;
+  gpRender->SetModelMatrix(CTransform4f::Translate(textLeft, 0.f, 448.f));
   CGraphics::SetCullMode(kCM_None);
   gpRender->SetDepthReadWrite(false, false);
   gpRender->SetBlendMode_AdditiveAlpha();

@@ -12,6 +12,9 @@
 #include "Kyoto/Text/CTextRenderBuffer.hpp"
 #include "MetaRender/CCubeRenderer.hpp"
 #include "MetroidPrime/Decode.hpp"
+#include "rstl/math.hpp"
+
+#include "port_debug.h"
 
 const char* const skSplashScreenTextureNames[CSplashScreen::kSplashScreen_MAX] = {
     "TXTR_NintendoLogo",
@@ -143,7 +146,13 @@ void CSplashScreen::Draw() const {
   tex.Load(GX_TEXMAP0, CTexture::kCM_Clamp);
   const CColor color = tint.WithAlphaOf(alpha);
   if (IsCurrentSplashScreen(kSplashScreen_Nintendo) || IsCurrentSplashScreen(kSplashScreen_Retro)) {
-    CGraphics::SetOrtho(-10.f, 650.f, -5.5f, 484.5f, -1.f, 1.f);
+    // Port: widen the ortho with the viewport (about the same centre) so the
+    // logos keep their shape in widescreen. Identical to the original at 4:3.
+    const CViewport& orthoVp = CGraphics::GetViewport();
+    const float halfWidth =
+        330.f * static_cast< float >(orthoVp.mWidth) /
+        static_cast< float >(PortDebug::FourThreeWidth(orthoVp.mWidth, orthoVp.mHeight));
+    CGraphics::SetOrtho(320.f - halfWidth, 320.f + halfWidth, -5.5f, 484.5f, -1.f, 1.f);
     const int x = 133 - (width - 376) / 2;
     const int y = 170 - (height - 104) / 2;
     CGraphics::SetCullMode(kCM_None);
@@ -160,8 +169,13 @@ void CSplashScreen::Draw() const {
     CGraphics::StreamEnd();
     CGraphics::SetCullMode(kCM_Front);
   } else {
+    // Port: pillarbox the full-screen splash at its 4:3 shape instead of
+    // stretching it across a wider viewport.
     const CViewport& vp = CGraphics::GetViewport();
-    CGraphics::Render2D(tex, vp.mLeft, vp.mTop, vp.mWidth, vp.mHeight, color);
+    const int drawWidth =
+        rstl::min_val(vp.mWidth, PortDebug::FourThreeWidth(vp.mWidth, vp.mHeight));
+    CGraphics::Render2D(tex, vp.mLeft + (vp.mWidth - drawWidth) / 2, vp.mTop, drawWidth,
+                        vp.mHeight, color);
   }
 
   const CViewport viewport = CGraphics::GetViewport();

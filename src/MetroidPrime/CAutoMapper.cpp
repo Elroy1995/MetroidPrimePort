@@ -47,6 +47,8 @@
 
 #include <math.h>
 
+#include "port_debug.h"
+
 static const char* const skFRME_MapScreen = "FRME_MapScreen";
 
 static inline const rstl::vector< CGameHintInfo::CGameHint >& GetGameHints() {
@@ -1884,15 +1886,23 @@ rstl::pair< int, int > CAutoMapper::FindClosestVisibleWorld(const CVector3f& poi
   return rstl::pair< int, int >(closestWorld, closestArea);
 }
 
+// Port: these sizes only feed the map plane's aspect (see Draw). The HUD camera
+// keeps its proportions in widescreen, so a wider viewport here squashed the map
+// horizontally. Keep the original 640x448 ratio in HUD units; 4:3 is unchanged.
+static int MapReferenceWidth() {
+  const CViewport& vp = CGraphics::GetViewport();
+  return PortDebug::AspectMode() == PortDebug::kAspect_4_3 ? vp.mWidth : vp.mHeight * 640 / 448;
+}
+
 CVector2i CAutoMapper::GetMiniMapViewportSize() {
-  float scaleX = static_cast< float >(CGraphics::GetViewport().mWidth) / 640.f;
+  float scaleX = static_cast< float >(MapReferenceWidth()) / 640.f;
   float scaleY = static_cast< float >(CGraphics::GetViewport().mHeight) / 480.f;
   return CVector2i(static_cast< int >(scaleX * gpTweakAutoMapper->xb8_miniMapViewportWidth),
                    static_cast< int >(scaleY * gpTweakAutoMapper->xbc_miniMapViewportHeight));
 }
 
 CVector2i CAutoMapper::GetMapScreenViewportSize() {
-  return CVector2i(CGraphics::GetViewport().mWidth, CGraphics::GetViewport().mHeight);
+  return CVector2i(MapReferenceWidth(), CGraphics::GetViewport().mHeight);
 }
 
 float CAutoMapper::GetMapAreaMiniMapDrawDepth() { return 2.f; }
