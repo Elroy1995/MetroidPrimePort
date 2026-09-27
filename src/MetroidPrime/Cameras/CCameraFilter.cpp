@@ -565,8 +565,10 @@ void CCameraBlurPass::Draw() const {
     data = static_cast< uchar* >(CGraphics::GetDolphinSpareBuffer());
   }
 
-  ushort width = 640;
-  ushort height = 448;
+  // Port: copy the whole viewport rather than 640x448, so the X-ray and blur
+  // passes also cover the sides of a widescreen frame buffer.
+  ushort width = static_cast< ushort >(CGraphics::GetViewport().mWidth);
+  ushort height = static_cast< ushort >(CGraphics::GetViewport().mHeight);
   if (x10_curType != kBT_XRay) {
     width >>= 1;
     height >>= 1;
@@ -752,7 +754,7 @@ void CCameraBlurPass::Draw() const {
         offsetX = 0.0;
       } else {
         float angle = 6.2831855f * static_cast< float >(i - 1) / 6.f;
-        offsetX = (x1c_curValue / 640.f) * cos(angle);
+        offsetX = (x1c_curValue / vWidth) * cos(angle); // Port: was / 640.f
       }
       float fOffsetX = static_cast< float >(offsetX);
       double offsetY;
@@ -760,7 +762,7 @@ void CCameraBlurPass::Draw() const {
         offsetY = 0.0;
       } else {
         float angle = 6.2831855f * static_cast< float >(i - 1) / 6.f;
-        offsetY = (x1c_curValue / 448.f) * sin(angle);
+        offsetY = (x1c_curValue / vHeight) * sin(angle); // Port: was / 448.f
       }
       float fOffsetY = static_cast< float >(offsetY);
       float mtx[2][4] = {
@@ -808,17 +810,21 @@ void CCameraBlurPass::Draw() const {
 }
 
 void CCameraBlurPass::GetFbCopy(GXTexFmt fmt, uchar* buf) const {
-  GXSetTexCopySrc(static_cast< u16 >(CGraphics::GetViewport().mLeft),
-                  static_cast< u16 >(CGraphics::GetViewport().mTop), 640, 448);
+  // Port: size the copy from the viewport (see Draw), not a fixed 640x448.
+  const CViewport& viewport = CGraphics::GetViewport();
+  const u16 width = static_cast< u16 >(viewport.mWidth);
+  const u16 height = static_cast< u16 >(viewport.mHeight);
+  GXSetTexCopySrc(static_cast< u16 >(viewport.mLeft), static_cast< u16 >(viewport.mTop), width,
+                  height);
   if (fmt == GX_TF_RGB565) {
-    GXGetTexBufferSize(320, 224, GX_TF_RGB565, GX_FALSE, 0);
+    GXGetTexBufferSize(width >> 1, height >> 1, GX_TF_RGB565, GX_FALSE, 0);
   } else {
-    GXGetTexBufferSize(640, 448, GX_TF_I8, GX_FALSE, 0);
+    GXGetTexBufferSize(width, height, GX_TF_I8, GX_FALSE, 0);
   }
   if (fmt == GX_TF_RGB565) {
-    GXSetTexCopyDst(320, 224, fmt, GX_TRUE);
+    GXSetTexCopyDst(width >> 1, height >> 1, fmt, GX_TRUE);
   } else {
-    GXSetTexCopyDst(640, 448, fmt, GX_FALSE);
+    GXSetTexCopyDst(width, height, fmt, GX_FALSE);
   }
   GXCopyTex(buf, GX_FALSE);
   GXPixModeSync();

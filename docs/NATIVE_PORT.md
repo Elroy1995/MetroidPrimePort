@@ -595,8 +595,8 @@ reports `[world-smoke] passed: world <id> area <n>` once a freshly constructed
 world is running. The F1 debug overlay's Debug tab lists every world by its
 front-end name and jumps to it on click.
 
-`MP_SMOKE_VISOR=1` grants and switches to the thermal visor after gameplay
-starts and reports `[visor-smoke] passed` once it has stayed up. It reproduces
+`MP_SMOKE_VISOR=1` grants and switches to the thermal visor (`MP_SMOKE_VISOR=xray`:
+the X-ray visor) after gameplay starts and reports `[visor-smoke] passed` once it has stayed up. It reproduces
 the FIFO-worker crash where the game binds a texture whose source pointer is an
 unmapped value, which the content hash then dereferences. The thermal cold blend
 was passing a deliberately fake random address as its noise texture (the console

@@ -513,18 +513,23 @@ void PortSmokeVisor(CStateManager& mgr) {  static const bool enabled = std::gete
   }
   CPlayerState* ps = mgr.PlayerState();
   if (ps == nullptr) return;
+  // MP_SMOKE_VISOR=xray selects the X-ray visor; any other value, thermal.
+  static const bool xray = std::strcmp(std::getenv("MP_SMOKE_VISOR"), "xray") == 0;
+  const char* name = xray ? "x-ray" : "thermal";
   if (!sRequested) {
     if (++sTicks < 120) return;
-    ps->SetPowerUp(CPlayerState::kIT_ThermalVisor, 1);
-    ps->SetPickup(CPlayerState::kIT_ThermalVisor, 1);
-    std::fputs("[visor-smoke] switching to the thermal visor\n", stderr);
-    ps->StartTransitionToVisor(CPlayerState::kPV_Thermal);
+    const CPlayerState::EItemType item =
+        xray ? CPlayerState::kIT_XRayVisor : CPlayerState::kIT_ThermalVisor;
+    ps->SetPowerUp(item, 1);
+    ps->SetPickup(item, 1);
+    std::fprintf(stderr, "[visor-smoke] switching to the %s visor\n", name);
+    ps->StartTransitionToVisor(xray ? CPlayerState::kPV_XRay : CPlayerState::kPV_Thermal);
     sRequested = true;
     return;
   }
   if (++sTicks > 900) {
     sPassed = true;
-    std::fputs("[visor-smoke] passed: thermal visor stable\n", stderr);
+    std::fprintf(stderr, "[visor-smoke] passed: %s visor stable\n", name);
   }
 }
 
