@@ -1,3 +1,69 @@
+## Prompt audit: what is covered, and the one prompt still unplaced (2026-09-27)
+
+Closing out the prompt work with a sweep of every surface I can reach, so the
+coverage is a list of what was looked at rather than an impression.
+
+- **Pause menu — photographed, correct.** `Q OPTIONS`, `X NEXT`, the game's
+  sphere for `EXIT`, `Z BACK`, `E LOG BOOK`. The `EXIT` case is the bug that
+  started all of this.
+- **Map screen — photographed, correct.** `F Exit`, the arrow glyph on
+  `Rotate`, `Q Zoom`, `E Move`. `Rotate` is the C-stick row that was simply
+  missing, so the map had been showing no stick icon at all; it now does, at the
+  right size, via the bindings path, with one log line instead of 4200.
+- **Map legend — dumped and checked, nothing missed.** Of the map's textures,
+  the six unclaimed ones in format 5 — the only size a prompt uses there — are
+  the legend's three books, a "?" hint and an "E" elevator. All decoration.
+- **Gameplay HUD — photographed, game art, correctly untouched.** The corner
+  prompts are the game's own pale icons (a morph slider, a crosshair), and they
+  are not in the replacement table, so the game drawing its own art there is
+  right rather than a gap.
+- **Front end A/B — still not reached by an automated capture.**
+  `MP_SMOKE_FRONTEND` taps Start and walks past the publisher logo, the distress
+  beacon narration and into gameplay, so it never sits on a front-end screen
+  that shows the A/B prompts. Reaching them needs the main menu, which needs a
+  save and the Continue walker. Not attempted this pass.
+- **`0xe14dc493`, the yellow "C" badge — restored, still unplaced.** The dump
+  proves it is a C-stick prompt; it is not the pause menu, not the map's
+  `Rotate`, and not the gameplay HUD corner icons. Some screen I have not reached
+  draws it. Having it in the table means that screen gets the bound input's icon
+  rather than the game's badge, which is an improvement wherever it turns up, so
+  leaving it is right even without knowing where it is.
+- **The narration is not a bug, again.** The sweep photographed the opening
+  "Unidentified distress beacon has been tracked to a derelict space vessel in
+  orbit above Tallon IV", which is where the old "unidentified memory card"
+  report came from. It is Metroid Prime's own opening narration.
+
+## An implemented feature that was missing from the list (2026-09-27)
+
+The objective names "checks persisted across save and reconnect" as an item to be
+implemented or explicitly descoped. It was implemented and tested, and it was
+not in the written list at all — so the list said nothing about it, and an
+implemented feature that is not in the list cannot be audited from the list.
+Now written down, with the mechanism and the end-to-end observation separated
+rather than conflated: `port_apclient_tests` covers a recorded location not
+being checked twice, `checkedLocations` accumulating, the state file round trip,
+and a `RoomInfo` for a different seed discarding the recorded checks, item index
+and progressive counts; the end-to-end evidence is a reconnect resuming at
+`next_item_index 2` rather than re-granting.
+
+## Audited two standing requirements rather than assuming them (2026-09-27)
+
+- **"No disc image or copyrighted asset is ever packaged."** Checked, not
+  assumed. The install tree has no `.iso`, `.gcm` or `.wbfs`; it ships the
+  binary, the pipeline cache, 162 generated texture replacements, the desktop
+  entry and the metainfo. The release APK likewise has nothing disc-shaped —
+  a disc would be three orders of magnitude larger than its largest entry — and
+  carries 162 texture assets, all derived from Kenney's CC0 Input Prompts pack
+  with the attribution recorded in `tools/prompt_icons/README.md`.
+  `assets/openssl-license.txt` is present, so the Apache-2.0 notice for the
+  newly vendored OpenSSL travels with the APK.
+- **The real Archipelago world is still unreachable.** Re-checked rather than
+  carried forward on the assumption it had always been: `git ls-remote` on
+  `UltiNaruto/MetroidAPPrime` and the GitHub API both return 404. So the
+  mapping-verification gap stays a gap, and the local `Locations.py` fixture
+  remains the stand-in. `Items.py` is not needed for `make_ap_config.py
+  --strict` to be exercisable — the tool mirrors that file's item ids, and says
+  so at line 65 — and `--self-test` passes.
 ## Review found a busy-loop I introduced, and a tool that already existed (2026-09-27)
 
 A second opinion on the prompt work. It was right about all three things I

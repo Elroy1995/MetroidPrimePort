@@ -350,6 +350,18 @@ still works; anything marked as a gap still limits a session.
   and an echo of this client's own death is ignored rather than killing the
   player twice. The mechanism is the same one the world's own client uses:
   clearing the alive flag, which is what drives the death sequence in the game.
+- **Checks persisted across save and reconnect — done.** `archipelago_state.json`
+  records which locations have been checked and how far each progressive sequence
+  has advanced, written whenever either changes and read back on the next
+  connection. `port_apclient_tests` covers the mechanism: a recorded location
+  cannot be checked twice, `checkedLocations` accumulates across packets, the
+  state file round trips, and a `RoomInfo` naming a different seed discards the
+  recorded checks, item index and progressive counts rather than applying them to
+  the wrong seed. The end-to-end observation is under Verified above, where a
+  reconnect resumed at `next_item_index 2` instead of re-granting. This was
+  implemented and tested long before it appeared in this list, which is the gap
+  worth naming: a feature that is not written down cannot be audited from the
+  list, and its absence reads as "not done".
 - **Mapping verification — a gap in one direction only.** The join itself is
   checked against the spec-shaped fixture (`ctest -R port_ap_fixture`): 100/100
   mapped, no area for review, no area missing. But that fixture is generated from
