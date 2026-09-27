@@ -9,8 +9,12 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.widget.RelativeLayout;
 
+import org.libsdl.app.SDLActivity;
+
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * On-screen controller drawn over the game surface.
@@ -124,6 +128,8 @@ final class TouchControlsView extends View {
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, TouchTarget> targets = new HashMap<>();
     private final Map<Integer, Integer> held = new HashMap<>();
+    // Fingers passed on to SDL; see forwardToSdl.
+    private final Set<Integer> forwarded = new HashSet<>();
     private final RectF hideBounds = new RectF();
     private static native boolean nativeDebugOverlayVisible();
     private static native boolean nativeTwinStick();
@@ -243,11 +249,17 @@ final class TouchControlsView extends View {
         // Anything still held has to go first: once this view stops claiming
         // touches the matching releases never arrive, which left whatever was
         // down (a trigger, say) held for the rest of the session.
-        if (nativeDebugOverlayVisible()) {
-            if (!targets.isEmpty() || !held.isEmpty()) {
-                releaseAll();
+        final boolean overlayVisible = nativeDebugOverlayVisible();
+        if (overlayVisible && (!targets.isEmpty() || !held.isEmpty())) {
+            releaseAll();
+        }
+        if (action == MotionEvent.ACTION_DOWN) {
+            cancelForwarded(event);
+            if (overlayVisible) {
+                return false;
             }
-            return false;
+        } else if (forwardToSdl(event, action, actionIndex, overlayVisible) || overlayVisible) {
+            return true;
         }
 
         if (autoHidden) {
@@ -325,6 +337,78 @@ final class TouchControlsView extends View {
         leftPointer = -1;
         rightPointer = -1;
         invalidate();
+    }
+
+    // Android sends a new finger to the view that already owns the gesture,
+    // without asking whether it wants it. So while any finger that went down on
+    // these controls is still held (a thumb resting on the stick, or the one that
+    // tapped MENU), every tap on the debug overlay lands here rather than on the
+    // SDL surface, and the overlay seems frozen until that finger lifts. Fingers
+    // that go down while the overlay is open are handed to SDL directly instead,
+    // and keep going there until they lift, even if the overlay closes first:
+    // SDL drives its touch mouse from the first finger down and ignores every
+    // other finger until that one comes up.
+    //
+    // Returns whether the event was entirely such fingers.
+    private boolean forwardToSdl(MotionEvent event, int action, int actionIndex,
+                                 boolean overlayVisible) {
+        final int pointerId = event.getPointerId(actionIndex);
+        switch (action) {
+            case MotionEvent.ACTION_POINTER_DOWN:
+                if (!overlayVisible) {
+                    return false;
+                }
+                forwarded.add(pointerId);
+                sendToSdl(event, actionIndex, MotionEvent.ACTION_DOWN);
+                return true;
+            case MotionEvent.ACTION_POINTER_UP:
+            case MotionEvent.ACTION_UP:
+                if (!forwarded.remove(pointerId)) {
+                    return false;
+                }
+                sendToSdl(event, actionIndex, MotionEvent.ACTION_UP);
+                return true;
+            case MotionEvent.ACTION_MOVE: {
+                boolean all = true;
+                for (int i = 0; i < event.getPointerCount(); ++i) {
+                    if (forwarded.contains(event.getPointerId(i))) {
+                        sendToSdl(event, i, MotionEvent.ACTION_MOVE);
+                    } else {
+                        all = false;
+                    }
+                }
+                return all;
+            }
+            case MotionEvent.ACTION_CANCEL:
+                cancelForwarded(event);
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    // A gesture that ends without its releases (cancelled, or a new one begun)
+    // must still lift SDL's fingers, or its touch mouse stays stuck on them.
+    private void cancelForwarded(MotionEvent event) {
+        if (forwarded.isEmpty()) {
+            return;
+        }
+        for (int pointerId : forwarded) {
+            SDLActivity.onNativeTouch(event.getDeviceId(), pointerId, MotionEvent.ACTION_CANCEL,
+                                      0f, 0f, 0f);
+        }
+        forwarded.clear();
+    }
+
+    private void sendToSdl(MotionEvent event, int index, int action) {
+        // SDL wants the position normalised to its surface, which fills this
+        // view's parent; this view does not while it is shrunk to SHOW.
+        View parent = (View) getParent();
+        float x = (getLeft() + event.getX(index)) / Math.max(1, parent.getWidth() - 1);
+        float y = (getTop() + event.getY(index)) / Math.max(1, parent.getHeight() - 1);
+        float pressure = Math.min(event.getPressure(index), 1f);
+        SDLActivity.onNativeTouch(event.getDeviceId(), event.getPointerId(index), action, x, y,
+                                  pressure);
     }
 
     private void assignPointer(int pointerId, float x, float y) {
