@@ -41,17 +41,8 @@ mkdir -p "$OUT"
 # rofiles-fuse mount as the same user succeeds. The flag below swaps the
 # mechanism and is otherwise equivalent, so try it first and fall back only if
 # the real thing is refused.
-# --share=network is needed at BUILD time and has nothing to do with the
-# manifest's finish-args: the build fetches Dawn, SDL, abseil, fmt, zstd and the
-# rest over HTTPS through FetchContent, and flatpak-builder gives the build no
-# network by default. Without it every fetch dies with
-#   getaddrinfo(3) failed for github.com:443
-# during the configure step, on Dawn first. The installed app is unaffected -
-# finish-args still governs what the game itself gets, and it does not ask for
-# the network.
 build_with_rofiles() {
-    flatpak-builder --share=network --force-clean \
-        --repo="$OUT/repo" "$OUT/build" "$MANIFEST" "$@"
+    flatpak-builder --force-clean --repo="$OUT/repo" "$OUT/build" "$MANIFEST" "$@"
 }
 
 if ! build_with_rofiles; then
