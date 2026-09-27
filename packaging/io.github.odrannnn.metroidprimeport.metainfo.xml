@@ -5,7 +5,12 @@
   <project_license>LicenseRef-mixed</project_license>
 
   <name>Metroid Prime Port</name>
-  <summary>Metroid Prime running natively, with randomizer and Archipelago support</summary>
+    <!-- The icon the desktop entry names, installed by the project's own rules to
+       share/icons/hicolor/scalable/apps. Without this declaration appstreamcli
+       compose finds the file by convention and then cannot resolve it, which is
+       reported as file-read-error. -->
+  <icon type="stock">io.github.odrannnn.metroidprimeport</icon>
+<summary>Metroid Prime running natively, with randomizer and Archipelago support</summary>
 
   <description>
     <p>
