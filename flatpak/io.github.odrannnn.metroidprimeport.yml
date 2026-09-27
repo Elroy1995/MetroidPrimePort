@@ -62,11 +62,23 @@ modules:
       # third-party notices: the two vendored snapshots come out of the tree,
       # and the fetched ones are collected here because they only exist once
       # cmake-ninja has run.
-      - install -Dm644 extern/aurora/LICENSE /app/share/licenses/metroid-prime-port/aurora.txt
-      - install -Dm644 extern/musyx/LICENSE /app/share/licenses/metroid-prime-port/musyx.txt
+      # post-install runs in the build directory, not the source root, so every
+      # path here is relative to it and reaches the source with a leading "..".
+      # The first version used bare "extern/aurora/LICENSE" and died with
+      # "install: cannot stat" - the file is tracked and present, just not
+      # relative to where the script runs.
+      - install -Dm644 ../extern/aurora/LICENSE /app/share/licenses/metroid-prime-port/aurora.txt
+      - install -Dm644 ../extern/musyx/LICENSE /app/share/licenses/metroid-prime-port/musyx.txt
+      # The fetched dependencies were unpacked by this manifest into their own
+      # directories at the source root, so that is where their notices are. The
+      # previous loop looked in _deps/*-src, which is where FetchContent would
+      # have put them had it been allowed to download, and which is empty now.
       - |
-        for dep in sdl-src imgui-src fmt-src zstd-src; do
-            for notice in _deps/$dep/LICENSE* _deps/$dep/COPYING*; do
+        for dir in ../*; do
+            [ -d "$dir" ] || continue
+            dep=$(basename "$dir")
+            case "$dep" in _flatpak_build|_deps) continue ;; esac
+            for notice in "$dir"/LICENSE* "$dir"/COPYING* "$dir"/LICENSE.txt; do
                 [ -f "$notice" ] || continue
                 install -Dm644 "$notice" /app/share/licenses/metroid-prime-port/$dep.txt
                 break
