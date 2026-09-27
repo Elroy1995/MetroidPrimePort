@@ -131,9 +131,27 @@ final class TouchControlsView extends View {
     private static native void nativeToggleDebugOverlay();
     private static native void nativeVirtualButton(int button, boolean down);
     private static native void nativeVirtualAxis(int axis, float value);
+    private static native boolean nativeTakePhysicalInput();
     private int leftPointer = -1;
     private int rightPointer = -1;
     private boolean hidden;
+    // Hidden because a real pad, keyboard or mouse was used. Unlike HIDE, which
+    // leaves a SHOW button, nothing is drawn and any touch brings them back.
+    private boolean autoHidden;
+
+    private static final long PHYSICAL_INPUT_POLL_MS = 250;
+    private final Runnable physicalInputPoll = new Runnable() {
+        @Override
+        public void run() {
+            // Always drained, so input from while the controls were already
+            // hidden cannot hide them again the moment they come back.
+            if (nativeTakePhysicalInput() && !hidden && !autoHidden) {
+                autoHidden = true;
+                releaseAll();
+            }
+            postDelayed(this, PHYSICAL_INPUT_POLL_MS);
+        }
+    };
 
     TouchControlsView(Context context) {
         super(context);
@@ -156,6 +174,9 @@ final class TouchControlsView extends View {
         // until the next touch happened to redraw them.
         if (nativeDebugOverlayVisible()) {
             postInvalidateDelayed(150);
+            return;
+        }
+        if (autoHidden) {
             return;
         }
         if (hidden) {
@@ -229,6 +250,17 @@ final class TouchControlsView extends View {
             return false;
         }
 
+        if (autoHidden) {
+            // The touch that brings them back is not also a press.
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+                autoHidden = false;
+                nativeTakePhysicalInput();
+                nativeSetTouchDevice(twinStickMode);
+                invalidate();
+            }
+            return true;
+        }
+
         if (hidden) {
             if (action == MotionEvent.ACTION_UP) {
                 setHidden(false);
@@ -264,6 +296,18 @@ final class TouchControlsView extends View {
         }
         invalidate();
         return true;
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        postDelayed(physicalInputPoll, PHYSICAL_INPUT_POLL_MS);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        removeCallbacks(physicalInputPoll);
+        super.onDetachedFromWindow();
     }
 
     @Override

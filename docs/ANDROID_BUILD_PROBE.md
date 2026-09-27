@@ -283,7 +283,12 @@ building and running it:
 - The first touch overlay provides digital movement and camera sticks plus the
   GameCube face, shoulder, Start and D-pad controls. `HIDE` collapses it to a
   small `SHOW` tab. Its sizing and ergonomics still need device testing;
-  physical USB and BLE controllers remain supported.
+  physical USB and BLE controllers remain supported. Pressing a button on a real
+  pad, moving its stick or a trigger well past rest, typing a key, or clicking a
+  real mouse hides the overlay entirely. Touching the screen brings it back, and
+  that touch is not also a press. Back, volume and media keys, the overlay's own
+  virtual pad, and keys typed while the debug overlay is open (the soft
+  keyboard) don't count.
 - **A short tap on the overlay can be missed.** SDL's virtual joystick is
   state-sampling, not event-queueing: a press and release that both land between
   two joystick updates leave only the release, so the game never sees the press.

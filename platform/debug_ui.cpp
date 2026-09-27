@@ -122,6 +122,9 @@ std::atomic< bool > sOverlayVisible{false};
 // Same idea for the twin-stick setting, which the Android touch overlay uses to
 // pick a controller layout.
 std::atomic< bool > sTwinStickFlag{false};
+// Set when a real pad, keyboard or mouse is used; the Android touch overlay takes
+// it to get out of the way.
+std::atomic< bool > sPhysicalInput{false};
 // Gyro state: the pad's gyro sensor is enabled once, and the phone's sensor is
 // looked up once, so neither is touched on every tick.
 bool sControllerGyroEnabled = false;
@@ -372,12 +375,54 @@ void SaveSettings() {
   sSettingsDirty = false;
 }
 
+// Whether the player just used a real pad, keyboard or mouse. The touch overlay
+// is itself a virtual pad, and touches also arrive as a mouse, so neither counts.
+// A stick or trigger has to move well past rest, so drift does not count either.
+bool IsPhysicalInput(const SDL_Event& event) {
+  switch (event.type) {
+  case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    return !SDL_IsJoystickVirtual(event.gbutton.which);
+  case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+    return std::abs(static_cast< int >(event.gaxis.value)) > 16000 &&
+           !SDL_IsJoystickVirtual(event.gaxis.which);
+  case SDL_EVENT_KEY_DOWN:
+    // The soft keyboard types into the overlay's text fields, and Back and the
+    // media keys come from the phone itself.
+    if (event.key.repeat || sOverlayVisible.load(std::memory_order_acquire)) {
+      return false;
+    }
+    switch (event.key.scancode) {
+    case SDL_SCANCODE_AC_BACK:
+    case SDL_SCANCODE_VOLUMEUP:
+    case SDL_SCANCODE_VOLUMEDOWN:
+    case SDL_SCANCODE_MUTE:
+    case SDL_SCANCODE_MEDIA_PLAY:
+    case SDL_SCANCODE_MEDIA_PAUSE:
+    case SDL_SCANCODE_MEDIA_PLAY_PAUSE:
+    case SDL_SCANCODE_MEDIA_NEXT_TRACK:
+    case SDL_SCANCODE_MEDIA_PREVIOUS_TRACK:
+    case SDL_SCANCODE_MEDIA_STOP:
+    case SDL_SCANCODE_POWER:
+      return false;
+    default:
+      return true;
+    }
+  case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    return event.button.which != SDL_TOUCH_MOUSEID && event.button.which != SDL_PEN_MOUSEID;
+  default:
+    return false;
+  }
+}
+
 bool SDLCALL debug_event_watch(void*, SDL_Event* event) {
   // F1 toggles the overlay. Watch the event rather than polling the key state:
   // a short tap can begin and end between two frames, so polling misses it.
   if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat &&
       event->key.scancode == SDL_SCANCODE_F1) {
     PortDebug::RequestToggle();
+  }
+  if (IsPhysicalInput(*event)) {
+    sPhysicalInput.store(true, std::memory_order_release);
   }
   return true;
 }
@@ -2464,5 +2509,11 @@ Java_org_metroidprime_port_TouchControlsView_nativeTwinStick(JNIEnv*, jclass) {
 extern "C" JNIEXPORT void JNICALL
 Java_org_metroidprime_port_TouchControlsView_nativeToggleDebugOverlay(JNIEnv*, jclass) {
   PortDebug::RequestToggle();
+}
+
+// Whether a real pad, keyboard or mouse was used since the last call.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_metroidprime_port_TouchControlsView_nativeTakePhysicalInput(JNIEnv*, jclass) {
+  return sPhysicalInput.exchange(false, std::memory_order_acq_rel) ? JNI_TRUE : JNI_FALSE;
 }
 #endif
