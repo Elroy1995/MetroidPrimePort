@@ -57,6 +57,14 @@ modules:
         } > /app/share/licenses/metroid-prime-port/BUNDLED_LIBRARIES.txt
     sources:
       # The repository itself. A git source keeps the build directory, disc
-      # images and other untracked files out of the sandbox.
+      # images and other untracked files out of the sandbox, which is the whole
+      # reason this is a git source and not `type: dir`.
+      #
+      # The branch is named because flatpak-builder defaults to `master`, and
+      # this repository has no `master`: its branches are `main` and `port`, with
+      # the port's work on `port`. Leaving it unset failed the build with
+      # "fatal: ambiguous argument 'master'" before compiling anything. Point
+      # this at whatever branch a release is cut from when publishing.
       - type: git
         path: ..
+        branch: port
