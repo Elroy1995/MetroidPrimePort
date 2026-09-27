@@ -1,3 +1,40 @@
+## The capture harness was reading a stranded save, and contradicted itself (2026-09-27)
+
+Two harness defects found while closing the last prompt surface. Neither is a port
+bug; both mean previous evidence was weaker than it looked.
+
+- **The canonical save every capture copies from was a corrupt file.** Seven
+  scripts - `audio-probe.sh`, `card-auto.sh`, `card-probe.sh`, `deathlink-e2e.sh`,
+  the pause and map captures and the dump scripts - all seed
+  `build/smoke-gcc/USA/Card A` from
+  `/home/odran/.local/share/Metroid Prime/USA/Card A`. That file was
+  `01-GM8E-MetroidPrime A.gci` with **0 non-zero bytes in the save region and an
+  invalid CRC**, stored `00000000` against a computed `553E7B06` - which is the
+  exact signature of the fast-boot stranding fixed in `f44737f2`. It was created
+  before that fix and had sat in the real save directory ever since, so every
+  capture since has been starting from a card the game would call corrupt. The
+  good save from the "saves and reloads" proof (134 non-zero, valid `34adeb51`)
+  was in `build/card-with-save-backup/`, which is **gitignored**, so the only
+  good copy was local and the canonical path was left holding the bad one.
+  Restored the good save to the canonical directory, and the smoke build's card
+  now matches.
+- **`build/continue-walk.sh` contradicted itself and the documentation.** Its
+  header says it "walks the title screen looking for Continue", and it set
+  `MP_FAST_BOOT=1` - which drives the front end straight past file select into a
+  new game, as `docs/NATIVE_PORT.md` states. So the walk could never arrive where
+  it was trying to go, and the frame-number presses were landing in the intro
+  cinematics. It now leaves fast boot off, uses the state-driven
+  `MP_SMOKE_CONTINUE` walker instead of fixed frames, and has a longer budget
+  because the real front end has to load.
+- **With that fixed, the front end is reachable and the prompt is correct.** The
+  main menu lists the real save - `[Samus A] 00% | Space Pirate Frigate | 00:00
+  Elapsed` - and its Select prompt is a clean `X` key cap, which is the keyboard
+  binding for A, so the front end's A prompt (`0xbb21e875`) renders correctly.
+  In `docs/images/prompt-front-end-menu.png` and
+  `docs/images/prompt-front-end-select.png`. This also re-confirms the save
+  loads, from a card that was verified good beforehand rather than assumed.
+- **The front end's B prompt is still not photographed.** Nothing on the main
+  menu draws it, and the screens that do were not reached this pass.
 ## Prompt audit: what is covered, and the one prompt still unplaced (2026-09-27)
 
 Closing out the prompt work with a sweep of every surface I can reach, so the
