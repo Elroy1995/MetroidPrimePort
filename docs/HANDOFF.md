@@ -45,9 +45,10 @@ source /home/odran/android/env.sh            # JAVA_HOME, ANDROID_HOME, PATH
 ```
 
 - Package `org.metroidprime.port`, version 0.1.0. Release APK is ~12 MB.
-- There is one test phone, serial `3d929981` (model `25102PCBEG`). It answers as
-  both `192.168.68.64:5555` (LAN) and `100.113.164.114:5555` (Tailscale) — the
-  same device, not two. A USB device may also be listed; it does not have the app.
+- There is one test phone. It answers over adb/TCP as well as USB, sometimes
+  under two addresses at once — a LAN address and a Tailscale address are the
+  same device, not two. `adb mdns services` also lists the wireless-debugging
+  port. A USB device may show up alongside; it does not have the app.
 - The APK embeds the game code, so any engine change needs a rebuild before it
   can be tested on the phone. Installing stops the running app.
 
