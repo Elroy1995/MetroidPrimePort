@@ -40,9 +40,13 @@ float hypotf(float x, float y) { return (float)hypot(x, y); }
 // the later one only changed how it rounds.
 double remainder(double x, double y) { return x - nearbyint(x / y) * y; }
 
-extern double glibc_hypot(double, double) __asm__("hypot");
+// Both halves matter, or hypot() spins forever calling itself. No
+// __asm__("hypot") label, unlike the parsers below: that names the wrapper
+// itself. And the wrapper stays hidden: exported, it interposes libm, and the
+// dynamic linker resolves the versioned reference right back to it.
+extern double glibc_hypot(double, double);
 __asm__(".symver glibc_hypot,hypot@GLIBC_2.2.5");
-double hypot(double x, double y) { return glibc_hypot(x, y); }
+__attribute__((visibility("hidden"))) double hypot(double x, double y) { return glibc_hypot(x, y); }
 
 // Pre-C23 parsing, referenced by its original name so this does not recurse
 // into the wrapper it is defining.
