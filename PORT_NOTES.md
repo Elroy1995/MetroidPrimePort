@@ -441,6 +441,54 @@ The app id is renamed, everywhere it appears.
   different ecosystem, and changing an `applicationId` breaks installs for no
   reason. It was not in scope.
 
+## The Flatpak manifest has never been buildable, and now I know why (2026-09-27)
+
+`flatpak-builder` ran for the first time on this project. It got further than
+anything before it and then failed in a way that is not a host problem.
+
+- **Three host problems came first, all now fixed, none of them the port's
+  fault.** `flatpak remote-add` needs the `/repo/` prefix on the Flathub URL
+  (`https://dl.flathub.org/repo/flathub.flatpakrepo`; the bare path 404s), and
+  fails outright if `DBUS_SESSION_BUS_ADDRESS` points at a dead bus. The build
+  sandbox needs `kernel.apparmor_restrict_unprivileged_userns=0`, which Ubuntu
+  26.04 sets to 1; that is what made `bwrap` fail, and `bwrap` works now.
+  `rofiles-fuse` cannot mount because `fusermount3` is setuid and a setuid binary
+  gains nothing inside a user namespace, so the script now retries with
+  `--disable-rofiles-fuse`. And `user_allow_other` has to be set in
+  `/etc/fuse.conf` - a manual mount as this user then succeeds while
+  flatpak-builder's does not, which is what pinned it down.
+- **And then the manifest itself, which is the real finding.** It failed during
+  CMake configure, on Dawn, with `getaddrinfo(3) failed for github.com:443`.
+  That is not a network-permission problem. **`flatpak-builder` has no network
+  option at all** - I added `--share=network`, it does not exist, and I reverted
+  that. A Flatpak build is meant to be offline: everything must be declared in
+  `sources:`, because the sandbox shares no resolver. This host resolves through
+  systemd-resolved's stub on `127.0.0.53`, which does not exist inside the
+  sandbox's network namespace, so every `FetchContent` dies at DNS.
+- **The manifest declares exactly one source: the repository.** It expects Dawn,
+  SDL3 and nod to be downloaded at build time. That cannot work on any host, so
+  this is not a defect of this machine - the manifest has simply never been
+  buildable, which is consistent with the notes saying nothing here had ever run
+  `flatpak-builder`. The install rules had been verified by installing to a
+  prefix and running the tree, which proves the *output* is right and says
+  nothing about whether the manifest can produce it.
+- **The fix is smaller than it first looked.** There are 7 `FetchContent_Declare`
+  sites in the build, but only four reach the network, and one of those is
+  `cmake/AndroidOpenSSL.cmake`, which is inside `if(ANDROID)`. So the Flatpak
+  needs **three** pinned sources: Dawn, SDL3 and nod. The rest come from the
+  freedesktop SDK. Aurora's `AuroraDependencyVersions.cmake` already pins every
+  version and ref, and the three provider files carry the URL templates, so the
+  versions are known; what is not in the tree is any **hash** - there is no
+  `URL_HASH` or `SHA256` anywhere in Aurora's dependency acquisition, which is
+  fine for a developer build and not what a Flatpak manifest wants.
+- **So the remaining decision is about pinning.** `flatpak-builder` accepts a
+  `sources` entry with no `sha256` and only warns, which would get the build
+  running today. Pinning them properly means downloading the three artefacts once
+  to hash them - Dawn's prebuilt tarball is the large one - and recording the
+  digests in the manifest. Pinning is the right answer for something that gets
+  published, and it is what makes the build reproducible; not pinning is a
+  faster route to a first successful build. I have not chosen between them,
+  because it changes what the manifest guarantees.
 ## Android wss:// works, and it cost more than I said it would (2026-09-26)
 
 The last AP gap that stopped a session is closed. A real `wss://` handshake from
