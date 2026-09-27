@@ -156,7 +156,6 @@ const char* ResolveDiscPath(int argc, char** argv) {
     return sFound.empty() ? nullptr : sFound.c_str();
 }
 
-#if defined(__ANDROID__)
 // aurora_dvd_open reports failure for three different reasons - the file would
 // not open, the disc parser rejected it, or the data partition was missing -
 // and says which of them nowhere. Splitting them here turns an unexplained
@@ -184,6 +183,7 @@ void ReportDiscOpenFailure(const char* path) {
                     header[2], header[3], header[4], header[5], header[6], header[7]);
 }
 
+#if defined(__ANDROID__)
 // Android's picker hands back a content:// URI, not a path. Opening one is
 // possible (SDL routes SDL_IOFromFile through ContentResolver) but it depends
 // on a permission grant that the system can revoke at any time - and on some
