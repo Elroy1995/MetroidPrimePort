@@ -190,8 +190,26 @@ final class TouchControlsView extends View {
         }
     }
 
+    // A mouse is not a finger on the overlay. Its clicks are dispatched as
+    // touches, and hover goes to the topmost hoverable view (this one, being
+    // clickable), so without these the SDL surface below saw neither and a
+    // click landed on whatever on-screen button was under the cursor. Declining
+    // passes them down to the surface. Once SDL captures the pointer for mouse
+    // aim, events go to the focused surface and never reach here.
+    private static boolean fromMouse(MotionEvent event) {
+        return event.getToolType(event.getActionIndex()) == MotionEvent.TOOL_TYPE_MOUSE;
+    }
+
+    @Override
+    public boolean onHoverEvent(MotionEvent event) {
+        return !fromMouse(event) && super.onHoverEvent(event);
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (fromMouse(event)) {
+            return false;
+        }
         int action = event.getActionMasked();
         int actionIndex = event.getActionIndex();
 

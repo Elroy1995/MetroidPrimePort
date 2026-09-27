@@ -879,10 +879,26 @@ int CMain::RsMain(int argc, const char* const* argv) {
             ApplyAspectMode();
           } else if (event->type == AURORA_SDL_EVENT &&
                      event->sdl.type == SDL_EVENT_MOUSE_MOTION) {
-            PortDebug::AddMouseDelta(event->sdl.motion.xrel, event->sdl.motion.yrel);
+            // Touches and pens also arrive as mouse motion (Android turns that
+            // on for ImGui); only a real mouse aims.
+            if (event->sdl.motion.which != SDL_TOUCH_MOUSEID &&
+                event->sdl.motion.which != SDL_PEN_MOUSEID) {
+              PortDebug::AddMouseDelta(event->sdl.motion.xrel, event->sdl.motion.yrel);
+            }
+          } else if (event->type == AURORA_SDL_EVENT &&
+                     (event->sdl.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                      event->sdl.type == SDL_EVENT_MOUSE_BUTTON_UP)) {
+            PortDebug::NoteMouseButton(event->sdl.button.which == SDL_TOUCH_MOUSEID ||
+                                           event->sdl.button.which == SDL_PEN_MOUSEID,
+                                       SDL_BUTTON_MASK(event->sdl.button.button),
+                                       event->sdl.button.down);
+          } else if (event->type == AURORA_SDL_EVENT &&
+                     event->sdl.type == SDL_EVENT_MOUSE_REMOVED) {
+            PortDebug::ClearMouseButtons();
           } else if (event->type == AURORA_SDL_EVENT &&
                      event->sdl.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
             PortDebug::SetMouseCaptured(false);
+            PortDebug::ClearMouseButtons();
           }
           ++event;
         }

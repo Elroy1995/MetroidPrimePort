@@ -80,8 +80,9 @@ void CDolphinController::ReadDevices() {
   PADStatus status[4]{};
   PADRead(status);
   PADClamp(status);
-  unsigned held = SDL_GetMouseState(nullptr, nullptr) &
-                        (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK | SDL_BUTTON_MMASK);
+  // Not SDL_GetMouseState: that counts touches as left clicks.
+  unsigned held = PortDebug::MouseHeldButtons() &
+                  (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK | SDL_BUTTON_MMASK);
   bool inputFocused = SDL_GetKeyboardFocus() != nullptr;
 #ifdef MP_ENABLE_SMOKE_DRIVER
   held = PortSmokeMouseButtons(held);

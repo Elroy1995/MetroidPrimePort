@@ -73,5 +73,17 @@ int main() {
   Check(buttons.Poll(true, 1) == 0); // do not resume a held click on refocus
   buttons.Poll(true, 0);
   Check(buttons.Poll(true, 1) == 1);
+
+  PortMouse::HeldButtons held;
+  held.Note(true, 1, true); // a touch-synthesised click is not a mouse button
+  Check(held.Held() == 0);
+  held.Note(false, 1, true);
+  held.Note(false, 4, true);
+  held.Note(true, 1, false); // nor does a synthetic release clear a real press
+  Check(held.Held() == 5);
+  held.Note(false, 1, false);
+  Check(held.Held() == 4);
+  held.Clear();
+  Check(held.Held() == 0);
   std::puts("mouse axes, limits, handoff and held-button regressions passed");
 }

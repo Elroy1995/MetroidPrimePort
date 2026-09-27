@@ -416,8 +416,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
                 case MotionEvent.ACTION_HOVER_MOVE:
                 case MotionEvent.ACTION_MOVE:
+                    // Port: captured coordinates are deltas, so any batched
+                    // samples are motion too; getX alone keeps only the last.
                     x = event.getX(i);
                     y = event.getY(i);
+                    for (int h = 0; h < event.getHistorySize(); h++) {
+                        x += event.getHistoricalX(i, h);
+                        y += event.getHistoricalY(i, h);
+                    }
                     SDLActivity.onNativeMouse(0, action, x, y, true);
                     return true;
 

@@ -99,4 +99,21 @@ public:
 private:
   bool mReady = false;
 };
+
+// Buttons held on real mice. SDL_GetMouseState also reports the mouse SDL
+// synthesises from touches and pens, which Android turns on for ImGui, so a
+// finger on the screen read as a held left button (fire). Fed from button
+// events, skipping the synthetic ones.
+class HeldButtons {
+public:
+  void Note(bool synthetic, uint32_t mask, bool down) {
+    if (synthetic) return;
+    mHeld = down ? (mHeld | mask) : (mHeld & ~mask);
+  }
+  // Releases can go missing when focus or the device goes away.
+  void Clear() { mHeld = 0; }
+  uint32_t Held() const { return mHeld; }
+private:
+  uint32_t mHeld = 0;
+};
 } // namespace PortMouse

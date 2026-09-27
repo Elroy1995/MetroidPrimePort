@@ -122,6 +122,11 @@ bool MouseInvertY();
 bool MouseButtons();
 bool MouseCrosshair();
 unsigned MouseWeaponButtons(unsigned held);
+// Real-mouse button state (SDL_BUTTON_*MASK), fed from the event loop. Touch-
+// and pen-synthesised mouse buttons are left out; see PortMouse::HeldButtons.
+void NoteMouseButton(bool synthetic, unsigned mask, bool down);
+void ClearMouseButtons();
+unsigned MouseHeldButtons();
 // Called during simulation, using the effective unbobbed camera direction.
 bool UpdateMouseAim(bool active, bool locked, float x, float y, float z);
 void SynchronizeMouseAim(float x, float y, float z);

@@ -184,12 +184,20 @@ std::atomic< ActiveInput > sActiveInput{ActiveInput::Pad};
 
 bool SDLCALL active_input_watch(void*, SDL_Event* event) {
   switch (event->type) {
+  case SDL_EVENT_MOUSE_MOTION:
+    // A touch or pen reaching SDL is synthesised into a mouse too; it is not
+    // the player picking up a keyboard and mouse.
+    if (event->motion.which == SDL_TOUCH_MOUSEID || event->motion.which == SDL_PEN_MOUSEID) break;
+    sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    break;
+  case SDL_EVENT_MOUSE_BUTTON_DOWN:
+  case SDL_EVENT_MOUSE_BUTTON_UP:
+    if (event->button.which == SDL_TOUCH_MOUSEID || event->button.which == SDL_PEN_MOUSEID) break;
+    sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    break;
   case SDL_EVENT_KEY_DOWN:
   case SDL_EVENT_KEY_UP:
   case SDL_EVENT_TEXT_INPUT:
-  case SDL_EVENT_MOUSE_MOTION:
-  case SDL_EVENT_MOUSE_BUTTON_DOWN:
-  case SDL_EVENT_MOUSE_BUTTON_UP:
   case SDL_EVENT_MOUSE_WHEEL:
     sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
     break;

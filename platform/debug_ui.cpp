@@ -105,6 +105,7 @@ bool sMouseButtons = true;
 bool sMouseCrosshair = true;
 PortMouse::AimState sMouseAimState;
 PortMouse::ButtonGate sMouseButtonGate;
+PortMouse::HeldButtons sMouseHeldButtons;
 float sMouseSensitivity = 0.0035f;
 float sMousePendingX = 0.f;
 float sMousePendingY = 0.f;
@@ -828,6 +829,11 @@ unsigned MouseWeaponButtons(unsigned held) {
   return sMouseButtonGate.Poll(MouseAim() && MouseButtons() && MouseGameplayActive() &&
                                MouseCaptured() && !Visible(), held);
 }
+void NoteMouseButton(bool synthetic, unsigned mask, bool down) {
+  sMouseHeldButtons.Note(synthetic, mask, down);
+}
+void ClearMouseButtons() { sMouseHeldButtons.Clear(); }
+unsigned MouseHeldButtons() { return sMouseHeldButtons.Held(); }
 
 bool UpdateMouseAim(bool active, bool locked, float x, float y, float z) {
   SetMouseGameplayActive(active);
