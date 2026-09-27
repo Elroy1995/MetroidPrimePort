@@ -31,7 +31,25 @@ if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
 fi
 
 mkdir -p "$OUT"
-flatpak-builder --force-clean --repo="$OUT/repo" "$OUT/build" "$MANIFEST"
+# rofiles-fuse gives the build a source tree whose files are immutable, so a
+# build step cannot modify the checkout it came from. It needs FUSE, and the
+# fusermount3 helper is setuid - which does not help once the caller is already
+# inside a user namespace, because a setuid binary cannot gain privilege inside
+# one. On such a host every attempt fails with
+#   fusermount3: mount failed: Permission denied
+# even with user_allow_other set in /etc/fuse.conf and even though a manual
+# rofiles-fuse mount as the same user succeeds. The flag below swaps the
+# mechanism and is otherwise equivalent, so try it first and fall back only if
+# the real thing is refused.
+build_with_rofiles() {
+    flatpak-builder --force-clean --repo="$OUT/repo" "$OUT/build" "$MANIFEST" "$@"
+}
+
+if ! build_with_rofiles; then
+    echo >&2
+    echo "note: retrying without rofiles-fuse (see the comment above)" >&2
+    build_with_rofiles --disable-rofiles-fuse
+fi
 flatpak build-bundle "$OUT/repo" "$OUT/MetroidPrimePort.flatpak" "$APP_ID"
 echo "wrote $OUT/MetroidPrimePort.flatpak"
 echo "install with: flatpak install --user $OUT/MetroidPrimePort.flatpak"
