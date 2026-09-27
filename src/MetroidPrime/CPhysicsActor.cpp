@@ -240,10 +240,16 @@ CVector3f CPhysicsActor::GetMoveToORImpulseWR(const CVector3f& trans, float d) c
 }
 
 CVector3f CPhysicsActor::GetRotateToORAngularMomentumWR(const CQuaternion& q, float d) const {
-  if (q.GetScalar() > 0.99999976f) {
+  // Port: q and -q are the same rotation. A near-identity delta can arrive with a
+  // scalar near -1 (animation deltas do at large dt); taken as is, its vector part
+  // normalizes from ~zero and acos can see a value past -1, both giving NaN, and
+  // the NaN angular momentum then hangs collision. Take the short way round.
+  const float sign = q.GetScalar() < 0.f ? -1.f : 1.f;
+  const float scalar = rstl::min_val(sign * q.GetScalar(), 1.f);
+  if (scalar > 0.99999976f || !q.GetVector().CanBeNormalized()) {
     return CVector3f::Zero();
   } else {
-    const CQuaternion rotated(q.GetScalar(), GetTransform().Rotate(q.GetVector()));
+    const CQuaternion rotated(scalar, GetTransform().Rotate(sign * q.GetVector()));
 
     const double ac = acos(rotated.GetScalar());
     return rotated.GetVector().AsNormalized() * ((static_cast< float >(ac) * 2.0f) * (1.0f / d)) *
