@@ -80,6 +80,8 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
   gfx::resolve_pass_into(handle.handle, rect, clearColor, clearAlpha, clearDepth, g_gxState.clearColor,
                          clear_depth_value(), texCopyFmt);
   ++handle.revision;
+  handle.width = g_gxState.texCopyDstWidth;
+  handle.height = g_gxState.texCopyDstHeight;
   g_gxState.copyTextures[dest] = handle;
   texture::invalidate_bindings();
 }

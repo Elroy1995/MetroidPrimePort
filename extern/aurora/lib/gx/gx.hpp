@@ -310,6 +310,9 @@ struct GXState {
   struct CopyTextureRef {
     gfx::TextureHandle handle;
     u32 revision = 0;
+    // Logical (unscaled) GXSetTexCopyDst size of the latest copy to this dest.
+    u32 width = 0;
+    u32 height = 0;
 
     operator bool() const noexcept { return handle.operator bool(); }
   };

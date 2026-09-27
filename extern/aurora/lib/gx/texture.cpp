@@ -305,6 +305,23 @@ bool texture_source_is_mapped(const GXTexObj_& obj) noexcept {
 #endif
 }
 
+// The EFB copy registered for obj's data pointer, if obj samples it. Games free
+// copy destinations without calling GXDestroyCopyTex, so a registration can
+// outlive its buffer; a texture later loaded at the same heap address would then
+// sample the stale copy (blank or garbled text, icons). A real copy target is
+// sampled at the size it was copied at, so a size mismatch means the address has
+// been reused for unrelated texture data.
+const GXState::CopyTextureRef* find_copy_texture(const GXTexObj_& obj) noexcept {
+  const auto it = g_gxState.copyTextures.find(obj.data);
+  if (it == g_gxState.copyTextures.end()) {
+    return nullptr;
+  }
+  if (obj.width() != it->second.width || obj.height() != it->second.height) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
 void log_invalid_texture_source(const GXTexObj_& obj, const char* where) noexcept {
   static const bool enabled = std::getenv("MP_LOG_TEX_INVALID") != nullptr;
   if (!enabled) {
@@ -492,14 +509,14 @@ void touch_bound_texture(const GXTexObj_& obj) {
   if (!is_palette_format(obj.format()) || obj.tlut >= g_gxState.loadedTluts.size()) {
     return;
   }
-  const auto copyIt = g_gxState.copyTextures.find(obj.data);
-  if (copyIt == g_gxState.copyTextures.end()) {
+  const auto* copyRef = find_copy_texture(obj);
+  if (copyRef == nullptr) {
     return;
   }
   const auto& tlut = g_gxState.loadedTluts[obj.tlut];
   if (auto tlutIt = s_tlutObjectCaches.find(tlut.tlutObjId); tlutIt != s_tlutObjectCaches.end()) {
     tlutIt->second.lastUsedFrame = s_frameCount;
-    if (auto dynamicIt = tlutIt->second.dynamicPaletteTextures.find(make_dynamic_palette_key(obj, copyIt->second));
+    if (auto dynamicIt = tlutIt->second.dynamicPaletteTextures.find(make_dynamic_palette_key(obj, *copyRef));
         dynamicIt != tlutIt->second.dynamicPaletteTextures.end()) {
       dynamicIt->second.lastUsedFrame = s_frameCount;
     }
@@ -911,8 +928,7 @@ void resolve_sampled_textures(const ShaderInfo& info) noexcept {
     }
 
     gfx::TextureHandle handle;
-    const auto copyIt = g_gxState.copyTextures.find(obj.data);
-    const GXState::CopyTextureRef* copyRef = copyIt != g_gxState.copyTextures.end() ? &copyIt->second : nullptr;
+    const GXState::CopyTextureRef* copyRef = find_copy_texture(obj);
     if (is_palette_format(obj.format())) {
       const auto tlutIdx = static_cast<size_t>(obj.tlut);
       if (tlutIdx < g_gxState.loadedTluts.size()) {
