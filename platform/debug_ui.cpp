@@ -76,6 +76,8 @@ unsigned sSimRate = 60;
 bool sSimAdaptive = false;
 float sTickPeriod = 1.f / 60.f;
 bool sFrameLimitEnabled = true;
+bool sTurbo = false;
+unsigned sTurboTicks = 1;
 bool sTraceTiming = false;
 uint64_t sTimingNs = 0;
 // Wall-clock for the same span as sTimingNs, so presented frames can be divided
@@ -441,6 +443,13 @@ void EnsureInitialized() {
   if (std::getenv("MP_FAST_BOOT") != nullptr) {
     sFastBoot = true;
   }
+  if (const char* turbo = std::getenv("MP_TURBO")) {
+    sTurbo = true;
+    const long ticks = std::strtol(turbo, nullptr, 10);
+    if (ticks >= 1 && ticks <= 16) {
+      sTurboTicks = static_cast< unsigned >(ticks);
+    }
+  }
   if (std::getenv("MP_SKIP_CUTSCENES") != nullptr) {
     sSkipCutscenes = true;
   }
@@ -544,6 +553,16 @@ float SimPeriod() { return 1.f / static_cast< float >(SimRate()); }
 bool SimAdaptive() {
   EnsureInitialized();
   return sSimAdaptive;
+}
+
+bool Turbo() {
+  EnsureInitialized();
+  return sTurbo;
+}
+
+unsigned TurboTicks() {
+  EnsureInitialized();
+  return sTurbo ? sTurboTicks : 1;
 }
 
 void SetSimAdaptive(bool enabled) {
@@ -2378,7 +2397,7 @@ void DrawUI() {
     // Apply persisted vsync once the swapchain surface exists (first drawn
     // frame), so the present mode is chosen from real surface capabilities.
     sPresentationSettingsApplied = true;
-    aurora_enable_vsync(sVsyncEnabled);
+    aurora_enable_vsync(sVsyncEnabled && !sTurbo);
   }
   if (!sVisible) {
     sTouchScroll = TouchScroll{};

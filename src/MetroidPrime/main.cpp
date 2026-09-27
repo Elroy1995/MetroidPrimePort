@@ -470,7 +470,7 @@ bool CGameArchitectureSupport::UpdateTicks() {
   // variable frame rate is matched exactly); otherwise a fixed 1/SimRate() step
   // catches up with whole ticks.
   double period;
-  if (PortDebug::SimAdaptive()) {
+  if (PortDebug::SimAdaptive() && !PortDebug::Turbo()) {
     period = static_cast< double >(elapsed);
     if (period < 1.0 / 480.0) {
       period = 1.0 / 480.0;
@@ -481,8 +481,12 @@ bool CGameArchitectureSupport::UpdateTicks() {
     period = 1.0 / static_cast< double >(PortDebug::SimRate());
   }
   x7c_tickClock.SetPeriod(period);
-  const unsigned ticks = x7c_tickClock.Advance(elapsed, gpMain->GetScreenFading(),
-                                             PortDebug::FrameLimitEnabled());
+  unsigned ticks =
+      x7c_tickClock.Advance(elapsed, gpMain->GetScreenFading() || PortDebug::Turbo(),
+                            PortDebug::FrameLimitEnabled());
+  if (PortDebug::Turbo() && !gpMain->GetScreenFading()) {
+    ticks = PortDebug::TurboTicks();
+  }
 
   const float tickPeriod = static_cast< float >(period);
   PortDebug::SetTickPeriod(tickPeriod);
@@ -845,6 +849,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
     // entry because the interesting part is from the first real frame, and this
     // point is where the game's own loading is done.
     uint64_t firstFrameNs = 0;
+    const uint64_t loopBeganNs = SDL_GetTicksNS();
     unsigned s_frameLog = 0;
     while (!x160_24_finished) {
       const uint64_t loopStartNs = SDL_GetTicksNS();
@@ -1067,7 +1072,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
       // two could never be told apart - which is the only thing worth reporting
       // when a frame overruns its budget.
       const uint64_t workEndNs = SDL_GetTicksNS();
-      if (PortDebug::FrameLimitEnabled()) {
+      if (PortDebug::FrameLimitEnabled() && !PortDebug::Turbo()) {
         nextFrameDeadline += framePeriodNs;
         const uint64_t now = SDL_GetTicksNS();
         if (nextFrameDeadline > now) {
@@ -1087,6 +1092,10 @@ int CMain::RsMain(int argc, const char* const* argv) {
   if (firstFrameNs != 0) {
     fprintf(stderr, "MP startup: first frame %llu ms after the main loop began, %u frames run\n",
             static_cast< unsigned long long >(firstFrameNs / 1000000ull), s_frameLog);
+    // The whole loop's wall time, so a test run's speed (MP_TURBO or not) is a
+    // number rather than a guess from the log's timestamps.
+    fprintf(stderr, "MP run: %u frames in %.1f s\n", s_frameLog,
+            static_cast< double >(SDL_GetTicksNS() - loopBeganNs) / 1e9);
   }
   // Which audio backend the run actually got, and at what rate. Nothing reported
   // this, so "is there any sound" was unanswerable from a run: a machine with no

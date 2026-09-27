@@ -126,6 +126,14 @@ void PortSmokeAreaReload(CStateManager& mgr) {
   if (sAreaReloads == 3) std::fputs("[area-smoke] passed: three geometry eviction/reload cycles\n", stderr);
 }
 
+// Set once MP_SMOKE_WORLD has run all its restarts, so MP_SMOKE_WALK can start
+// in the destination room instead of spending itself at the opening spawn.
+static bool sWorldSmokeDone = false;
+static bool WorldSmokePending() {
+  static const bool requested = std::getenv("MP_SMOKE_WORLD") != nullptr;
+  return requested && !sWorldSmokeDone;
+}
+
 void PortSmokeWorldTeleport(CStateManager& mgr) {
   static uint32_t sTargetWorld = 0;
   static bool sTargetResolved = false;
@@ -196,6 +204,7 @@ void PortSmokeWorldTeleport(CStateManager& mgr) {
   if (mgr.World()->IGetWorldAssetId() != targetWorld) return;
   sWaiting = false;
   ++sRestarts;
+  sWorldSmokeDone = sRestarts >= restartCount;
   std::fprintf(stderr, "[world-smoke] passed: world %08X area %d restart %u/%u\n", targetWorld,
                mgr.World()->GetCurrentAreaId().Value(), sRestarts, restartCount);
 }
@@ -887,7 +896,7 @@ void PortSmokeWalk(CStateManager& mgr) {
     const char* value = std::getenv("MP_SMOKE_WALK");
     return value != nullptr ? static_cast< unsigned >(std::strtoul(value, nullptr, 10)) : 0u;
   }();
-  if (walkTicks == 0) return;
+  if (walkTicks == 0 || WorldSmokePending()) return;
   static unsigned sTicks = 0;
   static bool sStarted = false;
   static CVector3f sStart;

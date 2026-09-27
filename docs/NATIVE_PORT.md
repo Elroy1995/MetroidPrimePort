@@ -487,6 +487,14 @@ a temporary directory instead of mounting.
 - `MP_FAST_BOOT=1`, `MP_SKIP_CUTSCENES=1`, `MP_CUTSCENE_SPEED=8`,
   `MP_SHOW_DEBUG_UI=1`: development controls. Presence flags are enabled by
   being set; unset them to disable them. Cutscene speed is restricted to 1–32.
+- `MP_TURBO[=<ticks>]`: lockstep for automated runs. Every frame runs exactly
+  `<ticks>` fixed ticks (default 1, at most 16) with no frame limiter and no
+  vsync, so a run goes as fast as the machine renders it; game time per tick
+  stays exact. Under Xvfb presentation caps near 100 fps, so extra ticks per
+  frame are what give the speedup: 3000 ticks took 50 s at real time, 30 s at
+  `MP_TURBO=1`, 7 s at `4` and 3.3 s at `8`. Audio and streamed music do not
+  keep up. Not saved to the settings file. On exit the port prints
+  `MP run: <frames> frames in <s> s`.
 - `MP_TOUCH_UI=1`: use the touch layout for the debug overlay on desktop (always
   on for Android): a full-screen window inside the safe area, with a page list
   instead of tabs, larger hit targets, drag-to-scroll with fling and a Close
@@ -619,6 +627,11 @@ size and object id.
 reports `[walk-smoke] passed: ticks=... dist=... maxFlatSpeed=... speed=.../s`.
 Run it with the same real duration at two simulation rates (for example 60 ticks
 at 60 Hz and 120 ticks at 120 Hz) to confirm ground movement stays real-time.
+With `MP_SMOKE_WORLD` set, the walk waits until the world jump has finished, so
+it starts in the destination room. For example, this reaches the Parasite Queen
+fight (Frigate Orpheon, Reactor Core) in about 15 s:
+`MP_TURBO=8 MP_SMOKE_WORLD=158EFE17 MP_SMOKE_WORLD_AREA=87452DC1 MP_SMOKE_WALK=3000 MP_SMOKE_FRAMES=1500`
+together with `MP_FAST_BOOT=1 MP_SKIP_CUTSCENES=1`.
 
 `MP_SMOKE_STICK=1` holds the right stick and reports the aim yaw change, to
 verify twin-stick aiming (run with `MP_TWIN_STICK=1`).

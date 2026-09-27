@@ -50,6 +50,13 @@ float SimPeriod();
 // tick-for-tick. Experimental.
 bool SimAdaptive();
 void SetSimAdaptive(bool enabled);
+// MP_TURBO[=<ticks>]: lockstep for tests. Every loop runs exactly <ticks> fixed
+// ticks (default 1, at most 16) and nothing waits for the wall clock, so a run
+// goes as fast as the machine can render it; more ticks per frame skip
+// presents, which is what limits a run under Xvfb. Game time stays exact per
+// tick; audio and streams do not keep up. Not saved to the settings file.
+bool Turbo();
+unsigned TurboTicks();
 // The dt of the simulation tick currently being processed, set by
 // CGameArchitectureSupport::UpdateTicks. Game constants authored per 60 Hz tick
 // (friction, damping) scale by this so they stay real-time at any rate.
