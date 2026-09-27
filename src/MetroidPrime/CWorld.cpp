@@ -448,7 +448,7 @@ CDummyWorld::CDummyWorld(CAssetId mlvlId, const bool loadMap)
 : x4_loadMap(loadMap)
 , x8_phase(kP_Loading)
 , xc_mlvlId(mlvlId)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , x10_strgId(kInvalidAssetId)
 #endif
 , x14_savwId(kInvalidAssetId)

@@ -5,7 +5,7 @@
 #include <dolphin/gx/GXManage.h>
 #include <rstl/list.hpp>
 
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 #include <stdint.h>
 #endif
 
@@ -76,7 +76,7 @@ bool CElementAllocationChunk::CanAllocate(uint size) const {
 }
 
 bool CElementAllocationChunk::Contains(const void* ptr) const {
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
   return reinterpret_cast< uintptr_t >(ptr) - reinterpret_cast< uintptr_t >(xc_data) <
          sizeof(xc_data);
 #else

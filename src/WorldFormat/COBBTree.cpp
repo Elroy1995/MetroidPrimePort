@@ -203,7 +203,7 @@ COBBTree::CNode::CNode(const CTransform4f& xf, const CVector3f& point, const CNo
 , x40_left(left)
 , x44_right(right)
 , x48_leaf(leaf)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , x4c_hit(false)
 #endif
 {}
@@ -214,7 +214,7 @@ COBBTree::CNode::CNode(CInputStream& in)
 , x40_left(x3c_isLeaf ? nullptr : rs_new CNode(in))
 , x44_right(x3c_isLeaf ? nullptr : rs_new CNode(in))
 , x48_leaf(x3c_isLeaf ? rs_new CLeafData(in) : nullptr)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , x4c_hit(false)
 #endif
 {}

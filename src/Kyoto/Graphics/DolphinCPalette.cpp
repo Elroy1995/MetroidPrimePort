@@ -15,7 +15,7 @@ CGraphicsPalette::CGraphicsPalette(EPaletteFormat format, int numEntries)
 , x4_frameLoaded(0)
 , x8_entryCount(numEntries)
 , xc_entries((ushort*)CMemory::Alloc(numEntries * sizeof(ushort), IAllocator::kHI_RoundUpLen))
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , x10_tlutObj()
 #endif
 , x1c_locked(false) {
@@ -27,7 +27,7 @@ CGraphicsPalette::CGraphicsPalette(CInputStream& in)
 , x4_frameLoaded(0)
 , x8_entryCount(in.Get< short >() * in.Get< short >())
 , xc_entries((ushort*)CMemory::Alloc(x8_entryCount * sizeof(ushort), IAllocator::kHI_RoundUpLen))
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , x10_tlutObj()
 #endif
 , x1c_locked(false) {

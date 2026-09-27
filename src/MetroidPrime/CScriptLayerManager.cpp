@@ -35,13 +35,13 @@ void CScriptLayerManager::SetLayerActive(TAreaId areaIdx, TLayerId layerIdx, boo
   CWorldLayers::Area& area = x0_areaLayers[areaIdx.Value()];
   int layerId = layerIdx.Value();
   if (active) {
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
     area.m_layerBits |= u64(1) << layerId;
 #else
     area.m_layerBits |= 1 << layerId;
 #endif
   } else {
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
     area.m_layerBits &= ~(u64(1) << layerId);
 #else
     area.m_layerBits &= ~(1 << layerId);
@@ -51,7 +51,7 @@ void CScriptLayerManager::SetLayerActive(TAreaId areaIdx, TLayerId layerIdx, boo
 
 bool CScriptLayerManager::IsLayerActive(TAreaId areaIdx, TLayerId layerIdx) const {
   const u64& layerBits = x0_areaLayers[areaIdx.Value()].m_layerBits;
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
   return (layerBits & (u64(1) << layerIdx.Value())) != 0;
 #else
   return (layerBits & (1 << layerIdx.Value())) != 0;

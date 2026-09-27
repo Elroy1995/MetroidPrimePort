@@ -288,12 +288,12 @@ CCubeRenderer::CCubeRenderer(IObjectStore& objStore, COsContext& osContext, CMem
 , x34_surfaces()
 , x44_frustumPlanes(CTransform4f::Identity(), 1.5707964f, 1.f, 1.f, false, 100.f)
 , xa8_drawableCallback(nullptr)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , xac_drawableCallbackUserData(nullptr)
 #endif
 , xb0_viewPlane(0.f, CUnitVector3f(CVector3f(0.f, 1.f, 0.f), CUnitVector3f::kN_Yes))
 , xc0_pvsMode(0)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , xc4_pvsState(0)
 #endif
 , xc8_pvsVisSet()

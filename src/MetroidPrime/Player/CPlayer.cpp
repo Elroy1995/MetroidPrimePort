@@ -387,7 +387,7 @@ CPlayer::CPlayer(TUniqueId uid, const CTransform4f& xf, const CAABox& aabb, CAss
 , x9c5_27_camSubmerged(false)
 , x9c5_28_slidingOnWall(false)
 , x9c5_29_hitWall(false)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , x9c5_30_selectFluidBallSound(false)
 #endif
 , x9c5_31_stepCameraZBiasDirty(true)
@@ -397,12 +397,12 @@ CPlayer::CPlayer(TUniqueId uid, const CTransform4f& xf, const CAABox& aabb, CAss
 , x9c6_27_aimingAtProjectile(false)
 , x9c6_28_aligningGrappleSwingTurn(false)
 , x9c6_29_disableInput(false)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , x9c6_30_newScanScanning(false)
 #endif
 , x9c6_31_overrideRadarRadius(false)
 , x9c7_25_outOfBallLookAtHintActor(false)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , x9c7_24_noDamageLoopSfx(false)
 #endif
 , x9c8_eyeZBias(0.f)
@@ -417,7 +417,7 @@ CPlayer::CPlayer(TUniqueId uid, const CTransform4f& xf, const CAABox& aabb, CAss
 , xa00_deathPowerBomb(kInvalidUniqueId)
 , xa04_preThinkDt(0.f)
 , xa08_steamTextureId(kInvalidAssetId)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , xa0c_iceTextureId(kInvalidAssetId)
 #endif
 , xa10_envDmgCounter(0)

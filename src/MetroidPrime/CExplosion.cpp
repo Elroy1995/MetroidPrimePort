@@ -42,7 +42,7 @@ CExplosion::CExplosion(const TLockedToken< CElectricDescription >& electric, TUn
 , xf4_24_renderThermalHot(flags & 0x4)
 , xf4_25_hasRenderBounds(true)
 , xf4_26_renderXray(flags & 0x8)
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
 , xf8_time(0.0f)
 #endif
 {
