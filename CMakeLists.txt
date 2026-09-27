@@ -220,8 +220,11 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/io.github.odrannnn.metroidpr
 # fails the whole package with icon-not-found. Installed here rather than in a
 # packaging script so the AppImage, the Flatpak and a package-manager install all
 # pick it up from the same rule.
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/io.github.odrannnn.metroidprimeport.svg
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+# Installed under the app id, which is the name the desktop entry and the
+# metainfo's <icon> both refer to, whatever the file in packaging/ is called.
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/packaging/varia-bolt.svg
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+    RENAME io.github.odrannnn.metroidprimeport.svg)
 # The AppStream description, which the desktop entry cannot carry. Flatpak
 # software centres and app stores show this rather than the desktop file, and
 # Flathub will not accept a component without it. Installed rather than left for
