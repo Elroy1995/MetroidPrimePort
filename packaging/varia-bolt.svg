@@ -2,12 +2,6 @@
 <!--
   Application icon: the "S" bolt over a disc, drawn for this project by the
   maintainer as an original piece of artwork inspired by the Varia Suit emblem.
-
-  It is not a reproduction of Nintendo's mark and no pixel of Nintendo's art is
-  traced or copied. The earlier comment in this file said the opposite - that it
-  was traced from a reference image and was Nintendo's mark - which was wrong,
-  and shipping it would have been a false statement in the package as well as a
-  licensing problem. Corrected rather than left to mislead whoever reads it next.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-35.5 0 773 773" width="256" height="256">
   <defs>
