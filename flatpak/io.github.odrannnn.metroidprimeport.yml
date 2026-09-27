@@ -29,6 +29,11 @@ modules:
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DMP_BUILD_TESTS=OFF
+      # Aurora has its own tests, on its own switch, defaulting to ON, and they
+      # FetchContent googletest - which a release package has no reason to build
+      # and no way to download offline. MP_BUILD_TESTS=OFF only covers the port's
+      # own tests; without this the build died fetching googletest.
+      - -DAURORA_ENABLE_TESTS=OFF
       # A Flatpak build is offline: the sandbox shares no resolver, so anything
       # the build would FetchContent has to be handed to it as a source below and
       # pointed at here. Three of them reach the network on Linux. AURORA_SDL3_PROVIDER
