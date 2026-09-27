@@ -564,7 +564,14 @@ bool CWorldTransManager::WaitForModelsAndTextures() {
           } else {
             texture->LoadToMRAM();
           }
-        } else if (it->GetType() == 'CMDL') {
+        }
+        // Port: the retail game bounces model buffers through ARAM here to
+        // compact MRAM. On PC the buffers are host new[] allocations (freed
+        // with delete[] by ~CModel) and GetDataSize() is an accounting size
+        // larger than the buffer, so the round trip over-reads the buffer,
+        // frees it with CMemory::Free and corrupts the game heap.
+#ifndef TARGET_PC
+        else if (it->GetType() == 'CMDL') {
           TToken< CModel > modelToken = gpSimplePool->GetObj(*it);
           CModel* model = *modelToken;
           if (pass == 0) {
@@ -580,6 +587,7 @@ bool CWorldTransManager::WaitForModelsAndTextures() {
             model->RemapData(static_cast< uchar* >(data));
           }
         }
+#endif
       }
     }
   }

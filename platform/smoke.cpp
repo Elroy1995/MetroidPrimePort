@@ -200,6 +200,76 @@ void PortSmokeWorldTeleport(CStateManager& mgr) {
                mgr.World()->GetCurrentAreaId().Value(), sRestarts, restartCount);
 }
 
+// MP_SMOKE_ELEVATOR=<ticks>: ride the last elevator teleporter the current world
+// constructed, that many gameplay ticks after the world is running. It sends
+// the teleporter the same Play and SetToZero messages the elevator's scripts
+// do, so the model transition and the mid-update world switch both run, unlike
+// MP_SMOKE_WORLD's debug restart. Reports `[elevator-smoke] passed` once the
+// destination world is running.
+namespace {
+TUniqueId sElevatorUid = kInvalidUniqueId;
+CAssetId sElevatorOwnerWorld = kInvalidAssetId;
+CAssetId sElevatorDestWorld = kInvalidAssetId;
+}
+
+void PortSmokeElevatorLoaded(TUniqueId uid, CAssetId worldId, CAssetId areaId) {
+  const CAssetId owner = gpGameState != nullptr ? gpGameState->CurrentWorldAssetId() : kInvalidAssetId;
+  std::fprintf(stderr, "[elevator-smoke] world %08X loaded elevator %04X -> world %08X area %08X\n",
+               owner, uid.value, worldId, areaId);
+  sElevatorUid = uid;
+  sElevatorOwnerWorld = owner;
+  sElevatorDestWorld = worldId;
+}
+
+void PortSmokeElevator(CStateManager& mgr) {
+  static const unsigned delayTicks = [] {
+    const char* value = std::getenv("MP_SMOKE_ELEVATOR");
+    return value != nullptr ? static_cast< unsigned >(std::strtoul(value, nullptr, 10)) : 0u;
+  }();
+  enum { kWaiting, kPlaying, kRiding, kDone };
+  static int sPhase = kWaiting;
+  static unsigned sTicks = 0;
+  static CAssetId sTicksWorld = kInvalidAssetId;
+  static CAssetId sDestWorld = kInvalidAssetId;
+  if (delayTicks == 0 || sPhase == kDone || mgr.GetWantsToQuit() || mgr.World() == nullptr) return;
+  const CAssetId world = mgr.World()->IGetWorldAssetId();
+  if (world != sTicksWorld) {
+    sTicksWorld = world;
+    sTicks = 0;
+  }
+  const bool playing = mgr.GetGameState() == CStateManager::kGS_Running &&
+                       mgr.GetCameraManager()->IsInFPCamera() &&
+                       !mgr.GetCameraManager()->IsInCinematicCamera();
+  switch (sPhase) {
+  case kWaiting:
+    if (!playing || ++sTicks < delayTicks) return;
+    if (sElevatorOwnerWorld != world || mgr.GetObjectById(sElevatorUid) == nullptr) {
+      if (sTicks == delayTicks)
+        std::fputs("[elevator-smoke] no elevator in this world yet\n", stderr);
+      return;
+    }
+    std::fprintf(stderr, "[elevator-smoke] riding elevator %04X to world %08X\n",
+                 sElevatorUid.value, sElevatorDestWorld);
+    sDestWorld = sElevatorDestWorld;
+    mgr.SendScriptMsgAlways(sElevatorUid, kInvalidUniqueId, kSM_Play);
+    sPhase = kPlaying;
+    sTicks = 0;
+    break;
+  case kPlaying:
+    if (++sTicks < 2) return;
+    std::fputs("[elevator-smoke] sending SetToZero\n", stderr);
+    sPhase = kRiding;
+    mgr.SendScriptMsgAlways(sElevatorUid, kInvalidUniqueId, kSM_SetToZero);
+    break;
+  case kRiding:
+    if (world != sDestWorld || !playing) return;
+    std::fprintf(stderr, "[elevator-smoke] passed: world %08X area %d\n", world,
+                 mgr.World()->GetCurrentAreaId().Value());
+    sPhase = kDone;
+    break;
+  }
+}
+
 // When the save screen's confirm press is due. Zero means not scheduled. Shared
 // between the game-side hook that requests the screen and the frame loop that
 // injects the press, because they run in different places at different times.

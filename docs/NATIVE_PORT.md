@@ -595,6 +595,16 @@ reports `[world-smoke] passed: world <id> area <n>` once a freshly constructed
 world is running. The F1 debug overlay's Debug tab lists every world by its
 front-end name and jumps to it on click.
 
+`MP_SMOKE_ELEVATOR=<ticks>` rides the elevator most recently loaded in the current world
+once gameplay has run for `<ticks>` ticks. It sends the elevator's `Play` and
+`SetToZero` messages, like the ride trigger does, and reports
+`[elevator-smoke] passed: world <id> area <n>` once the destination world is
+playable. Combine it with `MP_SMOKE_WORLD=83F6FF6F` (Chozo Ruins, whose spawn
+area loads the Tallon elevator). It reproduced the elevator crash:
+`CWorldTransManager::WaitForModelsAndTextures` bounced model buffers through ARAM,
+which over-read them and freed host `new[]` memory into the game heap. The port
+now skips that model pass.
+
 `MP_SMOKE_VISOR=1` grants and switches to the thermal visor (`MP_SMOKE_VISOR=xray`:
 the X-ray visor) after gameplay starts and reports `[visor-smoke] passed` once it has stayed up. It reproduces
 the FIFO-worker crash where the game binds a texture whose source pointer is an

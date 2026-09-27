@@ -11,6 +11,10 @@
 #include "Kyoto/Audio/CSfxManager.hpp"
 #include "Kyoto/CResFactory.hpp"
 
+#ifdef MP_ENABLE_SMOKE_DRIVER
+#include "port_smoke.h"
+#endif
+
 CScriptWorldTeleporter::CScriptWorldTeleporter(const TUniqueId uid, const rstl::string& name,
                                                const CEntityInfo& info, const bool active,
                                                const CAssetId worldId, const CAssetId areaId)
@@ -58,7 +62,11 @@ CScriptWorldTeleporter::CScriptWorldTeleporter(
 , x7c_backgroundScale(backgroundScale)
 , x88_soundId(CSfxManager::TranslateSFXID(soundId))
 , x8a_volume(volume)
-, x8b_panning(panning) {}
+, x8b_panning(panning) {
+#ifdef MP_ENABLE_SMOKE_DRIVER
+  PortSmokeElevatorLoaded(uid, worldId, areaId);
+#endif
+}
 
 CScriptWorldTeleporter::CScriptWorldTeleporter(
     const TUniqueId uid, const rstl::string& name, const CEntityInfo& info, const bool active,
