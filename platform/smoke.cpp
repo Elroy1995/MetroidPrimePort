@@ -264,6 +264,14 @@ void PortSmokeSave(CStateManager& mgr) {
     }
     if (++sTicks < afterTicks)
       return;
+    // A save station checks this before opening the screen, and closes without
+    // one when it is 0, as it was for every card while the GCI folder had no
+    // serial. Calling EnterSaveGameScreen() directly skips that check, so repeat it.
+    if (gpGameState->CardSerial() == 0) {
+      std::fputs("[save-smoke] failed: card serial is 0, so a save station would close "
+                 "without a save screen\n", stderr);
+      std::abort();
+    }
     std::fputs("[save-smoke] requesting the in-game save screen\n", stderr);
     mgr.EnterSaveGameScreen();
     // The confirm is not scheduled here: a press at a fixed delay landed on the

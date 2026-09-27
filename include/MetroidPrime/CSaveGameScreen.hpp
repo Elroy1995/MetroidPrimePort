@@ -47,6 +47,7 @@ public:
 
   EUIType GetUIType() const { return x10_uiType; }
   bool IsSavingDisabled() const { return x92_savingDisabled; }
+  u64 GetCardSerial() const; // Port: for fast boot, which skips StartGame.
   const CGameState::GameFileStateInfo* GetGameData(int idx) const;
   void EraseGame(int idx);
   void StartGame(int idx);

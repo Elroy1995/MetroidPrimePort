@@ -396,7 +396,15 @@ const uint8_t* CardGciFolder::getCurrentMaker() const {
 }
 
 void CardGciFolder::getSerial(uint64_t& serial) {
-  serial = 0; // TODO
+  // A folder has no card header to take a serial from, but games read 0 as "no
+  // card": Metroid Prime's save stations then close without offering a save.
+  // Derive one from the folder's path instead (FNV-1a), which is stable across
+  // launches, as the in-game "not the original card" check needs.
+  uint64_t hash = 0xcbf29ce484222325ull;
+  for (const char c : m_folderPath.generic_string()) {
+    hash = (hash ^ static_cast<uint8_t>(c)) * 0x100000001b3ull;
+  }
+  serial = hash != 0 ? hash : 1;
 }
 
 void CardGciFolder::getChecksum(uint16_t& checksum, uint16_t& inverse) const {

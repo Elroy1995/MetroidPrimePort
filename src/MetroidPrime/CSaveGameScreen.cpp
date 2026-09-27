@@ -407,6 +407,8 @@ void CSaveGameScreen::Draw() const {
   }
 }
 
+u64 CSaveGameScreen::GetCardSerial() const { return x6c_cardDriver->GetCardSerial(); }
+
 const CGameState::GameFileStateInfo* CSaveGameScreen::GetGameData(int idx) const {
   return x6c_cardDriver->GetGameFileStateInfo(idx);
 }

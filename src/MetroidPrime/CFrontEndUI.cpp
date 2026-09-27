@@ -1734,6 +1734,11 @@ CIOWin::EMessageReturn CFrontEndUI::Update(float dt, CArchitectureQueue& queue) 
                           "proceeding may strand a half-written save file\n");
         }
         if (cardSettled || sSaveWaitFrames >= 600) {
+          // StartGame is skipped, and it is what hands the card's serial to the
+          // game state. Without it every save station closes, reading 0 as no card.
+          if (saveUI != nullptr && saveUI->GetUIType() == CSaveGameScreen::kUIT_SaveReady) {
+            gpGameState->SetCardSerial(saveUI->GetCardSerial());
+          }
           TransitionToFive();
         }
         break;
