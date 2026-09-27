@@ -29,6 +29,14 @@ modules:
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DMP_BUILD_TESTS=OFF
+      # A Flatpak build is offline: the sandbox shares no resolver, so anything
+      # the build would FetchContent has to be handed to it as a source below and
+      # pointed at here. These are the two that come over the network on Linux.
+      # SDL3 is not among them - AURORA_SDL3_PROVIDER resolves to `vendor` here,
+      # so it is built from the vendored copy in this repository. The Android
+      # OpenSSL source is not among them either; that file is inside if(ANDROID).
+      - -DFETCHCONTENT_SOURCE_DIR_DAWN_PREBUILT=/run/build/metroid-prime-port/dawn_prebuilt
+      - -DFETCHCONTENT_SOURCE_DIR_NOD_PREBUILT=/run/build/metroid-prime-port/nod_prebuilt
     post-install:
       # The binary, its data files, the desktop entry and the port's own grant
       # and notice are all installed by the project's own install rules, so
@@ -68,3 +76,17 @@ modules:
       - type: git
         path: ..
         branch: port
+      # Dawn and nod, pinned. Aurora fetches these with FetchContent and no hash
+      # at all, which is acceptable for a developer build and not something a
+      # published manifest should do: the digests below are what make this build
+      # reproducible rather than whatever the release host serves that day.
+      # Versions match AuroraDependencyVersions.cmake: Dawn v20260807.225922 and
+      # nod v2.0.0-alpha.12.
+      - type: file
+        url: https://github.com/encounter/dawn/releases/download/v20260807.225922/dawn-linux-x86_64.tar.gz
+        sha256: 2a4523426ab9b3a8970b4e151c3b005304ad37c2c01bcff80c78fffe486fc768
+        dest: dawn_prebuilt
+      - type: file
+        url: https://github.com/encounter/nod/releases/download/v2.0.0-alpha.12/libnod-linux-x86_64.tar.gz
+        sha256: 920adb1d2386c8728e0521f8d52809057c04bd46913433a0000ee0931d08d69f
+        dest: nod_prebuilt
