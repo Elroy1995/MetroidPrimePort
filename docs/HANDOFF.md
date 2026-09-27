@@ -25,8 +25,8 @@ build/review-tools/bin/ctest --test-dir build/port-gcc -L port
 (`MP_ENABLE_SMOKE_DRIVER=ON`), which the `MP_SMOKE_*` hooks require.
 
 CI (`.github/workflows/`): `native-linux.yml` (GCC 14 and clang 18) and
-`windows.yml` (clang-cl, plus packaging and a packaged no-disc startup check).
-Both are green. `build.yml` belongs to the upstream decompilation, not to this
+`windows.yml` (clang-cl, plus packaging and a packaged no-disc startup check;
+manual only for now, `gh workflow run windows.yml --ref port`). Both are green. `build.yml` belongs to the upstream decompilation, not to this
 port.
 
 Running it needs a disc image; see `docs/NATIVE_PORT.md` for `MP_DISC`, the

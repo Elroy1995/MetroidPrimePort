@@ -346,7 +346,8 @@ screen quickly to see the result.
 The port is built and tested on Linux and Windows. Its own platform code is
 portable - SDL3 and `std::filesystem` throughout - and the CMake keeps the MSVC
 linker paths from the template. The Windows build is exercised by
-`.github/workflows/windows.yml` on `windows-latest`: it configures with
+`.github/workflows/windows.yml` on `windows-latest`, which only runs when
+started by hand for now (`gh workflow run windows.yml --ref port`): it configures with
 clang-cl, builds, runs `ctest -L port`, runs the FIFO regressions, packages a
 `dist/` directory with licences, checks that the packaged executable reaches
 main and reports the missing disc image, and uploads the result as an artifact.

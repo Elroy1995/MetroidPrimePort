@@ -1,10 +1,11 @@
 name: windows
 
+# Manual only while the port is in alpha: a clang-cl build is the slowest job
+# by far, and running it on every push held up each release. Start it from the
+# Actions tab or with `gh workflow run windows.yml --ref port` when a Windows
+# zip is wanted. Restore the push/pull_request triggers to run it on every push.
 on:
   workflow_dispatch:
-  push:
-    branches: [port, main, master]
-  pull_request:
 
 jobs:
   build:

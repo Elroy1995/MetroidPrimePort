@@ -118,7 +118,7 @@ The port targets `versionName "0.1.1"` and `versionCode 2`.
 | Linux | `cmake -S . -B build-gcc` | executable | works; tests green. `cmake --install` also produces a complete tree, verified by running it |
 | Linux | `tools/make_appimage.sh` | AppImage | builds; **notices missing** |
 | Linux | `tools/make_flatpak.sh` | Flatpak | manifest installs a working tree and collects notices; **never built here** — no `flatpak-builder` on the development machine. The app id is a placeholder, and there is no AppStream metainfo |
-| Windows | `.github/workflows/windows.yml` | zipped `dist/` | green in CI, artifact uploaded, packaged startup checked |
+| Windows | `.github/workflows/windows.yml` | zipped `dist/` | manual trigger only for now; green when run, artifact uploaded, packaged startup checked |
 | Android | `tools/android_apk.sh :app:assembleRelease` | APK | builds, signed with this project's own key; **on-device behaviour unverified** |
 
 The Linux binary is the only one with a test suite attached: 14 `port`-labelled
