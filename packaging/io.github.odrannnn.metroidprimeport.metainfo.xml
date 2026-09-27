@@ -10,6 +10,13 @@
        compose finds the file by convention and then cannot resolve it, which is
        reported as file-read-error. -->
   <icon type="stock">io.github.odrannnn.metroidprimeport</icon>
+  <!-- AppStream categories, which are a different list from the desktop
+       entry's XDG ones. Without this the desktop file's Categories=Game has
+       nothing to map onto and compose reports both app-categories-missing
+       and filters-but-no-output. -->
+  <categories>
+    <category>Game</category>
+  </categories>
 <summary>Metroid Prime running natively, with randomizer and Archipelago support</summary>
 
   <description>
