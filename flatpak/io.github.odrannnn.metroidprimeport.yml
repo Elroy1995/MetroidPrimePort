@@ -122,64 +122,52 @@ modules:
         sha256: f50e5ac311a81382da7fa75b97310e4b9006474f9560ac46f54a9967f07d4ae3
         dest: abseil-cpp
 
-      - -DFETCHCONTENT_SOURCE_DIR_ABSEIL_CPP=/run/build/metroid-prime-port/abseil-cpp
       - type: archive
         url: https://github.com/Cyan4973/xxHash/archive/refs/tags/v0.8.3.tar.gz
         sha256: aae608dfe8213dfd05d909a57718ef82f30722c392344583d3f39050c7f29a80
         dest: xxhash
 
-      - -DFETCHCONTENT_SOURCE_DIR_XXHASH=/run/build/metroid-prime-port/xxhash
       - type: archive
         url: https://github.com/fmtlib/fmt/archive/refs/tags/12.1.0.tar.gz
         sha256: ea7de4299689e12b6dddd392f9896f08fb0777ac7168897a244a6d6085043fea
         dest: fmt
 
-      - -DFETCHCONTENT_SOURCE_DIR_FMT=/run/build/metroid-prime-port/fmt
       - type: archive
         url: https://github.com/zlib-ng/zlib-ng/archive/refs/tags/2.3.3.tar.gz
         sha256: f9c65aa9c852eb8255b636fd9f07ce1c406f061ec19a2e7d508b318ca0c907d1
         dest: zlib
 
-      - -DFETCHCONTENT_SOURCE_DIR_ZLIB=/run/build/metroid-prime-port/zlib
       - type: archive
         url: https://github.com/pnggroup/libpng/archive/refs/tags/v1.6.58.tar.gz
         sha256: a9d4df463d36a6e5f9c29bd6f4967312d17e996c1854f3511f833924eb1993cf
         dest: png
 
-      - -DFETCHCONTENT_SOURCE_DIR_PNG=/run/build/metroid-prime-port/png
       - type: archive
         url: https://files.twilitrealm.dev/freetype-2.14.3.tar.gz
         sha256: e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1
         dest: freetype
 
-      - -DFETCHCONTENT_SOURCE_DIR_FREETYPE=/run/build/metroid-prime-port/freetype
       - type: archive
         url: https://github.com/ocornut/imgui/archive/refs/tags/v1.91.9b-docking.tar.gz
         sha256: 466fdef9b18de15f0bb6e288e3d00ffa3d82200ec458ce5e4f724a161d9528a5
         dest: imgui
 
-      - -DFETCHCONTENT_SOURCE_DIR_IMGUI=/run/build/metroid-prime-port/imgui
       - type: archive
         url: https://sqlite.org/2026/sqlite-amalgamation-3510300.zip
         sha256: acb1e6f5d832484bf6d32b681e858c38add8b2acdfd42ac5df24b8afb46552b4
         dest: sqlite3
 
-      - -DFETCHCONTENT_SOURCE_DIR_SQLITE3=/run/build/metroid-prime-port/sqlite3
       - type: archive
         url: https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
         sha256: eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
         dest: zstd
 
-      - -DFETCHCONTENT_SOURCE_DIR_ZSTD=/run/build/metroid-prime-port/zstd
       - type: archive
         url: https://github.com/mikke89/RmlUi/archive/0ae381e00d7426762bb5ed897973366358b16642.tar.gz
         sha256: fa4b84db1bae7b929996beb51d79b7037cd7aec438737a0df4d3c816d9b13bd8
         dest: rmlui
 
-      - -DFETCHCONTENT_SOURCE_DIR_RMLUI=/run/build/metroid-prime-port/rmlui
       - type: archive
         url: https://github.com/wolfpld/tracy/archive/refs/tags/v0.14.1.zip
         sha256: 908f3a2917fa86a247abfcf85dcf04bad1db6986a4d40f94b70512f3e9e98d5b
         dest: tracy
-
-      - -DFETCHCONTENT_SOURCE_DIR_TRACY=/run/build/metroid-prime-port/tracy
