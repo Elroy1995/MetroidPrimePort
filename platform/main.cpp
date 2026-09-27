@@ -339,8 +339,33 @@ int main(int argc, char** argv) {
 
     if (!aurora_dvd_open(discPath)) {
         PortLog::Write( "metroid_prime_port: failed to open disc image: %s\n", discPath);
-        aurora_shutdown();
-        return 1;
+        // A remembered disc goes stale whenever its permission lapses: on Android
+        // the provider can reclaim a persisted URI grant, and on desktop the file
+        // may have been moved or deleted. Retrying once through the picker turns
+        // an unexplained exit into a recoverable prompt.
+        const bool fromArgs = argc > 1 || std::getenv("MP_DISC") != nullptr;
+        if (discImage == PortDebug::DiscPath() && !fromArgs) {
+            PortLog::Write( "metroid_prime_port: asking for the disc image again\n");
+            PortDebug::SetDiscPath("");
+            PortDebug::SaveSettingsNow();
+            discImage = AskForDiscImage();
+            if (discImage.empty()) {
+                PortLog::Write( "metroid_prime_port: no disc image given.\n"
+                                "  usage: %s <path to Metroid Prime (USA) (v1.00).iso>\n",
+                                argv[0]);
+                aurora_shutdown();
+                return 1;
+            }
+            discPath = discImage.c_str();
+            if (!aurora_dvd_open(discPath)) {
+                PortLog::Write( "metroid_prime_port: failed to open disc image: %s\n", discPath);
+                aurora_shutdown();
+                return 1;
+            }
+        } else {
+            aurora_shutdown();
+            return 1;
+        }
     }
     std::printf("metroid_prime_port: disc mounted: %s\n", discPath);
     const DVDDiskID* discId = DVDGetCurrentDiskID();

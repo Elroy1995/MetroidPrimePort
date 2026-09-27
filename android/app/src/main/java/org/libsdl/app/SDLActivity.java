@@ -2085,6 +2085,16 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Intent intent = new Intent(forWrite ? Intent.ACTION_CREATE_DOCUMENT : Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple);
+        // Without these the provider hands back a one-shot grant: the URI opens
+        // for this launch and is unusable on the next one, so the remembered disc
+        // fails to open every time after the first. PERSISTABLE is what
+        // takePersistableUriPermission needs in order to succeed.
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        if (forWrite) {
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION |
+                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        }
         switch (mimes.size()) {
             case 0:
                 intent.setType("*/*");
