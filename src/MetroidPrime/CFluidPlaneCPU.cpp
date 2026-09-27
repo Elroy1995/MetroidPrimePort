@@ -219,7 +219,7 @@ void UpdatePatchWithNormals(CFluidPlaneCPURender::SHFieldSample (&heights)[45][4
           }
         }
       } else {
-#if NONMATCHING
+#if NONMATCHING || defined(TARGET_PC)
         // Border samples and partial patches can extend beyond the shoreline grid.
         const int gridX = info.x28_tileX + j - 1;
         const int gridY = info.x2e_tileY + i - 1;

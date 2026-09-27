@@ -4,7 +4,10 @@
 #include <cstring>
 
 namespace {
-alignas(32) u8 s_lcData[16 * 1024];
+// 16 KiB of locked cache plus a zeroed tail: CFluidPlaneCPU's 45x45 height field
+// sits at +0xa0 and its normal pass reads one row below the last one, which on
+// hardware ran past the cache. The tail keeps that read inside this array.
+alignas(32) u8 s_lcData[16 * 1024 + 512];
 
 u32 copy_data(void* dest, const void* src, u32 nBytes) {
   const size_t numBlocks = (static_cast<size_t>(nBytes) + 31) / 32;

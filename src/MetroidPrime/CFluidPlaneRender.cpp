@@ -40,6 +40,19 @@ static inline float fast_sqrt( float x) {
 static inline float fast_sqrt(float x) { return sqrtf(x); }
 #endif
 
+// Tile flag lookup. The patch loops walk one tile past the water's grid (the strip
+// and run loops go up to numTilesX+1), which on hardware read whatever followed the
+// flag buffer; on PC that is a heap overread. Tiles outside the grid are not set,
+// as in CFluidPlaneCPU's bounds check.
+static inline char GridFlag(const CFluidPlaneCPURender::SPatchInfo& info, int idx) {
+#ifdef TARGET_PC
+  if (idx < 0 || idx >= static_cast< int >(info.x2a_gridDimX) * info.x2c_gridDimY) {
+    return 0;
+  }
+#endif
+  return info.x30_gridFlags[idx];
+}
+
 float* InitializeSineWave() {
   if (!sSineWaveInitialized) {
     for (int i = 0; i < 256; ++i) {
@@ -332,7 +345,7 @@ void RenderStripWithRipples(CFluidPlaneCPURender::SHFieldSample (&heights)[45][4
     int numCombined = 1;
 
     if (info.x30_gridFlags == NULL ||
-        (info.x30_gridFlags != NULL && info.x30_gridFlags[gridOffset] != 0)) {
+        (info.x30_gridFlags != NULL && GridFlag(info, gridOffset) != 0)) {
       const unsigned char* flagByte = flagsPtr + tileIdx;
       if ((*flagByte & 0x1f) == 0x1f) {
         // Fully rippled tile - check for consecutive fully-rippled tiles
@@ -342,7 +355,7 @@ void RenderStripWithRipples(CFluidPlaneCPURender::SHFieldSample (&heights)[45][4
             break;
           }
           if (info.x30_gridFlags != NULL) {
-            if (info.x30_gridFlags[gridOffset + numCombined] == 0) {
+            if (GridFlag(info, gridOffset + numCombined) == 0) {
               break;
             }
           }
@@ -396,7 +409,7 @@ void RenderStripWithRipples(CFluidPlaneCPURender::SHFieldSample (&heights)[45][4
               break;
             }
             if (info.x30_gridFlags != NULL) {
-              if (info.x30_gridFlags[gridOffset + numCombined] == 0) {
+              if (GridFlag(info, gridOffset + numCombined) == 0) {
                 break;
               }
             }
@@ -844,7 +857,7 @@ void ApplyRipple(const CFluidPlaneCPURender::SRippleInfo& rippleInfo,
 
         if (!hasGridFlags || (hasGridFlags && curGridY >= 0 && curGridY < gridCells &&
                               curGridX >= 0 && curGridX < static_cast< int >(info.x2a_gridDimX) &&
-                              info.x30_gridFlags[curGridY + curGridX])) {
+                              GridFlag(info, curGridY + curGridX))) {
           int k = curYDiv;
           for (; k <= rstl::min_val(nextYDiv - 1, rippleInfo.x10_toY);
                ++k, curYMod -= info.x18_rippleResolution) {
@@ -885,21 +898,21 @@ void ApplyRipple(const CFluidPlaneCPURender::SRippleInfo& rippleInfo,
 
           if (curGridX >= 0 && curGridX < static_cast< int >(info.x2a_gridDimX) &&
               curGridY - static_cast< int >(info.x2a_gridDimX) >= 0 &&
-              !info.x30_gridFlags[curGridX + (curGridY - static_cast< int >(info.x2a_gridDimX))]) {
+              !GridFlag(info, curGridX + (curGridY - static_cast< int >(info.x2a_gridDimX)))) {
             yMax -= 2;
           }
           if (curGridX >= 0 && curGridX < static_cast< int >(info.x2a_gridDimX) &&
               curGridY + static_cast< int >(info.x2a_gridDimX) < gridCells &&
-              !info.x30_gridFlags[curGridY + (curGridX + static_cast< int >(info.x2a_gridDimX))]) {
+              !GridFlag(info, curGridY + (curGridX + static_cast< int >(info.x2a_gridDimX)))) {
             yMin += 2;
           }
           if (curGridY >= 0 && curGridY < static_cast< int >(info.x2c_gridDimY) && curGridX > 0 &&
-              !info.x30_gridFlags[curGridY + curGridX - 1]) {
+              !GridFlag(info, curGridY + curGridX - 1)) {
             xMax -= 2;
           }
           if (curGridY >= 0 && curGridY < static_cast< int >(info.x2c_gridDimY) &&
               curGridX + 1 < static_cast< int >(info.x2a_gridDimX) &&
-              !info.x30_gridFlags[curGridY + curGridX + 1]) {
+              !GridFlag(info, curGridY + curGridX + 1)) {
             xMin += 2;
           }
 
@@ -1039,7 +1052,7 @@ void RenderPatch(const CFluidPlaneCPURender::SPatchInfo& info, bool noRipples,
         while (iX < numTilesXP1) {
 
           if (info.x30_gridFlags == NULL ||
-              (info.x30_gridFlags != NULL && info.x30_gridFlags[gridOffset + iX] != 0)) {
+              (info.x30_gridFlags != NULL && GridFlag(info, gridOffset + iX) != 0)) {
             bool isLeftEdge = iX == 0;
             bool isRightEdge = (numTilesXP1 - 1 - iX) == 0;
 
@@ -1109,7 +1122,7 @@ void RenderPatch(const CFluidPlaneCPURender::SPatchInfo& info, bool noRipples,
               for (nextX = iX + 1;
                    nextX < numTilesXP1 - 1 &&
                    (info.x30_gridFlags == NULL ||
-                    (info.x30_gridFlags != NULL && info.x30_gridFlags[gridOffset + nextX] != 0));
+                    (info.x30_gridFlags != NULL && GridFlag(info, gridOffset + nextX) != 0));
                    ++nextX) {
               }
               int runLen = (nextX - iX) + 1;
@@ -1132,7 +1145,7 @@ void RenderPatch(const CFluidPlaneCPURender::SPatchInfo& info, bool noRipples,
             }
           } else {
             curX += info.x14_tileSize;
-            for (nextX = iX + 1; nextX < numTilesXP1 && info.x30_gridFlags[gridOffset + nextX] == 0;
+            for (nextX = iX + 1; nextX < numTilesXP1 && GridFlag(info, gridOffset + nextX) == 0;
                  ++nextX) {
               curX += info.x14_tileSize;
             }
@@ -1179,9 +1192,9 @@ void RenderPatch(const CFluidPlaneCPURender::SPatchInfo& info, bool noRipples,
           int iX = 0;
           while (iX < numTilesX) {
             int endIX;
-            if (info.x30_gridFlags[gridOffset + iX] != 0) {
+            if (GridFlag(info, gridOffset + iX) != 0) {
               endIX = iX + 1;
-              while (endIX < numTilesX && info.x30_gridFlags[gridOffset + endIX] != 0) {
+              while (endIX < numTilesX && GridFlag(info, gridOffset + endIX) != 0) {
                 ++endIX;
               }
               int runLen = (endIX - iX) + 1;
@@ -1204,7 +1217,7 @@ void RenderPatch(const CFluidPlaneCPURender::SPatchInfo& info, bool noRipples,
             } else {
               curX += info.x14_tileSize;
               endIX = iX + 1;
-              while (endIX < numTilesX && info.x30_gridFlags[gridOffset + endIX] == 0) {
+              while (endIX < numTilesX && GridFlag(info, gridOffset + endIX) == 0) {
                 curX += info.x14_tileSize;
                 ++endIX;
               }
