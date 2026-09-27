@@ -25,6 +25,7 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_iostream.h>
 #include <SDL3/SDL_timer.h>
 
 #if defined(__ANDROID__)
@@ -130,6 +131,20 @@ const char* ResolveDiscPath(int argc, char** argv) {
     if (const char* saved = PortDebug::DiscPath(); saved != nullptr) {
 #if defined(__ANDROID__)
         if (std::strncmp(saved, "content://", 10) == 0) {
+            // A URI from before the copy existed. Prefer the local copy, which
+            // needs no permission grant; fall back to the URI if it is not there
+            // yet, since the grant may still be live.
+            char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime");
+            if (pref != nullptr) {
+                const std::string local = (std::filesystem::path(pref) / "disc.iso").string();
+                SDL_free(pref);
+                std::error_code ec;
+                static const std::string sLocal =
+                    std::filesystem::exists(local, ec) ? local : std::string();
+                if (!sLocal.empty()) {
+                    return sLocal.c_str();
+                }
+            }
             return saved;
         }
 #endif
@@ -140,6 +155,128 @@ const char* ResolveDiscPath(int argc, char** argv) {
     static const std::string sFound = FindDiscNextToExecutable();
     return sFound.empty() ? nullptr : sFound.c_str();
 }
+
+#if defined(__ANDROID__)
+// aurora_dvd_open reports failure for three different reasons - the file would
+// not open, the disc parser rejected it, or the data partition was missing -
+// and says which of them nowhere. Splitting them here turns an unexplained
+// exit into a specific, actionable line.
+void ReportDiscOpenFailure(const char* path) {
+    PortLog::Write( "metroid_prime_port: failed to open disc image: %s\n", path);
+    SDL_ClearError();
+    SDL_IOStream* probe = SDL_IOFromFile(path, "rb");
+    if (probe == nullptr) {
+        PortLog::Write( "  the file itself could not be opened: %s\n", SDL_GetError());
+        return;
+    }
+    const Sint64 size = SDL_GetIOSize(probe);
+    Uint8 header[8] = {};
+    const size_t got = SDL_ReadIO(probe, header, sizeof(header));
+    SDL_CloseIO(probe);
+    if (got != sizeof(header)) {
+        PortLog::Write( "  the file opened but is only %lld bytes: too short to be a disc\n",
+                        static_cast<long long>(size));
+        return;
+    }
+    PortLog::Write( "  the file opened and is %lld bytes, so the disc parser rejected it\n",
+                    static_cast<long long>(size));
+    PortLog::Write( "  first bytes: %02x %02x %02x %02x %02x %02x %02x %02x\n", header[0], header[1],
+                    header[2], header[3], header[4], header[5], header[6], header[7]);
+}
+
+// Android's picker hands back a content:// URI, not a path. Opening one is
+// possible (SDL routes SDL_IOFromFile through ContentResolver) but it depends
+// on a permission grant that the system can revoke at any time - and on some
+// builds the open fails even on the launch that picked the file. Copying the
+// image into app storage once makes the remembered setting a plain file, which
+// is readable with no grant at all and survives anything short of an uninstall.
+//
+// Returns the local copy's path, or an empty string if the copy failed.
+std::string CopyDiscFromContentUri(const std::string& uri) {
+    char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime");
+    if (pref == nullptr) {
+        PortLog::Write( "metroid_prime_port: no pref path to copy the disc into\n");
+        return {};
+    }
+    const std::filesystem::path target = std::filesystem::path(pref) / "disc.iso";
+    SDL_free(pref);
+
+    SDL_IOStream* in = SDL_IOFromFile(uri.c_str(), "rb");
+    if (in == nullptr) {
+        PortLog::Write( "metroid_prime_port: could not read the picked image: %s: %s\n", uri.c_str(),
+                        SDL_GetError());
+        return {};
+    }
+    const Sint64 total = SDL_GetIOSize(in);
+    SDL_IOStream* out = SDL_IOFromFile(target.string().c_str(), "wb");
+    if (out == nullptr) {
+        PortLog::Write( "metroid_prime_port: could not create %s: %s\n", target.string().c_str(),
+                        SDL_GetError());
+        SDL_CloseIO(in);
+        return {};
+    }
+
+    char buffer[1 << 16];
+    Sint64 done = 0;
+    int lastPercent = -1;
+    bool ok = true;
+    for (;;) {
+        const size_t got = SDL_ReadIO(in, buffer, sizeof(buffer));
+        if (got == 0) {
+            break;
+        }
+        if (SDL_WriteIO(out, buffer, got) != got) {
+            PortLog::Write( "metroid_prime_port: writing %s failed: %s\n", target.string().c_str(),
+                            SDL_GetError());
+            ok = false;
+            break;
+        }
+        done += static_cast<Sint64>(got);
+        if (total > 0) {
+            const int percent = static_cast<int>(done * 100 / total);
+            // Every 5% rather than every chunk: a 1.5 GB image would otherwise
+            // put 3000 lines in the log.
+            if (percent / 5 != lastPercent / 5) {
+                lastPercent = percent;
+                PortLog::Write( "metroid_prime_port: copying the disc image, %d%%\n", percent);
+            }
+        }
+    }
+    if (!SDL_FlushIO(out)) {
+        PortLog::Write( "metroid_prime_port: flushing %s failed: %s\n", target.string().c_str(),
+                        SDL_GetError());
+        ok = false;
+    }
+    if (!SDL_CloseIO(in)) {
+        PortLog::Write( "metroid_prime_port: closing the picked image failed: %s\n", SDL_GetError());
+    }
+    if (!SDL_CloseIO(out)) {
+        PortLog::Write( "metroid_prime_port: closing %s failed: %s\n", target.string().c_str(),
+                        SDL_GetError());
+        ok = false;
+    }
+    if (!ok) {
+        std::error_code ec;
+        std::filesystem::remove(target, ec);
+        return {};
+    }
+    // What landed on disk, not what was handed to the writer: a short write that
+    // only fails at close looks identical to a good copy otherwise, and a
+    // truncated image fails to parse as a disc with no further clue.
+    std::error_code ec;
+    const auto written = std::filesystem::file_size(target, ec);
+    if (ec || static_cast<Sint64>(written) != done) {
+        PortLog::Write( "metroid_prime_port: %s is %lld bytes on disk, expected %lld\n",
+                        target.string().c_str(), static_cast<long long>(written),
+                        static_cast<long long>(done));
+        std::filesystem::remove(target, ec);
+        return {};
+    }
+    PortLog::Write( "metroid_prime_port: copied the disc image to %s (%lld bytes)\n",
+                    target.string().c_str(), static_cast<long long>(done));
+    return target.string();
+}
+#endif  // __ANDROID__
 
 // Asks for the disc image with the platform's file dialog and remembers the
 // choice. SDL delivers the result on another thread, so this pumps events until
@@ -188,6 +325,16 @@ std::string AskForDiscImage() {
         SDL_Delay(10);
     }
     if (!chosen.empty()) {
+#if defined(__ANDROID__)
+        // The picker returns a content:// URI. Copy it to a real file so that the
+        // remembered setting needs no grant on the next launch.
+        if (std::strncmp(chosen.c_str(), "content://", 10) == 0) {
+            const std::string local = CopyDiscFromContentUri(chosen);
+            if (!local.empty()) {
+                chosen = local;
+            }
+        }
+#endif
         PortDebug::SetDiscPath(chosen.c_str());
         // Persist immediately: the settings are otherwise only written from the
         // overlay's draw path, which never runs if the game cannot frame.
@@ -338,7 +485,7 @@ int main(int argc, char** argv) {
     const char* discPath = discImage.c_str();
 
     if (!aurora_dvd_open(discPath)) {
-        PortLog::Write( "metroid_prime_port: failed to open disc image: %s\n", discPath);
+        ReportDiscOpenFailure(discPath);
         // A remembered disc goes stale whenever its permission lapses: on Android
         // the provider can reclaim a persisted URI grant, and on desktop the file
         // may have been moved or deleted. Retrying once through the picker turns
@@ -358,7 +505,7 @@ int main(int argc, char** argv) {
             }
             discPath = discImage.c_str();
             if (!aurora_dvd_open(discPath)) {
-                PortLog::Write( "metroid_prime_port: failed to open disc image: %s\n", discPath);
+                ReportDiscOpenFailure(discPath);
                 aurora_shutdown();
                 return 1;
             }

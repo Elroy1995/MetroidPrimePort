@@ -2,7 +2,12 @@ plugins {
     id "com.android.application"
 }
 
-def useNodStub = providers.gradleProperty("androidNodStub").getOrElse("true")
+// The nod stub provides only the ABI, and every entry point fails, so a build
+// made with it cannot mount a disc. It exists to answer "does this compile and
+// link for Android" without a Rust cross-toolchain. Default to the real nod and
+// let a probe opt in: the cost of forgetting -PandroidNodStub=false is an APK
+// that installs, launches, and dies the moment a disc is opened.
+def useNodStub = providers.gradleProperty("androidNodStub").getOrElse("false")
 def generatedAssets = layout.buildDirectory.dir("generated/portAssets")
 def dependencyCache = providers.gradleProperty("cmakeDependencyCache")
 def configuredNdk = System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_ROOT")
