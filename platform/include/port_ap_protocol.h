@@ -129,7 +129,7 @@ public:
   // the game has not applied yet, so one that arrives at the title screen is
   // not lost. `TakeDeathPending` returns how many are owed and clears them,
   // which the client calls once it has killed the player. `LastDeathSource` is
-  // who to name, empty when the packet did not say or it was this client.
+  // who to name (the sender's slot name), empty when the packet did not say.
   int DeathsPending() const { return mDeathsReceived; }
   int TakeDeathPending() {
     const int owed = mDeathsReceived;
@@ -137,9 +137,10 @@ public:
     return owed;
   }
   const std::string& LastDeathSource() const { return mLastDeathSource; }
-  // The Bounce packet for a death of this client's own, or "" when the
-  // configuration does not enable DeathLink.
-  std::string BuildBounce(const std::string& reason = "DeathLink") const;
+  // The DeathLink Bounce packet for a death of this client's own, or "" when
+  // the configuration does not enable DeathLink. `cause` is the text other
+  // players see; empty means "<slot> died".
+  std::string BuildBounce(const std::string& cause = std::string()) const;
   // Whether the configuration asked for DeathLink at all, which the world's
   // RoomInfo is what actually agrees to; both must say yes.
   static bool DeathLinkEnabled(const Config& config);

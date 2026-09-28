@@ -23,6 +23,7 @@ import socket
 import ssl
 import struct
 import sys
+import time
 
 
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -180,11 +181,14 @@ def handle_client(sock, address, args, item_ids, bounce_sources=()):
                 # DeathLink: a bounce from another player, so the client's
                 # reaction to one can be exercised without a second session.
                 # It is sent after the items, which is when a real server would
-                # deliver it too.
+                # deliver it too, and in the shape a real server relays one: a
+                # Bounced tagged DeathLink whose source is the player's name.
                 for bounce_source in bounce_sources:
                     send_json(sock, {
-                        "cmd": "Bounce",
-                        "data": {"reason": "DeathLink", "source": bounce_source, "cause": None},
+                        "cmd": "Bounced",
+                        "tags": ["DeathLink"],
+                        "data": {"time": time.time(), "source": bounce_source,
+                                 "cause": f"{bounce_source} died"},
                     })
 
 
@@ -202,8 +206,8 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="interface to listen on (default: %(default)s)")
     parser.add_argument("--port", type=int, default=38281, help="TCP port (default: %(default)s)")
     parser.add_argument("--slot", default="Player1", help="accepted slot name (default: %(default)s)")
-    parser.add_argument("--bounce", type=int, action="append", default=[],
-                        help="send a DeathLink bounce from this slot after the items "
+    parser.add_argument("--bounce", metavar="NAME", action="append", default=[],
+                        help="send a DeathLink bounce from this player name after the items "
                              "(repeat for several)")
     parser.add_argument("--item", type=parse_item_ids, default=parse_item_ids("1234:5678"),
                         metavar="ID[:ID...]", help="item IDs sent in ReceivedItems (default: 1234:5678)")

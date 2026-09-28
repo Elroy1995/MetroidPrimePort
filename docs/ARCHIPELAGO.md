@@ -344,8 +344,11 @@ still works; anything marked as a gap still limits a session.
   it can mean anything. Without it the F1 tracker shows which items have arrived
   and in what order, which is the part a solo player actually uses.
 - **DeathLink — done, opt-in.** Set `"death_link": true` in `archipelago.json`
-  and a `Bounce` from another player kills this one, naming them; this client's
-  own deaths are announced once. A bounce is owed to the game rather than
+  and a DeathLink bounce from another player kills this one, naming them; this
+  client's own deaths are announced once. The client connects with the
+  `DeathLink` tag, sends `Bounce` with `tags:["DeathLink"]` and
+  `data:{time, source:<slot name>, cause}`, and acts only on a relayed `Bounced`
+  that carries the tag. A bounce is owed to the game rather than
   applied on the socket thread, so one that arrives during a load is not lost,
   and an echo of this client's own death is ignored rather than killing the
   player twice. The mechanism is the same one the world's own client uses:

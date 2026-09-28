@@ -498,27 +498,62 @@ int main() {
                                R"([{"slot":1,"alias":"Me"},{"slot":2,"alias":"Bob"}]})"),
                         outgoing, deathGrants);
     Check(deaths.DeathsPending() == 0, "no death is owed before a bounce arrives");
-    deaths.HandlePacket(Packet(R"({"cmd":"Bounce","data":{"reason":"DeathLink","source":2}})"),
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounced","tags":["DeathLink"],)"
+                               R"("data":{"time":1.5,"source":"Bob"}})"),
                         outgoing, deathGrants);
     Check(deaths.DeathsPending() == 1, "a bounce from another player is owed to the game");
     Check(deaths.LastDeathSource() == "Bob", "the bounce names who died");
     Check(deaths.TakeDeathPending() == 1 && deaths.DeathsPending() == 0,
           "taking a death clears it so it is not applied twice");
-    deaths.HandlePacket(Packet(R"({"cmd":"Bounce","data":{"reason":"DeathLink","source":1}})"),
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounced","tags":["DeathLink"],)"
+                               R"("data":{"time":2.5,"source":"P"}})"),
                         outgoing, deathGrants);
     Check(deaths.DeathsPending() == 0, "a bounce from this client is not a death of its own");
     Check(deaths.TakeNotification(notification) && notification.find("Bob") != std::string::npos,
           "a bounce raises a notification naming who died");
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounced","tags":["Tracker"],"data":{"source":"Bob"}})"),
+                        outgoing, deathGrants);
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounced","data":{"source":"Bob"}})"), outgoing,
+                        deathGrants);
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounce","tags":["DeathLink"],"data":{"source":"Bob"}})"),
+                        outgoing, deathGrants);
+    Check(deaths.DeathsPending() == 0,
+          "only a Bounced carrying the DeathLink tag is a death");
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounced","tags":["DeathLink"],)"
+                               R"("data":{"time":3,"source":"Bob","cause":"Bob fell"}})"),
+                        outgoing, deathGrants);
+    Check(deaths.TakeNotification(notification) && notification == "Bob fell",
+          "a bounce with a cause shows the cause");
+    deaths.TakeDeathPending();
 
     // Two bounces before the game runs are two deaths, not one.
-    deaths.HandlePacket(Packet(R"({"cmd":"Bounce","data":{"source":2}})"), outgoing, deathGrants);
-    deaths.HandlePacket(Packet(R"({"cmd":"Bounce","data":{"source":2}})"), outgoing, deathGrants);
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounced","tags":["DeathLink"],"data":{"source":"Bob"}})"),
+                        outgoing, deathGrants);
+    deaths.HandlePacket(Packet(R"({"cmd":"Bounced","tags":["DeathLink"],"data":{"source":"Bob"}})"),
+                        outgoing, deathGrants);
     Check(deaths.TakeDeathPending() == 2, "bounces that arrive together are all owed");
+
+    Session deathsOff(noDeath, State{});
+    deathsOff.HandlePacket(Packet(R"({"cmd":"Bounced","tags":["DeathLink"],"data":{"source":"Bob"}})"),
+                           outgoing, deathGrants);
+    Check(deathsOff.DeathsPending() == 0, "a client without death_link ignores bounces");
 
     const std::string bounce = deaths.BuildBounce();
     Check(bounce.find("\"cmd\":\"Bounce\"") != std::string::npos &&
-              bounce.find("DeathLink") != std::string::npos,
-          "an enabled client builds a Bounce packet naming a source");
+              bounce.find("\"tags\":[\"DeathLink\"]") != std::string::npos &&
+              bounce.find("\"time\":") != std::string::npos &&
+              bounce.find("\"source\":\"P\"") != std::string::npos &&
+              bounce.find("\"cause\":\"P died\"") != std::string::npos,
+          "an enabled client builds a DeathLink Bounce with time, source and cause");
+    PortJson::Value bounceJson;
+    size_t bounceOffset = 0;
+    const char* bounceReason = nullptr;
+    Check(PortJson::Parse(bounce, bounceJson, bounceOffset, &bounceReason),
+          "the built Bounce is valid JSON");
+    Check(deaths.BuildConnect().find("\"tags\":[\"DeathLink\"]") != std::string::npos,
+          "a DeathLink client connects with the DeathLink tag");
+    Check(Session(noDeath, State{}).BuildConnect().find("DeathLink") == std::string::npos,
+          "a client without death_link does not carry the tag");
     Check(Session(noDeath, State{}).BuildBounce().empty(),
           "a client without death_link sends no Bounce");
   }

@@ -1303,6 +1303,13 @@ Two release blockers, and the second turned out to be hiding a third.
   assertions in `port_apclient_tests`, and verified end to end against
   `tools/ap_fake_server.py --bounce`: a live run receives a bounce from another
   slot, dies, and announces exactly one death.
+- Wire format fixed (2026-09-28). The first version spoke a made-up format that
+  the fake server shared, so the end-to-end run proved nothing against a real
+  server: it sent an untagged `Bounce` (routed to nobody) with an integer
+  `source` and no `time`, never put `DeathLink` in the Connect tags (so the
+  server never relayed deaths to it), and listened for `Bounce` although servers
+  relay as `Bounced`. It now follows the AP DeathLink spec; the echo is spotted
+  by `source` matching this client's slot name. `--bounce` takes a player name.
 
 
 ## Layer sweep: the stall is the game leaving kSMT_InGame, not the sweep (2026-09-26)

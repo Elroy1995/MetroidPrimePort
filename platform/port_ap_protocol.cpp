@@ -768,30 +768,48 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
   } else if (command == "InvalidPacket") {
     const PortJson::Value* text = Member(packet, "text");
     mLastError = text != nullptr && text->IsString() ? text->AsString() : std::string();
-  } else if (command == "Bounce") {
-    // DeathLink: someone else in the multiworld died. The data carries a
-    // reason, a source and an optional cause, none of which the game needs -
-    // what it needs is to know it should die too, and who to say so.
+  } else if (command == "Bounced") {
+    // DeathLink: someone else in the multiworld died. The server relays a
+    // client's Bounce as Bounced to every client whose tags match, so a
+    // DeathLink is a Bounced carrying the "DeathLink" tag; other bounces
+    // (trackers, game-specific links) are none of the game's business. The
+    // data has `time`, an optional `cause`, and `source`, the dead player's
+    // name as that client sent it.
     //
-    // A bounce whose source is this client's own slot is the echo of a death
-    // it already announced, and acting on it would kill the player a second
-    // time. An unknown source (0, or a slot not in Connected) is still
+    // The server echoes a bounce to its sender too, so one whose source is
+    // this client's own slot name is a death it already announced, and acting
+    // on it would kill the player a second time. A missing source is still
     // somebody else's death and still counts.
+    if (!mConfig.deathLink)
+      return;
+    const PortJson::Value* tags = Member(packet, "tags");
+    bool deathLink = false;
+    if (tags != nullptr && tags->IsArray()) {
+      for (const PortJson::Value& tag : tags->AsArray())
+        deathLink = deathLink || (tag.IsString() && tag.AsString() == "DeathLink");
+    }
+    if (!deathLink)
+      return;
     const PortJson::Value* data = Member(packet, "data");
-    int64_t source = 0;
-    const bool hasSource = data != nullptr && data->IsObject() &&
-                           IntegerMember(*data, "source", source);
-    if (hasSource && source != 0 && source == mOwnSlot)
+    const PortJson::Value* source =
+        data != nullptr && data->IsObject() ? Member(*data, "source") : nullptr;
+    const PortJson::Value* cause =
+        data != nullptr && data->IsObject() ? Member(*data, "cause") : nullptr;
+    const std::string sourceName =
+        source != nullptr && source->IsString() ? source->AsString() : std::string();
+    if (!sourceName.empty() && sourceName == mConfig.slot)
       return; // our own death, coming back to us
-    if (hasSource && source != 0)
-      mLastDeathSource = PlayerName(source);
+    mLastDeathSource = sourceName;
     ++mDeathsReceived;
     // Counted even when the game is not running: a bounce that arrives at the
     // title screen must not be lost, or the next run would neither die nor show
     // it. Poll applies it and clears the counter.
-    AppendNotification(mNotifications,
-                       mLastDeathSource.empty() ? "Someone died"
-                                                : mLastDeathSource + " died");
+    // The cause is another client's free text, so it is capped like PrintJSON.
+    if (cause != nullptr && cause->IsString() && !cause->AsString().empty())
+      AppendNotification(mNotifications, cause->AsString().substr(0, 200));
+    else
+      AppendNotification(mNotifications,
+                         sourceName.empty() ? "Someone died" : sourceName + " died");
   }
   } catch (...) {
     // Malformed packets and allocation failures must not escape into the client.
@@ -843,6 +861,14 @@ std::string Session::BuildConnect() const {
       result.push_back(',');
     result += Quote(mConfig.tags[i]);
   }
+  // The server routes DeathLink bounces by tag, so a client without it would
+  // neither receive other players' deaths nor be expected to send its own.
+  if (mConfig.deathLink &&
+      std::find(mConfig.tags.begin(), mConfig.tags.end(), "DeathLink") == mConfig.tags.end()) {
+    if (!mConfig.tags.empty())
+      result.push_back(',');
+    result += "\"DeathLink\"";
+  }
   result += "],\"slot_data\":false}";
   return result;
 }
@@ -864,17 +890,28 @@ bool Session::DeathLinkEnabled(const Config& config) {
   return config.deathLink;
 }
 
-std::string Session::BuildBounce(const std::string& reason) const {
-  // The world's own client sends no Bounce of its own - it only reacts to one -
-  // but a client that dies in DeathLink is expected to announce it, and a
-  // server that is not in DeathLink simply ignores the packet. Sent only when
-  // the configuration asked for DeathLink, so a normal session never emits one.
+std::string Session::BuildBounce(const std::string& cause) const {
+  // A client that dies in DeathLink announces it with a Bounce aimed at the
+  // "DeathLink" tag; the server relays it as Bounced to every client carrying
+  // that tag, this one included. `time` is required (clients use it to spot
+  // duplicates) and `source` is this slot's name, which is also how the echo
+  // is recognised in HandlePacket. Sent only when the configuration asked for
+  // DeathLink, so a normal session never emits one.
   if (!mConfig.deathLink)
     return std::string();
-  std::string packet = "{\"cmd\":\"Bounce\",\"data\":{\"reason\":";
-  packet += Quote(reason);
-  packet += ",\"source\":" + std::to_string(mOwnSlot);
-  packet += ",\"cause\":null}}";
+  // Unix seconds with millisecond precision, formatted by hand so the locale
+  // cannot turn the decimal point into a comma.
+  const int64_t millis = std::chrono::duration_cast< std::chrono::milliseconds >(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+  char time[32];
+  std::snprintf(time, sizeof(time), "%lld.%03lld", static_cast< long long >(millis / 1000),
+                static_cast< long long >(millis % 1000));
+  std::string packet = "{\"cmd\":\"Bounce\",\"tags\":[\"DeathLink\"],\"data\":{\"time\":";
+  packet += time;
+  packet += ",\"source\":" + Quote(mConfig.slot);
+  packet += ",\"cause\":" + Quote(cause.empty() ? mConfig.slot + " died" : cause);
+  packet += "}}";
   return packet;
 }
 
