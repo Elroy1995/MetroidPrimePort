@@ -284,6 +284,13 @@ std::string CopyDiscFromContentUri(const std::string& uri) {
 std::string AskForDiscImage() {
     static std::atomic< bool > answered{false};
     static std::string chosen;
+    // Static because the callback cannot capture, but reset on every call: the
+    // stale-disc retry asks a second time, and without this it would return the
+    // first answer at once without showing a dialog. A first call only returns
+    // early (timeout, quit, no window) on the way to exiting, so no callback
+    // from it can still be pending here.
+    answered.store(false);
+    chosen.clear();
     const SDL_DialogFileFilter filters[] = {
         {"GameCube disc image", "iso;gcm;rvz;wbfs;ciso;nkit"},
         {"All files", "*"},
