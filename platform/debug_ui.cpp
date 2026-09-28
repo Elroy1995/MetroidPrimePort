@@ -263,7 +263,7 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sMouseCrosshair = ParseBool(value);
   } else if (key == "mouse_sensitivity") {
     const float f = static_cast< float >(std::atof(value.c_str()));
-    if (std::isfinite(f) && f > 0.f) {
+    if (std::isfinite(f) && f > 0.f && f <= 1.f) {
       sMouseSensitivity = f;
     }
   } else if (key == "skip_cutscenes") {

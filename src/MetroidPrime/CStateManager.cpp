@@ -396,6 +396,11 @@ CStateManager::CStateManager(const rstl::ncrc_ptr< CScriptMailbox >& mailbox,
 }
 
 CStateManager::~CStateManager() {
+  // The overlay and console read this pointer between ticks, including on the
+  // title screen after a quit freed the manager.
+  if (PortDebug::StateManager() == this) {
+    PortDebug::SetStateManager(nullptr);
+  }
   CMemory::OffsetFakeStatics(
       -(x808_objectLists.size() * sizeof(CObjectList) + 0x11c)); // TODO what is this 11c?
   x88c_rumbleManager->HardStopAll();
