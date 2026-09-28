@@ -131,8 +131,99 @@ constexpr KeyIcon kKeyIcons[] = {
     {SDL_SCANCODE_LSHIFT, "keyboard_shift"}, {SDL_SCANCODE_RSHIFT, "keyboard_shift"},
     {SDL_SCANCODE_LCTRL, "keyboard_ctrl"}, {SDL_SCANCODE_RCTRL, "keyboard_ctrl"},
     {SDL_SCANCODE_LALT, "keyboard_alt"}, {SDL_SCANCODE_RALT, "keyboard_alt"},
+    {SDL_SCANCODE_LGUI, "keyboard_win"}, {SDL_SCANCODE_RGUI, "keyboard_win"},
+    {SDL_SCANCODE_MINUS, "keyboard_minus"}, {SDL_SCANCODE_EQUALS, "keyboard_equals"},
+    {SDL_SCANCODE_LEFTBRACKET, "keyboard_bracket_open"},
+    {SDL_SCANCODE_RIGHTBRACKET, "keyboard_bracket_close"},
+    {SDL_SCANCODE_SEMICOLON, "keyboard_semicolon"}, {SDL_SCANCODE_APOSTROPHE, "keyboard_apostrophe"},
+    {SDL_SCANCODE_COMMA, "keyboard_comma"}, {SDL_SCANCODE_PERIOD, "keyboard_period"},
+    {SDL_SCANCODE_SLASH, "keyboard_slash_forward"}, {SDL_SCANCODE_BACKSLASH, "keyboard_slash_back"},
+    {SDL_SCANCODE_NONUSBACKSLASH, "keyboard_slash_back"}, {SDL_SCANCODE_GRAVE, "keyboard_tilde"},
+    {SDL_SCANCODE_CAPSLOCK, "keyboard_capslock"}, {SDL_SCANCODE_PRINTSCREEN, "keyboard_printscreen"},
+    {SDL_SCANCODE_SCROLLLOCK, "keyboard_scroll_lock"}, {SDL_SCANCODE_PAUSE, "keyboard_pause"},
+    // The keypad. The pack has no keypad digits, so those share the main row's.
+    {SDL_SCANCODE_KP_0, "keyboard_0"}, {SDL_SCANCODE_KP_1, "keyboard_1"},
+    {SDL_SCANCODE_KP_2, "keyboard_2"}, {SDL_SCANCODE_KP_3, "keyboard_3"},
+    {SDL_SCANCODE_KP_4, "keyboard_4"}, {SDL_SCANCODE_KP_5, "keyboard_5"},
+    {SDL_SCANCODE_KP_6, "keyboard_6"}, {SDL_SCANCODE_KP_7, "keyboard_7"},
+    {SDL_SCANCODE_KP_8, "keyboard_8"}, {SDL_SCANCODE_KP_9, "keyboard_9"},
+    {SDL_SCANCODE_KP_ENTER, "keyboard_numpad_enter"}, {SDL_SCANCODE_KP_PLUS, "keyboard_numpad_plus"},
+    {SDL_SCANCODE_KP_MINUS, "keyboard_minus"}, {SDL_SCANCODE_KP_MULTIPLY, "keyboard_asterisk"},
+    {SDL_SCANCODE_KP_DIVIDE, "keyboard_slash_forward"}, {SDL_SCANCODE_KP_PERIOD, "keyboard_period"},
+    {SDL_SCANCODE_NUMLOCKCLEAR, "keyboard_numlock"},
     {PAD_KEY_MOUSE_LEFT, "mouse_left"}, {PAD_KEY_MOUSE_RIGHT, "mouse_right"},
+    {PAD_KEY_MOUSE_MIDDLE, "mouse_scroll"},
+    {PAD_KEY_MOUSE_X1, "mouse_side_back"}, {PAD_KEY_MOUSE_X2, "mouse_side_forward"},
 };
+
+// A GameCube pad's buttons carry GameCube labels, which SDL's positional names
+// don't give; Aurora's default GC mappings (lib/dolphin/pad/pad.cpp) pin each
+// SDL button to the GC button of the same name, so they double as the labels.
+// Kept in step with g_defaultButtonsGamecube / g_defaultButtonsNSOGamecube.
+struct GameCubeButton {
+  int sdlButton;
+  PADButton action;
+  const char* stem;
+};
+constexpr GameCubeButton kGameCubeButtons[] = {
+    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A, "gamecube_a"},
+    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_B, "gamecube_b"},
+    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X, "gamecube_x"},
+    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y, "gamecube_y"},
+    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START, "gamecube_start"},
+    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z, "gamecube_z"},
+    {SDL_GAMEPAD_BUTTON_MISC3, PAD_TRIGGER_L, "gamecube_l"},
+    {SDL_GAMEPAD_BUTTON_MISC4, PAD_TRIGGER_R, "gamecube_r"},
+    {PAD_NATIVE_BUTTON_TRIGGER_LEFT, PAD_TRIGGER_L, "gamecube_l"},
+    {PAD_NATIVE_BUTTON_TRIGGER_RIGHT, PAD_TRIGGER_R, "gamecube_r"},
+};
+constexpr GameCubeButton kNsoGameCubeButtons[] = {
+    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A, "gamecube_a"},
+    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_B, "gamecube_b"},
+    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X, "gamecube_x"},
+    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y, "gamecube_y"},
+    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START, "gamecube_start"},
+    {SDL_GAMEPAD_BUTTON_BACK, PAD_TRIGGER_Z, "gamecube_z"},
+    {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, PAD_TRIGGER_L, "gamecube_l"},
+    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_R, "gamecube_r"},
+    {PAD_NATIVE_BUTTON_TRIGGER_LEFT, PAD_TRIGGER_L, "gamecube_l"},
+    {PAD_NATIVE_BUTTON_TRIGGER_RIGHT, PAD_TRIGGER_R, "gamecube_r"},
+};
+
+// The icon for `button` on a GameCube pad, or empty to leave the game's own art,
+// which is already right for a GC pad on its default mapping. So only an action
+// moved to another button gets an icon. The GameCube touch layout also resolves
+// to "gamecube", hence the check that a GC pad really is in port 0.
+std::string GameCubeStemForButton(PADButton button) {
+  const PADControllerType type = PADGetControllerType(PAD_CHAN0);
+  const GameCubeButton* table = nullptr;
+  size_t tableSize = 0;
+  if (type == PAD_TYPE_GAMECUBE) {
+    table = kGameCubeButtons;
+    tableSize = sizeof(kGameCubeButtons) / sizeof(kGameCubeButtons[0]);
+  } else if (type == PAD_TYPE_NSO_GAMECUBE) {
+    table = kNsoGameCubeButtons;
+    tableSize = sizeof(kNsoGameCubeButtons) / sizeof(kNsoGameCubeButtons[0]);
+  } else {
+    return {};
+  }
+  u32 count = 0;
+  PADButtonMapping* mappings = PADGetButtonMappings(PAD_CHAN0, &count);
+  for (u32 i = 0; mappings != nullptr && i < count; ++i) {
+    if (mappings[i].padButton != button) {
+      continue;
+    }
+    // Unbound means the analog trigger for L and R, which is the default too.
+    const int native = static_cast<int>(mappings[i].nativeButton);
+    for (size_t j = 0; j < tableSize; ++j) {
+      if (table[j].sdlButton == native) {
+        return table[j].action == button ? std::string() : std::string(table[j].stem);
+      }
+    }
+    break;
+  }
+  return {};
+}
 
 // The SDL button a mapping points at, named the way the generated pad icons
 // are (tools/make_prompt_glyphs.py writes "<device>_<suffix>").
@@ -298,6 +389,10 @@ bool ReadIconBytes(void* userData, const char* path, std::vector<uint8_t>& out) 
 // mapping, so a remapped button shows the button it was remapped to.
 std::string IconStemForButton(PADButton button, const char* device) {
   const bool keyboard = std::strcmp(device, "keyboard") == 0;
+  if (std::strcmp(device, "gamecube") == 0) {
+    // The game's C-stick art is the GameCube stick already.
+    return button == PAD_AXIS_CSTICK ? std::string() : GameCubeStemForButton(button);
+  }
   if (button == PAD_AXIS_CSTICK) {
     // A stick is bound to several keys at once, so the icon says "direction
     // keys" rather than naming one; a pad shows its own stick.
@@ -419,9 +514,9 @@ const char* LabelForButton(PADButton button) {
 } // namespace
 
 namespace PortPrompts {
-// "gamecube" has no generated icons, which is deliberate: the game's own prompt
-// art already is the GameCube set, and with no gamecube folder the static set
-// loads nothing, so those prompts are left alone.
+// "gamecube" has no static set, which is deliberate: the game's own prompt art
+// already is the GameCube set, so only a remapped GC pad button gets an icon
+// (GameCubeStemForButton).
 const char* ActiveDevice() {
   const char* env = std::getenv("MP_TEXTURE_DEVICE");
   if (env != nullptr && env[0] != '\0') {

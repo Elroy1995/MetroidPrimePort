@@ -338,12 +338,16 @@ not follow a binding; they get the device's own stick, or a direction-key icon
 on keyboard. Of the HUD prompts only one R hint is covered; the rest keep the
 static icon. A keyboard follows its key bindings (the main key, else the second
 key); a pad follows its button mapping, so a remapped button or a preset shows
-the button it now uses. A binding with no generated icon (keypad keys,
-punctuation, the middle mouse button, a GameCube adapter) leaves the static set
-in place, and the static pad sets have no Z. The binding icons register above
-the static set, so reloading that set never hides them. The chosen icon is
-logged when it changes ("prompt A keyboard_x"). `MP_SMOKE_BIND_A=<scancode>` rebinds the A action once,
-for checking this without going through the Controls tab, and
+the button it now uses. Letters, digits, punctuation, the named keys, the keypad
+(its digits share the main row's art) and all five mouse buttons have icons; a
+binding without one leaves the static set in place. A GameCube pad (adapter or
+NSO) on its default mapping keeps the game's own art, and only an action moved
+to another button gets a GameCube icon, named after the button's default action.
+The binding icons register above the static set, so reloading that set never
+hides them. The chosen icon is logged when it changes ("prompt A keyboard_x").
+`MP_SMOKE_BIND_A=<scancode>` (negative for mouse buttons, -3 is middle) rebinds
+the A action once, for checking this without going through the Controls tab; it
+needs a `-DMP_ENABLE_SMOKE_DRIVER=ON` build such as `build/smoke-gcc`, and
 `MP_FAST_BOOT=1 MP_SKIP_CUTSCENES=1 MP_SMOKE_PAUSE=<ticks>` reaches the pause
 screen quickly to see the result.
 

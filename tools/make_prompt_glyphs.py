@@ -36,15 +36,22 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "textures"
 
 # Icon per device and action. The keyboard set is the fallback used when a
 # binding has no icon of its own, so it labels the port's default keys.
+#
+# Z is the right shoulder in every default pad mapping Aurora ships, so the pad
+# sets give it the bumper. There is no "gamecube" set on purpose: the game's own
+# art already is the GameCube set.
 DEVICE_ICONS = {
     "xbox": {"a": "xbox_button_color_a.png", "b": "xbox_button_color_b.png",
-             "l": "xbox_lt.png", "r": "xbox_rt.png", "stick": "xbox_stick_r.png"},
+             "l": "xbox_lt.png", "r": "xbox_rt.png", "z": "xbox_rb.png",
+             "stick": "xbox_stick_r.png"},
     "playstation": {"a": "playstation_button_color_cross.png",
                     "b": "playstation_button_color_circle.png",
                     "l": "playstation_trigger_l2.png", "r": "playstation_trigger_r2.png",
+                    "z": "playstation_trigger_r1.png",
                     "stick": "playstation_stick_r.png"},
     "switch": {"a": "switch_button_a.png", "b": "switch_button_b.png",
                "l": "switch_button_zl.png", "r": "switch_button_zr.png",
+               "z": "switch_button_r.png",
                "stick": "switch_stick_r.png"},
     "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png",
                  "l": "keyboard_q.png", "r": "keyboard_e.png",
@@ -83,6 +90,15 @@ PAD_ICONS = {
         "leftstick": "switch_stick_l_press.png", "rightstick": "switch_stick_r_press.png",
         "lt": "switch_button_zl.png", "rt": "switch_button_zr.png",
         "stick": "switch_stick_r.png",
+    },
+    # Keyed by the GameCube button rather than the SDL one: the port names a GC
+    # pad's button after the action its default mapping gives it (see
+    # GameCubeStemForButton in platform/port_prompts.cpp), and only when remapped.
+    "gamecube": {
+        "a": "gamecube_button_color_a.png", "b": "gamecube_button_color_b.png",
+        "x": "gamecube_button_x.png", "y": "gamecube_button_y.png",
+        "z": "gamecube_button_z.png", "start": "gamecube_button_start.png",
+        "l": "gamecube_trigger_l.png", "r": "gamecube_trigger_r.png",
     },
 }
 PAD_ICONS["standard"] = PAD_ICONS["xbox"]
@@ -132,7 +148,14 @@ BINDING_ICONS = [
     "keyboard_backspace", "keyboard_delete", "keyboard_insert", "keyboard_home",
     "keyboard_end", "keyboard_page_up", "keyboard_page_down",
     "keyboard_shift", "keyboard_ctrl", "keyboard_alt",
-    "mouse_left", "mouse_right",
+    "keyboard_minus", "keyboard_equals", "keyboard_bracket_open", "keyboard_bracket_close",
+    "keyboard_semicolon", "keyboard_apostrophe", "keyboard_comma", "keyboard_period",
+    "keyboard_slash_forward", "keyboard_slash_back", "keyboard_tilde", "keyboard_capslock",
+    "keyboard_win", "keyboard_printscreen", "keyboard_scroll_lock", "keyboard_pause",
+    # Keypad keys without art of their own share the main keys' (digits, minus,
+    # period, slash); these are the ones that have it.
+    "keyboard_numpad_enter", "keyboard_numpad_plus", "keyboard_asterisk", "keyboard_numlock",
+    "mouse_left", "mouse_right", "mouse_scroll", "mouse_side_back", "mouse_side_forward",
     "keyboard_arrows",
 ]
 

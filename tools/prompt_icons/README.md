@@ -32,6 +32,8 @@ own, so it labels the port's default keys:
 | `keyboard_f.png` | keyboard Z, matching the default key |
 | `keyboard_arrows.png` | keyboard stick prompts (the sticks are bound to key sets) |
 | `xbox_stick_r.png`, `playstation_stick_r.png`, `switch_stick_r.png` | pad stick prompts |
+| `playstation_trigger_r1.png`, `switch_button_r.png` | PlayStation / Switch Z prompts (the right shoulder) |
+| `gamecube_button_*.png`, `gamecube_trigger_l.png`, `gamecube_trigger_r.png` | a GameCube pad's buttons, used only when an action is remapped; there is no static GameCube set, since that is the game's own art |
 
 Which game textures they are written as comes from the prompt table in
 `platform/port_prompts.cpp`, which `tools/make_prompt_glyphs.py` parses, so a
@@ -43,7 +45,12 @@ shows whatever key or mouse button is actually bound to the action. Stems match
 the tables in `platform/port_prompts.cpp`: `keyboard_a`–`keyboard_z`,
 `keyboard_0`–`keyboard_9`, the arrows, `keyboard_f1`–`keyboard_f12`, the named
 keys (space, enter, escape, tab, backspace, delete, insert, home, end, page up,
-page down, shift, ctrl, alt) and `mouse_left` / `mouse_right`.
+page down, shift, ctrl, alt, win, caps lock, print screen, scroll lock, pause),
+punctuation (minus, equals, brackets, semicolon, apostrophe, comma, period,
+slashes, tilde for the grave key), the keypad keys that have art of their own
+(enter, plus, asterisk, num lock; its digits, minus, period and slash reuse the
+main keys'), and `mouse_left` / `mouse_right` / `mouse_scroll` (middle button) /
+`mouse_side_back` / `mouse_side_forward`.
 
 The prompt texture names these are written as (`tex1_32x32_..._5.dds`) identify
 the game's own GameCube A and B glyph textures, which is why these two actions
