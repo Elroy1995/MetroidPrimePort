@@ -488,6 +488,12 @@ void PortSmokeScript(unsigned frame) {
     PADStatus status{};
     status.err = PAD_ERR_NONE;
     status.button = static_cast< u16 >(sHeld);
+    // The game reads L/R as analog triggers (the pause screen pages on them),
+    // so the digital bit alone does nothing there.
+    if ((sHeld & PAD_TRIGGER_L) != 0)
+      status.triggerLeft = 0xFF;
+    if ((sHeld & PAD_TRIGGER_R) != 0)
+      status.triggerRight = 0xFF;
     PADSetVirtualStatus(0, &status);
   } else if (sHeld != 0) {
     sHeld = 0;
