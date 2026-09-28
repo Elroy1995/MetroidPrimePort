@@ -166,8 +166,14 @@ add_dependencies(metroid_prime_port port_build_info)
 target_include_directories(metroid_prime_port PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 # Keep the HD texture replacements next to the executable, which is where the
 # port looks for them by default, so a built binary picks them up without a
-# manual copy. Regenerate them with tools/make_prompt_glyphs.py.
+# manual copy. Regenerate them with tools/make_prompt_glyphs.py. The generated
+# sets are cleared first: copy_directory only adds, and an icon the generator
+# no longer writes would otherwise keep replacing a texture it no longer claims
+# (two retired legend hashes kept drawing L/R over the map's [M] and [S] icons).
+set(PORT_TEXTURE_SETS bindings keyboard playstation switch xbox)
+list(TRANSFORM PORT_TEXTURE_SETS PREPEND "$<TARGET_FILE_DIR:metroid_prime_port>/textures/")
 add_custom_command(TARGET metroid_prime_port POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${PORT_TEXTURE_SETS}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/textures"
         "$<TARGET_FILE_DIR:metroid_prime_port>/textures"

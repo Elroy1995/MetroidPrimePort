@@ -35,7 +35,11 @@ public final class MetroidPrimeActivity extends SDLActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         try {
-            copyAssetTree("textures", new File(getFilesDir(), "textures"));
+            // Cleared first: copying only adds, so an icon a newer APK no longer
+            // ships would keep replacing a texture it no longer claims.
+            File textures = new File(getFilesDir(), "textures");
+            deleteTree(textures);
+            copyAssetTree("textures", textures);
             copyAssetFile("initial_pipeline_cache.db", new File(getFilesDir(), "initial_pipeline_cache.db"));
         } catch (IOException e) {
             Log.e(TAG, "Failed to prepare native resources", e);
@@ -95,6 +99,16 @@ public final class MetroidPrimeActivity extends SDLActivity {
         for (String child : children) {
             copyAssetTree(assetPath + "/" + child, new File(destination, child));
         }
+    }
+
+    private static void deleteTree(File file) {
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                deleteTree(child);
+            }
+        }
+        file.delete();
     }
 
     private void copyAssetFile(String assetPath, File destination) throws IOException {
