@@ -129,6 +129,7 @@ struct Runtime {
     wake.notify_all();
     if (worker.joinable())
       worker.join();
+    FlushState(); // whatever the worker had not written yet
   }
 
   void LogStateLocked(const std::string& message) {
@@ -147,16 +148,44 @@ struct Runtime {
   }
 
   bool WaitBackoff(int seconds) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
     std::unique_lock<std::mutex> lock(mutex);
-    wake.wait_for(lock, std::chrono::seconds(seconds), [this] {
-      return stop.load(std::memory_order_acquire);
-    });
+    while (!stop.load(std::memory_order_acquire)) {
+      if (!wake.wait_until(lock, deadline, [this] {
+            return stop.load(std::memory_order_acquire) || stateDirty;
+          }))
+        break; // the backoff ran out
+      if (stateDirty) {
+        lock.unlock();
+        FlushState(); // checks collected while offline are still recorded
+        lock.lock();
+      }
+    }
     return !stop.load(std::memory_order_acquire);
   }
 
-  void SaveStateLocked() {
-    if (session != nullptr)
-      Protocol::SaveStateFile(statePath, session->GetState());
+  // The state file is written by the socket thread (or at shutdown, once it
+  // has stopped), never by the game thread: a pickup must not wait on disk.
+  void MarkStateDirtyLocked() {
+    stateDirty = true;
+    wake.notify_all();
+  }
+
+  // Writes the state file if it has changed. Only one thread calls this at a
+  // time, so the snapshot taken under the lock is written in order.
+  void FlushState() {
+    Protocol::State snapshot;
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      if (!stateDirty || session == nullptr)
+        return;
+      stateDirty = false;
+      snapshot = session->GetState();
+    }
+    const bool written = Protocol::SaveStateFile(statePath, snapshot);
+    if (!written && !stateWriteFailed) // said once, not on every pickup
+      PortLog::Write("archipelago: could not write %s\n", statePath.c_str());
+    stateWriteFailed = !written;
   }
 
   std::mutex mutex;
@@ -181,6 +210,9 @@ struct Runtime {
   // A loaded game rewound the session, so the socket thread owes the server a
   // Sync to get the full inventory replayed.
   bool syncWanted = false;
+  // The session state has changed since the state file was last written.
+  bool stateDirty = false;
+  bool stateWriteFailed = false; // only touched by the thread that flushes
   std::deque<std::string> notifications;
   int itemCount = 0;
   int checkCount = 0;
@@ -256,6 +288,7 @@ void ReconcileLocked(Runtime& runtime, CGameState::ApProgress& progress) {
                  "asking the server for the rest\n",
                  static_cast<long long>(held), static_cast<long long>(state.nextItemIndex));
   runtime.session->RewindTo(held);
+  runtime.MarkStateDirtyLocked();
   runtime.grants.clear();
   runtime.itemCount = static_cast<int>(std::min<int64_t>(held, std::numeric_limits<int>::max()));
   runtime.syncWanted = true;
@@ -384,7 +417,7 @@ void Worker(Runtime& runtime) {
               const Protocol::State& state = runtime.session->GetState();
               if (state.nextItemIndex != oldIndex || state.checkedLocations != oldChecks ||
                   state.progressive != oldProgressive || state.seed != oldSeed)
-                runtime.SaveStateLocked();
+                runtime.MarkStateDirtyLocked();
               runtime.grants.insert(runtime.grants.end(), newGrants.begin(), newGrants.end());
               runtime.lastMessage = runtime.session->LastMessage();
               const std::string& packetError = runtime.session->LastError();
@@ -508,6 +541,7 @@ void Worker(Runtime& runtime) {
           }
           PortLog::Write("archipelago: announced a death to the multiworld\n");
         }
+        runtime.FlushState();
 
         if (!received && !client.IsOpen()) {
           connectionError = ErrorText(client.Error());
@@ -518,6 +552,7 @@ void Worker(Runtime& runtime) {
     }
 
     client.Close();
+    runtime.FlushState();
     {
       std::lock_guard<std::mutex> lock(runtime.mutex);
       runtime.connected = false;
@@ -747,7 +782,7 @@ void QueueCheck(const char* locationKey) {
       }
       return;
     }
-    runtime.SaveStateLocked();
+    runtime.MarkStateDirtyLocked();
     runtime.queuedChecks.push_back(id);
   } catch (...) {
     // This is called from game pickup handling; AP must never disrupt gameplay.
