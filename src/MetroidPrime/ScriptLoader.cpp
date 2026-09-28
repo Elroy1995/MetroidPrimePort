@@ -15,6 +15,7 @@
 #include "MetroidPrime/CModelData.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
+#include "port_log.h"
 #include "port_randomizer.h"
 #include "MetroidPrime/Enemies/CAmbientAI.hpp"
 #include "MetroidPrime/Enemies/CAtomicAlpha.hpp"
@@ -899,13 +900,22 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
       // new item, when it has one. Otherwise the retail model stays, which
       // still grants the right item but looks like the original one.
       PortRandomizer::PickupModel randomModel;
-      if (PortRandomizer::ModelForItem(randoItem, randomModel)) {
+      // A model id the resource factory does not know (a seed made for another
+      // disc version, or a hand-edited one) would make the check below drop
+      // the pickup entirely, and with it the item; the retail look is better.
+      if (PortRandomizer::ModelForItem(randoItem, randomModel) &&
+          (gpResourceFactory->GetResourceTypeById(static_cast< CAssetId >(randomModel.model)) != 0 ||
+           gpResourceFactory->GetResourceTypeById(static_cast< CAssetId >(randomModel.acs)) != 0)) {
         // Mirror the area data exactly: an animated pickup keeps its static
         // model alongside the animation file, and the loader already prefers
         // the animation when one is present.
         staticModel = static_cast< CAssetId >(randomModel.model);
         aParms = CAnimationParameters(static_cast< CAssetId >(randomModel.acs), randomModel.character,
                                       randomModel.animation);
+      } else if (randomModel.model != 0 || randomModel.acs != 0) {
+        PortLog::Write("randomizer: model %08X/%08X for item %d is not on this disc; "
+                       "keeping the retail model\n",
+                       randomModel.model, randomModel.acs, randoItem);
       }
     }
   }
