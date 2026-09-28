@@ -215,6 +215,12 @@ CAssetId CWorldState::GetDesiredAreaAssetId() const { return x10_desiredAreaAsse
 void CWorldState::SetDesiredAreaAssetId(CAssetId id) { x10_desiredAreaAssetId = id; }
 rstl::ncrc_ptr< CScriptLayerManager >& CWorldState::GetLayerState() { return x14_layerState; }
 
+#ifdef TARGET_PC
+// Marks the Archipelago trailer after the retail save data ("APIX"). The
+// unused tail of a retail save is zero, so it cannot match by accident.
+static const uint kPortApMagic = 0x41504958;
+#endif
+
 CGameState::CGameState() : x0_(static_cast< uchar >(0))
 , x84_mlvlId(kInvalidAssetId)
 , x98_playerState(rs_new CPlayerState)
@@ -224,6 +230,13 @@ CGameState::CGameState() : x0_(static_cast< uchar >(0))
 , x210_cardSerial(0)
 , x228_24_hardMode(false)
 , x228_25_initPowerupsAtFirstSpawn(true) {
+#ifdef TARGET_PC
+  // A new game holds no received items, whichever session it ends up in.
+  xpc_apProgress.recorded = true;
+  xpc_apProgress.identity = 0;
+  xpc_apProgress.appliedIndex = 0;
+  xpc_apProgress.reconciled = false;
+#endif
   if (gpMemoryCard != nullptr)
     InitializeMemoryStates();
 }
@@ -263,6 +276,12 @@ CGameState::CGameState(CInputStream& in, int saveIdx) : x0_(static_cast< uchar >
         SObjectTag('SAVW', it->second.GetSaveWorldAssetId()));
     x88_worldStates.push_back(CWorldState(in, worldId, **saveWorld));
   }
+#ifdef TARGET_PC
+  xpc_apProgress.recorded = in.ReadBits(32) == kPortApMagic;
+  xpc_apProgress.identity = xpc_apProgress.recorded ? in.ReadBits(32) : 0;
+  xpc_apProgress.appliedIndex = xpc_apProgress.recorded ? in.ReadBits(32) : 0;
+  xpc_apProgress.reconciled = false;
+#endif
   InitializeMemoryWorlds();
   WriteBackupBuf();
 }
@@ -341,6 +360,13 @@ void CGameState::PutTo(COutputStream& out) {
     CWorldState& state = StateForWorld(worldId);
     state.PutTo(out, world);
   }
+#ifdef TARGET_PC
+  if (xpc_apProgress.recorded) {
+    out.WriteBits(kPortApMagic, 32);
+    out.WriteBits(xpc_apProgress.identity, 32);
+    out.WriteBits(xpc_apProgress.appliedIndex, 32);
+  }
+#endif
 }
 
 void CGameState::ReadSystemOptions(CInputStream& in) { xa8_systemState = CSystemState(in); }

@@ -470,6 +470,43 @@ int main() {
           "copies past the last step stay on it");
   }
   {
+    // A loaded save holding the first two of five received items: the session
+    // rewinds, and the full replay grants only the three the save is missing,
+    // with the progressive steps counted from the items it already holds.
+    const std::string allFive = R"({"cmd":"ReceivedItems","index":0,"items":[[5031043,1,1,0],)"
+                                R"([5031004,2,1,0],[5031043,3,1,0],[999,4,1,0],[5031043,5,1,0]]})";
+    Session rewound(progressiveConfig, State{});
+    std::vector<ItemGrant> firstRun;
+    rewound.HandlePacket(Packet(allFive), outgoing, firstRun);
+    Check(firstRun.size() == 5 && firstRun[0].index == 0 && firstRun[4].index == 4,
+          "grants carry their received-item index");
+    while (rewound.TakeNotification(notification)) {
+    }
+    rewound.RewindTo(2);
+    Check(rewound.GetState().nextItemIndex == 0 && rewound.GetState().progressive.empty() &&
+              rewound.Tracked().empty(),
+          "a rewind clears the item index, progressive counts and tracker");
+    std::vector<ItemGrant> replayed;
+    outgoing.clear();
+    rewound.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":5,"items":[[5031004,6,1,0]]})"),
+                         outgoing, replayed);
+    Check(replayed.empty() && !outgoing.empty() && outgoing.back() == Session::BuildSync(),
+          "a live item before the replay waits for the Sync reply");
+    rewound.HandlePacket(Packet(allFive), outgoing, replayed);
+    Check(replayed.size() == 3 && replayed[0].index == 2 &&
+              replayed[0].itemType == PortRandomizer::ItemFromName("ChargeBeam") &&
+              replayed[1].index == 3 && replayed[1].itemType == -1 && replayed[2].index == 4 &&
+              replayed[2].itemType == PortRandomizer::ItemFromName("SuperMissile"),
+          "the replay grants only the items the save is missing, at the right steps");
+    Check(rewound.GetState().nextItemIndex == 5 &&
+              rewound.GetState().progressive.at(5031043) == 3 && rewound.Tracked().size() == 5,
+          "the replay restores the index, progressive count and tracker");
+    int replayNotes = 0;
+    while (rewound.TakeNotification(notification))
+      ++replayNotes;
+    Check(replayNotes == 3, "only the regranted items are announced");
+  }
+  {
     // Another player's item records who sent it, using the alias from Connected.
     Session shared(progressiveConfig, State{});
     std::vector<ItemGrant> sharedGrants;

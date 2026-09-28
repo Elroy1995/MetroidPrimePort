@@ -7,6 +7,7 @@
 #include "MetroidPrime/CHealthInfo.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/HUD/CSamusHud.hpp"
+#include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 
 #include <SDL3/SDL_filesystem.h>
@@ -177,6 +178,9 @@ struct Runtime {
   // DeathLink: a death noticed on the game thread, waiting for the socket
   // thread to announce it. Non-empty means one is owed.
   std::string pendingBounce;
+  // A loaded game rewound the session, so the socket thread owes the server a
+  // Sync to get the full inventory replayed.
+  bool syncWanted = false;
   std::deque<std::string> notifications;
   int itemCount = 0;
   int checkCount = 0;
@@ -191,6 +195,70 @@ struct Runtime {
 Runtime& GetRuntime() {
   static Runtime runtime;
   return runtime;
+}
+
+// Names the session a save's received items came from: FNV-1a over the seed
+// and slot, never 0, which marks a game no session has given items to.
+uint32_t SessionIdentity(const std::string& seed, const std::string& slot) {
+  uint32_t hash = 2166136261u;
+  const auto mix = [&hash](const std::string& text) {
+    for (const char c : text) {
+      hash ^= static_cast<uint8_t>(c);
+      hash *= 16777619u;
+    }
+  };
+  mix(seed);
+  mix(std::string(1, '\0'));
+  mix(slot);
+  return hash != 0 ? hash : 1;
+}
+
+// Lines the session up with the loaded game. The state file's item index says
+// what this client has received, but not what the game holds: quitting without
+// saving, or loading an older save, drops items the index has moved past. So
+// the save records how many it holds, and on load the session rewinds to that
+// many and has the server replay the rest.
+void ReconcileLocked(Runtime& runtime, CGameState::ApProgress& progress) {
+  const Protocol::State& state = runtime.session->GetState();
+  if (state.seed.empty())
+    return; // no session yet to compare with; nothing can have been granted
+  const uint32_t identity = SessionIdentity(state.seed, runtime.config.slot);
+  if (progress.reconciled) {
+    // The server changed seeds under a running game. The session has already
+    // dropped the old seed's progress, and none of the new one's is held yet.
+    if (progress.identity != identity) {
+      progress.identity = identity;
+      progress.appliedIndex = 0;
+    }
+    return;
+  }
+  progress.reconciled = true;
+  // Where the game's items end on the session's side: grants still queued
+  // for the game are about to be applied, so they count as not held yet.
+  const int64_t firstPending =
+      runtime.grants.empty() ? state.nextItemIndex : runtime.grants.front().index;
+  if (!progress.recorded) {
+    // A save from before the record existed: take it to hold what the state
+    // file says was received, which is what the client assumed until now.
+    progress.recorded = true;
+    progress.identity = identity;
+    progress.appliedIndex = static_cast<uint>(
+        std::clamp<int64_t>(firstPending, 0, std::numeric_limits<uint32_t>::max()));
+    return;
+  }
+  // A new game, or a save from another seed or slot, holds none of these items.
+  const int64_t held = progress.identity == identity ? progress.appliedIndex : 0;
+  progress.identity = identity;
+  progress.appliedIndex = static_cast<uint>(held);
+  if (held == firstPending)
+    return;
+  PortLog::Write("archipelago: the loaded game holds %lld of %lld received items; "
+                 "asking the server for the rest\n",
+                 static_cast<long long>(held), static_cast<long long>(state.nextItemIndex));
+  runtime.session->RewindTo(held);
+  runtime.grants.clear();
+  runtime.itemCount = static_cast<int>(std::min<int64_t>(held, std::numeric_limits<int>::max()));
+  runtime.syncWanted = true;
 }
 
 void CountChecks(Runtime& runtime, size_t count) {
@@ -325,6 +393,8 @@ void Worker(Runtime& runtime) {
                 runtime.lastError = packetError;
                 runtime.LogStateLocked(packetError);
               }
+              if (cmd == "Connected")
+                runtime.syncWanted = false; // the handshake replays everything anyway
               if (cmd == "RoomInfo") {
                 connectPacket = runtime.session->BuildConnect();
               } else if (cmd == "Connected" && runtime.session->HandshakeComplete()) {
@@ -398,12 +468,15 @@ void Worker(Runtime& runtime) {
 
         std::vector<int64_t> pendingChecks;
         std::string pendingBounce;
+        bool syncWanted = false;
         if (apConnected) {
           std::lock_guard<std::mutex> lock(runtime.mutex);
           while (!runtime.queuedChecks.empty()) {
             pendingChecks.push_back(runtime.queuedChecks.front());
             runtime.queuedChecks.pop_front();
           }
+          syncWanted = runtime.syncWanted;
+          runtime.syncWanted = false;
           // DeathLink: a death the game thread noticed, announced once. The
           // pending flag is *cleared* rather than moved-from, because this block
           // runs on every loop iteration and a moved-from-but-not-cleared
@@ -416,6 +489,10 @@ void Worker(Runtime& runtime) {
             if (pendingBounce.empty())
               runtime.deathAnnounced = false; // not in DeathLink; do not latch
           }
+        }
+        if (syncWanted && !SendPacket(client, Session::BuildSync(), connectionError)) {
+          connectionFailed = true;
+          break;
         }
         if (!pendingChecks.empty()) {
           if (!SendPacket(client, Session::BuildLocationChecks(pendingChecks), connectionError)) {
@@ -682,8 +759,9 @@ void Poll(CStateManager& mgr) {
     EnsureLoaded();
     Runtime& runtime = GetRuntime();
     CPlayerState* player = mgr.PlayerState();
-    if (player == nullptr)
+    if (player == nullptr || gpGameState == nullptr)
       return;
+    CGameState::ApProgress& progress = gpGameState->PortApProgress();
 
     static unsigned int notificationTicks = 0;
     std::deque<ItemGrant> grants;
@@ -691,12 +769,16 @@ void Poll(CStateManager& mgr) {
       std::lock_guard<std::mutex> lock(runtime.mutex);
       if (!runtime.enabled || runtime.session == nullptr)
         return;
+      ReconcileLocked(runtime, progress);
       grants.swap(runtime.grants);
       const size_t room = static_cast<size_t>(std::max(0, std::numeric_limits<int>::max() -
                                                            runtime.itemCount));
       runtime.itemCount += static_cast<int>(std::min(grants.size(), room));
     }
     for (const ItemGrant& grant : grants) {
+      if (grant.index >= 0 && grant.index < std::numeric_limits<uint32_t>::max())
+        progress.appliedIndex =
+            std::max(progress.appliedIndex, static_cast<uint>(grant.index + 1));
       if (grant.itemType < 0)
         continue;
       const auto type = static_cast<CPlayerState::EItemType>(grant.itemType);

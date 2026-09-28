@@ -156,6 +156,14 @@ def handle_client(sock, address, args, item_ids, bounce_sources=()):
             for packet in packets:
                 print(f"[server] {packet_command(packet)} {json.dumps(packet, separators=(',', ':'))}",
                       flush=True)
+                # Sync asks for the whole inventory again, as a real server does.
+                if packet_command(packet) == "Sync":
+                    send_json(sock, {
+                        "cmd": "ReceivedItems",
+                        "index": 0,
+                        "items": [[item_id, 0, 1, 0] for item_id in item_ids],
+                    })
+                    continue
                 if packet_command(packet) != "Connect":
                     continue
                 name = packet.get("name", "") if isinstance(packet, dict) else ""

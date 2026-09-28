@@ -71,6 +71,24 @@ public:
   };
   static GameFileStateInfo LoadGameFileState(const void* data);
 
+#ifdef TARGET_PC
+  // Archipelago: how many of the session's received items this state already
+  // holds, so loading a save (or quitting without one) gives back exactly the
+  // items the save is missing. Saved as a trailer after the retail data, which
+  // leaves ~100 of the buffer's 940 bytes unused; retail readers ignore it.
+  struct ApProgress {
+    // False for a save written before the trailer existed: the client adopts
+    // it as is, since there is no telling which items it has.
+    bool recorded;
+    // Hash of the seed and slot that granted the items, 0 when none has yet.
+    uint identity;
+    uint appliedIndex;
+    // Not saved: the client has lined its session up with this state.
+    bool reconciled;
+  };
+  ApProgress& PortApProgress() { return xpc_apProgress; }
+#endif
+
 private:
   void InitializeMemoryWorlds();
 
@@ -88,6 +106,9 @@ private:
   rstl::vector< uchar > x218_backupBuf;
   bool x228_24_hardMode : 1;
   bool x228_25_initPowerupsAtFirstSpawn : 1;
+#ifdef TARGET_PC
+  ApProgress xpc_apProgress;
+#endif
 };
 CHECK_SIZEOF(CGameState, 0x230)
 

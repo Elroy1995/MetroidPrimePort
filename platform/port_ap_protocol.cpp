@@ -569,6 +569,7 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
         mState.nextItemIndex = 0;
         mState.checkedLocations.clear();
         mState.progressive.clear();
+        mGrantFrom = 0;
         mResetReason = "recorded for seed \"" + mState.seed + "\", server has \"" + mSeedName + "\"";
       }
       mState.seed = mSeedName;
@@ -671,6 +672,9 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       const int64_t receivedIndex = index + static_cast<int64_t>(position);
       if (receivedIndex < mState.nextItemIndex)
         continue;
+      // Below mGrantFrom the loaded save already holds the item: the replay
+      // only rebuilds the progressive counts and the tracker.
+      const bool alreadyHeld = receivedIndex < mGrantFrom;
       const auto found = mConfig.items.find(itemId);
       std::string notification;
       // Copies of this item already processed, which is what makes a
@@ -688,14 +692,18 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
         }
         ItemGrant grant = entry.Step(count);
         grant.itemId = itemId;
+        grant.index = receivedIndex;
         seenBefore = count;
         notification = grant.display;
-        granted.push_back(std::move(grant));
+        if (!alreadyHeld)
+          granted.push_back(std::move(grant));
       } else {
         ItemGrant grant;
         grant.itemId = itemId;
         grant.itemType = -1;
-        granted.push_back(grant);
+        grant.index = receivedIndex;
+        if (!alreadyHeld)
+          granted.push_back(grant);
         mLastError = "unknown item id " + std::to_string(itemId);
         notification = "unknown item " + std::to_string(itemId);
       }
@@ -709,7 +717,8 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       }
       if (hasPlayer && mOwnSlot != 0 && itemPlayer != mOwnSlot)
         notification += " from " + PlayerName(itemPlayer);
-      AppendNotification(mNotifications, std::move(notification));
+      if (!alreadyHeld)
+        AppendNotification(mNotifications, std::move(notification));
       // The tracker keeps the same receipt with its parts separated, so a
       // session's worth of items stays readable after the HUD line is gone.
       {
@@ -922,6 +931,13 @@ std::string Session::BuildBounce(const std::string& cause) const {
   packet += ",\"cause\":" + Quote(cause.empty() ? mConfig.slot + " died" : cause);
   packet += "}}";
   return packet;
+}
+
+void Session::RewindTo(int64_t heldCount) {
+  mState.nextItemIndex = 0;
+  mState.progressive.clear();
+  mTracked.clear();
+  mGrantFrom = std::max<int64_t>(0, heldCount);
 }
 
 bool Session::MarkLocationChecked(const std::string& locationKey, int64_t& id) {

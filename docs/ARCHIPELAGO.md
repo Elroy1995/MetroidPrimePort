@@ -137,10 +137,18 @@ the first connect adopts the server's and keeps the progress.
 On every connect the whole recorded check list is re-sent, so a reconnect or a
 reloaded save re-announces what was already collected.
 
-**Set `MP_AP_RESET_STATE=1` to discard the file before connecting.** That is the
-way out for the one case which cannot be detected: a new game, or an older save
-loaded on the same slot *and* the same seed, looks exactly like continued
-progress, and the client would skip items the server believes were granted.
+The file's item index says what the client has received, not what the game
+holds, so the game save records that too: a 12-byte trailer after the retail
+save data (magic `APIX`, a hash of seed and slot, and how many received items
+the save holds). When a game is loaded, or a new one started, the client
+compares the two. If the game holds fewer (quit without saving, an older save,
+a new game) or items from another seed or slot, the session rewinds to what the
+game holds and sends a `Sync`, and the server replays the rest. Saves written
+before the trailer existed are taken to hold what the state file says.
+
+**Set `MP_AP_RESET_STATE=1` to discard the file before connecting.** Checks and
+progressive counts start over; the items the game holds are still worked out
+from the save.
 
 ## Producing the id maps
 

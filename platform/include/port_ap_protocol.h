@@ -22,6 +22,7 @@ struct ItemGrant {
   int amount = 1;
   int capacity = 1;
   std::string display; // name shown to the player; the item name when unset
+  int64_t index = 0;   // position in the slot's received-items list
 };
 
 // One item as the tracker shows it: the name a player reads, where it came
@@ -159,6 +160,11 @@ public:
 
   const Config& GetConfig() const { return mConfig; }
   const State& GetState() const { return mState; }
+  // Lines the session up with a loaded game that holds the first `heldCount`
+  // received items: the next full inventory (the reply to Connect or Sync) is
+  // replayed from the start, granting only the items from `heldCount` on and
+  // rebuilding the progressive counts from the ones before it.
+  void RewindTo(int64_t heldCount);
   void SetState(const State& state) { mState = state; }
   bool HandshakeComplete() const { return mHandshakeComplete; }
   // "slot 3, team 0" after Connected, empty before.
@@ -182,6 +188,8 @@ private:
   State mState;
   bool mHandshakeComplete = false;
   bool mDesynced = false;
+  // Received items below this index are in the loaded game already; see RewindTo.
+  int64_t mGrantFrom = 0;
   std::string mSlotDescription;
   std::string mLastMessage;
   std::string mLastError;
