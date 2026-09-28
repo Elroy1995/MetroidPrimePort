@@ -41,3 +41,7 @@ screenshots/
 android/keystore.properties
 android/*.jks
 android/*.keystore
+
+# Local agent notes: they hold machine paths and private details.
+/AGENTS.md
+/CLAUDE.md
