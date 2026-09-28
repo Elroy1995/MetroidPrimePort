@@ -490,6 +490,9 @@ a temporary directory instead of mounting.
   the normal PAD/gun input path, preserving charge timing and weapon cooldowns.
   Existing keyboard/controller weapon bindings are also available; saved mapping
   files are not rewritten. `MP_DISABLE_MOUSE_BUTTONS=1` opts out of these aliases.
+  Outside playable first person (morph ball, text boxes, menus) left-click is a
+  plain A press, so it lays bombs and advances text; like the weapon buttons it
+  only counts after the button has been seen released.
 - Outside lock-on, A/D (the left-stick lateral axis) strafe in mouse mode rather
   than applying the console's turning torque. Movement uses the current mouse
   heading and the game's acceleration, friction, surface restraints and collision
@@ -605,7 +608,8 @@ driver unless enabled at configure time.
 build. Run it with `MP_FAST_BOOT=1 MP_SKIP_CUTSCENES=1 MP_SMOKE_FRAMES=1800` and an
 isolated `MP_USER_PATH`/`MP_CACHE_PATH`. It injects mouse input without grabbing
 the real pointer, verifies immediate camera aim, live power/missile projectiles,
-charged release, lock/release, jump and morph-ball handoffs, UI charge cancellation,
+charged release, lock/release, jump and morph-ball handoffs, a left-click bomb in
+morph ball, UI charge cancellation,
 crosshair state, and cannon/view orientation while uncapped. Scripted cinematics
 pause the test sequence; the frame limit is a minimum until the scenario finishes.
 Success is reported as `[mouse-smoke] passed` followed by a clean exit.

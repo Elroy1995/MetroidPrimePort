@@ -138,6 +138,9 @@ bool MouseInvertY();
 bool MouseButtons();
 bool MouseCrosshair();
 unsigned MouseWeaponButtons(unsigned held);
+// Outside mouse gameplay (morph ball, text boxes, menus) the left button is a
+// plain A press; returns SDL_BUTTON_LMASK while it should be held.
+unsigned MouseMenuButtons(unsigned held, bool focused);
 // Real-mouse button state (SDL_BUTTON_*MASK), fed from the event loop. Touch-
 // and pen-synthesised mouse buttons are left out; see PortMouse::HeldButtons.
 void NoteMouseButton(bool synthetic, unsigned mask, bool down);

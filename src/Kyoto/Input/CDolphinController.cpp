@@ -71,6 +71,13 @@ void CDolphinController::ReadDevices() {
   inputFocused = inputFocused || PortSmokeMouseEnabled() || PortSmokeScriptedInput();
 #endif
   const unsigned mouse = PortDebug::MouseWeaponButtons(held);
+  // Out of first-person aim a left click is still A: bombs in morph ball, and
+  // advancing text boxes and menus. Its gate also waits for a release, so a
+  // held charge carried into morph ball does not drop a bomb.
+  if (PortDebug::MouseMenuButtons(held, inputFocused) != 0) {
+    status[0].err = PAD_ERR_NONE;
+    status[0].button |= PAD_BUTTON_A;
+  }
   if (PortDebug::MouseGameplayActive() && PortDebug::MouseCaptured() && PortDebug::MouseButtons()) {
     // Add held states to the normal PAD path: its press/release edges drive
     // charge shots and missile cooldowns. Saved bindings remain untouched.

@@ -36,7 +36,7 @@ unsigned sGunViewChecks = 0;
 bool sMouseJumped = false;
 bool sMouseMorphed = false, sMouseResumed = false;
 bool sStrafedBeforeUI = false, sStrafedAfterUI = false;
-bool sPowerProjectileSeen = false, sMissileProjectileSeen = false;
+bool sPowerProjectileSeen = false, sMissileProjectileSeen = false, sBombSeen = false;
 bool sMouseComplete = false;
 unsigned sAreaReloads = 0;
 bool AreaReloadEnabled() {
@@ -648,7 +648,8 @@ unsigned PortSmokeMouseButtons(unsigned realButtons) {
   if (sMouseComplete) return 0;
   if ((sMouseTicks >= 10 && sMouseTicks < 15) ||
       (sMouseTicks >= 25 && sMouseTicks < 115) ||
-      (sMouseTicks >= 335 && sMouseTicks < 380)) return SDL_BUTTON_LMASK;
+      (sMouseTicks >= 335 && sMouseTicks < 380) ||
+      (sMouseTicks >= 488 && sMouseTicks < 493)) return SDL_BUTTON_LMASK;
   if ((sMouseTicks >= 135 && sMouseTicks < 140) ||
       (sMouseTicks >= 155 && sMouseTicks < 160) ||
       (sMouseTicks >= 175 && sMouseTicks < 180)) return SDL_BUTTON_MMASK;
@@ -713,6 +714,7 @@ void PortSmokeMouseAfterUpdate(CStateManager& mgr) {
   const CPlayer& player = *mgr.GetPlayer();
   sPowerProjectileSeen |= mgr.GetWeaponIdCount(player.GetUniqueId(), kWT_Power) > 0;
   sMissileProjectileSeen |= mgr.GetWeaponIdCount(player.GetUniqueId(), kWT_Missile) > 0;
+  sBombSeen |= mgr.GetWeaponIdCount(player.GetUniqueId(), kWT_Bomb) > 0;
   if (player.GetMorphballTransitionState() == CPlayer::kMS_Morphed) sMouseMorphed = true;
   if (!player.MouseControlsAllowed(mgr)) {
     MouseCheck(!PortDebug::AimInitialized(), "inactive camera kept mouse ownership");
@@ -747,10 +749,11 @@ void PortSmokeMouseAfterUpdate(CStateManager& mgr) {
     MouseCheck(sPowerProjectileSeen && sMissileProjectileSeen, "weapon inputs did not create live projectiles");
     MouseCheck(sMouseLocks > 0 && sMouseJumped && sGunViewChecks > 50, "lock/jump/viewmodel coverage incomplete");
     MouseCheck(sMouseMorphed && sMouseResumed, "morph-ball handoff coverage incomplete");
+    MouseCheck(sBombSeen, "a left click in morph ball did not lay a bomb");
     MouseCheck(sStrafedBeforeUI && sStrafedAfterUI, "free strafe failed before/after F1");
     PADClearVirtualStatus(0);
     sMouseComplete = true;
-    std::fprintf(stderr, "[mouse-smoke] passed: shots=%u charged=%u missiles=%u lockedTicks=%u gunViews=%u jump=1 morph=1 strafe-before/after-F1=1\n",
+    std::fprintf(stderr, "[mouse-smoke] passed: shots=%u charged=%u missiles=%u lockedTicks=%u gunViews=%u jump=1 morph=1 bomb=1 strafe-before/after-F1=1\n",
                  sMouseShots, sMouseChargedShots, sMouseMissiles, sMouseLocks, sGunViewChecks);
   }
 }
