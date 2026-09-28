@@ -12,7 +12,9 @@ anyway. The pack ships a `License.txt` alongside the download.
 
 Only the icons the port needs are copied here.
 
-The device icons label the A, B, L and R prompts for each controller family. L
+The device icons label the A, B, Y, L, R, Z and stick prompts for each
+controller family. The Switch set is positional, like SDL3's button names: the
+A action sits on the bottom face button, which the Switch labels B. L
 and R are the pad's analog triggers, so they take the trigger art (LT/RT, L2/R2,
 ZL/ZR), while the Z prompt, which is a digital shoulder, takes the bumper.
 The keyboard set doubles as the fallback used when a binding has no icon of its
@@ -30,6 +32,7 @@ own, so it labels the port's default keys:
 | `keyboard_x.png`, `keyboard_z.png` | keyboard A / B, matching the default keys |
 | `keyboard_q.png`, `keyboard_e.png` | keyboard L / R, matching the default keys |
 | `keyboard_f.png` | keyboard Z, matching the default key |
+| `xbox_button_color_y.png`, `playstation_button_color_triangle.png`, `switch_button_x.png`, `keyboard_v.png` | Y prompts (the pause screen's Zoom) |
 | `keyboard_arrows.png` | keyboard stick prompts (the sticks are bound to key sets) |
 | `xbox_stick_r.png`, `playstation_stick_r.png`, `switch_stick_r.png` | pad stick prompts |
 | `playstation_trigger_r1.png`, `switch_button_r.png` | PlayStation / Switch Z prompts (the right shoulder) |
@@ -51,7 +54,3 @@ slashes, tilde for the grave key), the keypad keys that have art of their own
 (enter, plus, asterisk, num lock; its digits, minus, period and slash reuse the
 main keys'), and `mouse_left` / `mouse_right` / `mouse_scroll` (middle button) /
 `mouse_side_back` / `mouse_side_forward`.
-
-The prompt texture names these are written as (`tex1_32x32_..._5.dds`) identify
-the game's own GameCube A and B glyph textures, which is why these two actions
-are the ones covered so far.

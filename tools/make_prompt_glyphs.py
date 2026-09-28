@@ -40,20 +40,25 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "textures"
 # Z is the right shoulder in every default pad mapping Aurora ships, so the pad
 # sets give it the bumper. There is no "gamecube" set on purpose: the game's own
 # art already is the GameCube set.
+#
+# Y is the pause screen's Zoom. The Switch labels are positional, as in
+# PAD_ICONS: SDL3 names buttons by position, so A is the bottom face button,
+# which a Switch pad labels B.
 DEVICE_ICONS = {
     "xbox": {"a": "xbox_button_color_a.png", "b": "xbox_button_color_b.png",
-             "l": "xbox_lt.png", "r": "xbox_rt.png", "z": "xbox_rb.png",
+             "y": "xbox_button_color_y.png", "l": "xbox_lt.png", "r": "xbox_rt.png", "z": "xbox_rb.png",
              "stick": "xbox_stick_r.png"},
     "playstation": {"a": "playstation_button_color_cross.png",
                     "b": "playstation_button_color_circle.png",
+                    "y": "playstation_button_color_triangle.png",
                     "l": "playstation_trigger_l2.png", "r": "playstation_trigger_r2.png",
                     "z": "playstation_trigger_r1.png",
                     "stick": "playstation_stick_r.png"},
-    "switch": {"a": "switch_button_a.png", "b": "switch_button_b.png",
-               "l": "switch_button_zl.png", "r": "switch_button_zr.png",
+    "switch": {"a": "switch_button_b.png", "b": "switch_button_a.png",
+               "y": "switch_button_x.png", "l": "switch_button_zl.png", "r": "switch_button_zr.png",
                "z": "switch_button_r.png",
                "stick": "switch_stick_r.png"},
-    "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png",
+    "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png", "y": "keyboard_v.png",
                  "l": "keyboard_q.png", "r": "keyboard_e.png",
                  "z": "keyboard_f.png", "stick": "keyboard_arrows.png"},
 }
@@ -107,6 +112,7 @@ PAD_ICONS["standard"] = PAD_ICONS["xbox"]
 ACTION_FOR_BUTTON = {
     "PAD_BUTTON_A": "a",
     "PAD_BUTTON_B": "b",
+    "PAD_BUTTON_Y": "y",
     "PAD_TRIGGER_L": "l",
     "PAD_TRIGGER_R": "r",
     "PAD_TRIGGER_Z": "z",

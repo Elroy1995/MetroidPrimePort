@@ -332,8 +332,9 @@ key or mouse button changes the prompt. The per-input icons live in
 served through Aurora's virtual-replacement callback rather than shipped as a
 fixed set. Each screen draws its own prompt art, so one action maps to several
 game textures; the front end, the pause/inventory screen and the map screen are
-covered, for the A, B, L, R, Z and stick prompts. The stick prompts (the map
-screen's Move, the pause screen's Zoom) are axes rather than buttons, so they do
+covered, for the A, B, Y (the pause screen's Zoom), L, R, Z and stick prompts.
+The stick prompts (the map screen's Rotate and a C-stick badge) are axes rather
+than buttons, so they do
 not follow a binding; they get the device's own stick, or a direction-key icon
 on keyboard. Of the HUD prompts only one R hint is covered; the rest keep the
 static icon. A keyboard follows its key bindings (the main key, else the second
