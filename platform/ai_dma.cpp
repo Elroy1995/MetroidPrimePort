@@ -36,6 +36,19 @@ bool sAudioInitialized = false;
 bool sPlaying = true;
 alignas(32) uint8_t sSilence[0x280] = {};
 
+// Runs the registered DMA callback once. On the GameCube, MusyX's base AI
+// callback submits a fresh mix buffer first, and later callbacks (streamed
+// music, movie audio) read it through AIGetDMAStartAddr and mix on top. The port
+// plays MusyX through its own stream, so hand them silence instead: otherwise
+// they read back the buffer they submitted last time, and a mixer that adds to
+// its input (the THP movie player, e.g. the game-over screen) feeds its own
+// output back into itself until it distorts.
+void RunCallback() {
+  sBuffer = reinterpret_cast< uintptr_t >(sSilence);
+  sLength = sizeof(sSilence);
+  sCallback();
+}
+
 void EnsureStream() {
   if (sStream != nullptr || !sOutputEnabled) {
     return;
@@ -96,7 +109,7 @@ extern "C" void AIPortPoll(void) {
     int queued = SDL_GetAudioStreamQueued(sStream);
     int budget = 16;
     while (sCallback != nullptr && queued >= 0 && queued < kTargetQueuedBytes && budget-- > 0) {
-      sCallback();
+      RunCallback();
       const uintptr_t buffer = sBuffer;
       const uint32_t length = sLength;
       if (buffer == 0 || length == 0 ||
@@ -116,7 +129,7 @@ extern "C" void AIPortPoll(void) {
   // Catch up to real time, bounded so a long stall cannot fire a burst.
   int budget = 8;
   while (sCallback != nullptr && sNextFrameNs <= now && budget-- > 0) {
-    sCallback();
+    RunCallback();
     const uint32_t length = sLength;
     const uint64_t duration = length != 0
                                   ? static_cast< uint64_t >(length) * 1000000000ull /

@@ -10,9 +10,14 @@ extern "C" uintptr_t AIPortGetDMAStartAddr();
 namespace {
 int calls = 0;
 bool unregister = false;
+bool fedOwnBuffer = false;
 alignas(32) unsigned char samples[640]{};
 void Callback() {
   ++calls;
+  // Each callback must start from a fresh (silent) buffer, never the one it
+  // submitted last time, or a mixer that adds to its input feeds back.
+  if (AIPortGetDMAStartAddr() == reinterpret_cast<uintptr_t>(samples))
+    fedOwnBuffer = true;
   AIInitDMA(reinterpret_cast<uintptr_t>(samples), sizeof(samples));
   if (unregister)
     AIRegisterDMACallback(nullptr);
@@ -34,6 +39,7 @@ int main() {
   AIPortSetOutputEnabled(1);
   AIPortPoll();
   Check(calls - silentCalls >= 8); // enabling must create and prefill a stream
+  Check(!fedOwnBuffer);
   AIPortSetOutputEnabled(0);
   SDL_Delay(30);
   unregister = true;
