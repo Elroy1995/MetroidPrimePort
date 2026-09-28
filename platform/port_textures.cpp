@@ -137,20 +137,33 @@ void ApplyPendingUserPack() {
     return;
   }
   Unload(sUser);
-  std::filesystem::remove_all(root, ec);
-  if (ec) {
-    PortLog::Write("metroid_prime_port: could not remove %s: %s\n", root.string().c_str(),
-                   ec.message().c_str());
+  // The old pack is moved aside rather than deleted first, so a failed install
+  // leaves the user with the pack they had instead of none.
+  const std::filesystem::path old(sUser.root + ".old");
+  std::filesystem::remove_all(old, ec);
+  const bool hadPack = std::filesystem::exists(root, ec);
+  if (hadPack) {
+    std::filesystem::rename(root, old, ec);
+    if (ec) {
+      PortLog::Write("metroid_prime_port: could not replace %s: %s\n", root.string().c_str(),
+                     ec.message().c_str());
+      return;
+    }
   }
   if (swap && !remove) {
     std::filesystem::rename(pending, root, ec);
     if (ec) {
       PortLog::Write("metroid_prime_port: could not install the texture pack from %s: %s\n",
                      pending.string().c_str(), ec.message().c_str());
+      if (hadPack) {
+        std::filesystem::rename(old, root, ec);
+      }
+      return;
     }
   } else if (swap) {
     std::filesystem::remove_all(pending, ec);
   }
+  std::filesystem::remove_all(old, ec);
 }
 } // namespace
 
