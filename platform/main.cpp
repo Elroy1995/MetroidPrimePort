@@ -101,20 +101,32 @@ std::string FindDiscNextToExecutable() {
         return {};
     }
     namespace fs = std::filesystem;
-    std::error_code ec;
-    const fs::path baseDir(base);
-    std::vector<fs::path> dirs{baseDir};
-    for (fs::directory_iterator it(baseDir, ec), end; !ec && it != end; it.increment(ec)) {
-        if (it->is_directory(ec)) {
-            dirs.push_back(it->path());
-        }
-    }
-    for (const fs::path& dir : dirs) {
-        for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
-            if (it->is_regular_file(ec) && IsDiscImage(it->path())) {
-                return it->path().string();
+    // The iterator and the per-entry checks keep separate error codes: an entry
+    // whose status cannot be read (a symlink into a directory without access)
+    // fails its own check and is skipped, where a shared code would end the
+    // whole search before a good image further on.
+    // Path conversions can still throw (a name the narrow encoding cannot hold),
+    // and this runs before anything that could report it, so nothing escapes.
+    try {
+        std::error_code ec;
+        const fs::path baseDir(base);
+        std::vector<fs::path> dirs{baseDir};
+        for (fs::directory_iterator it(baseDir, ec), end; !ec && it != end; it.increment(ec)) {
+            std::error_code entryEc;
+            if (it->is_directory(entryEc)) {
+                dirs.push_back(it->path());
             }
         }
+        for (const fs::path& dir : dirs) {
+            for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+                std::error_code entryEc;
+                if (it->is_regular_file(entryEc) && IsDiscImage(it->path())) {
+                    return it->path().string();
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        PortLog::Write("metroid_prime_port: searching for a disc image failed: %s\n", e.what());
     }
     return {};
 }
@@ -148,7 +160,10 @@ const char* ResolveDiscPath(int argc, char** argv) {
             return saved;
         }
 #endif
-        if (std::filesystem::exists(saved)) {
+        // The error_code overload: the throwing one would end the program on a
+        // remembered path that is merely unreadable, instead of moving on.
+        std::error_code ec;
+        if (std::filesystem::exists(saved, ec)) {
             return saved;
         }
     }
