@@ -18,6 +18,9 @@
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Math/CQuaternion.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
+#include "MetroidPrime/ScriptObjects/CScriptWater.hpp"
+#include "MetroidPrime/CFluidPlaneCPU.hpp"
+#include "MetroidPrime/TCastTo.hpp"
 #include <dolphin/pad.h>
 #include <SDL3/SDL.h>
 #include <cmath>
@@ -1023,4 +1026,63 @@ void PortSmokeDash(CStateManager& mgr) {
                  sDashTicks > 0 ? "passed" : "failed", sLockedTicks, sDashTicks,
                  static_cast< int >(player->GetOrbitState()));
   }
+}
+
+// MP_SMOKE_WATER=<cycles>: put the player into the loaded area's first water
+// volume (just under the surface), walk forward there for two seconds, pull
+// them back out, and repeat, so enter/exit effects and damage can be checked.
+void PortSmokeWater(CStateManager& mgr) {
+  static const unsigned cycles = [] {
+    const char* value = std::getenv("MP_SMOKE_WATER");
+    return value != nullptr ? static_cast< unsigned >(std::strtoul(value, nullptr, 10)) : 0u;
+  }();
+  if (cycles == 0 || WorldSmokePending()) return;
+  static unsigned sTicks = 0, sCycle = 0;
+  static bool sDone = false, sHaveWater = false;
+  static CVector3f sDry, sWet;
+  if (sDone || mgr.GetGameState() != CStateManager::kGS_Running ||
+      !mgr.GetCameraManager()->IsInFPCamera() || mgr.GetCameraManager()->IsInCinematicCamera()) {
+    return;
+  }
+  CPlayer* player = mgr.Player();
+  if (player == nullptr) return;
+  if (!sHaveWater) {
+    if (++sTicks < 60) return;
+    const CObjectList& objList = mgr.GetObjectListById(kOL_All);
+    for (int idx = objList.GetFirstObjectIndex(); idx != -1; idx = objList.GetNextObjectIndex(idx)) {
+      CScriptWater* water = TCastToPtr< CScriptWater >(const_cast< CEntity* >(objList[idx]));
+      if (water == nullptr || !water->GetActive()) continue;
+      const CAABox box = water->GetTriggerBoundsWR();
+      const CVector3f center = box.GetCenterPoint();
+      sWet = CVector3f(center.GetX(), center.GetY(), box.GetMaxPoint().GetZ() - 1.5f);
+      sHaveWater = true;
+      std::fprintf(stderr, "[water-smoke] water %04x type %d surface %.2f\n", water->GetUniqueId().Value(),
+                   static_cast< int >(water->GetFluidPlane().GetFluidType()), box.GetMaxPoint().GetZ());
+      break;
+    }
+    if (!sHaveWater) {
+      sDone = true;
+      std::fprintf(stderr, "[water-smoke] failed: no active water in the area\n");
+      return;
+    }
+    sDry = player->GetTranslation();
+    sTicks = 0;
+  }
+  PADStatus status{};
+  status.err = PAD_ERR_NONE;
+  const unsigned phase = sTicks++ % 240;
+  if (phase == 0 || phase == 120) {
+    const bool in = phase == 0;
+    player->Teleport(CTransform4f::Translate(in ? sWet : sDry), mgr, true);
+    std::fprintf(stderr, "[water-smoke] cycle %u %s, health %.1f\n", sCycle, in ? "in" : "out",
+                 mgr.GetPlayerState()->GetHealthInfo().GetHP());
+    if (!in && ++sCycle >= cycles) {
+      PADClearVirtualStatus(0);
+      sDone = true;
+      std::fprintf(stderr, "[water-smoke] passed: %u cycles\n", sCycle);
+      return;
+    }
+  }
+  if (phase < 120) status.stickY = 100;
+  PADSetVirtualStatus(0, &status);
 }
