@@ -529,6 +529,12 @@ bool SkipCutscenes() {
   return sSkipCutscenes;
 }
 
+void SetSkipCutscenes(bool enabled) {
+  EnsureInitialized();
+  sSkipCutscenes = enabled;
+  MarkDirty();
+}
+
 float CutsceneSpeed() {
   EnsureInitialized();
   return sCutsceneSpeed;
@@ -668,6 +674,7 @@ EAspectMode AspectMode() {
 void SetAspectMode(EAspectMode mode) {
   EnsureInitialized();
   sAspectMode = mode;
+  MarkDirty();
 }
 
 bool HudWide() {

@@ -33,6 +33,9 @@ private:
   void ResetOptionWidgetVisibility();
   void OnSliderChanged(CGuiSliderGroup* caller, float value);
   void OnEnumChanged(CGuiTableGroup* caller, int oldSel);
+#ifdef TARGET_PC
+  void UpdateRightTitles();
+#endif
 
   rstl::single_ptr< CQuitGameScreen > x19c_quitGame;
   rstl::single_ptr< CGameCubeDoll > x1a0_gameCube;

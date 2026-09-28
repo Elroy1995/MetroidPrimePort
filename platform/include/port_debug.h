@@ -38,6 +38,7 @@ void SetDiscPath(const char* path);
 // Fast iteration
 bool FastBoot();
 bool SkipCutscenes();
+void SetSkipCutscenes(bool enabled);
 float CutsceneSpeed();
 // Simulation tick rate. 60 is console-accurate; higher values run the tick at
 // the display rate instead of interpolating presentation. Experimental.

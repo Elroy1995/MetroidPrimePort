@@ -25,6 +25,12 @@
 #include "rstl/math.hpp"
 #include <stdio.h>
 
+#ifdef TARGET_PC
+#include "GuiSys/CGuiModel.hpp"
+#include "port_debug.h"
+#include <math.h>
+#endif
+
 static const int skQuitTitles[] = {24, 25, 26, 27, 28};
 
 CQuitGameScreen::CQuitGameScreen(EQuitType type)
@@ -169,7 +175,138 @@ static SOptionCategory skGameOptions[] = {
     {4, skControllerOptions}, {0, nullptr},
 };
 
+#ifdef TARGET_PC
+// Port settings (the ones also in the debug overlay) shown on the pause screen,
+// after each category's retail rows. The left table has no free category (the
+// fifth is Quit Game), so the right table scrolls instead. The title-screen
+// Options keeps the retail tables: its frame has no scrolling. These rows have
+// no STRG entries, so their labels live here.
+enum EPortOption {
+  kPO_SkipCutscenes = kGO_RestoreDefaults + 1,
+  kPO_AspectRatio,
+  kPO_WidescreenHUD,
+  kPO_TwinStick,
+  kPO_AimSpeed,
+};
+#define PORT_OPTION(opt) static_cast< EGameOption >(opt)
+
+// Aim speed steps: 900 px/s (the default) at 10, x9 per 10 steps, so 0 is
+// 100 px/s and 16 about 3370 px/s (the overlay's slider covers 100-3000).
+static const float kAimSpeedDefault = 900.f;
+static const float kAimSpeedDefaultStep = 10.f;
+static float AimSpeedFromStep(int step) {
+  return kAimSpeedDefault * powf(9.f, (step - kAimSpeedDefaultStep) / 10.f);
+}
+static int AimSpeedToStep(float rate) {
+  return static_cast< int >(
+      floorf(kAimSpeedDefaultStep + 10.f * logf(rate / kAimSpeedDefault) / logf(9.f) + 0.5f));
+}
+
+static const SGameOption skPortVisorOptions[] = {
+    {kGO_VisorOpacity, 21, 0.f, 255.f, 1.f, kOT_Float},
+    {kGO_HelmetOpacity, 22, 0.f, 255.f, 1.f, kOT_Float},
+    {kGO_HUDLag, 23, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {kGO_HintSystem, 24, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_SkipCutscenes), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
+};
+static const SGameOption skPortDisplayOptions[] = {
+    {kGO_ScreenBrightness, 25, 0.f, 8.f, 1.f, kOT_Float},
+    {kGO_ScreenOffsetX, 26, -30.f, 30.f, 1.f, kOT_Float},
+    {kGO_ScreenOffsetY, 27, -30.f, 30.f, 1.f, kOT_Float},
+    {kGO_ScreenStretch, 28, -10.f, 10.f, 1.f, kOT_Float},
+    {PORT_OPTION(kPO_AspectRatio), -1, 0.f, 2.f, 1.f, kOT_TripleEnum},
+    {PORT_OPTION(kPO_WidescreenHUD), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
+};
+static const SGameOption skPortControllerOptions[] = {
+    {kGO_ReverseYAxis, 32, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {kGO_Rumble, 33, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {kGO_SwapBeamControls, 34, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_TwinStick), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_AimSpeed), -1, 0.f, 16.f, 1.f, kOT_Float},
+    {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
+};
+static SOptionCategory skPauseOptions[] = {
+    {6, skPortVisorOptions},      {7, skPortDisplayOptions}, {4, skSoundOptions},
+    {6, skPortControllerOptions}, {0, nullptr},
+};
+
+static bool IsPortOption(EGameOption option) { return option > kGO_RestoreDefaults; }
+
+static const wchar_t* PortOptionTitle(EGameOption option) {
+  switch (static_cast< int >(option)) {
+  case kPO_SkipCutscenes:
+    return L"Skip Cutscenes";
+  case kPO_AspectRatio:
+    return L"Aspect Ratio";
+  case kPO_WidescreenHUD:
+    return L"Widescreen HUD";
+  case kPO_TwinStick:
+    return L"Twin Stick Aim";
+  case kPO_AimSpeed:
+    return L"Stick Aim Speed";
+  default:
+    return L"";
+  }
+}
+
+static int GetPortOption(EGameOption option) {
+  switch (static_cast< int >(option)) {
+  case kPO_SkipCutscenes:
+    return PortDebug::SkipCutscenes() ? 1 : 0;
+  case kPO_AspectRatio:
+    return PortDebug::AspectMode();
+  case kPO_WidescreenHUD:
+    return PortDebug::HudWide() ? 1 : 0;
+  case kPO_TwinStick:
+    return PortDebug::TwinStick() ? 1 : 0;
+  case kPO_AimSpeed:
+    return AimSpeedToStep(PortDebug::StickAimRate());
+  default:
+    return 0;
+  }
+}
+
+static void SetPortOption(EGameOption option, int value) {
+  switch (static_cast< int >(option)) {
+  case kPO_SkipCutscenes:
+    PortDebug::SetSkipCutscenes(value > 0);
+    break;
+  case kPO_AspectRatio:
+    if (value >= PortDebug::kAspect_4_3 && value <= PortDebug::kAspect_Window) {
+      PortDebug::SetAspectMode(static_cast< PortDebug::EAspectMode >(value));
+    }
+    break;
+  case kPO_WidescreenHUD:
+    PortDebug::SetHudWide(value > 0);
+    break;
+  case kPO_TwinStick:
+    PortDebug::SetTwinStick(value > 0);
+    break;
+  case kPO_AimSpeed:
+    PortDebug::SetStickAimRate(AimSpeedFromStep(value));
+    break;
+  default:
+    break;
+  }
+}
+
+static const SOptionCategory& GetOptionCategory(int category, bool frontEnd) {
+  return frontEnd ? skGameOptions[category] : skPauseOptions[category];
+}
+#else
+static const SOptionCategory& GetOptionCategory(int category, bool frontEnd) {
+  return skGameOptions[category];
+}
+#endif
+
 int CGameOptions::GetOption(EGameOption option) {
+#ifdef TARGET_PC
+  if (IsPortOption(option)) {
+    return GetPortOption(option);
+  }
+#endif
   const CGameOptions& options = gpGameState->GameOptions();
   switch (option) {
   case kGO_VisorOpacity:
@@ -206,6 +343,12 @@ int CGameOptions::GetOption(EGameOption option) {
 }
 
 void CGameOptions::SetOption(EGameOption option, int value) {
+#ifdef TARGET_PC
+  if (IsPortOption(option)) {
+    SetPortOption(option, value);
+    return;
+  }
+#endif
   CGameOptions& options = gpGameState->GameOptions();
   switch (option) {
   case kGO_VisorOpacity:
@@ -257,7 +400,7 @@ void CGameOptions::SetOption(EGameOption option, int value) {
 
 void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, int option,
                                       bool frontEnd) {
-  const SOptionCategory& cat = skGameOptions[category];
+  const SOptionCategory& cat = GetOptionCategory(category, frontEnd);
   if (cat.count != 0 && cat.options[option].option == kGO_RestoreDefaults && input.PA()) {
     if (frontEnd) {
       CSfxManager::SfxStart(0x448, 0x7f, 0x40, false, CSfxManager::kMedPriority, false,
@@ -295,6 +438,26 @@ void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, in
     default:
       break;
     }
+#ifdef TARGET_PC
+    // The port rows only show on the pause screen, so only it resets them.
+    if (!frontEnd) {
+      switch (category) {
+      case 0:
+        PortDebug::SetSkipCutscenes(false);
+        break;
+      case 1:
+        PortDebug::SetAspectMode(PortDebug::kAspect_4_3);
+        PortDebug::SetHudWide(false);
+        break;
+      case 3:
+        PortDebug::SetTwinStick(false);
+        PortDebug::SetStickAimRate(kAimSpeedDefault);
+        break;
+      default:
+        break;
+      }
+    }
+#endif
   }
 }
 
@@ -306,7 +469,14 @@ COptionsScreen::COptionsScreen(const CStateManager& mgr, CGuiFrame& frame,
 , x29c_optionAlpha(0.f)
 , x2a0_24_inOptionBody(false) {}
 
-COptionsScreen::~COptionsScreen() { CSfxManager::SfxStop(x1a4_sliderSfx); }
+COptionsScreen::~COptionsScreen() {
+  CSfxManager::SfxStop(x1a4_sliderSfx);
+#ifdef TARGET_PC
+  // Write any port setting changed here now, not only at exit: Android can
+  // kill the app without running exit handlers.
+  PortDebug::SaveSettingsNow();
+#endif
+}
 
 bool COptionsScreen::VReady() const { return true; }
 
@@ -422,12 +592,16 @@ bool COptionsScreen::ShouldLeftTableAdvance() {
 }
 
 uint COptionsScreen::GetRightTableCount() const {
-  return skGameOptions[x70_tablegroup_leftlog->GetUserSelection()].count;
+  return GetOptionCategory(x70_tablegroup_leftlog->GetUserSelection(), false).count;
 }
 
 void COptionsScreen::UpdateRightTable() {
   CPauseScreenBase::UpdateRightTable();
-  const SOptionCategory& category = skGameOptions[x70_tablegroup_leftlog->GetUserSelection()];
+#ifdef TARGET_PC
+  UpdateRightTitles();
+#else
+  const SOptionCategory& category =
+      GetOptionCategory(x70_tablegroup_leftlog->GetUserSelection(), false);
   for (int i = 0; i < 5; ++i) {
     CGuiTextPane* pane = xd8_textpane_titles[i];
     if (i < category.count) {
@@ -437,9 +611,47 @@ void COptionsScreen::UpdateRightTable() {
       pane->TextSupport().SetText(rstl::wstring_l(L""));
     }
   }
+#endif
 }
 
+#ifdef TARGET_PC
+// The titles of the rows in view, for categories that scroll. The title models
+// behind them are a ring, rotated as in CLogBookScreen::UpdateRightTitles, so
+// the base class's highlight (row index % 5) lands on the selected row.
+void COptionsScreen::UpdateRightTitles() {
+  const SOptionCategory& category =
+      GetOptionCategory(x70_tablegroup_leftlog->GetUserSelection(), false);
+  for (int i = 0; i < 5; ++i) {
+    CGuiTextPane* pane = xd8_textpane_titles[i];
+    const int row = x18_firstViewRightSel + i;
+    if (row < category.count) {
+      const SGameOption& opt = category.options[row];
+      if (opt.stringId < 0) {
+        pane->TextSupport().SetText(rstl::wstring_l(PortOptionTitle(opt.option)));
+      } else {
+        pane->TextSupport().SetText(rstl::wstring(xc_pauseStrg.GetString(opt.stringId)));
+      }
+    } else {
+      pane->TextSupport().SetText(rstl::wstring_l(L""));
+    }
+  }
+  const int firstMod = x18_firstViewRightSel % 5;
+  for (int i = 0; i < x144_model_titles.size(); ++i) {
+    CGuiModel* model = x144_model_titles[i];
+    const int row = i >= firstMod ? -firstMod : 5 - firstMod;
+    model->SetO2PTransform(CTransform4f::Translate(0.f, 0.f, x38_highlightPitch * row) *
+                           model->GetTransform());
+  }
+}
+#endif
+
 void COptionsScreen::ChangedMode(EMode oldMode) {
+#ifdef TARGET_PC
+  // Going back to the left table resets the scroll position.
+  if (x10_mode == kM_LeftTable) {
+    UpdateRightTitles();
+  }
+#endif
   if (x10_mode == kM_RightTable) {
     x174_textpane_body->SetIsVisible(true);
     UpdateOptionView();
@@ -449,7 +661,12 @@ void COptionsScreen::ChangedMode(EMode oldMode) {
   }
 }
 
-void COptionsScreen::RightTableSelectionChanged(int oldSel, int newSel) { UpdateOptionView(); }
+void COptionsScreen::RightTableSelectionChanged(int oldSel, int newSel) {
+#ifdef TARGET_PC
+  UpdateRightTitles();
+#endif
+  UpdateOptionView();
+}
 
 void COptionsScreen::ResetOptionWidgetVisibility() {
   x18c_slidergroup_slider->SetIsActive(false);
@@ -462,12 +679,17 @@ void COptionsScreen::ResetOptionWidgetVisibility() {
 
 void COptionsScreen::UpdateOptionView() {
   ResetOptionWidgetVisibility();
-  const SOptionCategory& category = skGameOptions[x70_tablegroup_leftlog->GetUserSelection()];
+  const SOptionCategory& category =
+      GetOptionCategory(x70_tablegroup_leftlog->GetUserSelection(), false);
   if (category.count == 0) {
     return;
   }
   const SGameOption& opt = category.options[x1c_rightSel];
+#ifdef TARGET_PC
+  const float zOff = x38_highlightPitch * (x1c_rightSel - x18_firstViewRightSel);
+#else
   const float zOff = x38_highlightPitch * x1c_rightSel;
+#endif
   switch (opt.type) {
   case kOT_Float:
     x18c_slidergroup_slider->SetIsActive(true);
@@ -486,6 +708,19 @@ void COptionsScreen::UpdateOptionView() {
     x190_tablegroup_double->SetLocalPosition(x48_tableDoubleStart + CVector3f(0.f, 0.f, zOff));
     break;
   case kOT_TripleEnum:
+#ifdef TARGET_PC
+    // The triple labels are the sound modes' (strings 96-98) except on port rows.
+    for (int i = 0; i < 3; ++i) {
+      static const wchar_t* const kAspectLabels[] = {L"4:3", L"16:9", L"Window"};
+      CGuiTextPane* label =
+          static_cast< CGuiTextPane* >(x194_tablegroup_triple->GetWorkerWidget(i));
+      if (opt.option == PORT_OPTION(kPO_AspectRatio)) {
+        label->TextSupport().SetText(rstl::wstring_l(kAspectLabels[i]));
+      } else {
+        label->TextSupport().SetText(rstl::wstring_l(xc_pauseStrg.GetString(96 + i)));
+      }
+    }
+#endif
     x194_tablegroup_triple->SetUserSelection(CGameOptions::GetOption(opt.option));
     x194_tablegroup_triple->SetIsVisible(true);
     x194_tablegroup_triple->SetIsActive(true);
@@ -501,7 +736,8 @@ void COptionsScreen::UpdateOptionView() {
 
 void COptionsScreen::OnSliderChanged(CGuiSliderGroup* caller, float value) {
   if (x10_mode == kM_RightTable) {
-    const SOptionCategory& category = skGameOptions[x70_tablegroup_leftlog->GetUserSelection()];
+    const SOptionCategory& category =
+        GetOptionCategory(x70_tablegroup_leftlog->GetUserSelection(), false);
     const EGameOption option = category.options[x1c_rightSel].option;
     CGameOptions::SetOption(option, caller->GetCurVal());
   }
@@ -509,7 +745,8 @@ void COptionsScreen::OnSliderChanged(CGuiSliderGroup* caller, float value) {
 
 void COptionsScreen::OnEnumChanged(CGuiTableGroup* caller, int oldSel) {
   if (x10_mode == kM_RightTable) {
-    const SOptionCategory& category = skGameOptions[x70_tablegroup_leftlog->GetUserSelection()];
+    const SOptionCategory& category =
+        GetOptionCategory(x70_tablegroup_leftlog->GetUserSelection(), false);
     const SGameOption& option = category.options[x1c_rightSel];
     const int selection = caller->GetUserSelection();
     CGameOptions::SetOption(option.option, selection);
