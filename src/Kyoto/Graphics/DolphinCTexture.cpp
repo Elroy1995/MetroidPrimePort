@@ -19,6 +19,10 @@
 #include <Kyoto/Math/CMath.hpp>
 #include <Kyoto/Streams/CInputStream.hpp>
 
+#ifdef TARGET_PC
+#include <dolphin/gx/GXExtra.h>
+#endif
+
 int CTexture::sCurrentFrameCount = 0;
 int CTexture::sTotalAllocatedMemory = 0;
 bool CTexture::sMangleMips = false;
@@ -126,6 +130,24 @@ void CTexture::InitTextureObjects() {
   short height = mHeight;
   void* buf = mARAMToken.GetMRAMSafe();
   CountMemory();
+
+#ifdef TARGET_PC
+  // New texel data just landed in buf. On the GameCube it simply overwrote any
+  // EFB copy that an earlier, since freed, buffer at this address held; Aurora
+  // keeps copy registrations by address until GXDestroyCopyTex, which the game
+  // never calls, so drop any left at the base or a mip start (LoadMipLevel).
+  {
+    char* mip = static_cast< char* >(buf);
+    int w = mWidth;
+    int h = mHeight;
+    for (int i = 0; i < mNumMips && mip != nullptr; ++i) {
+      GXDestroyCopyTex(mip);
+      mip += OSRoundUp32B((mBitsPerPixel * (ROUND_UP_4(w) * ROUND_UP_4(h))) / 8);
+      w /= 2;
+      h /= 2;
+    }
+  }
+#endif
 
   if (IsCITextureFormat(mTexelFormat)) {
     GXInitTexObjCI(&mTexObj, buf, width, height, mNativeCIFormat, wrap, wrap, hasMips, 0);

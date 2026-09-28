@@ -878,7 +878,9 @@ void clear_static_texture_cache() noexcept { s_pendingCacheClears.fetch_add(1, s
 
 void evict_copy_texture(const void* dest) noexcept {
   absl::flat_hash_set<const void*> sourceIdentities;
+  bool erased = false;
   if (const auto it = g_gxState.copyTextures.find(dest); it != g_gxState.copyTextures.end()) {
+    erased = true;
     if (it->second.handle) {
       sourceIdentities.insert(it->second.handle.get());
     }
@@ -887,6 +889,7 @@ void evict_copy_texture(const void* dest) noexcept {
 
   for (auto it = g_gxState.copyTextureCache.begin(); it != g_gxState.copyTextureCache.end();) {
     if (it->first.dest == dest) {
+      erased = true;
       if (it->second.handle) {
         sourceIdentities.insert(it->second.handle.get());
       }
@@ -907,7 +910,11 @@ void evict_copy_texture(const void* dest) noexcept {
       }
     }
   }
-  texture::invalidate_bindings();
+  // CTexture calls this for every texture it loads, almost always with nothing
+  // registered; keep those calls from dropping the bound textures.
+  if (erased) {
+    texture::invalidate_bindings();
+  }
 }
 
 void resolve_sampled_textures(const ShaderInfo& info) noexcept {
