@@ -656,6 +656,13 @@ together with `MP_FAST_BOOT=1 MP_SKIP_CUTSCENES=1`.
 `MP_SMOKE_STICK=1` holds the right stick and reports the aim yaw change, to
 verify twin-stick aiming (run with `MP_TWIN_STICK=1`).
 
+`MP_SMOKE_DASH=1` turns the player until an orbit target is offered, locks on with
+L, holds the stick right and presses B, then reports
+`[dash-smoke] passed/failed: lockedTicks=... dashTicks=...`. `MP_SMOKE_DASH=scan`
+switches to the scan visor first and locks onto scan points, for rooms with no
+targetable enemies; Reactor Core (the walk example above) passes that way. Run it
+plain, with `MP_MOUSE_AIM=1` and with `MP_TWIN_STICK=1`: all three should dash.
+
 `MP_SMOKE_PAUSE=<ticks>` enters the pause screen after gameplay starts;
 `MP_SMOKE_MAP=<ticks>` presses Z that many ticks into gameplay to open the map
 screen (Z opens the map from gameplay; in the pause screen it does nothing).

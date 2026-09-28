@@ -1114,6 +1114,7 @@ void CStateManager::Update(float dt) {
   PortSmokeSave(*this);
   PortSmokeStick(*this);
   PortSmokeWalk(*this);
+  PortSmokeDash(*this);
   PortSmokeMouseBeforeUpdate(*this);
 #endif
 

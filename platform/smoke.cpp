@@ -16,8 +16,11 @@
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CSaveGameScreen.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
+#include "Kyoto/Math/CQuaternion.hpp"
+#include "Kyoto/Math/CRelAngle.hpp"
 #include <dolphin/pad.h>
 #include <SDL3/SDL.h>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -635,6 +638,7 @@ bool PortSmokeMouseEnabled() {
 bool PortSmokeScriptedInput() {
   static const bool enabled = std::getenv("MP_SMOKE_SCRIPT") != nullptr ||
                               std::getenv("MP_SMOKE_FRONTEND") != nullptr ||
+                              std::getenv("MP_SMOKE_DASH") != nullptr ||
                               PortSmokeContinueEnabled();
   return enabled;
 }
@@ -936,4 +940,84 @@ void PortSmokeWalk(CStateManager& mgr) {
   std::fprintf(stderr,
                "[walk-smoke] passed: ticks=%u seconds=%.3f dist=%.3f maxFlatSpeed=%.4f speed=%.4f/s\n",
                sTicks, seconds, dist, sMaxSpeed, seconds > 0.0 ? dist / seconds : 0.0);
+}
+
+// MP_SMOKE_DASH=1: turn until the game offers an orbit target, lock on with L,
+// then hold the stick right and press B, and report whether a sideways dash
+// started. Run it with MP_MOUSE_AIM=1 or MP_TWIN_STICK=1 to cover those modes.
+void PortSmokeDash(CStateManager& mgr) {
+  static const bool enabled = std::getenv("MP_SMOKE_DASH") != nullptr;
+  if (!enabled || WorldSmokePending()) return;
+  static unsigned sTicks = 0, sLockedTicks = 0, sDashTicks = 0, sTurnTicks = 0;
+  static bool sFound = false, sDone = false;
+  static float sYaw = 0.f;
+  if (sDone || mgr.GetGameState() != CStateManager::kGS_Running ||
+      !mgr.GetCameraManager()->IsInFPCamera() || mgr.GetCameraManager()->IsInCinematicCamera()) {
+    return;
+  }
+  CPlayer* player = mgr.Player();
+  if (player == nullptr || player->GetDisableInput()) return;
+  if (PortDebug::MouseAim()) PortDebug::SetMouseCaptured(true);
+  ++sTicks;
+  // MP_SMOKE_DASH=scan locks onto scan points instead, for rooms without enemies.
+  if (sTicks == 30 && std::strcmp(std::getenv("MP_SMOKE_DASH"), "scan") == 0) {
+    mgr.PlayerState()->StartTransitionToVisor(CPlayerState::kPV_Scan);
+  }
+  if (sTicks < 60) return;
+  PADStatus status{};
+  status.err = PAD_ERR_NONE;
+  if (!sFound) {
+    if (sTicks == 60) {
+      const CVector3f fwd = player->GetTransform().GetForward();
+      sYaw = std::atan2(-fwd.GetX(), fwd.GetY());
+    }
+    if (player->GetOrbitNextTargetId() != kInvalidUniqueId) {
+      sFound = true;
+      std::fprintf(stderr, "[dash-smoke] target %04x after %u turn ticks\n",
+                   player->GetOrbitNextTargetId().Value(), sTurnTicks);
+    } else if (++sTurnTicks > 240) {
+      PADClearVirtualStatus(0);
+      sDone = true;
+      std::fprintf(stderr, "[dash-smoke] failed: no orbit target in a full turn\n");
+      return;
+    } else {
+      // A slow turn, so the camera keeps up and the orbit zone sees each yaw.
+      sYaw += 1.5f * M_PIF / 180.f;
+      if (PortDebug::MouseAim() || PortDebug::TwinStick()) {
+        PortDebug::SynchronizeMouseAim(-std::sin(sYaw), std::cos(sYaw), 0.f);
+      } else {
+        player->SetTransform(CQuaternion::ZRotation(CRelAngle(sYaw))
+                                 .BuildTransform4f(player->GetTranslation()));
+      }
+      PADSetVirtualStatus(0, &status);
+      return;
+    }
+  }
+  status.button = PAD_TRIGGER_L;
+  status.triggerLeft = 0xFF;
+  const bool locked = player->GetOrbitState() == CPlayer::kOS_OrbitObject;
+  if (locked) ++sLockedTicks;
+  if (sLockedTicks == 0 && sTicks % 10 == 0) {
+    std::fprintf(stderr, "[dash-smoke] tick %u orbit %d next %04x\n", sTicks,
+                 static_cast< int >(player->GetOrbitState()), player->GetOrbitNextTargetId().Value());
+  }
+  if (sLockedTicks >= 20) {
+    status.stickX = 127;
+    if (sLockedTicks == 22) status.button |= PAD_BUTTON_B;
+  }
+  PADSetVirtualStatus(0, &status);
+  if (player->IsSidewaysDashing()) ++sDashTicks;
+  if (sLockedTicks >= 20 && sLockedTicks < 40) {
+    const CVector3f vel = player->GetVelocityWR();
+    std::fprintf(stderr, "[dash-smoke] tick %u orbit %d dashing %d vel %.2f %.2f %.2f\n",
+                 sLockedTicks, static_cast< int >(player->GetOrbitState()),
+                 player->IsSidewaysDashing() ? 1 : 0, vel.GetX(), vel.GetY(), vel.GetZ());
+  }
+  if (sLockedTicks >= 60 || sTicks >= 600) {
+    PADClearVirtualStatus(0);
+    sDone = true;
+    std::fprintf(stderr, "[dash-smoke] %s: lockedTicks=%u dashTicks=%u orbit=%d\n",
+                 sDashTicks > 0 ? "passed" : "failed", sLockedTicks, sDashTicks,
+                 static_cast< int >(player->GetOrbitState()));
+  }
 }

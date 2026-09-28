@@ -26,6 +26,7 @@ unsigned PortSmokeCurrentFrame();
 void PortSmokeCurrentFrameSet(unsigned frame);
 void PortSmokeStick(CStateManager& mgr);
 void PortSmokeWalk(CStateManager& mgr);
+void PortSmokeDash(CStateManager& mgr);
 unsigned PortSmokeMouseButtons(unsigned realButtons);
 void PortSmokeMouseBeforeUpdate(CStateManager& mgr);
 void PortSmokeMouseAfterUpdate(CStateManager& mgr);
