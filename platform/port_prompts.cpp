@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -299,7 +300,7 @@ const char* SuffixForSdlButton(int button) {
 }
 
 struct Registration {
-  std::string iconPath;  // stable storage for the read callback
+  std::string iconPath;
   std::string activeStem;
   aurora::texture::ReplacementRegistration handle{};
   bool registered = false;
@@ -410,6 +411,15 @@ bool IconDimensions(const std::string& path, uint32_t& width, uint32_t& height) 
   height = both[0];
   width = both[1];
   return true;
+}
+
+// The read callback's userData. Aurora worker threads can still be reading an
+// icon after Apply has unregistered it and moved on to another path, so each
+// path gets storage that is never changed or freed. Only the main thread adds
+// to the set, and there are only as many entries as distinct icon files.
+const std::string* StablePath(const std::string& path) {
+  static std::set<std::string> sPaths;
+  return &*sPaths.insert(path).first;
 }
 
 // Serves one generated icon as if it were a replacement file. Called from
@@ -686,7 +696,7 @@ void Apply(size_t index, const std::string& stem) {
   // set (a pad unplugged, say) buried the binding icons, and Poll does not
   // re-apply a stem that has not changed.
   reg.handle = aurora::texture::register_virtual_replacement(
-      keyName, aurora::texture::VirtualFileSource{&ReadIconBytes, &reg.iconPath},
+      keyName, aurora::texture::VirtualFileSource{&ReadIconBytes, const_cast<std::string*>(StablePath(reg.iconPath))},
       aurora::texture::ReplacementOptions{.priority = 2});
   reg.registered = reg.handle.id != 0;
 }
