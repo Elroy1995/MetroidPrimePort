@@ -783,6 +783,7 @@ void PortSmokeMouseGunView(const CStateManager& mgr, const CPlayerGun& gun, cons
 bool PortSmokeFrame(unsigned frame) {
   if (PortSmokeMouseEnabled() && frame == 1) PortDebug::SetMouseAim(true);
   PortSmokeCurrentFrameSet(frame);
+  if (PortConsoleFrame(frame)) return true;
   // Before the other input hooks, so a script step and a hook press cannot
   // fight over the same virtual pad status in one frame.
   PortSmokeScript(frame);

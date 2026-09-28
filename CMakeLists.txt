@@ -179,7 +179,7 @@ add_custom_command(TARGET metroid_prime_port POST_BUILD
         "$<TARGET_FILE_DIR:metroid_prime_port>/textures"
     COMMENT "Copying texture replacements next to the executable")
 if(MP_ENABLE_SMOKE_DRIVER)
-    target_sources(metroid_prime_port PRIVATE platform/smoke.cpp)
+    target_sources(metroid_prime_port PRIVATE platform/smoke.cpp platform/port_console.cpp)
     target_compile_definitions(mp_game PRIVATE MP_ENABLE_SMOKE_DRIVER)
 endif()
 # aurora_core (webgpu/gpu.cpp) and aurora_gx reference each other; group them so

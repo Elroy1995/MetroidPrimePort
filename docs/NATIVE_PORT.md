@@ -530,6 +530,20 @@ a temporary directory instead of mounting.
   `MP_TURBO=1`, 7 s at `4` and 3.3 s at `8`. Audio and streamed music do not
   keep up. Not saved to the settings file. On exit the port prints
   `MP run: <frames> frames in <s> s`.
+- `MP_CONSOLE=<port>` (smoke builds only, `1` = 4777, POSIX only): a debug
+  command console on 127.0.0.1. `tools/mpcon.py` is the client: one-shot
+  (`tools/mpcon.py 'warp chozo 492CBF4A' 'objs eyeball' shot`), a script
+  (`-f file`) or an interactive prompt with no arguments. Commands: `status`,
+  `worlds`, `areas`, `warp <world id or name prefix> [mrea]` (replies once the
+  new world runs), `tp x y z`, `face <yaw>`, `look <id>`, `objs [filter]`,
+  `obj <id>` (AI state, health, body state and animation, connections),
+  `send <id> <msg>`, `give <item> [n]`, `items`, `heal`, `press <a+b> [frames]`,
+  `stick`/`cstick <x> <y> [frames]`, `shot` (prints the bmp path),
+  `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  unique ids or exact debug names. Every reply ends with `=> ok` or
+  `=> err: <why>`, and the client exits 1 if any command failed. Game commands
+  run inside the state manager tick, so they fail with "not ticking" on the
+  title screen or while paused. Pair with `MP_TURBO` for speed.
 - `MP_TOUCH_UI=1`: use the touch layout for the debug overlay on desktop (always
   on for Android): a full-screen window inside the safe area, with a page list
   instead of tabs, larger hit targets, drag-to-scroll with fling and a Close
