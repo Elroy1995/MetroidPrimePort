@@ -12,7 +12,8 @@ anyway. The pack ships a `License.txt` alongside the download.
 
 Only the icons the port needs are copied here.
 
-The device icons label the A, B, Y, L, R, Z and stick prompts for each
+The device icons label the A, B, X, Y, Start, L, R and Z prompts, and the
+stick, C-stick and D-pad prompts (whole and per direction), for each
 controller family. The Switch set is positional, like SDL3's button names: the
 A action sits on the bottom face button, which the Switch labels B. L
 and R are the pad's analog triggers, so they take the trigger art (LT/RT, L2/R2,
@@ -33,8 +34,11 @@ own, so it labels the port's default keys:
 | `keyboard_q.png`, `keyboard_e.png` | keyboard L / R, matching the default keys |
 | `keyboard_f.png` | keyboard Z, matching the default key |
 | `xbox_button_color_y.png`, `playstation_button_color_triangle.png`, `switch_button_x.png`, `keyboard_v.png` | Y prompts (the pause screen's Zoom) |
-| `keyboard_arrows.png` | keyboard stick prompts (the sticks are bound to key sets) |
-| `xbox_stick_r.png`, `playstation_stick_r.png`, `switch_stick_r.png` | pad stick prompts |
+| `xbox_button_color_x.png`, `playstation_button_color_square.png`, `switch_button_y.png`, `keyboard_c.png` | X prompts |
+| `xbox_button_start.png`, `playstation3_button_start.png`, `switch_button_plus.png`, `keyboard_enter.png` | Start prompts |
+| `{xbox,playstation,switch}_stick_l.png`, `…_stick_r.png`, `…_dpad.png` | whole-stick, C-stick and D-pad prompts |
+| `{xbox,playstation,switch}_{stick_l,stick_r,dpad}_{up,down,left,right}.png` | the same prompts for one direction (the map screen's stick frames, the visor hints' D-pad arrows) |
+| `keyboard_w/a/s/d.png`, `keyboard_i/j/k/l.png`, `keyboard_arrow_*.png` | keyboard stick, C-stick and D-pad directions; the whole-stick prompts are drawn from them as an inverted T of keys (`keyboard_wasd`, `keyboard_ijkl`, `keyboard_arrows`), since the pack has no such icons |
 | `playstation_trigger_r1.png`, `switch_button_r.png` | PlayStation / Switch Z prompts (the right shoulder) |
 | `gamecube_button_*.png`, `gamecube_trigger_l.png`, `gamecube_trigger_r.png` | a GameCube pad's buttons, used only when an action is remapped; there is no static GameCube set, since that is the game's own art |
 

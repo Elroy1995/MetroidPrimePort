@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Generate per-device button-prompt replacements for Metroid Prime.
 
-The game's prompts are individual 32x32 RGB5A3 textures holding a coloured
-button icon (GameCube A teal, B red). Each device gets its own icon for the
-same two actions, so the in-game prompt matches the pad (or keyboard) in use.
-The keyboard icons label the keys the port binds by default (A action is X,
-B action is Z).
+The game's prompts are individual textures: 32x32 buttons (A, B, X, Y, Start,
+L, R) and 64x32 stick, C-stick, D-pad and Z art, each listed with its hash in
+kKeys in platform/port_prompts.cpp (found with tools/extract_textures.py, whose
+index.tsv carries the developers' names such as LStickN or DPadR). Each device
+gets its own icon for every action, so the in-game prompt matches the pad (or
+keyboard) in use. The keyboard icons label the keys the port binds by default
+(A action is X, B action is Z, the sticks WASD and IJKL, the D-pad the arrows).
+The bindings/ set holds one icon per key and pad input, which the port swaps
+in when an action is rebound.
 
 Icons come from Kenney's "Input Prompts" pack, which is CC0; the ones used are
 vendored in tools/prompt_icons/ (see the README there). Run with an output
@@ -16,9 +20,10 @@ directory, usually the `textures` folder beside the executable:
 Output is an uncompressed 32-bit RGBA DDS. DDS rather than PNG because the
 game's texture is RGB5A3 and Aurora's DDS path keeps the alpha where the PNG
 path does not; the vertical flip matches how Aurora reads and writes DDS (the
-dumps come out flipped). The icon is inset to match the game's own art, which
-is opaque only from (6,5) to (27,26): the glyph is about 22px on screen, so a
-full-bleed icon reads as a solid square.
+dumps come out flipped). The icon is inset to match the game's own art: the
+32x32 buttons are opaque only from about (6,5) to (27,26), so the glyph is
+22px (a full-bleed icon reads as a solid square), and the 64x32 art is a
+centred 28px square.
 """
 import os
 import re
@@ -44,24 +49,73 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "textures"
 # Y is the pause screen's Zoom. The Switch labels are positional, as in
 # PAD_ICONS: SDL3 names buttons by position, so A is the bottom face button,
 # which a Switch pad labels B.
+DIRECTIONS = ("up", "down", "left", "right")
+
+
+def pad_sticks_and_dpad(prefix):
+    """The control stick (left), the C-stick (right) and the D-pad, whole and
+    per direction, for a pad whose Kenney icons start with `prefix`."""
+    icons = {"stick": f"{prefix}_stick_l.png", "cstick": f"{prefix}_stick_r.png",
+             "dpad": f"{prefix}_dpad.png"}
+    for d in DIRECTIONS:
+        icons[f"stick_{d}"] = f"{prefix}_stick_l_{d}.png"
+        icons[f"cstick_{d}"] = f"{prefix}_stick_r_{d}.png"
+        icons[f"dpad_{d}"] = f"{prefix}_dpad_{d}.png"
+    return icons
+
+
 DEVICE_ICONS = {
     "xbox": {"a": "xbox_button_color_a.png", "b": "xbox_button_color_b.png",
-             "y": "xbox_button_color_y.png", "l": "xbox_lt.png", "r": "xbox_rt.png", "z": "xbox_rb.png",
-             "stick": "xbox_stick_r.png"},
+             "x": "xbox_button_color_x.png", "y": "xbox_button_color_y.png",
+             "start": "xbox_button_start.png",
+             "l": "xbox_lt.png", "r": "xbox_rt.png", "z": "xbox_rb.png",
+             **pad_sticks_and_dpad("xbox")},
     "playstation": {"a": "playstation_button_color_cross.png",
                     "b": "playstation_button_color_circle.png",
+                    "x": "playstation_button_color_square.png",
                     "y": "playstation_button_color_triangle.png",
+                    "start": "playstation3_button_start.png",
                     "l": "playstation_trigger_l2.png", "r": "playstation_trigger_r2.png",
                     "z": "playstation_trigger_r1.png",
-                    "stick": "playstation_stick_r.png"},
+                    **pad_sticks_and_dpad("playstation")},
     "switch": {"a": "switch_button_b.png", "b": "switch_button_a.png",
-               "y": "switch_button_x.png", "l": "switch_button_zl.png", "r": "switch_button_zr.png",
+               "x": "switch_button_y.png", "y": "switch_button_x.png",
+               "start": "switch_button_plus.png",
+               "l": "switch_button_zl.png", "r": "switch_button_zr.png",
                "z": "switch_button_r.png",
-               "stick": "switch_stick_r.png"},
-    "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png", "y": "keyboard_v.png",
-                 "l": "keyboard_q.png", "r": "keyboard_e.png",
-                 "z": "keyboard_f.png", "stick": "keyboard_arrows.png"},
+               **pad_sticks_and_dpad("switch")},
+    # The sticks and the D-pad on their default keys: WASD, IJKL and the arrows.
+    "keyboard": {"a": "keyboard_x.png", "b": "keyboard_z.png", "x": "keyboard_c.png",
+                 "y": "keyboard_v.png", "start": "keyboard_enter.png",
+                 "l": "keyboard_q.png", "r": "keyboard_e.png", "z": "keyboard_f.png",
+                 "stick": "keyboard_wasd", "cstick": "keyboard_ijkl", "dpad": "keyboard_arrows",
+                 **{f"stick_{d}": f"keyboard_{k}.png" for d, k in zip(DIRECTIONS, "wsad")},
+                 **{f"cstick_{d}": f"keyboard_{k}.png" for d, k in zip(DIRECTIONS, "ikjl")},
+                 **{f"dpad_{d}": f"keyboard_arrow_{d}.png" for d in DIRECTIONS}},
 }
+
+# Key clusters drawn as an inverted T of the keys' own icons (up on top; left,
+# down, right below). The pack's keyboard_arrows is a small unlabelled glyph
+# that reads much weaker than the letter clusters, so the arrows are built too.
+COMPOSITES = {
+    "keyboard_arrows": ("keyboard_arrow_up", "keyboard_arrow_left",
+                        "keyboard_arrow_down", "keyboard_arrow_right"),
+    "keyboard_wasd": ("keyboard_w", "keyboard_a", "keyboard_s", "keyboard_d"),
+    "keyboard_ijkl": ("keyboard_i", "keyboard_j", "keyboard_k", "keyboard_l"),
+}
+
+def pad_icons_for_axes(prefix):
+    """The stems the port builds for sticks and the D-pad: <device>_stick_l
+    or _stick_r, optionally with the way it is pushed, and <device>_dpad; the
+    D-pad's directions are buttons and named like them (dpad_up...)."""
+    icons = {"stick_l": f"{prefix}_stick_l.png", "stick_r": f"{prefix}_stick_r.png",
+             "dpad": f"{prefix}_dpad.png"}
+    for d in DIRECTIONS:
+        icons[f"stick_l_{d}"] = f"{prefix}_stick_l_{d}.png"
+        icons[f"stick_r_{d}"] = f"{prefix}_stick_r_{d}.png"
+        icons[f"dpad_{d}"] = f"{prefix}_dpad_{d}.png"
+    return icons
+
 
 # Per-device icons for the pad's own buttons, keyed by the SDL gamepad button
 # the port reports in the controller's mapping. The port builds the icon name as
@@ -74,7 +128,7 @@ PAD_ICONS = {
         "leftshoulder": "xbox_lb.png", "rightshoulder": "xbox_rb.png",
         "leftstick": "xbox_stick_l_press.png", "rightstick": "xbox_stick_r_press.png",
         "lt": "xbox_lt.png", "rt": "xbox_rt.png",
-        "stick": "xbox_stick_r.png",
+        **pad_icons_for_axes("xbox"),
     },
     "playstation": {
         "south": "playstation_button_color_cross.png",
@@ -85,7 +139,7 @@ PAD_ICONS = {
         "leftshoulder": "playstation_trigger_l1.png", "rightshoulder": "playstation_trigger_r1.png",
         "leftstick": "playstation_stick_l_press.png", "rightstick": "playstation_stick_r_press.png",
         "lt": "playstation_trigger_l2.png", "rt": "playstation_trigger_r2.png",
-        "stick": "playstation_stick_r.png",
+        **pad_icons_for_axes("playstation"),
     },
     "switch": {
         "south": "switch_button_b.png", "east": "switch_button_a.png",
@@ -94,7 +148,7 @@ PAD_ICONS = {
         "leftshoulder": "switch_button_l.png", "rightshoulder": "switch_button_r.png",
         "leftstick": "switch_stick_l_press.png", "rightstick": "switch_stick_r_press.png",
         "lt": "switch_button_zl.png", "rt": "switch_button_zr.png",
-        "stick": "switch_stick_r.png",
+        **pad_icons_for_axes("switch"),
     },
     # Keyed by the GameCube button rather than the SDL one: the port names a GC
     # pad's button after the action its default mapping gives it (see
@@ -108,15 +162,22 @@ PAD_ICONS = {
 }
 PAD_ICONS["standard"] = PAD_ICONS["xbox"]
 
-# PAD_BUTTON_* / PAD_TRIGGER_* to the action name used above.
+# PAD_BUTTON_* / PAD_TRIGGER_* / PROMPT_* to the action name used above.
 ACTION_FOR_BUTTON = {
     "PAD_BUTTON_A": "a",
     "PAD_BUTTON_B": "b",
+    "PAD_BUTTON_X": "x",
     "PAD_BUTTON_Y": "y",
+    "PAD_BUTTON_START": "start",
     "PAD_TRIGGER_L": "l",
     "PAD_TRIGGER_R": "r",
     "PAD_TRIGGER_Z": "z",
-    "PAD_AXIS_CSTICK": "stick",
+    "PROMPT_STICK": "stick",
+    "PROMPT_CSTICK": "cstick",
+    "PROMPT_DPAD": "dpad",
+    **{f"PROMPT_STICK_{d.upper()}": f"stick_{d}" for d in DIRECTIONS},
+    **{f"PROMPT_CSTICK_{d.upper()}": f"cstick_{d}" for d in DIRECTIONS},
+    **{f"PAD_BUTTON_{d.upper()}": f"dpad_{d}" for d in DIRECTIONS},
 }
 
 
@@ -127,7 +188,7 @@ def read_prompt_keys():
     once, in the C++ where it is used.
     """
     pattern = re.compile(
-        r"\{\s*(PAD_\w+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*0x([0-9a-fA-F]+)ull\s*,\s*\"(\w+)\"\s*\}")
+        r"\{\s*((?:PAD|PROMPT)_\w+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*0x([0-9a-fA-F]+)ull\s*,\s*\"(\w+)\"\s*\}")
     with open(PORT_PROMPTS) as f:
         keys = pattern.findall(f.read())
     if not keys:
@@ -162,7 +223,7 @@ BINDING_ICONS = [
     # period, slash); these are the ones that have it.
     "keyboard_numpad_enter", "keyboard_numpad_plus", "keyboard_asterisk", "keyboard_numlock",
     "mouse_left", "mouse_right", "mouse_scroll", "mouse_side_back", "mouse_side_forward",
-    "keyboard_arrows",
+    "keyboard_arrows", "keyboard_wasd", "keyboard_ijkl",
 ]
 
 
@@ -185,13 +246,43 @@ def write_dds(img, path):
         f.write(header + pf + caps + img.tobytes())
 
 
+def load_icon(name):
+    return Image.open(os.path.join(ICONS_DIR, name)).convert("RGBA")
+
+
+def make_cluster(stems):
+    """An inverted T of key icons (up, left, down, right), cropped to the keys."""
+    keys = [load_icon(s + ".png") for s in stems]
+    keys = [k.crop(k.getbbox()) for k in keys]
+    kw, kh = keys[0].size
+    gap = max(1, kw // 16)
+    img = Image.new("RGBA", (3 * kw + 2 * gap, 2 * kh + gap), (0, 0, 0, 0))
+    up, left, down, right = keys
+    img.alpha_composite(up, (kw + gap, 0))
+    for i, key in enumerate((left, down, right)):
+        img.alpha_composite(key, (i * (kw + gap), kh + gap))
+    return img
+
+
 def make_icon(name, width=SIZE, height=SIZE):
-    """Scale the icon to the game's inset for a texture of this size."""
-    scale = min(width, height) / SIZE
-    size = max(1, int(round(ICON_SIZE * scale)))
-    icon = Image.open(os.path.join(ICONS_DIR, name)).convert("RGBA")
-    icon = icon.resize((size, size), Image.LANCZOS)
+    """Scale the icon to the game's inset for a texture of this size: 22px in
+    the 32x32 buttons, 28px in the 64x32 stick and D-pad art (which the game
+    draws as a centred 28px square)."""
+    if width == height:
+        size = max(1, int(round(ICON_SIZE * width / SIZE)))
+    else:
+        size = max(1, min(width, height) - 4)
     tile = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    stem = name[:-4] if name.endswith(".png") else name
+    if stem in COMPOSITES:
+        # Four keys at the height of one: as tall as the inset, and wider.
+        icon = make_cluster(COMPOSITES[stem])
+        fit = min(width / icon.width, size / icon.height)
+        icon = icon.resize((max(1, round(icon.width * fit)), max(1, round(icon.height * fit))),
+                           Image.LANCZOS)
+        tile.alpha_composite(icon, ((width - icon.width) // 2, (height - icon.height) // 2))
+        return tile
+    icon = load_icon(name).resize((size, size), Image.LANCZOS)
     tile.alpha_composite(icon, ((width - size) // 2, (height - size) // 2))
     return tile
 
@@ -227,7 +318,7 @@ def main():
     missing = []
     for stem in BINDING_ICONS:
         src = os.path.join(ICONS_DIR, stem + ".png")
-        if not os.path.exists(src):
+        if stem not in COMPOSITES and not os.path.exists(src):
             missing.append(stem)
             continue
         # At every size in the table, not just 32x32. The key stems serve the

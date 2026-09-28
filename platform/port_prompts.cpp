@@ -12,6 +12,7 @@
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_scancode.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -19,76 +20,122 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
 namespace {
-// Stands in for the C-stick, which is an axis rather than a button, so the
-// table can name the prompts that show it.
-constexpr PADButton PAD_AXIS_CSTICK = 0;
+// Prompts that are not one button: the control stick and the C-stick, at rest
+// or pushed one way, and the D-pad as a whole (its directions are buttons).
+// Numbered past PADButton's range so they share the table with the buttons.
+enum : uint32_t {
+  PROMPT_STICK = 0x10000,
+  PROMPT_STICK_UP,
+  PROMPT_STICK_DOWN,
+  PROMPT_STICK_LEFT,
+  PROMPT_STICK_RIGHT,
+  PROMPT_CSTICK,
+  PROMPT_CSTICK_UP,
+  PROMPT_CSTICK_DOWN,
+  PROMPT_CSTICK_LEFT,
+  PROMPT_CSTICK_RIGHT,
+  PROMPT_DPAD,
+};
 
 // The prompt textures the port can re-icon. Each names the game action it
-// stands for, and the hash identifies the game's own texture as it appears in
-// a dump. One action usually has several, since each screen draws its own art.
+// stands for, and the hash identifies the game's own texture under Aurora's
+// name for it. Every one here is the game's prompt art, identified from the
+// disc by tools/extract_textures.py: the PAK name (in brackets) where it has
+// one, else the &image= text that draws it. One action often has several, as
+// the screens draw pressed and released frames and some hints have their own.
 struct PromptKey {
-  PADButton button;
+  uint32_t prompt;  // a PADButton or a PROMPT_*
   uint32_t width;
   uint32_t height;
   uint64_t hash;
   const char* format;
 };
 constexpr PromptKey kKeys[] = {
-    // Front end.
-    {PAD_BUTTON_A, 32, 32, 0xbb21e8755f36b2f0ull, "5"},
-    {PAD_BUTTON_B, 32, 32, 0xe6dbfd18d4666ee7ull, "5"},
-    // Pause / inventory. The B prompt reuses the front end's texture; Zoom is Y
-    // (CInventoryScreen reads PY), and the two shoulder prompts have their own,
-    // one per side.
-    {PAD_BUTTON_Y, 32, 32, 0x281ae5aa517797edull, "5"},
-    {PAD_TRIGGER_L, 32, 32, 0x3f419d4a7ba3cff3ull, "5"},
-    {PAD_TRIGGER_R, 32, 32, 0x178b7311fda3f949ull, "5"},
-    // Map screen.
-    {PAD_TRIGGER_L, 32, 32, 0x06ad76760dcad506ull, "5"},
-    {PAD_TRIGGER_R, 32, 32, 0x45ccec4d3cda3f1bull, "5"},
-    {PAD_TRIGGER_Z, 64, 32, 0x0f4cb495c960bcfaull, "14"},
-    // HUD hint memos.
-    {PAD_TRIGGER_R, 32, 32, 0xc39b2f9c2eac777bull, "5"},
-    // Stick prompts. Not a button, so there is no binding to follow; the icon
-    // is the device's own stick (or the direction keys for a keyboard).
-    //
-    // 0x1ff9d2b310c0b706 at 32x32 is not a stick prompt: it is the pause menu's
-    // Exit sphere, and listing it here once wrote the arrow glyph over it. It
-    // was also the only 32x32 entry with format 14 while the others are format
-    // 5, which is the tell.
-    //
-    // 0x2d26352b420db007 is the map screen's Rotate prompt. It was missing, so
-    // the map showed no stick icon at all. Found by MP_DUMP_TEXTURES=1, which
-    // dumps only the textures that have no replacement, and then LOOKING at
-    // them - Rotate turned out to be a grey spiral emblem.
-    //
-    // 0xe14dc493b5513d14 dumps as a yellow "C" badge: a C-stick prompt, just
-    // not the map's.
-    {PAD_AXIS_CSTICK, 64, 32, 0x2d26352b420db007ull, "5"},
-    {PAD_AXIS_CSTICK, 64, 32, 0xe14dc493b5513d14ull, "5"},
+    {PAD_BUTTON_A, 32, 32, 0xbb21e8755f36b2f0ull, "5"},   // AButtonIn
+    {PAD_BUTTON_B, 32, 32, 0xe6dbfd18d4666ee7ull, "5"},   // BButtonIn
+    {PAD_BUTTON_X, 32, 32, 0x818890ce3f3a949bull, "5"},   // XButtonOut, "Press X to ... Morph Ball"
+    {PAD_BUTTON_Y, 32, 32, 0x281ae5aa517797edull, "5"},   // YButtonOut, the pause and map screens
+    {PAD_BUTTON_START, 32, 32, 0x1ff9d2b310c0b706ull, "14"},  // StartButtonOut, the pause Return
+    {PAD_TRIGGER_L, 32, 32, 0x3f419d4a7ba3cff3ull, "5"},  // LTriggerOut
+    {PAD_TRIGGER_L, 32, 32, 0xc39b2f9c2eac777bull, "5"},  // LTriggerIn
+    {PAD_TRIGGER_R, 32, 32, 0x178b7311fda3f949ull, "5"},  // RTriggerOut
+    {PAD_TRIGGER_R, 32, 32, 0xac602ce1291cbd26ull, "5"},  // RTriggerIn
+    {PAD_TRIGGER_R, 32, 32, 0x07165bfca0d0908full, "14"}, // the hints' released R
+    {PAD_TRIGGER_Z, 64, 32, 0x0f4cb495c960bcfaull, "14"}, // the map legend's Z
+    // The control stick. The map screen draws the frame for the way the stick
+    // is pushed; the diagonals take the stick's own icon.
+    {PROMPT_STICK, 64, 32, 0x2d26352b420db007ull, "5"},        // LStickN
+    {PROMPT_STICK_UP, 64, 32, 0x54e47b41b25b4651ull, "5"},     // LstickU
+    {PROMPT_STICK_DOWN, 64, 32, 0x6861ed79f30dd9a8ull, "5"},   // LStickD
+    {PROMPT_STICK_LEFT, 64, 32, 0xaf41768a5da09b20ull, "5"},   // LStickL
+    {PROMPT_STICK_RIGHT, 64, 32, 0x7380195f13489f63ull, "5"},  // LStickR
+    {PROMPT_STICK, 64, 32, 0x01eb5601a6874bf0ull, "5"},        // LStickUL
+    {PROMPT_STICK, 64, 32, 0x2c8c84d6511fa2f0ull, "5"},        // LStickUR
+    {PROMPT_STICK, 64, 32, 0x88393aacfa3ddee3ull, "5"},        // LStickDL
+    {PROMPT_STICK, 64, 32, 0x271c18e5d246591cull, "5"},        // LStickDR
+    {PROMPT_STICK_LEFT, 64, 32, 0xb5ebd7c20f7fa1b4ull, "5"},   // "stick while holding L to strafe"
+    {PROMPT_STICK_RIGHT, 64, 32, 0x625f670e544215d1ull, "5"},
+    // The C-stick, as the map screen draws it...
+    {PROMPT_CSTICK, 64, 32, 0xe14dc493b5513d14ull, "5"},        // CStickN
+    {PROMPT_CSTICK_UP, 64, 32, 0x3d7b8d8eb4875357ull, "5"},     // CStickU
+    {PROMPT_CSTICK_DOWN, 64, 32, 0xcc677b23b7799be0ull, "5"},   // CStickD
+    {PROMPT_CSTICK_LEFT, 64, 32, 0x49172cec707109fbull, "5"},   // CStickL
+    {PROMPT_CSTICK_RIGHT, 64, 32, 0x8180dbd4c4b1b5d5ull, "5"},  // CStickR
+    {PROMPT_CSTICK, 64, 32, 0xd27581e24408939dull, "5"},        // CStickUL
+    {PROMPT_CSTICK, 64, 32, 0x100fd48145e9ead5ull, "5"},        // CStickUR
+    {PROMPT_CSTICK, 64, 32, 0x17ea7b8c686aa635ull, "5"},        // CStickDL
+    {PROMPT_CSTICK, 64, 32, 0x00b675706b74fb84ull, "5"},        // CStickDR
+    // ...and the smaller set the beam hints draw.
+    {PROMPT_CSTICK, 64, 32, 0x82e1b4c9930dd504ull, "5"},
+    {PROMPT_CSTICK_UP, 64, 32, 0xda1128c0321ef299ull, "5"},     // Power Beam
+    {PROMPT_CSTICK_DOWN, 64, 32, 0xafc88c5fcca46ce6ull, "5"},   // Ice Beam
+    {PROMPT_CSTICK_LEFT, 64, 32, 0xefec72330b49fd16ull, "5"},   // Plasma Beam
+    {PROMPT_CSTICK_RIGHT, 64, 32, 0x85c74de9df341b80ull, "5"},  // Wave Beam
+    // The D-pad, which the visor hints draw.
+    {PROMPT_DPAD, 64, 32, 0x31c74326a7e8fd1full, "5"},        // DPadN
+    {PAD_BUTTON_UP, 64, 32, 0xdfdffa485095ee03ull, "5"},      // DPadU, Combat Visor
+    {PAD_BUTTON_DOWN, 64, 32, 0x112b6136175108bbull, "5"},    // DPadD, Thermal Visor
+    {PAD_BUTTON_LEFT, 64, 32, 0x8c1d5fec98c638efull, "5"},    // DPadL, Scan Visor
+    {PAD_BUTTON_RIGHT, 64, 32, 0x43a63656a5767a1dull, "5"},   // DPadR, X-Ray Visor
 };
 constexpr size_t kKeyCount = sizeof(kKeys) / sizeof(kKeys[0]);
 
 // The actions to resolve bindings for, resolved once per action rather than
 // once per texture.
 struct PromptAction {
-  PADButton button;
+  uint32_t prompt;
   const char* label;
 };
 constexpr PromptAction kActions[] = {
     {PAD_BUTTON_A, "A"},
     {PAD_BUTTON_B, "B"},
+    {PAD_BUTTON_X, "X"},
     {PAD_BUTTON_Y, "Y"},
+    {PAD_BUTTON_START, "Start"},
     {PAD_TRIGGER_L, "L"},
     {PAD_TRIGGER_R, "R"},
     {PAD_TRIGGER_Z, "Z"},
-    {PAD_AXIS_CSTICK, "stick"},
+    {PROMPT_STICK, "stick"},
+    {PROMPT_STICK_UP, "stick up"},
+    {PROMPT_STICK_DOWN, "stick down"},
+    {PROMPT_STICK_LEFT, "stick left"},
+    {PROMPT_STICK_RIGHT, "stick right"},
+    {PROMPT_CSTICK, "C-stick"},
+    {PROMPT_CSTICK_UP, "C-stick up"},
+    {PROMPT_CSTICK_DOWN, "C-stick down"},
+    {PROMPT_CSTICK_LEFT, "C-stick left"},
+    {PROMPT_CSTICK_RIGHT, "C-stick right"},
+    {PROMPT_DPAD, "D-pad"},
+    {PAD_BUTTON_UP, "D-pad up"},
+    {PAD_BUTTON_DOWN, "D-pad down"},
+    {PAD_BUTTON_LEFT, "D-pad left"},
+    {PAD_BUTTON_RIGHT, "D-pad right"},
 };
-constexpr size_t kActionCount = sizeof(kActions) / sizeof(kActions[0]);
 
 // Scancodes mapped to icon stems. Aurora reports mouse buttons as negative
 // codes; the rest are SDL scancodes. Stems match the files generated into
@@ -241,6 +288,10 @@ const char* SuffixForSdlButton(int button) {
   case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return "rightshoulder";
   case SDL_GAMEPAD_BUTTON_LEFT_STICK: return "leftstick";
   case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return "rightstick";
+  case SDL_GAMEPAD_BUTTON_DPAD_UP: return "dpad_up";
+  case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return "dpad_down";
+  case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return "dpad_left";
+  case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return "dpad_right";
   case PAD_NATIVE_BUTTON_TRIGGER_LEFT: return "lt";
   case PAD_NATIVE_BUTTON_TRIGGER_RIGHT: return "rt";
   default: return nullptr;
@@ -385,39 +436,77 @@ bool ReadIconBytes(void* userData, const char* path, std::vector<uint8_t>& out) 
   return !in.fail();
 }
 
+const char* StemForScancode(int scancode) {
+  for (const KeyIcon& icon : kKeyIcons) {
+    if (icon.scancode == scancode) {
+      return icon.stem;
+    }
+  }
+  return nullptr;
+}
+
+// The key bound to `button` (the main key, else the second), or PAD_KEY_INVALID.
+int KeyForButton(PADButton button) {
+  for (u32 slot = 0; slot < PAD_KEY_SLOT_COUNT; ++slot) {
+    u32 count = 0;
+    PADKeyButtonBinding* bindings = PADGetKeyButtonBindingsSlot(PAD_CHAN0, slot, &count);
+    for (u32 i = 0; bindings != nullptr && i < count; ++i) {
+      if (bindings[i].padButton == button && bindings[i].scancode != PAD_KEY_INVALID) {
+        return bindings[i].scancode;
+      }
+    }
+  }
+  return PAD_KEY_INVALID;
+}
+
+// The key that pushes `axis` (the main key, else the second), or PAD_KEY_INVALID.
+int KeyForAxis(PADAxis axis) {
+  for (u32 slot = 0; slot < PAD_KEY_SLOT_COUNT; ++slot) {
+    u32 count = 0;
+    PADKeyAxisBinding* bindings = PADGetKeyAxisBindingsSlot(PAD_CHAN0, slot, &count);
+    for (u32 i = 0; bindings != nullptr && i < count; ++i) {
+      if (bindings[i].padAxis == axis && bindings[i].scancode != PAD_KEY_INVALID) {
+        return bindings[i].scancode;
+      }
+    }
+  }
+  return PAD_KEY_INVALID;
+}
+
+// A whole stick or D-pad on keys: the cluster icon when the four keys are one
+// the pack draws, else the up key's own icon, as the nearest single thing to
+// name. Keys are up, down, left, right.
+std::string KeyClusterStem(const int (&keys)[4]) {
+  struct Cluster {
+    int keys[4];
+    const char* stem;
+  };
+  static constexpr Cluster kClusters[] = {
+      {{SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D}, "keyboard_wasd"},
+      {{SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L}, "keyboard_ijkl"},
+      {{SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT}, "keyboard_arrows"},
+  };
+  for (const Cluster& cluster : kClusters) {
+    if (std::equal(std::begin(keys), std::end(keys), std::begin(cluster.keys))) {
+      return cluster.stem;
+    }
+  }
+  const char* up = StemForScancode(keys[0]);
+  return up != nullptr ? std::string(up) : std::string();
+}
+
 // The icon stem for whatever is bound to `button` on `device`, or empty when
 // the port has no icon for it (in which case the static set stays in place).
 // Keyboard and mouse come from the key bindings; a pad follows its own button
 // mapping, so a remapped button shows the button it was remapped to.
 std::string IconStemForButton(PADButton button, const char* device) {
-  const bool keyboard = std::strcmp(device, "keyboard") == 0;
   if (std::strcmp(device, "gamecube") == 0) {
-    // The game's C-stick art is the GameCube stick already.
-    return button == PAD_AXIS_CSTICK ? std::string() : GameCubeStemForButton(button);
+    return GameCubeStemForButton(button);
   }
-  if (button == PAD_AXIS_CSTICK) {
-    // A stick is bound to several keys at once, so the icon says "direction
-    // keys" rather than naming one; a pad shows its own stick.
-    return keyboard ? std::string("keyboard_arrows") : std::string(device) + "_stick";
-  }
-
   u32 count = 0;
-  if (keyboard) {
-    // The main key's icon, else the alt key's.
-    for (u32 slot = 0; slot < PAD_KEY_SLOT_COUNT; ++slot) {
-      PADKeyButtonBinding* bindings = PADGetKeyButtonBindingsSlot(PAD_CHAN0, slot, &count);
-      for (u32 i = 0; bindings != nullptr && i < count; ++i) {
-        if (bindings[i].padButton != button) {
-          continue;
-        }
-        for (const KeyIcon& icon : kKeyIcons) {
-          if (icon.scancode == bindings[i].scancode) {
-            return icon.stem;
-          }
-        }
-      }
-    }
-    return {};
+  if (std::strcmp(device, "keyboard") == 0) {
+    const char* stem = StemForScancode(KeyForButton(button));
+    return stem != nullptr ? std::string(stem) : std::string();
   }
 
   // A pad's L and R are analog triggers unless remapped to a button (a preset
@@ -437,6 +526,103 @@ std::string IconStemForButton(PADButton button, const char* device) {
     break;
   }
   return trigger ? triggerStem : std::string();
+}
+
+// The pad axes a stick prompt stands for, in up, down, left, right order.
+constexpr PADAxis kStickAxes[4] = {PAD_AXIS_LEFT_Y_POS, PAD_AXIS_LEFT_Y_NEG, PAD_AXIS_LEFT_X_NEG,
+                                   PAD_AXIS_LEFT_X_POS};
+constexpr PADAxis kCStickAxes[4] = {PAD_AXIS_RIGHT_Y_POS, PAD_AXIS_RIGHT_Y_NEG, PAD_AXIS_RIGHT_X_NEG,
+                                    PAD_AXIS_RIGHT_X_POS};
+
+// The icon for one direction of a pad axis: the stick and the way it is pushed,
+// or the button driving the axis. With `whole`, the stick itself.
+std::string PadStemForAxis(PADAxis axis, const char* device, bool whole) {
+  u32 count = 0;
+  PADAxisMapping* mappings = PADGetAxisMappings(PAD_CHAN0, &count);
+  for (u32 i = 0; mappings != nullptr && i < count; ++i) {
+    if (mappings[i].padAxis != axis) {
+      continue;
+    }
+    // Aurora reads the native axis whenever it is set, else the button.
+    const int native = mappings[i].nativeAxis.nativeAxis;
+    if (native != -1) {
+      const bool leftStick = native == SDL_GAMEPAD_AXIS_LEFTX || native == SDL_GAMEPAD_AXIS_LEFTY;
+      const bool rightStick = native == SDL_GAMEPAD_AXIS_RIGHTX || native == SDL_GAMEPAD_AXIS_RIGHTY;
+      if (!leftStick && !rightStick) {
+        return {};  // a trigger driving a stick: no art for that
+      }
+      std::string stem = std::string(device) + (leftStick ? "_stick_l" : "_stick_r");
+      if (whole) {
+        return stem;
+      }
+      // SDL's Y axis is positive downwards.
+      const bool positive = mappings[i].nativeAxis.sign == AXIS_SIGN_POSITIVE;
+      const bool vertical = native == SDL_GAMEPAD_AXIS_LEFTY || native == SDL_GAMEPAD_AXIS_RIGHTY;
+      return stem + (vertical ? (positive ? "_down" : "_up") : (positive ? "_right" : "_left"));
+    }
+    const char* suffix = SuffixForSdlButton(mappings[i].nativeButton);
+    if (suffix == nullptr) {
+      return {};
+    }
+    // A stick moved onto the D-pad reads as the D-pad; any other set of
+    // buttons has no single icon.
+    if (whole) {
+      return std::strncmp(suffix, "dpad_", 5) == 0 ? std::string(device) + "_dpad" : std::string();
+    }
+    return std::string(device) + "_" + suffix;
+  }
+  return {};
+}
+
+// The icon for a stick prompt: the whole stick, or one way (dir 0-3 = up, down,
+// left, right; -1 = the whole stick).
+std::string IconStemForStick(const PADAxis (&axes)[4], int dir, const char* device) {
+  if (std::strcmp(device, "gamecube") == 0) {
+    return {};  // the game's stick art is the GameCube's
+  }
+  if (std::strcmp(device, "keyboard") == 0) {
+    if (dir >= 0) {
+      const char* stem = StemForScancode(KeyForAxis(axes[dir]));
+      return stem != nullptr ? std::string(stem) : std::string();
+    }
+    const int keys[4] = {KeyForAxis(axes[0]), KeyForAxis(axes[1]), KeyForAxis(axes[2]),
+                         KeyForAxis(axes[3])};
+    return KeyClusterStem(keys);
+  }
+  // The whole stick is named by its up direction's mapping.
+  return PadStemForAxis(axes[dir >= 0 ? dir : 0], device, dir < 0);
+}
+
+std::string IconStemForDpad(const char* device) {
+  if (std::strcmp(device, "gamecube") == 0) {
+    return {};
+  }
+  if (std::strcmp(device, "keyboard") == 0) {
+    const int keys[4] = {KeyForButton(PAD_BUTTON_UP), KeyForButton(PAD_BUTTON_DOWN),
+                         KeyForButton(PAD_BUTTON_LEFT), KeyForButton(PAD_BUTTON_RIGHT)};
+    return KeyClusterStem(keys);
+  }
+  // The pad's D-pad unless up has moved elsewhere, in which case that button.
+  const std::string up = IconStemForButton(PAD_BUTTON_UP, device);
+  const std::string dpadUp = std::string(device) + "_dpad_up";
+  return up == dpadUp ? std::string(device) + "_dpad" : up;
+}
+
+std::string IconStemForPrompt(uint32_t prompt, const char* device) {
+  switch (prompt) {
+  case PROMPT_STICK: return IconStemForStick(kStickAxes, -1, device);
+  case PROMPT_STICK_UP: return IconStemForStick(kStickAxes, 0, device);
+  case PROMPT_STICK_DOWN: return IconStemForStick(kStickAxes, 1, device);
+  case PROMPT_STICK_LEFT: return IconStemForStick(kStickAxes, 2, device);
+  case PROMPT_STICK_RIGHT: return IconStemForStick(kStickAxes, 3, device);
+  case PROMPT_CSTICK: return IconStemForStick(kCStickAxes, -1, device);
+  case PROMPT_CSTICK_UP: return IconStemForStick(kCStickAxes, 0, device);
+  case PROMPT_CSTICK_DOWN: return IconStemForStick(kCStickAxes, 1, device);
+  case PROMPT_CSTICK_LEFT: return IconStemForStick(kCStickAxes, 2, device);
+  case PROMPT_CSTICK_RIGHT: return IconStemForStick(kCStickAxes, 3, device);
+  case PROMPT_DPAD: return IconStemForDpad(device);
+  default: return IconStemForButton(static_cast<PADButton>(prompt), device);
+  }
 }
 
 void Apply(size_t index, const std::string& stem) {
@@ -504,15 +690,6 @@ void Apply(size_t index, const std::string& stem) {
       aurora::texture::ReplacementOptions{.priority = 1});
   reg.registered = reg.handle.id != 0;
 }
-
-const char* LabelForButton(PADButton button) {
-  for (const PromptAction& action : kActions) {
-    if (action.button == button) {
-      return action.label;
-    }
-  }
-  return "?";
-}
 } // namespace
 
 namespace PortPrompts {
@@ -559,10 +736,10 @@ void Poll() {
   }
   const char* device = ActiveDevice();
   for (const PromptAction& action : kActions) {
-    const std::string stem = IconStemForButton(action.button, device);
+    const std::string stem = IconStemForPrompt(action.prompt, device);
     size_t applied = 0;
     for (size_t i = 0; i < kKeyCount; ++i) {
-      if (kKeys[i].button != action.button) {
+      if (kKeys[i].prompt != action.prompt) {
         continue;
       }
       const std::string& current = sRegistrations[i].activeStem;
@@ -576,7 +753,7 @@ void Poll() {
       ++applied;
     }
     if (applied != 0) {
-      std::fprintf(stderr, "metroid_prime_port: prompt %s %s\n", LabelForButton(action.button),
+      std::fprintf(stderr, "metroid_prime_port: prompt %s %s\n", action.label,
                    stem.empty() ? "(back to the static icon)" : stem.c_str());
     }
   }
