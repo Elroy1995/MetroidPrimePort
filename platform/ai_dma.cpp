@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
-#include <limits>
 
 #include <SDL3/SDL.h>
 
@@ -22,6 +21,9 @@ constexpr uint32_t kSampleRate = 32000;
 constexpr uint32_t kBytesPerFrame = 4;
 constexpr uint64_t kDefaultFrameNs = 5000000ull; // 0x280 bytes at 32 kHz
 constexpr int kTargetQueuedBytes = kSampleRate * kBytesPerFrame * 64 / 1000;
+// The AI DMA length register counts 32-byte blocks in 15 bits; no real buffer is
+// larger, so anything beyond it is a caller bug SDL would read out of bounds on.
+constexpr uint32_t kMaxDMALength = 0x7FFF * 32;
 
 AIDCallback sCallback = nullptr;
 uintptr_t sBuffer = 0;
@@ -136,8 +138,7 @@ extern "C" void AIInit(u8* stack) {
 
 extern "C" void AIInitDMA(uintptr_t start_addr, uint32_t length) {
   EnsureStarted();
-  if (start_addr == 0 || length == 0 || length % kBytesPerFrame != 0 ||
-      length > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+  if (start_addr == 0 || length == 0 || length % kBytesPerFrame != 0 || length > kMaxDMALength) {
     sBuffer = reinterpret_cast<uintptr_t>(sSilence);
     sLength = sizeof(sSilence);
     return;

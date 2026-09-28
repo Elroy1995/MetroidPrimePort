@@ -6,6 +6,7 @@
 extern "C" void AIPortPoll();
 extern "C" void AIPortSetOutputEnabled(int);
 extern "C" void AIPortShutdown();
+extern "C" uintptr_t AIPortGetDMAStartAddr();
 namespace {
 int calls = 0;
 bool unregister = false;
@@ -21,6 +22,11 @@ void Check(bool condition) { if (!condition) std::abort(); }
 int main() {
   SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "SDL_AUDIO_DRIVER", "dummy", true);
   SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "MP_DISABLE_AI_AUDIO", "1", true);
+  const uintptr_t samplesAddr = reinterpret_cast<uintptr_t>(samples);
+  AIInitDMA(samplesAddr, sizeof(samples));
+  Check(AIPortGetDMAStartAddr() == samplesAddr);
+  AIInitDMA(samplesAddr, 0x7FFF * 32 + 32); // past the hardware limit: silence instead
+  Check(AIPortGetDMAStartAddr() != samplesAddr);
   AIRegisterDMACallback(Callback);
   AIPortPoll();
   const int silentCalls = calls;
