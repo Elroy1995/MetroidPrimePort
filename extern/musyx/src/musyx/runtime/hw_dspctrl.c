@@ -409,6 +409,12 @@ bool salInitDspCtrl(u8 numVoices, u8 numStudios, u32 defaultStudioDPL2) {
             dspVoice[i].lastUpdate.vol = 0xff;
             dspVoice[i].lastUpdate.volA = 0xff;
             dspVoice[i].lastUpdate.volB = 0xff;
+            // Port: studio is only set by salActivateVoice, but streamHandle
+            // calls hwSetVolume, which indexes dspStudio[studio], before
+            // hwStart. A voice's first stream therefore read an uninitialised
+            // index. That was a stray read on GameCube; here it can fault
+            // the audio thread.
+            dspVoice[i].studio = 0;
             dspVoice[i].pb = SAL_MALLOC(sizeof(_PB));
             memset(dspVoice[i].pb, 0, sizeof(_PB));
             dspVoice[i].patchData = SAL_MALLOC(0x80);
