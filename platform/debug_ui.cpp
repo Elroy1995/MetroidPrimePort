@@ -1394,6 +1394,15 @@ void UpdateControllerNav() {
   ImGuiIO& io = ImGui::GetIO();
   io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+  // The SDL3 backend calls SDL_ShowCursor on every NewFrame, and the main loop
+  // hides the cursor again during play, so it flickered wherever relative
+  // mouse mode wasn't hiding it (Android, menus, cutscenes). Let the backend
+  // own the cursor only while the overlay is open.
+  if (sVisible) {
+    io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+  } else {
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+  }
 
   SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0);
   if (pad == nullptr) {
