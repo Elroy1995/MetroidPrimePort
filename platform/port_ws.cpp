@@ -28,6 +28,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netdb.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -118,12 +119,22 @@ std::string SystemError(int error) {
 #endif
 }
 
-// A return value of 1 means ready, 0 means timed out, and -1 means error.
+// A return value of 1 means ready, 0 means timed out, and -1 means error. A
+// timeout of 0 or less waits indefinitely. An error or hangup on the socket
+// counts as ready, so the caller's next call reports it.
 int WaitReady(int storedSocket, bool readable, int timeoutMs) {
   const NativeSocket socket = NativeFromStored(storedSocket);
+#ifdef _WIN32
+  // Winsock's fd_set is a list of handles, not a bitmap, so select has no
+  // descriptor limit here; WSAPoll is avoided because before Windows 10 2004
+  // it never reported a failed connect. A failed connect is signalled in the
+  // except set, not the write set, so that is watched too.
   fd_set descriptors;
   FD_ZERO(&descriptors);
   FD_SET(socket, &descriptors);
+  fd_set failures;
+  FD_ZERO(&failures);
+  FD_SET(socket, &failures);
   timeval timeout{};
   timeval* timeoutPointer = nullptr;
   if (timeoutMs > 0) {
@@ -131,12 +142,17 @@ int WaitReady(int storedSocket, bool readable, int timeoutMs) {
     timeout.tv_usec = (timeoutMs % 1000) * 1000;
     timeoutPointer = &timeout;
   }
-#ifdef _WIN32
   const int result = select(0, readable ? &descriptors : nullptr,
-                            readable ? nullptr : &descriptors, nullptr, timeoutPointer);
+                            readable ? nullptr : &descriptors, readable ? nullptr : &failures,
+                            timeoutPointer);
 #else
-  const int result = select(socket + 1, readable ? &descriptors : nullptr,
-                            readable ? nullptr : &descriptors, nullptr, timeoutPointer);
+  // poll rather than select: FD_SET on a descriptor at or above FD_SETSIZE
+  // (1024) writes past the fd_set, and nothing stops a process with many files
+  // or sockets open from getting such a descriptor for this one.
+  pollfd descriptor{};
+  descriptor.fd = socket;
+  descriptor.events = readable ? POLLIN : POLLOUT;
+  const int result = poll(&descriptor, 1, timeoutMs > 0 ? timeoutMs : -1);
 #endif
   if (result > 0)
     return 1;
