@@ -106,6 +106,11 @@ public:
   };
 
   CActorModelParticles();
+#ifdef TARGET_PC
+  // Members die in reverse order, so x50_dgrps would go before x0_items, whose
+  // CItem destructors still DelTypeRef into it (a use-after-free on PC).
+  ~CActorModelParticles() { x0_items.clear(); }
+#endif
 
   CTexture* GetAshyTexture(const CActor& actor) const;
   void StartBurnDeath(CActor& actor);
