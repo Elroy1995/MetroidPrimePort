@@ -13,6 +13,10 @@ class CScriptTimer : public CEntity {
   uchar x40_loop;
   bool x41_autoStart;
   bool x42_isTiming;
+#ifdef TARGET_PC
+  // Set when a message starts timing; the next ApplyTime skips that tick (see ApplyTime).
+  bool mSkipNextTick;
+#endif
 
   public:
     CScriptTimer(TUniqueId, const rstl::string&, const CEntityInfo&, float, float, bool, bool, bool);

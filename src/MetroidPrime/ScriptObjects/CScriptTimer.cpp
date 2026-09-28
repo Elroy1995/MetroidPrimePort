@@ -14,7 +14,12 @@ CScriptTimer::CScriptTimer(const TUniqueId uid, const rstl::string& name, const 
 , x3c_maxRandDelay(maxRandDelay)
 , x40_loop(loop)
 , x41_autoStart(autoStart)
-, x42_isTiming(autoStart) {}
+, x42_isTiming(autoStart)
+#ifdef TARGET_PC
+, mSkipNextTick(false)
+#endif
+{
+}
 
 CScriptTimer::~CScriptTimer() {}
 
@@ -62,6 +67,9 @@ void CScriptTimer::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId objId,
   case kSM_Start:
     if (GetActive()) {
       StartTiming(true);
+#ifdef TARGET_PC
+      mSkipNextTick = true;
+#endif
     }
     break;
 
@@ -76,6 +84,9 @@ void CScriptTimer::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId objId,
       Reset(stateMgr);
       if (x41_autoStart) {
         StartTiming(true);
+#ifdef TARGET_PC
+        mSkipNextTick = true;
+#endif
       }
     }
     break;
@@ -91,6 +102,9 @@ void CScriptTimer::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId objId,
     if (GetActive()) {
       Reset(stateMgr);
       StartTiming(true);
+#ifdef TARGET_PC
+      mSkipNextTick = true;
+#endif
     }
     break;
   }
@@ -102,6 +116,18 @@ void CScriptTimer::ApplyTime(float dt, CStateManager& mgr) {
   if (x34_time > 0.f && GetActive()) {
 #if VERSION >= VERSION_GM8P_00 && VERSION != VERSION_GM8E_02
     if (x34_startFrame == mgr.GetInputFrameIdx()) {
+      return;
+    }
+#endif
+#ifdef TARGET_PC
+    // Retail NTSC relies on dt = 1/60: a short timer (Sunchamber's 0.02 s mirror
+    // timer) that some object re-arms every tick never expires. With a bigger
+    // step (cutscene fast-forward, adaptive sim rate, sim rates under 50) it
+    // expired every tick and spammed its sound. Like PAL's x34_startFrame check,
+    // skip the first tick after a message starts the timer, whatever the order
+    // the objects think in.
+    if (mSkipNextTick) {
+      mSkipNextTick = false;
       return;
     }
 #endif
