@@ -232,11 +232,20 @@ int main() {
   Check(packets.TakeNotification(notification) && notification == "unknown item 999",
         "unknown item notification names its ID");
   Check(!packets.TakeNotification(notification), "notification queue reports empty after draining");
-  packets.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":5,"items":[]})"),
+  packets.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":5,"items":[[101,2,3,0]]})"),
                       outgoing, grants);
-  Check(packets.Desynced() && packets.GetState().nextItemIndex == 5 &&
+  Check(packets.Desynced() && packets.GetState().nextItemIndex == 3 && grants.size() == 3 &&
             !outgoing.empty() && outgoing.back() == Session::BuildSync(),
-        "item index jump marks desync and queues Sync");
+        "item index jump marks desync, queues Sync, and holds the items past the gap");
+  packets.HandlePacket(
+      Packet(R"({"cmd":"ReceivedItems","index":0,"items":)"
+             R"([[100,1,1,0],[101,2,3,0],[999,1,3,0],[100,4,5,0],[101,6,7,0],[100,8,9,0]]})"),
+      outgoing, grants);
+  Check(!packets.Desynced() && packets.GetState().nextItemIndex == 6 && grants.size() == 6 &&
+            grants[3].itemId == 100 && grants[4].itemId == 101 && grants[5].itemId == 100,
+        "the Sync reply grants the gap and the held items once each");
+  while (packets.TakeNotification(notification)) {
+  }
 
   std::string printParts = R"({"cmd":"PrintJSON","data":[{"text":"Hello"},{"text":"\nworld"}]})";
   packets.HandlePacket(Packet(printParts), outgoing, grants);

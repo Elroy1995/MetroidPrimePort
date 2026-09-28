@@ -641,9 +641,18 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
     // progressive counts start over and the replay rebuilds them.
     if (index == 0 && expectedIndex == 0)
       mState.progressive.clear();
+    // Index 0 is the whole inventory (the reply to Connect or Sync), which
+    // closes any gap; the loop below skips what was already processed.
+    if (index == 0)
+      mDesynced = false;
     if (index > 0 && index != expectedIndex) {
       mDesynced = true;
       outgoing.push_back(BuildSync());
+      // Items past a gap are left for the Sync reply. Taking them now would
+      // move nextItemIndex past the missing ones, and the replay would then
+      // skip those as already received.
+      if (index > expectedIndex)
+        return;
     }
     for (size_t position = 0; position < itemList.size(); ++position) {
       int64_t itemId = 0;
