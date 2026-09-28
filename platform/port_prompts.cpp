@@ -296,20 +296,19 @@ std::string IconStemForButton(PADButton button, const char* device) {
 
   u32 count = 0;
   if (keyboard) {
-    PADKeyButtonBinding* bindings = PADGetKeyButtonBindings(PAD_CHAN0, &count);
-    if (bindings == nullptr) {
-      return {};
-    }
-    for (u32 i = 0; i < count; ++i) {
-      if (bindings[i].padButton != button) {
-        continue;
-      }
-      for (const KeyIcon& icon : kKeyIcons) {
-        if (icon.scancode == bindings[i].scancode) {
-          return icon.stem;
+    // The main key's icon, else the alt key's.
+    for (u32 slot = 0; slot < PAD_KEY_SLOT_COUNT; ++slot) {
+      PADKeyButtonBinding* bindings = PADGetKeyButtonBindingsSlot(PAD_CHAN0, slot, &count);
+      for (u32 i = 0; bindings != nullptr && i < count; ++i) {
+        if (bindings[i].padButton != button) {
+          continue;
+        }
+        for (const KeyIcon& icon : kKeyIcons) {
+          if (icon.scancode == bindings[i].scancode) {
+            return icon.stem;
+          }
         }
       }
-      return {};
     }
     return {};
   }

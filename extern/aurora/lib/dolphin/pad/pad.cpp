@@ -250,9 +250,13 @@ constexpr const std::array<T, N>& toStdArray(const T (&array)[N]) {
   return reinterpret_cast<const std::array<T, N>&>(array);
 }
 
+struct PADKeyboardSlot {
+  std::array<PADKeyButtonBinding, PAD_BUTTON_COUNT> m_buttonMapping = g_defaultKeys;
+  std::array<PADKeyAxisBinding, PAD_AXIS_COUNT> m_axisMapping = g_defaultKeyAxis;
+};
+
 struct PADKeyboardState {
-  std::array<PADKeyButtonBinding, PAD_BUTTON_COUNT> m_buttonMapping{};
-  std::array<PADKeyAxisBinding, PAD_AXIS_COUNT> m_axisMapping{};
+  std::array<PADKeyboardSlot, PAD_KEY_SLOT_COUNT> m_slots{};
   bool m_mappingsSet = false;
 };
 
@@ -381,10 +385,7 @@ BOOL PADInit() {
   }
   g_initialized = true;
 
-  std::ranges::for_each(g_keyboardBindings, [](auto& state) {
-    state.m_buttonMapping = g_defaultKeys;
-    state.m_axisMapping = g_defaultKeyAxis;
-  });
+  std::ranges::for_each(g_keyboardBindings, [](auto& state) { state.m_slots.fill(PADKeyboardSlot{}); });
 
   if (!g_keyboardBindingsLoaded) {
     g_keyboardBindingsLoaded = true;
@@ -737,27 +738,34 @@ u32 PADRead(PADStatus* status) {
 
     status[i].err = PAD_ERR_NONE;
     if (g_keyboardBindings[i].m_mappingsSet) {
-      std::ranges::for_each(
-          g_keyboardBindings[i].m_buttonMapping, [&kbState, &i, &status](const PADKeyButtonBinding& mapping) {
-            if (mapping.scancode > PAD_KEY_INVALID && kbState[mapping.scancode]) {
-              status[i].button |= mapping.padButton;
-            } else if (is_mouse_scancode(mapping.scancode) && is_mouse_button_pressed(mapping.scancode)) {
-              status[i].button |= mapping.padButton;
-            }
-          });
+      const auto keyPressed = [&kbState, numKeys](const s32 scancode) {
+        if (scancode > PAD_KEY_INVALID) {
+          return scancode < numKeys && kbState[scancode];
+        }
+        return is_mouse_scancode(scancode) && is_mouse_button_pressed(scancode);
+      };
+      // An axis held through both of its slots still counts once, so two keys
+      // for one direction don't cancel the opposite direction's key.
+      std::array<bool, PAD_AXIS_COUNT> axisPressed{};
+      for (const auto& slot : g_keyboardBindings[i].m_slots) {
+        for (const auto& mapping : slot.m_buttonMapping) {
+          if (keyPressed(mapping.scancode)) {
+            status[i].button |= mapping.padButton;
+          }
+        }
+        for (const auto& binding : slot.m_axisMapping) {
+          if (binding.padAxis < PAD_AXIS_COUNT && keyPressed(binding.scancode)) {
+            axisPressed[binding.padAxis] = true;
+          }
+        }
+      }
 
       int lx = 0, ly = 0, rx = 0, ry = 0, tl = 0, tr = 0;
-      for (const auto& binding : g_keyboardBindings[i].m_axisMapping) {
-        bool pressed = false;
-        if (binding.scancode > PAD_KEY_INVALID) {
-          pressed = binding.scancode < numKeys && kbState[binding.scancode];
-        } else if (is_mouse_scancode(binding.scancode)) {
-          pressed = is_mouse_button_pressed(binding.scancode);
-        }
-        if (!pressed) {
+      for (u32 padAxis = 0; padAxis < PAD_AXIS_COUNT; ++padAxis) {
+        if (!axisPressed[padAxis]) {
           continue;
         }
-        switch (binding.padAxis) {
+        switch (padAxis) {
         case PAD_AXIS_LEFT_X_POS:
           lx += 127;
           break;
@@ -1237,12 +1245,12 @@ PADAxisMapping* PADGetAxisMappings(const u32 port, u32* axisCount) {
   return controller->m_axisMapping.data();
 }
 
-BOOL PADSetKeyButtonBinding(const u32 port, const PADKeyButtonBinding binding) {
-  if (port >= PAD_MAX_CONTROLLERS) {
+BOOL PADSetKeyButtonBindingSlot(const u32 port, const u32 slot, const PADKeyButtonBinding binding) {
+  if (port >= PAD_MAX_CONTROLLERS || slot >= PAD_KEY_SLOT_COUNT) {
     return FALSE;
   }
 
-  for (auto& state = g_keyboardBindings[port]; auto& [scancode, padButton] : state.m_buttonMapping) {
+  for (auto& [scancode, padButton] : g_keyboardBindings[port].m_slots[slot].m_buttonMapping) {
     if (padButton == binding.padButton) {
       scancode = binding.scancode;
       return TRUE;
@@ -1250,6 +1258,10 @@ BOOL PADSetKeyButtonBinding(const u32 port, const PADKeyButtonBinding binding) {
   }
 
   return FALSE;
+}
+
+BOOL PADSetKeyButtonBinding(const u32 port, const PADKeyButtonBinding binding) {
+  return PADSetKeyButtonBindingSlot(port, 0, binding);
 }
 
 BOOL PADSetKeyButtonBindings(const u32 port, PADKeyButtonBinding bindings[PAD_BUTTON_COUNT]) {
@@ -1261,21 +1273,24 @@ BOOL PADSetKeyButtonBindings(const u32 port, PADKeyButtonBinding bindings[PAD_BU
   return TRUE;
 }
 
-PADKeyButtonBinding* PADGetKeyButtonBindings(const u32 port, u32* buttonCount) {
-  if (port >= PAD_MAX_CONTROLLERS || !g_keyboardBindings[port].m_mappingsSet) {
+PADKeyButtonBinding* PADGetKeyButtonBindingsSlot(const u32 port, const u32 slot, u32* buttonCount) {
+  if (port >= PAD_MAX_CONTROLLERS || slot >= PAD_KEY_SLOT_COUNT || !g_keyboardBindings[port].m_mappingsSet) {
     return nullptr;
   }
-  auto& state = g_keyboardBindings[port];
   *buttonCount = PAD_BUTTON_COUNT;
-  return state.m_buttonMapping.data();
+  return g_keyboardBindings[port].m_slots[slot].m_buttonMapping.data();
 }
 
-BOOL PADSetKeyAxisBinding(const u32 port, const PADKeyAxisBinding binding) {
-  if (port >= PAD_MAX_CONTROLLERS) {
+PADKeyButtonBinding* PADGetKeyButtonBindings(const u32 port, u32* buttonCount) {
+  return PADGetKeyButtonBindingsSlot(port, 0, buttonCount);
+}
+
+BOOL PADSetKeyAxisBindingSlot(const u32 port, const u32 slot, const PADKeyAxisBinding binding) {
+  if (port >= PAD_MAX_CONTROLLERS || slot >= PAD_KEY_SLOT_COUNT) {
     return FALSE;
   }
 
-  for (auto& state = g_keyboardBindings[port]; auto& b : state.m_axisMapping) {
+  for (auto& b : g_keyboardBindings[port].m_slots[slot].m_axisMapping) {
     if (b.padAxis == binding.padAxis) {
       b.scancode = binding.scancode;
       return TRUE;
@@ -1283,6 +1298,10 @@ BOOL PADSetKeyAxisBinding(const u32 port, const PADKeyAxisBinding binding) {
   }
 
   return FALSE;
+}
+
+BOOL PADSetKeyAxisBinding(const u32 port, const PADKeyAxisBinding binding) {
+  return PADSetKeyAxisBindingSlot(port, 0, binding);
 }
 BOOL PADSetKeyAxisBindings(const u32 port, PADKeyAxisBinding bindings[PAD_BUTTON_COUNT]) {
   for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
@@ -1293,13 +1312,16 @@ BOOL PADSetKeyAxisBindings(const u32 port, PADKeyAxisBinding bindings[PAD_BUTTON
   return TRUE;
 }
 
-PADKeyAxisBinding* PADGetKeyAxisBindings(const u32 port, u32* axisCount) {
-  if (port >= PAD_MAX_CONTROLLERS || !g_keyboardBindings[port].m_mappingsSet) {
+PADKeyAxisBinding* PADGetKeyAxisBindingsSlot(const u32 port, const u32 slot, u32* axisCount) {
+  if (port >= PAD_MAX_CONTROLLERS || slot >= PAD_KEY_SLOT_COUNT || !g_keyboardBindings[port].m_mappingsSet) {
     return nullptr;
   }
-  auto& state = g_keyboardBindings[port];
   *axisCount = PAD_AXIS_COUNT;
-  return state.m_axisMapping.data();
+  return g_keyboardBindings[port].m_slots[slot].m_axisMapping.data();
+}
+
+PADKeyAxisBinding* PADGetKeyAxisBindings(const u32 port, u32* axisCount) {
+  return PADGetKeyAxisBindingsSlot(port, 0, axisCount);
 }
 
 void PADSetKeyboardActive(const u32 port, const BOOL active) {
@@ -1313,13 +1335,14 @@ void PADClearKeyBindings(const u32 port) {
   if (port >= PAD_MAX_CONTROLLERS) {
     return;
   }
-  g_keyboardBindings[port].m_buttonMapping = g_defaultKeys;
-  g_keyboardBindings[port].m_axisMapping = g_defaultKeyAxis;
+  g_keyboardBindings[port].m_slots.fill(PADKeyboardSlot{});
   g_keyboardBindings[port].m_mappingsSet = false;
 }
 
 constexpr uint32_t k_keyboardMagic = SBIG('KBND');
-constexpr int32_t k_keyboardVersion = 3;
+// 4: PAD_KEY_SLOT_COUNT keys per input.
+constexpr int32_t k_keyboardVersion = 4;
+constexpr int32_t k_keyboardMinVersion = 3;
 
 static void load_keyboard_bindings() {
   if (aurora::g_config.userPath == nullptr) {
@@ -1338,10 +1361,14 @@ static void load_keyboard_bindings() {
   }
 
   uint32_t version = 0;
-  if (!SDL_ReadU32LE(file.get(), &version) || version != k_keyboardVersion) {
-    Log.warn("keyboard_bindings.dat: version mismatch (expected {}, got {})", k_keyboardVersion, version);
+  if (!SDL_ReadU32LE(file.get(), &version) || version < static_cast<uint32_t>(k_keyboardMinVersion) ||
+      version > static_cast<uint32_t>(k_keyboardVersion)) {
+    Log.warn("keyboard_bindings.dat: unsupported version {} (expected {} to {})", version, k_keyboardMinVersion,
+             k_keyboardVersion);
     return;
   }
+  // Version 3 files hold one key per input: slot 0.
+  const uint32_t fileSlots = version >= 4 ? PAD_KEY_SLOT_COUNT : 1;
 
   Sint64 dataStart = 0;
   if (!seek_aligned(file.get(), dataStart)) {
@@ -1350,51 +1377,55 @@ static void load_keyboard_bindings() {
   }
 
   auto bindings = g_keyboardBindings;
-  bool ok = true;
   for (uint32_t port = 0; port < bindings.size(); ++port) {
-    auto& [buttonMapping, axisMapping, mappingsSet] = bindings[port];
+    auto& [slots, mappingsSet] = bindings[port];
     uint8_t mappingsSetValue = 0;
-    ok = ok && SDL_ReadU8(file.get(), &mappingsSetValue) &&
-         aurora::io::read_exact(file.get(), buttonMapping.data(), sizeof(buttonMapping)) &&
-         aurora::io::read_exact(file.get(), axisMapping.data(), sizeof(axisMapping));
+    bool ok = SDL_ReadU8(file.get(), &mappingsSetValue);
+    for (uint32_t s = 0; ok && s < fileSlots; ++s) {
+      ok = aurora::io::read_exact(file.get(), slots[s].m_buttonMapping.data(), sizeof(slots[s].m_buttonMapping)) &&
+           aurora::io::read_exact(file.get(), slots[s].m_axisMapping.data(), sizeof(slots[s].m_axisMapping));
+    }
     if (!ok) {
       Log.warn("keyboard_bindings.dat: truncated bindings for port {}", port);
       return;
     }
     mappingsSet = mappingsSetValue != 0;
 
-    bool kbButtonCorrupt = false;
-    for (uint32_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
-      if (buttonMapping[i].padButton != g_defaultKeys[i].padButton) {
-        kbButtonCorrupt = true;
-        break;
+    bool anyBound = false;
+    for (uint32_t s = 0; s < PAD_KEY_SLOT_COUNT; ++s) {
+      auto& [buttonMapping, axisMapping] = slots[s];
+      bool kbButtonCorrupt = false;
+      for (uint32_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
+        if (buttonMapping[i].padButton != g_defaultKeys[i].padButton) {
+          kbButtonCorrupt = true;
+          break;
+        }
       }
-    }
-    if (kbButtonCorrupt) {
-      Log.warn("keyboard_bindings.dat port={}: corrupt button identifiers, resetting to defaults", port);
-      buttonMapping = g_defaultKeys;
-    }
+      if (kbButtonCorrupt) {
+        Log.warn("keyboard_bindings.dat port={} slot={}: corrupt button identifiers, resetting to defaults", port, s);
+        buttonMapping = g_defaultKeys;
+      }
 
-    bool kbAxisCorrupt = false;
-    for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
-      if (axisMapping[i].padAxis != g_defaultKeyAxis[i].padAxis) {
-        kbAxisCorrupt = true;
-        break;
+      bool kbAxisCorrupt = false;
+      for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
+        if (axisMapping[i].padAxis != g_defaultKeyAxis[i].padAxis) {
+          kbAxisCorrupt = true;
+          break;
+        }
       }
-    }
-    if (kbAxisCorrupt) {
-      Log.warn("keyboard_bindings.dat port={}: corrupt axis identifiers, resetting to defaults", port);
-      axisMapping = g_defaultKeyAxis;
-    }
+      if (kbAxisCorrupt) {
+        Log.warn("keyboard_bindings.dat port={} slot={}: corrupt axis identifiers, resetting to defaults", port, s);
+        axisMapping = g_defaultKeyAxis;
+      }
 
-    if (mappingsSet) {
-      const bool anyBound =
-          std::ranges::any_of(buttonMapping,
-                              [](const PADKeyButtonBinding& b) { return b.scancode != PAD_KEY_INVALID; }) ||
-          std::ranges::any_of(axisMapping, [](const PADKeyAxisBinding& b) { return b.scancode != PAD_KEY_INVALID; });
-      if (!anyBound) {
-        mappingsSet = false;
-      }
+      anyBound = anyBound ||
+                 std::ranges::any_of(buttonMapping,
+                                     [](const PADKeyButtonBinding& b) { return b.scancode != PAD_KEY_INVALID; }) ||
+                 std::ranges::any_of(axisMapping,
+                                     [](const PADKeyAxisBinding& b) { return b.scancode != PAD_KEY_INVALID; });
+    }
+    if (!anyBound) {
+      mappingsSet = false;
     }
   }
   g_keyboardBindings = std::move(bindings);
@@ -1416,10 +1447,12 @@ static void save_keyboard_bindings() {
   Sint64 dataStart = 0;
   ok = ok && seek_aligned(file.get(), dataStart);
 
-  for (const auto& [buttonMapping, axisMapping, mappingsSet] : g_keyboardBindings) {
-    ok = ok && SDL_WriteU8(file.get(), mappingsSet) &&
-         aurora::io::write_exact(file.get(), buttonMapping.data(), sizeof(buttonMapping)) &&
-         aurora::io::write_exact(file.get(), axisMapping.data(), sizeof(axisMapping));
+  for (const auto& [slots, mappingsSet] : g_keyboardBindings) {
+    ok = ok && SDL_WriteU8(file.get(), mappingsSet);
+    for (const auto& [buttonMapping, axisMapping] : slots) {
+      ok = ok && aurora::io::write_exact(file.get(), buttonMapping.data(), sizeof(buttonMapping)) &&
+           aurora::io::write_exact(file.get(), axisMapping.data(), sizeof(axisMapping));
+    }
   }
   if (!ok || !file.commit()) {
     Log.warn("save_keyboard_bindings: failed to write {}: {}", pathString, SDL_GetError());

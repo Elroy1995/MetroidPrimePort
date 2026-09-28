@@ -199,6 +199,12 @@ PADKeyButtonBinding* PADGetKeyButtonBindings(u32 port, u32* buttonCount);
 BOOL PADSetKeyAxisBinding(u32 port, PADKeyAxisBinding binding);
 BOOL PADSetKeyAxisBindings(u32 port, PADKeyAxisBinding bindings[PAD_BUTTON_COUNT]);
 PADKeyAxisBinding* PADGetKeyAxisBindings(u32 port, u32* axisCount);
+/* Each pad input takes up to PAD_KEY_SLOT_COUNT keys; the calls above use slot 0. */
+#define PAD_KEY_SLOT_COUNT 2
+BOOL PADSetKeyButtonBindingSlot(u32 port, u32 slot, PADKeyButtonBinding binding);
+PADKeyButtonBinding* PADGetKeyButtonBindingsSlot(u32 port, u32 slot, u32* buttonCount);
+BOOL PADSetKeyAxisBindingSlot(u32 port, u32 slot, PADKeyAxisBinding binding);
+PADKeyAxisBinding* PADGetKeyAxisBindingsSlot(u32 port, u32 slot, u32* axisCount);
 void PADClearKeyBindings(u32 port);
 void PADSetKeyboardActive(u32 port, BOOL active);
 

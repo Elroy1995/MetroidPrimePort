@@ -152,6 +152,8 @@ struct SInput {
 struct SCapture {
   ECapture target = ECapture::kNone;
   int index = 0;
+  // Which of a keyboard row's PAD_KEY_SLOT_COUNT keys; always 0 for the pad.
+  int slot = 0;
   Uint64 startMs = 0;
   // Inputs held when the capture started, the Bind click or pad press among
   // them. Each only counts once it has been released and pressed again.
@@ -170,6 +172,7 @@ struct SCapture {
   bool conflictReleased = false;
   ECapture otherKind = ECapture::kNone;
   int otherIndex = 0;
+  int otherSlot = 0;
   // Screen rect of the listening row's Press... button, from the last frame.
   ImVec2 pressMin{0.f, 0.f};
   ImVec2 pressMax{0.f, 0.f};
@@ -225,10 +228,11 @@ bool InputHeld(const SInput& input) {
   return false;
 }
 
-void StartCapture(ECapture target, int index) {
+void StartCapture(ECapture target, int index, int slot) {
   sCapture = SCapture{};
   sCapture.target = target;
   sCapture.index = index;
+  sCapture.slot = slot;
   sCapture.startMs = SDL_GetTicks();
   int count = 0;
   const bool* keys = SDL_GetKeyboardState(&count);
@@ -302,15 +306,15 @@ bool NewInput(SInput& out) {
   return found;
 }
 
-// Points one row at an input (code -1 unbinds a key or button row). Doesn't
-// save.
-void BindRow(ECapture kind, int index, const SInput& input) {
+// Points one row's slot at an input (code -1 unbinds a key or button row).
+// Doesn't save.
+void BindRow(ECapture kind, int index, int slot, const SInput& input) {
   switch (kind) {
   case ECapture::kKeyButton: {
     PADKeyButtonBinding binding{};
     binding.scancode = input.code;
     binding.padButton = kControlPadButtons[index].button;
-    PADSetKeyButtonBinding(kControlPort, binding);
+    PADSetKeyButtonBindingSlot(kControlPort, static_cast< u32 >(slot), binding);
     // A binding on a switched-off keyboard would never fire.
     PADSetKeyboardActive(kControlPort, TRUE);
     break;
@@ -320,7 +324,7 @@ void BindRow(ECapture kind, int index, const SInput& input) {
     binding.scancode = input.code;
     binding.padAxis = static_cast< PADAxis >(index);
     binding.influence = 1;
-    PADSetKeyAxisBinding(kControlPort, binding);
+    PADSetKeyAxisBindingSlot(kControlPort, static_cast< u32 >(slot), binding);
     PADSetKeyboardActive(kControlPort, TRUE);
     break;
   }
@@ -348,16 +352,16 @@ s32 KeyForPadButton(const PADKeyButtonBinding* list, u32 count, PADButton button
 s32 KeyForPadAxis(const PADKeyAxisBinding* list, u32 count, PADAxis axis);
 u32 NativeButtonForPadButton(const PADButtonMapping* list, u32 count, PADButton button);
 
-// What a row is bound to now; code -1 when nothing.
-SInput RowInput(ECapture kind, int index) {
+// What a row's slot is bound to now; code -1 when nothing.
+SInput RowInput(ECapture kind, int index, int slot) {
   u32 count = 0;
   switch (kind) {
   case ECapture::kKeyButton: {
-    const PADKeyButtonBinding* list = PADGetKeyButtonBindings(kControlPort, &count);
+    const PADKeyButtonBinding* list = PADGetKeyButtonBindingsSlot(kControlPort, static_cast< u32 >(slot), &count);
     return {SInput::kKey, KeyForPadButton(list, count, kControlPadButtons[index].button), AXIS_SIGN_POSITIVE};
   }
   case ECapture::kKeyAxis: {
-    const PADKeyAxisBinding* list = PADGetKeyAxisBindings(kControlPort, &count);
+    const PADKeyAxisBinding* list = PADGetKeyAxisBindingsSlot(kControlPort, static_cast< u32 >(slot), &count);
     return {SInput::kKey, KeyForPadAxis(list, count, static_cast< PADAxis >(index)), AXIS_SIGN_POSITIVE};
   }
   case ECapture::kPadButton: {
@@ -408,32 +412,38 @@ bool PairedRow(ECapture kind, int index, ECapture& pairKind, int& pairIndex) {
   return false;
 }
 
-// Binds a row, taking its L/R partner along if the two shared the old key.
-void BindWithPair(ECapture kind, int index, const SInput& input) {
+// Binds a row's slot, taking its L/R partner's same slot along if the two
+// shared the old key.
+void BindWithPair(ECapture kind, int index, int slot, const SInput& input) {
   ECapture pairKind = ECapture::kNone;
   int pairIndex = -1;
   const bool paired = PairedRow(kind, index, pairKind, pairIndex) &&
-                      SameInput(RowInput(kind, index), RowInput(pairKind, pairIndex));
-  BindRow(kind, index, input);
+                      SameInput(RowInput(kind, index, slot), RowInput(pairKind, pairIndex, slot));
+  BindRow(kind, index, slot, input);
   if (paired) {
-    BindRow(pairKind, pairIndex, input);
+    BindRow(pairKind, pairIndex, slot, input);
   }
 }
 
-// Another row already driven by `input`, other than the row's own L/R partner.
-bool FindConflict(ECapture kind, int index, const SInput& input, ECapture& otherKind, int& otherIndex) {
+// Another row slot already driven by `input`, other than the row itself (either
+// slot) and its L/R partner.
+bool FindConflict(ECapture kind, int index, const SInput& input, ECapture& otherKind, int& otherIndex,
+                  int& otherSlot) {
   ECapture pairKind = ECapture::kNone;
   int pairIndex = -1;
   PairedRow(kind, index, pairKind, pairIndex);
-  const auto check = [&](ECapture rowKind, int rowCount) {
+  const auto check = [&](ECapture rowKind, int rowCount, int slots) {
     for (int i = 0; i < rowCount; ++i) {
       if ((rowKind == kind && i == index) || (rowKind == pairKind && i == pairIndex)) {
         continue;
       }
-      if (SameInput(RowInput(rowKind, i), input)) {
-        otherKind = rowKind;
-        otherIndex = i;
-        return true;
+      for (int s = 0; s < slots; ++s) {
+        if (SameInput(RowInput(rowKind, i, s), input)) {
+          otherKind = rowKind;
+          otherIndex = i;
+          otherSlot = s;
+          return true;
+        }
       }
     }
     return false;
@@ -441,11 +451,12 @@ bool FindConflict(ECapture kind, int index, const SInput& input, ECapture& other
   const int buttonRows = static_cast< int >(std::size(kControlPadButtons));
   switch (input.kind) {
   case SInput::kKey:
-    return check(ECapture::kKeyButton, buttonRows) || check(ECapture::kKeyAxis, PAD_AXIS_COUNT);
+    return check(ECapture::kKeyButton, buttonRows, PAD_KEY_SLOT_COUNT) ||
+           check(ECapture::kKeyAxis, PAD_AXIS_COUNT, PAD_KEY_SLOT_COUNT);
   case SInput::kPadButton:
-    return check(ECapture::kPadButton, buttonRows);
+    return check(ECapture::kPadButton, buttonRows, 1);
   case SInput::kPadAxis:
-    return check(ECapture::kPadAxis, PAD_AXIS_COUNT);
+    return check(ECapture::kPadAxis, PAD_AXIS_COUNT, 1);
   }
   return false;
 }
@@ -496,18 +507,19 @@ void PollCapture() {
     }
   }
   sCapture.bound = input;
-  if (FindConflict(sCapture.target, sCapture.index, input, sCapture.otherKind, sCapture.otherIndex)) {
+  if (FindConflict(sCapture.target, sCapture.index, input, sCapture.otherKind, sCapture.otherIndex,
+                   sCapture.otherSlot)) {
     sCapture.conflict = true;
     return;
   }
-  BindWithPair(sCapture.target, sCapture.index, input);
+  BindWithPair(sCapture.target, sCapture.index, sCapture.slot, input);
   PADSerializeMappings();
   sCapture.settling = true;
   sCapture.startMs = SDL_GetTicks();
 }
 
-bool Listening(ECapture target, int index) {
-  return sCapture.target == target && sCapture.index == index && !sCapture.settling &&
+bool Listening(ECapture target, int index, int slot) {
+  return sCapture.target == target && sCapture.index == index && sCapture.slot == slot && !sCapture.settling &&
          !sCapture.conflict;
 }
 
@@ -590,33 +602,36 @@ std::string InputName(const SInput& input) {
   return "(unknown)";
 }
 
-std::string RowLabel(ECapture kind, int index) {
-  if (kind == ECapture::kKeyAxis || kind == ECapture::kPadAxis) {
-    return ActionLabel(kControlPadAxes[index].function, kControlPadAxes[index].label);
-  }
-  return ActionLabel(kControlPadButtons[index].function, kControlPadButtons[index].label);
+// "Fire / Bomb (A)", or "the alt key of Fire / Bomb (A)" for a keyboard row's
+// second slot.
+std::string RowLabel(ECapture kind, int index, int slot) {
+  std::string label = kind == ECapture::kKeyAxis || kind == ECapture::kPadAxis
+                          ? ActionLabel(kControlPadAxes[index].function, kControlPadAxes[index].label)
+                          : ActionLabel(kControlPadButtons[index].function, kControlPadButtons[index].label);
+  return slot != 0 ? "the alt key of " + label : label;
 }
 
 // The swap / bind both / cancel prompt for a captured input another row uses.
 void DrawConflict() {
-  const SInput old = RowInput(sCapture.target, sCapture.index);
-  const std::string other = RowLabel(sCapture.otherKind, sCapture.otherIndex);
+  const SInput old = RowInput(sCapture.target, sCapture.index, sCapture.slot);
+  const std::string other = RowLabel(sCapture.otherKind, sCapture.otherIndex, sCapture.otherSlot);
   ImGui::Text("%s is already bound to %s.", InputName(sCapture.bound).c_str(), other.c_str());
   ImGui::BeginDisabled(!sCapture.conflictReleased);
   // Aurora can't leave a controller axis unbound, so an axis row with nothing
   // to hand over can't swap.
   ImGui::BeginDisabled(sCapture.target == ECapture::kPadAxis && old.code == -1);
-  const std::string swapLabel = "Swap: " + other + " gets " + InputName(old) + "###swap";
+  const std::string swapLabel =
+      (old.code == -1 ? "Move: " + other + " loses it" : "Swap: " + other + " gets " + InputName(old)) + "###swap";
   if (ImGui::Button(swapLabel.c_str())) {
-    BindWithPair(sCapture.target, sCapture.index, sCapture.bound);
-    BindWithPair(sCapture.otherKind, sCapture.otherIndex, old);
+    BindWithPair(sCapture.target, sCapture.index, sCapture.slot, sCapture.bound);
+    BindWithPair(sCapture.otherKind, sCapture.otherIndex, sCapture.otherSlot, old);
     PADSerializeMappings();
     CancelCapture();
   }
   ImGui::EndDisabled();
   ImGui::SameLine();
   if (ImGui::Button("Bind both")) {
-    BindWithPair(sCapture.target, sCapture.index, sCapture.bound);
+    BindWithPair(sCapture.target, sCapture.index, sCapture.slot, sCapture.bound);
     PADSerializeMappings();
     CancelCapture();
   }
@@ -627,25 +642,41 @@ void DrawConflict() {
   ImGui::EndDisabled();
 }
 
-// The Bind button of one row; starts that row's capture when clicked.
-void BindButton(ECapture target, int index, float width) {
-  if (ImGui::Button(Listening(target, index) ? "Press..." : "Bind", ImVec2(width, 0.f))) {
-    StartCapture(target, index);
+// A row slot's binding, as a button that starts that slot's capture.
+void BindingButton(ECapture target, int index, int slot, const std::string& name, float width) {
+  const bool listening = Listening(target, index, slot);
+  const std::string label = (listening ? std::string("Press...") : name) + "###bind" + std::to_string(slot);
+  if (ImGui::Button(label.c_str(), ImVec2(width, 0.f))) {
+    StartCapture(target, index, slot);
   }
-  if (Listening(target, index)) {
+  if (listening) {
     sCapture.pressMin = ImGui::GetItemRectMin();
     sCapture.pressMax = ImGui::GetItemRectMax();
   }
 }
 
-// The rest of a row after its buttons: the action, then what it is bound to
-// in a column at labelWidth.
-void RowText(const std::string& label, float labelWidth, const char* binding) {
-  ImGui::SameLine();
-  const float x = ImGui::GetCursorPosX();
+// A keyboard row: the action, then each slot's key with a button to clear it.
+void KeyRow(ECapture kind, int index, const std::string& label, const float* slotX, float keyWidth) {
+  const float rowX = ImGui::GetCursorPosX();
+  ImGui::AlignTextToFramePadding();
   ImGui::TextUnformatted(label.c_str());
-  ImGui::SameLine(x + labelWidth + ImGui::GetStyle().ItemSpacing.x * 2.f);
-  ImGui::TextUnformatted(binding);
+  for (int slot = 0; slot < PAD_KEY_SLOT_COUNT; ++slot) {
+    ImGui::PushID(slot);
+    const SInput input = RowInput(kind, index, slot);
+    ImGui::SameLine(rowX + slotX[slot]);
+    BindingButton(kind, index, slot, input.code == PAD_KEY_INVALID ? std::string("-") : InputName(input), keyWidth);
+    ImGui::SameLine(0.f, ImGui::GetStyle().ItemInnerSpacing.x);
+    ImGui::BeginDisabled(input.code == PAD_KEY_INVALID);
+    if (ImGui::Button("x")) {
+      BindWithPair(kind, index, slot, SInput{});
+      PADSerializeMappings();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+      ImGui::SetTooltip("Clear");
+    }
+    ImGui::EndDisabled();
+    ImGui::PopID();
+  }
 }
 
 } // namespace
@@ -671,6 +702,13 @@ void ApplyDefaultKeyBindings(unsigned port) {
   if (PADSetKeyButtonBindings(port, buttons) && PADSetKeyAxisBindings(port, axes)) {
     PADSetKeyboardActive(port, TRUE);
   }
+  // The defaults have no alt keys.
+  for (const PADKeyButtonBinding& binding : buttons) {
+    PADSetKeyButtonBindingSlot(port, 1, {PAD_KEY_INVALID, binding.padButton});
+  }
+  for (const PADKeyAxisBinding& binding : axes) {
+    PADSetKeyAxisBindingSlot(port, 1, {PAD_KEY_INVALID, binding.padAxis, 1});
+  }
 }
 
 bool Capturing() {
@@ -689,9 +727,11 @@ bool Capturing() {
 void DrawTab() {
   sLastDrawFrame = ImGui::GetFrameCount();
   PollCapture();
-  // Wide enough for the longer label, so the rows line up at any font scale.
+  // Wide enough for the usual key names, so the columns line up at any font
+  // scale; a longer name is clipped.
   const float bindWidth =
-      ImGui::CalcTextSize("Press...").x + ImGui::GetStyle().FramePadding.x * 2.f;
+      std::max(ImGui::CalcTextSize("Mouse Middle").x, ImGui::CalcTextSize("Press...").x) +
+      ImGui::GetStyle().FramePadding.x * 2.f;
 
   // A modal rather than an inline prompt: when an inline one closed, the rows
   // below moved up under the cursor, so a double-click on Swap could land on
@@ -729,7 +769,7 @@ void DrawTab() {
       }
     }
   } else {
-    ImGui::TextUnformatted("Pad 1. Click Bind, then press the input to assign it.");
+    ImGui::TextUnformatted("Pad 1. Click a binding, then press the input to assign it.");
   }
 
   // Nothing else is clickable while an input is being captured: the capture
@@ -745,15 +785,6 @@ void DrawTab() {
     PADSerializeMappings();
   }
 
-  u32 keyButtonCount = 0;
-  PADKeyButtonBinding* keyButtons = PADGetKeyButtonBindings(kControlPort, &keyButtonCount);
-  u32 keyAxisCount = 0;
-  PADKeyAxisBinding* keyAxes = PADGetKeyAxisBindings(kControlPort, &keyAxisCount);
-  u32 padButtonCount = 0;
-  PADButtonMapping* padButtons = PADGetButtonMappings(kControlPort, &padButtonCount);
-  u32 padAxisCount = 0;
-  PADAxisMapping* padAxes = PADGetAxisMappings(kControlPort, &padAxisCount);
-
   std::string buttonLabels[std::size(kControlPadButtons)];
   std::string axisLabels[PAD_AXIS_COUNT];
   float labelWidth = 0.f;
@@ -766,67 +797,57 @@ void DrawTab() {
     labelWidth = std::max(labelWidth, ImGui::CalcTextSize(axisLabels[i].c_str()).x);
   }
 
+  // Columns: the action, then each key slot (a binding button and its clear
+  // button). The controller's single binding spans the key column.
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float clearWidth = ImGui::CalcTextSize("x").x + style.FramePadding.x * 2.f;
+  const float slotX[PAD_KEY_SLOT_COUNT] = {
+      labelWidth + style.ItemSpacing.x * 2.f,
+      labelWidth + style.ItemSpacing.x * 4.f + bindWidth + style.ItemInnerSpacing.x + clearWidth,
+  };
+
   if (ImGui::CollapsingHeader("Keyboard & mouse", ImGuiTreeNodeFlags_DefaultOpen)) {
+    const float rowX = ImGui::GetCursorPosX();
+    ImGui::TextDisabled("Action");
+    ImGui::SameLine(rowX + slotX[0]);
+    ImGui::TextDisabled("Key");
+    ImGui::SameLine(rowX + slotX[1]);
+    ImGui::TextDisabled("Alt key");
     for (int i = 0; i < static_cast< int >(std::size(kControlPadButtons)); ++i) {
       ImGui::PushID(i);
-      const PADButton button = kControlPadButtons[i].button;
-      BindButton(ECapture::kKeyButton, i, bindWidth);
-      ImGui::SameLine();
-      if (ImGui::Button("Clear")) {
-        PADKeyButtonBinding binding{};
-        binding.scancode = PAD_KEY_INVALID;
-        binding.padButton = button;
-        PADSetKeyButtonBinding(kControlPort, binding);
-        PADSerializeMappings();
-      }
-      RowText(buttonLabels[i], labelWidth,
-              ScancodeName(KeyForPadButton(keyButtons, keyButtonCount, button)).c_str());
+      KeyRow(ECapture::kKeyButton, i, buttonLabels[i], slotX, bindWidth);
       ImGui::PopID();
     }
     for (int i = 0; i < PAD_AXIS_COUNT; ++i) {
       ImGui::PushID(100 + i);
-      BindButton(ECapture::kKeyAxis, i, bindWidth);
-      ImGui::SameLine();
-      if (ImGui::Button("Clear")) {
-        PADKeyAxisBinding binding{};
-        binding.scancode = PAD_KEY_INVALID;
-        binding.padAxis = static_cast< PADAxis >(i);
-        binding.influence = 1;
-        PADSetKeyAxisBinding(kControlPort, binding);
-        PADSerializeMappings();
-      }
-      RowText(axisLabels[i], labelWidth,
-              ScancodeName(KeyForPadAxis(keyAxes, keyAxisCount, static_cast< PADAxis >(i))).c_str());
+      KeyRow(ECapture::kKeyAxis, i, axisLabels[i], slotX, bindWidth);
       ImGui::PopID();
     }
   }
 
   if (ImGui::CollapsingHeader("Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
-    if (padButtons == nullptr) {
+    u32 padButtonCount = 0;
+    if (PADGetButtonMappings(kControlPort, &padButtonCount) == nullptr) {
       ImGui::TextDisabled("No controller on pad 1.");
-    }
-    for (int i = 0; padButtons != nullptr && i < static_cast< int >(std::size(kControlPadButtons)); ++i) {
-      ImGui::PushID(200 + i);
-      const PADButton button = kControlPadButtons[i].button;
-      BindButton(ECapture::kPadButton, i, bindWidth);
-      const u32 native = NativeButtonForPadButton(padButtons, padButtonCount, button);
-      const char* nativeName =
-          native == PAD_NATIVE_BUTTON_INVALID ? "(unbound)" : PADGetNativeButtonName(native);
-      RowText(buttonLabels[i], labelWidth, nativeName != nullptr ? nativeName : "(unknown)");
-      ImGui::PopID();
-    }
-    for (int i = 0; padAxes != nullptr && i < PAD_AXIS_COUNT; ++i) {
-      ImGui::PushID(300 + i);
-      BindButton(ECapture::kPadAxis, i, bindWidth);
-      std::string nativeName = "(unbound)";
-      for (u32 j = 0; j < padAxisCount; ++j) {
-        if (padAxes[j].padAxis == static_cast< PADAxis >(i)) {
-          nativeName = NativeAxisName(padAxes[j].nativeAxis);
-          break;
-        }
+    } else {
+      const float padWidth = bindWidth + style.ItemInnerSpacing.x + clearWidth;
+      const auto padRow = [&](ECapture kind, int index, const std::string& label) {
+        const float rowX = ImGui::GetCursorPosX();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(label.c_str());
+        ImGui::SameLine(rowX + slotX[0]);
+        BindingButton(kind, index, 0, InputName(RowInput(kind, index, 0)), padWidth);
+      };
+      for (int i = 0; i < static_cast< int >(std::size(kControlPadButtons)); ++i) {
+        ImGui::PushID(200 + i);
+        padRow(ECapture::kPadButton, i, buttonLabels[i]);
+        ImGui::PopID();
       }
-      RowText(axisLabels[i], labelWidth, nativeName.c_str());
-      ImGui::PopID();
+      for (int i = 0; i < PAD_AXIS_COUNT; ++i) {
+        ImGui::PushID(300 + i);
+        padRow(ECapture::kPadAxis, i, axisLabels[i]);
+        ImGui::PopID();
+      }
     }
   }
   ImGui::EndDisabled();
