@@ -811,9 +811,10 @@ void CPlayer::UpdateMouseAim(CStateManager& mgr) {
   if (active) {
     // Keep native consumers of player aim coherent without pretending that R
     // is held (which changes movement, gun animations, and controller input).
+    // The jump and fall camera timers stay: the camera already skips their
+    // pitch-down under free mouse look, and CheckPostGrapple reads a zero jump
+    // timer in the air as a grapple jump, which blocked the sideways dash.
     x3ec_freeLookPitchAngle = PortDebug::AimPitch();
-    x294_jumpCameraTimer = 0.f;
-    x29c_fallCameraTimer = 0.f;
     x9c4_25_showCrosshairs = PortDebug::MouseCrosshair();
   }
 }
