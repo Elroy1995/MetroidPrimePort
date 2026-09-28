@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 
 #include <SDL3/SDL.h>
 
@@ -44,6 +45,9 @@ alignas(32) uint8_t sSilence[0x280] = {};
 // its input (the THP movie player, e.g. the game-over screen) feeds its own
 // output back into itself until it distorts.
 void RunCallback() {
+  // Re-zeroed every time: a callback that mixes in place would otherwise leave
+  // its output in the shared buffer for the next one to read as "silence".
+  std::memset(sSilence, 0, sizeof(sSilence));
   sBuffer = reinterpret_cast< uintptr_t >(sSilence);
   sLength = sizeof(sSilence);
   sCallback();
