@@ -319,6 +319,8 @@ final class TouchControlsView extends View {
     @Override
     protected void onDetachedFromWindow() {
         removeCallbacks(physicalInputPoll);
+        // No more touch events will arrive to release what is held.
+        releaseAll();
         super.onDetachedFromWindow();
     }
 
@@ -404,6 +406,9 @@ final class TouchControlsView extends View {
         // SDL wants the position normalised to its surface, which fills this
         // view's parent; this view does not while it is shrunk to SHOW.
         View parent = (View) getParent();
+        if (parent == null) {
+            return; // a late touch during teardown
+        }
         float x = (getLeft() + event.getX(index)) / Math.max(1, parent.getWidth() - 1);
         float y = (getTop() + event.getY(index)) / Math.max(1, parent.getHeight() - 1);
         float pressure = Math.min(event.getPressure(index), 1f);

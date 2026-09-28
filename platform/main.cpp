@@ -214,6 +214,10 @@ std::string CopyDiscFromContentUri(const std::string& uri) {
         return {};
     }
     const std::filesystem::path target = std::filesystem::path(pref) / "disc.iso";
+    // Copied under another name and renamed when complete: a copy killed part
+    // way (the app closed during a multi-minute copy) must not leave a
+    // truncated disc.iso, which ResolveDiscPath would prefer on every launch.
+    const std::filesystem::path partial = std::filesystem::path(pref) / "disc.iso.part";
     SDL_free(pref);
 
     SDL_IOStream* in = SDL_IOFromFile(uri.c_str(), "rb");
@@ -223,9 +227,9 @@ std::string CopyDiscFromContentUri(const std::string& uri) {
         return {};
     }
     const Sint64 total = SDL_GetIOSize(in);
-    SDL_IOStream* out = SDL_IOFromFile(target.string().c_str(), "wb");
+    SDL_IOStream* out = SDL_IOFromFile(partial.string().c_str(), "wb");
     if (out == nullptr) {
-        PortLog::Write( "metroid_prime_port: could not create %s: %s\n", target.string().c_str(),
+        PortLog::Write( "metroid_prime_port: could not create %s: %s\n", partial.string().c_str(),
                         SDL_GetError());
         SDL_CloseIO(in);
         return {};
@@ -248,7 +252,7 @@ std::string CopyDiscFromContentUri(const std::string& uri) {
             break;
         }
         if (SDL_WriteIO(out, buffer, got) != got) {
-            PortLog::Write( "metroid_prime_port: writing %s failed: %s\n", target.string().c_str(),
+            PortLog::Write( "metroid_prime_port: writing %s failed: %s\n", partial.string().c_str(),
                             SDL_GetError());
             ok = false;
             break;
@@ -265,7 +269,7 @@ std::string CopyDiscFromContentUri(const std::string& uri) {
         }
     }
     if (!SDL_FlushIO(out)) {
-        PortLog::Write( "metroid_prime_port: flushing %s failed: %s\n", target.string().c_str(),
+        PortLog::Write( "metroid_prime_port: flushing %s failed: %s\n", partial.string().c_str(),
                         SDL_GetError());
         ok = false;
     }
@@ -273,25 +277,32 @@ std::string CopyDiscFromContentUri(const std::string& uri) {
         PortLog::Write( "metroid_prime_port: closing the picked image failed: %s\n", SDL_GetError());
     }
     if (!SDL_CloseIO(out)) {
-        PortLog::Write( "metroid_prime_port: closing %s failed: %s\n", target.string().c_str(),
+        PortLog::Write( "metroid_prime_port: closing %s failed: %s\n", partial.string().c_str(),
                         SDL_GetError());
         ok = false;
     }
     if (!ok) {
         std::error_code ec;
-        std::filesystem::remove(target, ec);
+        std::filesystem::remove(partial, ec);
         return {};
     }
     // What landed on disk, not what was handed to the writer: a short write that
     // only fails at close looks identical to a good copy otherwise, and a
     // truncated image fails to parse as a disc with no further clue.
     std::error_code ec;
-    const auto written = std::filesystem::file_size(target, ec);
+    const auto written = std::filesystem::file_size(partial, ec);
     if (ec || static_cast<Sint64>(written) != done || (total > 0 && done != total)) {
         PortLog::Write( "metroid_prime_port: %s is %lld bytes on disk, copied %lld of %lld\n",
-                        target.string().c_str(), static_cast<long long>(written),
+                        partial.string().c_str(), static_cast<long long>(written),
                         static_cast<long long>(done), static_cast<long long>(total));
-        std::filesystem::remove(target, ec);
+        std::filesystem::remove(partial, ec);
+        return {};
+    }
+    std::filesystem::rename(partial, target, ec);
+    if (ec) {
+        PortLog::Write( "metroid_prime_port: could not rename %s to %s: %s\n",
+                        partial.string().c_str(), target.string().c_str(), ec.message().c_str());
+        std::filesystem::remove(partial, ec);
         return {};
     }
     PortLog::Write( "metroid_prime_port: copied the disc image to %s (%lld bytes)\n",
