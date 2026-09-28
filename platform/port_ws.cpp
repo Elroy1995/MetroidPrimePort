@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <cctype>
@@ -122,7 +123,7 @@ std::string SystemError(int error) {
 // A return value of 1 means ready, 0 means timed out, and -1 means error. A
 // timeout of 0 or less waits indefinitely. An error or hangup on the socket
 // counts as ready, so the caller's next call reports it.
-int WaitReady(int storedSocket, bool readable, int timeoutMs) {
+int WaitReadyOnce(int storedSocket, bool readable, int timeoutMs) {
   const NativeSocket socket = NativeFromStored(storedSocket);
 #ifdef _WIN32
   // Winsock's fd_set is a list of handles, not a bitmap, so select has no
@@ -161,6 +162,32 @@ int WaitReady(int storedSocket, bool readable, int timeoutMs) {
   return -1;
 }
 
+// WaitReadyOnce, but with a `cancel` flag the wait is cut into slices and
+// ends as if timed out once the flag is set, so a stopping owner does not sit
+// out a long timeout. The socket is checked before the flag, so a close frame
+// still goes out when the socket is writable.
+int WaitReady(int storedSocket, bool readable, int timeoutMs,
+              const std::atomic<bool>* cancel) {
+  if (cancel == nullptr)
+    return WaitReadyOnce(storedSocket, readable, timeoutMs);
+  constexpr int kSliceMs = 100;
+  const bool infinite = timeoutMs <= 0;
+  int left = timeoutMs;
+  for (;;) {
+    const int slice = infinite ? kSliceMs : std::min(left, kSliceMs);
+    const int result = WaitReadyOnce(storedSocket, readable, slice);
+    if (result != 0)
+      return result;
+    if (cancel->load(std::memory_order_acquire))
+      return 0;
+    if (!infinite) {
+      left -= slice;
+      if (left <= 0)
+        return 0;
+    }
+  }
+}
+
 int RemainingMs(const Clock::time_point& deadline, bool infinite) {
   if (infinite)
     return 0;
@@ -173,7 +200,8 @@ int RemainingMs(const Clock::time_point& deadline, bool infinite) {
   return static_cast<int>(std::min<int64_t>(milliseconds, INT_MAX));
 }
 
-bool SendAll(int storedSocket, const std::string& data, int timeoutMs, std::string& error) {
+bool SendAll(int storedSocket, const std::string& data, int timeoutMs, std::string& error,
+             const std::atomic<bool>* cancel) {
   const bool infinite = timeoutMs <= 0;
   const Clock::time_point deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 0));
   size_t sent = 0;
@@ -183,7 +211,7 @@ bool SendAll(int storedSocket, const std::string& data, int timeoutMs, std::stri
       error = "send timed out";
       return false;
     }
-    const int ready = WaitReady(storedSocket, false, remaining);
+    const int ready = WaitReady(storedSocket, false, remaining, cancel);
     if (ready == 0) {
       error = "send timed out";
       return false;
@@ -446,7 +474,7 @@ bool IsIpLiteral(const std::string& host) {
 }
 
 bool SendAllTls(SSL* ssl, int storedSocket, const std::string& data, int timeoutMs, std::string& error,
-                bool& fatal) {
+                bool& fatal, const std::atomic<bool>* cancel) {
   const bool infinite = timeoutMs <= 0;
   const Clock::time_point deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 0));
   size_t sent = 0;
@@ -479,7 +507,7 @@ bool SendAllTls(SSL* ssl, int storedSocket, const std::string& data, int timeout
       error = "send timed out";
       return false;
     }
-    const int ready = WaitReady(storedSocket, sslError == SSL_ERROR_WANT_READ, remaining);
+    const int ready = WaitReady(storedSocket, sslError == SSL_ERROR_WANT_READ, remaining, cancel);
     if (ready == 0) {
       error = "send timed out";
       return false;
@@ -916,7 +944,7 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
         if (remaining < 0) {
           connectError = "connect timed out";
         } else {
-          const int ready = WaitReady(StoreSocket(candidate), false, remaining);
+          const int ready = WaitReady(StoreSocket(candidate), false, remaining, mCancel);
           if (ready > 0) {
             int pendingError = 0;
 #ifdef _WIN32
@@ -1027,7 +1055,7 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
       const int remaining = RemainingMs(deadline, infinite);
       if (remaining < 0)
         return fail("TLS handshake timed out");
-      const int ready = WaitReady(mSocket, sslError == SSL_ERROR_WANT_READ, remaining);
+      const int ready = WaitReady(mSocket, sslError == SSL_ERROR_WANT_READ, remaining, mCancel);
       if (ready == 0)
         return fail("TLS handshake timed out");
       if (ready < 0) {
@@ -1286,13 +1314,13 @@ bool Client::SendBytes(const std::string& data, int timeoutMs, std::string& erro
 #ifdef MP_HAVE_OPENSSL
   if (mSsl != nullptr) {
     bool fatal = false;
-    const bool sent = SendAllTls(mSsl, mSocket, data, timeoutMs, error, fatal);
+    const bool sent = SendAllTls(mSsl, mSocket, data, timeoutMs, error, fatal, mCancel);
     if (fatal)
       mTlsFailed = true;
     return sent;
   }
 #endif
-  return SendAll(mSocket, data, timeoutMs, error);
+  return SendAll(mSocket, data, timeoutMs, error, mCancel);
 }
 
 bool Client::ReadRaw(std::string& out, bool& closed, std::string& error) {
@@ -1351,10 +1379,10 @@ int Client::WaitIo(int timeoutMs) {
     // socket, would never make select() fire.
     if (SSL_has_pending(mSsl) == 1)
       return 1;
-    return WaitReady(mSocket, !mTlsReadWantsWrite, timeoutMs);
+    return WaitReady(mSocket, !mTlsReadWantsWrite, timeoutMs, mCancel);
   }
 #endif
-  return WaitReady(mSocket, true, timeoutMs);
+  return WaitReady(mSocket, true, timeoutMs, mCancel);
 }
 
 void Client::ShutdownTls() {

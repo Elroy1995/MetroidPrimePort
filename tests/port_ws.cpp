@@ -8,6 +8,17 @@
 #include <utility>
 #include <vector>
 
+#ifndef _WIN32
+// The cancel test below: a listener that never answers.
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 #if defined(MP_HAVE_OPENSSL)
 #include <chrono>
 #include <cstdlib>
@@ -697,6 +708,41 @@ int main() {
   std::vector<PortWs::Frame> oversizedFrames;
   oversizedDecoder.Feed(oversized.data(), oversized.size(), oversizedFrames);
   Check(oversizedDecoder.Failed(), "oversized message latches decoder failure");
+
+#ifndef _WIN32
+  {
+    // The kernel completes the TCP handshake from the backlog, but nobody
+    // answers the upgrade, so only the cancel flag can end this before the
+    // 10 s timeout.
+    const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t length = sizeof(address);
+    const bool listening =
+        listener >= 0 && ::bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0 &&
+        ::listen(listener, 1) == 0 &&
+        ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length) == 0;
+    Check(listening, "a silent loopback listener for the cancel test");
+    if (listening) {
+      std::atomic<bool> cancel{false};
+      PortWs::Client client;
+      client.SetCancelFlag(&cancel);
+      std::thread canceller([&cancel] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        cancel.store(true, std::memory_order_release);
+      });
+      const auto start = std::chrono::steady_clock::now();
+      const bool connected = client.Connect("127.0.0.1", ntohs(address.sin_port), "/", 10000);
+      const auto elapsed = std::chrono::steady_clock::now() - start;
+      canceller.join();
+      Check(!connected && !client.IsOpen() && elapsed < std::chrono::seconds(2),
+            "a set cancel flag ends a stalled handshake well before its timeout");
+    }
+    if (listener >= 0)
+      ::close(listener);
+  }
+#endif
 
 #if defined(MP_HAVE_OPENSSL)
   CheckTlsEndToEnd();

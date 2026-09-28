@@ -332,6 +332,7 @@ void Worker(Runtime& runtime) {
     bool secure = false;
     std::string connectionError;
     PortWs::Client client;
+    client.SetCancelFlag(&runtime.stop); // quitting must not wait out a timeout
     PortWs::TlsOptions tls;
     tls.caFile = config.tlsCa;
     bool transportReady = false;
@@ -347,7 +348,8 @@ void Worker(Runtime& runtime) {
     bool connectionFailed = !transportReady;
     bool apConnected = false;
     if (!transportReady) {
-      runtime.SetError(connectionError);
+      if (!runtime.stop.load(std::memory_order_acquire)) // not a failure when cut short
+        runtime.SetError(connectionError);
     } else {
       while (!runtime.stop.load(std::memory_order_acquire) && client.IsOpen()) {
         std::string message;

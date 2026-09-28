@@ -1,5 +1,6 @@
 #ifndef METROID_PRIME_PORT_PORT_WS_H
 #define METROID_PRIME_PORT_PORT_WS_H
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -118,6 +119,10 @@ public:
   // Last error text, never null.
   const char* Error() const { return mError.c_str(); }
   void SetTimeoutMs(int timeoutMs) { mTimeoutMs = timeoutMs; }
+  // While `cancel` is set, every wait (connect, handshake, send, receive) ends
+  // within ~100 ms as a timeout. Name resolution cannot be cut short. The flag
+  // must outlive the client; null turns cancelling off.
+  void SetCancelFlag(const std::atomic<bool>* cancel) { mCancel = cancel; }
 
 private:
   bool SendRaw(const std::string& data);
@@ -142,6 +147,7 @@ private:
   // The last SSL_read wanted the socket writable (renegotiation, key update).
   bool mTlsReadWantsWrite = false;
   int mTimeoutMs = 10000;
+  const std::atomic<bool>* mCancel = nullptr;
   std::string mError = "not connected";
   std::string mReceiveBuffer;
   FrameDecoder mDecoder;
