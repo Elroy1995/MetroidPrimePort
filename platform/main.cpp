@@ -491,7 +491,10 @@ int main(int argc, char** argv) {
         // may have been moved or deleted. Retrying once through the picker turns
         // an unexplained exit into a recoverable prompt.
         const bool fromArgs = argc > 1 || std::getenv("MP_DISC") != nullptr;
-        if (discImage == PortDebug::DiscPath() && !fromArgs) {
+        // DiscPath() is null when no disc is remembered, and comparing a
+        // std::string with a null pointer is undefined (it calls strlen(NULL)).
+        const char* rememberedDisc = PortDebug::DiscPath();
+        if (rememberedDisc != nullptr && discImage == rememberedDisc && !fromArgs) {
             PortLog::Write( "metroid_prime_port: asking for the disc image again\n");
             PortDebug::SetDiscPath("");
             PortDebug::SaveSettingsNow();
