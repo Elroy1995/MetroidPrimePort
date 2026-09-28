@@ -164,6 +164,12 @@ struct SCapture {
   // nav focus (Enter, or the pad's A) and start another capture.
   bool settling = false;
   SInput bound;
+  // The captured input already drives another row: the tab asks whether to
+  // swap, bind it to both or cancel. Its buttons wait for the input's release.
+  bool conflict = false;
+  bool conflictReleased = false;
+  ECapture otherKind = ECapture::kNone;
+  int otherIndex = 0;
   // Screen rect of the listening row's Press... button, from the last frame.
   ImVec2 pressMin{0.f, 0.f};
   ImVec2 pressMax{0.f, 0.f};
@@ -296,9 +302,10 @@ bool NewInput(SInput& out) {
   return found;
 }
 
-void Bind(const SInput& input) {
-  const int index = sCapture.index;
-  switch (sCapture.target) {
+// Points one row at an input (code -1 unbinds a key or button row). Doesn't
+// save.
+void BindRow(ECapture kind, int index, const SInput& input) {
+  switch (kind) {
   case ECapture::kKeyButton: {
     PADKeyButtonBinding binding{};
     binding.scancode = input.code;
@@ -333,13 +340,126 @@ void Bind(const SInput& input) {
     break;
   }
   case ECapture::kNone:
-    return;
+    break;
   }
-  PADSerializeMappings();
+}
+
+s32 KeyForPadButton(const PADKeyButtonBinding* list, u32 count, PADButton button);
+s32 KeyForPadAxis(const PADKeyAxisBinding* list, u32 count, PADAxis axis);
+u32 NativeButtonForPadButton(const PADButtonMapping* list, u32 count, PADButton button);
+
+// What a row is bound to now; code -1 when nothing.
+SInput RowInput(ECapture kind, int index) {
+  u32 count = 0;
+  switch (kind) {
+  case ECapture::kKeyButton: {
+    const PADKeyButtonBinding* list = PADGetKeyButtonBindings(kControlPort, &count);
+    return {SInput::kKey, KeyForPadButton(list, count, kControlPadButtons[index].button), AXIS_SIGN_POSITIVE};
+  }
+  case ECapture::kKeyAxis: {
+    const PADKeyAxisBinding* list = PADGetKeyAxisBindings(kControlPort, &count);
+    return {SInput::kKey, KeyForPadAxis(list, count, static_cast< PADAxis >(index)), AXIS_SIGN_POSITIVE};
+  }
+  case ECapture::kPadButton: {
+    const PADButtonMapping* list = PADGetButtonMappings(kControlPort, &count);
+    const u32 native = NativeButtonForPadButton(list, count, kControlPadButtons[index].button);
+    return {SInput::kPadButton, static_cast< s32 >(native), AXIS_SIGN_POSITIVE};
+  }
+  case ECapture::kPadAxis: {
+    const PADAxisMapping* list = PADGetAxisMappings(kControlPort, &count);
+    for (u32 i = 0; list != nullptr && i < count; ++i) {
+      if (list[i].padAxis == static_cast< PADAxis >(index)) {
+        return {SInput::kPadAxis, list[i].nativeAxis.nativeAxis, list[i].nativeAxis.sign};
+      }
+    }
+    return {SInput::kPadAxis, -1, AXIS_SIGN_POSITIVE};
+  }
+  case ECapture::kNone:
+    break;
+  }
+  return {};
+}
+
+bool SameInput(const SInput& a, const SInput& b) {
+  return a.kind == b.kind && a.code == b.code && a.code != -1 &&
+         (a.kind != SInput::kPadAxis || a.sign == b.sign);
+}
+
+// The keyboard has L and R twice, as the click and the analog trigger, and the
+// defaults put both on one key: that pair isn't a conflict, and binding one
+// half moves the other along while they still share a key.
+bool PairedRow(ECapture kind, int index, ECapture& pairKind, int& pairIndex) {
+  if (kind == ECapture::kKeyButton) {
+    const PADButton button = kControlPadButtons[index].button;
+    pairKind = ECapture::kKeyAxis;
+    pairIndex = button == PAD_TRIGGER_L ? PAD_AXIS_TRIGGER_L : button == PAD_TRIGGER_R ? PAD_AXIS_TRIGGER_R : -1;
+    return pairIndex >= 0;
+  }
+  if (kind == ECapture::kKeyAxis && (index == PAD_AXIS_TRIGGER_L || index == PAD_AXIS_TRIGGER_R)) {
+    const PADButton button = index == PAD_AXIS_TRIGGER_L ? PAD_TRIGGER_L : PAD_TRIGGER_R;
+    for (int i = 0; i < static_cast< int >(std::size(kControlPadButtons)); ++i) {
+      if (kControlPadButtons[i].button == button) {
+        pairKind = ECapture::kKeyButton;
+        pairIndex = i;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Binds a row, taking its L/R partner along if the two shared the old key.
+void BindWithPair(ECapture kind, int index, const SInput& input) {
+  ECapture pairKind = ECapture::kNone;
+  int pairIndex = -1;
+  const bool paired = PairedRow(kind, index, pairKind, pairIndex) &&
+                      SameInput(RowInput(kind, index), RowInput(pairKind, pairIndex));
+  BindRow(kind, index, input);
+  if (paired) {
+    BindRow(pairKind, pairIndex, input);
+  }
+}
+
+// Another row already driven by `input`, other than the row's own L/R partner.
+bool FindConflict(ECapture kind, int index, const SInput& input, ECapture& otherKind, int& otherIndex) {
+  ECapture pairKind = ECapture::kNone;
+  int pairIndex = -1;
+  PairedRow(kind, index, pairKind, pairIndex);
+  const auto check = [&](ECapture rowKind, int rowCount) {
+    for (int i = 0; i < rowCount; ++i) {
+      if ((rowKind == kind && i == index) || (rowKind == pairKind && i == pairIndex)) {
+        continue;
+      }
+      if (SameInput(RowInput(rowKind, i), input)) {
+        otherKind = rowKind;
+        otherIndex = i;
+        return true;
+      }
+    }
+    return false;
+  };
+  const int buttonRows = static_cast< int >(std::size(kControlPadButtons));
+  switch (input.kind) {
+  case SInput::kKey:
+    return check(ECapture::kKeyButton, buttonRows) || check(ECapture::kKeyAxis, PAD_AXIS_COUNT);
+  case SInput::kPadButton:
+    return check(ECapture::kPadButton, buttonRows);
+  case SInput::kPadAxis:
+    return check(ECapture::kPadAxis, PAD_AXIS_COUNT);
+  }
+  return false;
 }
 
 void PollCapture() {
   if (sCapture.target == ECapture::kNone) {
+    return;
+  }
+  if (sCapture.conflict) {
+    if (!sCapture.conflictReleased) {
+      sCapture.conflictReleased = !InputHeld(sCapture.bound);
+    } else if (SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_ESCAPE]) {
+      CancelCapture();
+    }
     return;
   }
   if (SDL_GetTicks() - sCapture.startMs > kCaptureTimeoutMs) {
@@ -375,14 +495,20 @@ void PollCapture() {
       return;
     }
   }
-  Bind(input);
-  sCapture.settling = true;
   sCapture.bound = input;
+  if (FindConflict(sCapture.target, sCapture.index, input, sCapture.otherKind, sCapture.otherIndex)) {
+    sCapture.conflict = true;
+    return;
+  }
+  BindWithPair(sCapture.target, sCapture.index, input);
+  PADSerializeMappings();
+  sCapture.settling = true;
   sCapture.startMs = SDL_GetTicks();
 }
 
 bool Listening(ECapture target, int index) {
-  return sCapture.target == target && sCapture.index == index && !sCapture.settling;
+  return sCapture.target == target && sCapture.index == index && !sCapture.settling &&
+         !sCapture.conflict;
 }
 
 std::string ScancodeName(s32 scancode) {
@@ -447,6 +573,60 @@ std::string NativeAxisName(const PADSignedNativeAxis& axis) {
   return result;
 }
 
+std::string InputName(const SInput& input) {
+  switch (input.kind) {
+  case SInput::kKey:
+    return ScancodeName(input.code);
+  case SInput::kPadButton: {
+    if (input.code == -1) {
+      return "(unbound)";
+    }
+    const char* name = PADGetNativeButtonName(static_cast< u32 >(input.code));
+    return name != nullptr ? name : "(unknown)";
+  }
+  case SInput::kPadAxis:
+    return NativeAxisName({input.code, input.sign});
+  }
+  return "(unknown)";
+}
+
+std::string RowLabel(ECapture kind, int index) {
+  if (kind == ECapture::kKeyAxis || kind == ECapture::kPadAxis) {
+    return ActionLabel(kControlPadAxes[index].function, kControlPadAxes[index].label);
+  }
+  return ActionLabel(kControlPadButtons[index].function, kControlPadButtons[index].label);
+}
+
+// The swap / bind both / cancel prompt for a captured input another row uses.
+void DrawConflict() {
+  const SInput old = RowInput(sCapture.target, sCapture.index);
+  const std::string other = RowLabel(sCapture.otherKind, sCapture.otherIndex);
+  ImGui::Text("%s is already bound to %s.", InputName(sCapture.bound).c_str(), other.c_str());
+  ImGui::BeginDisabled(!sCapture.conflictReleased);
+  // Aurora can't leave a controller axis unbound, so an axis row with nothing
+  // to hand over can't swap.
+  ImGui::BeginDisabled(sCapture.target == ECapture::kPadAxis && old.code == -1);
+  const std::string swapLabel = "Swap: " + other + " gets " + InputName(old) + "###swap";
+  if (ImGui::Button(swapLabel.c_str())) {
+    BindWithPair(sCapture.target, sCapture.index, sCapture.bound);
+    BindWithPair(sCapture.otherKind, sCapture.otherIndex, old);
+    PADSerializeMappings();
+    CancelCapture();
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  if (ImGui::Button("Bind both")) {
+    BindWithPair(sCapture.target, sCapture.index, sCapture.bound);
+    PADSerializeMappings();
+    CancelCapture();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Cancel")) {
+    CancelCapture();
+  }
+  ImGui::EndDisabled();
+}
+
 // The Bind button of one row; starts that row's capture when clicked.
 void BindButton(ECapture target, int index, float width) {
   if (ImGui::Button(Listening(target, index) ? "Press..." : "Bind", ImVec2(width, 0.f))) {
@@ -497,10 +677,13 @@ bool Capturing() {
   // Only the tab polls the capture, so one left running when the overlay closed
   // or the tab changed would otherwise block the overlay's pad navigation.
   if (sCapture.target != ECapture::kNone &&
-      (ImGui::GetFrameCount() - sLastDrawFrame > 2 || SDL_GetTicks() - sCapture.startMs > kCaptureTimeoutMs)) {
+      (ImGui::GetFrameCount() - sLastDrawFrame > 2 ||
+       (!sCapture.conflict && SDL_GetTicks() - sCapture.startMs > kCaptureTimeoutMs))) {
     CancelCapture();
   }
-  return sCapture.target != ECapture::kNone;
+  // A conflict prompt is answered with the pad too, once the captured input
+  // is released.
+  return sCapture.target != ECapture::kNone && !(sCapture.conflict && sCapture.conflictReleased);
 }
 
 void DrawTab() {
@@ -510,7 +693,27 @@ void DrawTab() {
   const float bindWidth =
       ImGui::CalcTextSize("Press...").x + ImGui::GetStyle().FramePadding.x * 2.f;
 
-  if (sCapture.target != ECapture::kNone && !sCapture.settling) {
+  // A modal rather than an inline prompt: when an inline one closed, the rows
+  // below moved up under the cursor, so a double-click on Swap could land on
+  // Restore keyboard defaults.
+  constexpr const char* kConflictPopup = "Binding conflict";
+  if (sCapture.conflict && !ImGui::IsPopupOpen(kConflictPopup)) {
+    ImGui::OpenPopup(kConflictPopup);
+  }
+  const ImVec2 overlayCenter(ImGui::GetWindowPos().x + ImGui::GetWindowWidth() * 0.5f,
+                             ImGui::GetWindowPos().y + ImGui::GetWindowHeight() * 0.5f);
+  ImGui::SetNextWindowPos(overlayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  if (ImGui::BeginPopupModal(kConflictPopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (sCapture.conflict) {
+      DrawConflict();
+    }
+    if (!sCapture.conflict) {
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
+
+  if (sCapture.target != ECapture::kNone && !sCapture.settling && !sCapture.conflict) {
     const bool keys =
         sCapture.target == ECapture::kKeyButton || sCapture.target == ECapture::kKeyAxis;
     const Uint64 elapsed = SDL_GetTicks() - sCapture.startMs;
