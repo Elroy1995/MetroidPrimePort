@@ -151,9 +151,6 @@ static uint sTicksAdvanced = 0;
 // Port: apply the selected aspect ratio to the game's framebuffer and viewport.
 // Aurora derives the internal EFB from the render mode, so this also resizes the
 // presented image, and it applies live when the debug overlay changes the mode.
-static int sLastWindowWidth = 0;
-static int sLastWindowHeight = 0;
-
 static void ApplyAspectMode() {
   const GXRenderModeObj& renderMode = CGraphics::GetRenderMode();
   const int efbHeight = renderMode.efbHeight;
@@ -166,8 +163,15 @@ static void ApplyAspectMode() {
     fbWidth = (efbHeight * 16 + 8) / 9;
     break;
   case PortDebug::kAspect_Window: {
-    const int windowWidth = sLastWindowWidth > 0 ? sLastWindowWidth : 854;
-    const int windowHeight = sLastWindowHeight > 0 ? sLastWindowHeight : 480;
+    // Ask the window rather than track resize events: the loading loops that
+    // run before the main loop drain the startup resize (on Android the window
+    // is already full screen at the phone's shape by then).
+    int windowWidth = 0;
+    int windowHeight = 0;
+    if (!PortDebug::WindowSize(windowWidth, windowHeight)) {
+      windowWidth = 854;
+      windowHeight = 480;
+    }
     fbWidth = static_cast< int >(static_cast< double >(efbHeight) *
                                      static_cast< double >(windowWidth) /
                                      static_cast< double >(windowHeight) +
@@ -879,8 +883,6 @@ int CMain::RsMain(int argc, const char* const* argv) {
             PortDebug::Toggle();
           } else if (event->type == AURORA_WINDOW_RESIZED ||
                      event->type == AURORA_DISPLAY_SCALE_CHANGED) {
-            sLastWindowWidth = static_cast< int >(event->windowSize.width);
-            sLastWindowHeight = static_cast< int >(event->windowSize.height);
             ApplyAspectMode();
           } else if (event->type == AURORA_SDL_EVENT &&
                      event->sdl.type == SDL_EVENT_MOUSE_MOTION) {

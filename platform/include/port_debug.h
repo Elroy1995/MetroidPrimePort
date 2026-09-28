@@ -86,6 +86,8 @@ enum EAspectMode {
 };
 EAspectMode AspectMode();
 void SetAspectMode(EAspectMode mode);
+// Current size of the game window in window coordinates; false before it exists.
+bool WindowSize(int& width, int& height);
 // Framebuffer width that is shown at 4:3 for the given height: the width itself
 // in 4:3 mode (640x448 is displayed at 4:3), height * 4 / 3 otherwise, since the
 // widened framebuffers have square pixels. Fits 4:3 art into a wider viewport.

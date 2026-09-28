@@ -1312,6 +1312,12 @@ SDL_Window* MainWindow() {
   return sWindow;
 }
 
+bool WindowSize(int& width, int& height) {
+  SDL_Window* window = MainWindow();
+  return window != nullptr && SDL_GetWindowSize(window, &width, &height) && width > 0 &&
+         height > 0;
+}
+
 // Sizes in unscaled pixels; UpdateUiScale multiplies them by the display scale
 // like the defaults. A fingertip covers far more than a cursor does, so frames,
 // grabs and scrollbars grow, and TouchExtraPadding widens every hit box a
