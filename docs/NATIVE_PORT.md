@@ -311,7 +311,12 @@ textures from a screen that shows the prompt, find the glyph by its size and
 contents, then write a replacement with the same stem into the device folder.
 `MP_DUMP_TEXTURES=1` is the supported way to do this and needs no code change:
 textures that already have a replacement are not dumped, so the result is
-exactly the unclaimed set, and the images can simply be looked at. The prompt
+exactly the unclaimed set, and the images can simply be looked at. To see every
+texture on the disc instead, `tools/extract_textures.py <disc.iso> <outdir>
+--png` writes them all under Aurora's names, with the developers' PAK names
+(`LStickN`, `AButtonIn`, `DPadU`...) in `index.tsv` and the textures the game's
+text draws inline (`&image=` tags, the HUD hints) in `strg_images.tsv`; that is
+how the prompt table was completed. It needs libxxhash, numpy and PIL. The prompt
 table in `platform/port_prompts.cpp` is the authority on which textures are
 claimed, and every hash in it should be one that appears in a dump from the
 screen that shows it - two rows were transcribed into the wrong action and that
