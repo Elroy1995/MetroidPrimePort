@@ -4,6 +4,7 @@
 
 #include "port_debug.h"
 #include "port_apclient.h"
+#include "port_controls.h"
 #include "port_prompts.h"
 #include "port_mouse.h"
 #include "port_textures.h"
@@ -1408,11 +1409,14 @@ void UpdateControllerNav() {
   if (pad == nullptr) {
     return;
   }
-  const auto held = [pad](SDL_GamepadButton button) {
-    return SDL_GetGamepadButton(pad, button);
+  // While the Controls tab captures a pad input, the pad binds instead of
+  // navigating (releasing everything here also ends any nav press in progress).
+  const bool capturing = PortControls::Capturing();
+  const auto held = [pad, capturing](SDL_GamepadButton button) {
+    return !capturing && SDL_GetGamepadButton(pad, button);
   };
-  const auto axis = [pad](SDL_GamepadAxis a) {
-    return SDL_GetGamepadAxis(pad, a);
+  const auto axis = [pad, capturing](SDL_GamepadAxis a) {
+    return capturing ? Sint16{0} : SDL_GetGamepadAxis(pad, a);
   };
   constexpr Sint16 kStickThreshold = 16000;
   io.AddKeyEvent(ImGuiKey_GamepadDpadUp,
@@ -1618,287 +1622,6 @@ void DrawAudioTab() {
   if (ImGui::Checkbox("MusyX audio (effects/streams)", &musyx)) {
     SetMusyxAudioEnabled(musyx);
     MarkDirty();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Controls: rebind keyboard/mouse and controller inputs to the emulated pad.
-// The binding backend (matching, persistence, name helpers) lives in Aurora.
-// ---------------------------------------------------------------------------
-
-constexpr u32 kControlPort = PAD_CHAN0;
-
-struct SControlPadButton {
-  PADButton button;
-  const char* label;
-};
-const SControlPadButton kControlPadButtons[] = {
-    {PAD_BUTTON_A, "A"},             {PAD_BUTTON_B, "B"},
-    {PAD_BUTTON_X, "X"},             {PAD_BUTTON_Y, "Y"},
-    {PAD_TRIGGER_L, "L"},            {PAD_TRIGGER_R, "R"},
-    {PAD_TRIGGER_Z, "Z"},            {PAD_BUTTON_START, "Start"},
-    {PAD_BUTTON_UP, "D-pad Up"},     {PAD_BUTTON_DOWN, "D-pad Down"},
-    {PAD_BUTTON_LEFT, "D-pad Left"}, {PAD_BUTTON_RIGHT, "D-pad Right"},
-};
-
-enum class EControlCapture { kNone, kKeyButton, kKeyAxis, kPadButton, kPadAxis };
-EControlCapture sControlCapture = EControlCapture::kNone;
-int sControlCaptureIndex = 0;
-
-std::string ScancodeName(s32 scancode) {
-  switch (scancode) {
-  case PAD_KEY_INVALID:
-    return "(unbound)";
-  case PAD_KEY_MOUSE_LEFT:
-    return "Mouse Left";
-  case PAD_KEY_MOUSE_MIDDLE:
-    return "Mouse Middle";
-  case PAD_KEY_MOUSE_RIGHT:
-    return "Mouse Right";
-  case PAD_KEY_MOUSE_X1:
-    return "Mouse X1";
-  case PAD_KEY_MOUSE_X2:
-    return "Mouse X2";
-  default:
-    break;
-  }
-  const char* name = SDL_GetScancodeName(static_cast< SDL_Scancode >(scancode));
-  return name != nullptr && name[0] != '\0' ? name : "(unknown)";
-}
-
-std::string PadAxisName(PADAxis axis) {
-  const char* name = PADGetAxisName(axis);
-  const char* dir = PADGetAxisDirectionLabel(axis);
-  if (name == nullptr) {
-    return "(axis)";
-  }
-  return dir != nullptr ? std::string(name) + " " + dir : std::string(name);
-}
-
-s32 KeyForPadButton(const PADKeyButtonBinding* list, u32 count, PADButton button) {
-  for (u32 i = 0; i < count; ++i) {
-    if (list[i].padButton == button) {
-      return list[i].scancode;
-    }
-  }
-  return PAD_KEY_INVALID;
-}
-
-s32 KeyForPadAxis(const PADKeyAxisBinding* list, u32 count, PADAxis axis) {
-  for (u32 i = 0; i < count; ++i) {
-    if (list[i].padAxis == axis) {
-      return list[i].scancode;
-    }
-  }
-  return PAD_KEY_INVALID;
-}
-
-u32 NativeButtonForPadButton(const PADButtonMapping* list, u32 count, PADButton button) {
-  for (u32 i = 0; i < count; ++i) {
-    if (list[i].padButton == button) {
-      return list[i].nativeButton;
-    }
-  }
-  return PAD_NATIVE_BUTTON_INVALID;
-}
-
-// While a keyboard binding is being captured, bind the next newly pressed key or
-// mouse button. Controller captures poll the pad directly.
-void PollControlCapture() {
-  if (sControlCapture == EControlCapture::kNone) {
-    return;
-  }
-
-  if (sControlCapture == EControlCapture::kPadButton) {
-    const s32 native = PADGetNativeButtonPressed(kControlPort);
-    if (native >= 0) {
-      PADButtonMapping mapping{};
-      mapping.nativeButton = static_cast< u32 >(native);
-      mapping.padButton = kControlPadButtons[sControlCaptureIndex].button;
-      PADSetButtonMapping(kControlPort, mapping);
-      PADSerializeMappings();
-      sControlCapture = EControlCapture::kNone;
-    }
-    return;
-  }
-  if (sControlCapture == EControlCapture::kPadAxis) {
-    const PADSignedNativeAxis pulled = PADGetNativeAxisPulled(kControlPort);
-    if (pulled.nativeAxis >= 0) {
-      PADAxisMapping mapping{};
-      mapping.nativeAxis = pulled;
-      mapping.nativeButton = static_cast< s32 >(PAD_NATIVE_BUTTON_INVALID);
-      mapping.padAxis = static_cast< PADAxis >(sControlCaptureIndex);
-      PADSetAxisMapping(kControlPort, mapping);
-      PADSerializeMappings();
-      sControlCapture = EControlCapture::kNone;
-    }
-    return;
-  }
-
-  static bool sPrevKeys[SDL_SCANCODE_COUNT] = {};
-  static Uint32 sPrevMouse = 0;
-  const bool* keys = SDL_GetKeyboardState(nullptr);
-  float mx = 0.f;
-  float my = 0.f;
-  const Uint32 mouse = SDL_GetMouseState(&mx, &my);
-
-  s32 scancode = PAD_KEY_INVALID;
-  for (int i = 0; i < SDL_SCANCODE_COUNT; ++i) {
-    if (keys[i] && !sPrevKeys[i]) {
-      scancode = i;
-      break;
-    }
-  }
-  if (scancode == PAD_KEY_INVALID) {
-    const Uint32 kMouseButtons[] = {SDL_BUTTON_LEFT, SDL_BUTTON_MIDDLE, SDL_BUTTON_RIGHT, SDL_BUTTON_X1,
-                                    SDL_BUTTON_X2};
-    const s32 kMouseCodes[] = {PAD_KEY_MOUSE_LEFT, PAD_KEY_MOUSE_MIDDLE, PAD_KEY_MOUSE_RIGHT,
-                               PAD_KEY_MOUSE_X1, PAD_KEY_MOUSE_X2};
-    for (int i = 0; i < 5; ++i) {
-      const Uint32 mask = SDL_BUTTON_MASK(kMouseButtons[i]);
-      if ((mouse & mask) != 0 && (sPrevMouse & mask) == 0) {
-        scancode = kMouseCodes[i];
-        break;
-      }
-    }
-  }
-  for (int i = 0; i < SDL_SCANCODE_COUNT; ++i) {
-    sPrevKeys[i] = keys[i];
-  }
-  sPrevMouse = mouse;
-
-  if (scancode == PAD_KEY_INVALID) {
-    return;
-  }
-  if (sControlCapture == EControlCapture::kKeyButton) {
-    PADKeyButtonBinding binding{};
-    binding.scancode = scancode;
-    binding.padButton = kControlPadButtons[sControlCaptureIndex].button;
-    PADSetKeyButtonBinding(kControlPort, binding);
-  } else {
-    PADKeyAxisBinding binding{};
-    binding.scancode = scancode;
-    binding.padAxis = static_cast< PADAxis >(sControlCaptureIndex);
-    binding.influence = 1;
-    PADSetKeyAxisBinding(kControlPort, binding);
-  }
-  PADSerializeMappings();
-  sControlCapture = EControlCapture::kNone;
-}
-
-void DrawControlsTab() {
-  PollControlCapture();
-  // Wide enough for the longer label, so the rows line up at any font scale.
-  const float bindWidth =
-      ImGui::CalcTextSize("Press...").x + ImGui::GetStyle().FramePadding.x * 2.f;
-
-  ImGui::TextUnformatted("Pad 1. Click Bind, then press the input to assign it.");
-  if (ImGui::Button("Restore controller defaults")) {
-    PADRestoreDefaultMapping(kControlPort);
-    PADSerializeMappings();
-  }
-  ImGui::SameLine();
-  if (ImGui::Button("Clear keyboard bindings")) {
-    PADClearKeyBindings(kControlPort);
-    PADSerializeMappings();
-  }
-  if (sControlCapture != EControlCapture::kNone) {
-    ImGui::SameLine();
-    ImGui::TextUnformatted("... waiting for input");
-  }
-
-  u32 keyButtonCount = 0;
-  PADKeyButtonBinding* keyButtons = PADGetKeyButtonBindings(kControlPort, &keyButtonCount);
-  u32 keyAxisCount = 0;
-  PADKeyAxisBinding* keyAxes = PADGetKeyAxisBindings(kControlPort, &keyAxisCount);
-  u32 padButtonCount = 0;
-  PADButtonMapping* padButtons = PADGetButtonMappings(kControlPort, &padButtonCount);
-  u32 padAxisCount = 0;
-  PADAxisMapping* padAxes = PADGetAxisMappings(kControlPort, &padAxisCount);
-
-  if (ImGui::CollapsingHeader("Keyboard & mouse", ImGuiTreeNodeFlags_DefaultOpen)) {
-    for (int i = 0; i < static_cast< int >(ARRAY_SIZE(kControlPadButtons)); ++i) {
-      ImGui::PushID(i);
-      const PADButton button = kControlPadButtons[i].button;
-      const bool listening =
-          sControlCapture == EControlCapture::kKeyButton && sControlCaptureIndex == i;
-      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(bindWidth, 0.f))) {
-        sControlCapture = EControlCapture::kKeyButton;
-        sControlCaptureIndex = i;
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("Clear")) {
-        PADKeyButtonBinding binding{};
-        binding.scancode = PAD_KEY_INVALID;
-        binding.padButton = button;
-        PADSetKeyButtonBinding(kControlPort, binding);
-        PADSerializeMappings();
-      }
-      ImGui::SameLine();
-      ImGui::Text("%-12s %s", kControlPadButtons[i].label,
-                  ScancodeName(KeyForPadButton(keyButtons, keyButtonCount, button)).c_str());
-      ImGui::PopID();
-    }
-    for (int i = 0; i < PAD_AXIS_COUNT; ++i) {
-      ImGui::PushID(100 + i);
-      const bool listening = sControlCapture == EControlCapture::kKeyAxis && sControlCaptureIndex == i;
-      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(bindWidth, 0.f))) {
-        sControlCapture = EControlCapture::kKeyAxis;
-        sControlCaptureIndex = i;
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("Clear")) {
-        PADKeyAxisBinding binding{};
-        binding.scancode = PAD_KEY_INVALID;
-        binding.padAxis = static_cast< PADAxis >(i);
-        binding.influence = 1;
-        PADSetKeyAxisBinding(kControlPort, binding);
-        PADSerializeMappings();
-      }
-      ImGui::SameLine();
-      ImGui::Text("%-12s %s", PadAxisName(static_cast< PADAxis >(i)).c_str(),
-                  ScancodeName(KeyForPadAxis(keyAxes, keyAxisCount, static_cast< PADAxis >(i))).c_str());
-      ImGui::PopID();
-    }
-  }
-
-  if (ImGui::CollapsingHeader("Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
-    for (int i = 0; i < static_cast< int >(ARRAY_SIZE(kControlPadButtons)); ++i) {
-      ImGui::PushID(200 + i);
-      const PADButton button = kControlPadButtons[i].button;
-      const bool listening =
-          sControlCapture == EControlCapture::kPadButton && sControlCaptureIndex == i;
-      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(bindWidth, 0.f))) {
-        sControlCapture = EControlCapture::kPadButton;
-        sControlCaptureIndex = i;
-      }
-      ImGui::SameLine();
-      const u32 native = NativeButtonForPadButton(padButtons, padButtonCount, button);
-      const char* nativeName =
-          native == PAD_NATIVE_BUTTON_INVALID ? "(unbound)" : PADGetNativeButtonName(native);
-      ImGui::Text("%-12s %s", kControlPadButtons[i].label,
-                  nativeName != nullptr ? nativeName : "(unknown)");
-      ImGui::PopID();
-    }
-    for (int i = 0; i < PAD_AXIS_COUNT; ++i) {
-      ImGui::PushID(300 + i);
-      const bool listening = sControlCapture == EControlCapture::kPadAxis && sControlCaptureIndex == i;
-      if (ImGui::Button(listening ? "Press..." : "Bind", ImVec2(bindWidth, 0.f))) {
-        sControlCapture = EControlCapture::kPadAxis;
-        sControlCaptureIndex = i;
-      }
-      ImGui::SameLine();
-      const char* nativeName = "(unbound)";
-      for (u32 j = 0; j < padAxisCount; ++j) {
-        if (padAxes[j].padAxis == static_cast< PADAxis >(i)) {
-          const char* axisName = PADGetNativeAxisName(padAxes[j].nativeAxis);
-          nativeName = axisName != nullptr ? axisName : "(axis)";
-          break;
-        }
-      }
-      ImGui::Text("%-12s %s", PadAxisName(static_cast< PADAxis >(i)).c_str(), nativeName);
-      ImGui::PopID();
-    }
   }
 }
 
@@ -2184,7 +1907,7 @@ struct DebugPage {
 
 const DebugPage kDebugPages[] = {
     {"Performance", DrawPerformanceTab}, {"Cutscenes", DrawCutscenesTab},
-    {"Input", DrawInputTab},             {"Controls", DrawControlsTab},
+    {"Input", DrawInputTab},             {"Controls", PortControls::DrawTab},
     {"Render", DrawRenderTab},           {"Audio", DrawAudioTab},
     {"Voices", DrawVoicesTab},           {"Debug", DrawDebugTab},
     {"Session", DrawSessionTab},

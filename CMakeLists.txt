@@ -97,6 +97,7 @@ set(MP_PORT_SOURCES
     platform/sdk_stubs.cpp
     platform/port_textures.cpp
     platform/port_prompts.cpp
+    platform/port_controls.cpp
     platform/port_randomizer.cpp
     platform/port_ap_protocol.cpp
     platform/port_apclient.cpp
