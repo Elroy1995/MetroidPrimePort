@@ -730,6 +730,11 @@ void AddStickAim(float x, float y, float dt) {
       dt <= 0.f) {
     return;
   }
+  // Stick aim stands in for free look, so it follows the game's Reverse Y Axis
+  // option, as free look does.
+  if (gpGameState != nullptr && gpGameState->GameOptions().GetInvertYAxis()) {
+    y = -y;
+  }
   // x right / y up; the aim state expects SDL-style right/down positive.
   sMouseFrameX += x * sStickAimRate * dt;
   sMouseFrameY -= y * sStickAimRate * dt;
@@ -1562,6 +1567,13 @@ void DrawInputTab() {
                          ImGuiSliderFlags_Logarithmic)) {
     SetStickAimRate(stickRate);
   }
+  // The game's own option, saved with its settings; free look uses it too.
+  ImGui::BeginDisabled(gpGameState == nullptr);
+  bool invertY = gpGameState != nullptr && gpGameState->GameOptions().GetInvertYAxis();
+  if (ImGui::Checkbox("Invert stick aim Y (the game's Reverse Y Axis)", &invertY)) {
+    gpGameState->GameOptions().SetInvertYAxis(invertY);
+  }
+  ImGui::EndDisabled();
   ImGui::EndDisabled();
   ImGui::TextWrapped(
       "Twin stick uses the right stick as a direct camera aim (the same path as "

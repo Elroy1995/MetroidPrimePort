@@ -18,6 +18,7 @@
 #include <SDL3/SDL_timer.h>
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <string>
 
@@ -767,6 +768,52 @@ void ApplyPadPreset(EPadPreset preset) {
   PADSerializeMappings();
 }
 
+// A deadzone as a percentage of full travel; Aurora keeps raw SDL axis units.
+// Returns true once an edit is finished, to save then rather than every frame.
+bool ZoneSlider(const char* label, u16& zone, int minPercent, int maxPercent, const char* tooltip) {
+  int percent = static_cast< int >(std::lround(zone * 100.0 / SDL_JOYSTICK_AXIS_MAX));
+  if (ImGui::SliderInt(label, &percent, minPercent, maxPercent, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+    zone = static_cast< u16 >(std::lround(percent * SDL_JOYSTICK_AXIS_MAX / 100.0));
+  }
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+    ImGui::SetTooltip("%s", tooltip);
+  }
+  return ImGui::IsItemDeactivatedAfterEdit();
+}
+
+void DrawDeadZones(PADDeadZones& zones) {
+  ImGui::SeparatorText("Sticks and triggers");
+  bool save = false;
+  const u16 stick = zones.stickDeadZone;
+  const u16 substick = zones.substickDeadZone;
+  save |= ZoneSlider("Stick deadzone", zones.stickDeadZone, 0, 50,
+                     "How far the control stick moves before it registers.");
+  save |= ZoneSlider("C-stick deadzone", zones.substickDeadZone, 0, 50,
+                     "How far the right stick moves before it registers, for\n"
+                     "twin-stick aim as well as the C-stick.");
+  // A file written with deadzones off would make these sliders do nothing.
+  if (zones.stickDeadZone != stick || zones.substickDeadZone != substick) {
+    zones.useDeadzones = true;
+  }
+  save |= ZoneSlider("L click point", zones.leftTriggerActivationZone, 10, 95,
+                     "How far the left trigger pulls before it also clicks L\n"
+                     "(lock on). Lower it for triggers that don't reach the end.");
+  save |= ZoneSlider("R click point", zones.rightTriggerActivationZone, 10, 95,
+                     "How far the right trigger pulls before it also clicks R.");
+  // Aurora's defaults, from GameController in lib/input.hpp.
+  if (ImGui::Button("Reset sticks and triggers")) {
+    zones.useDeadzones = true;
+    zones.stickDeadZone = 8000;
+    zones.substickDeadZone = 8000;
+    zones.leftTriggerActivationZone = 31150;
+    zones.rightTriggerActivationZone = 31150;
+    save = true;
+  }
+  if (save) {
+    PADSerializeMappings();
+  }
+}
+
 } // namespace
 
 namespace PortControls {
@@ -935,7 +982,8 @@ void DrawTab() {
                    "and press the D-pad to change beams.");
       ImGui::EndDisabled();
       ImGui::SameLine();
-      presetButton("Southpaw", EPadPreset::kSouthpaw, "The GameCube layout with the two sticks swapped.\nTurns off Twin Stick Aim.");
+      presetButton("Southpaw", EPadPreset::kSouthpaw,
+                   "The GameCube layout with the two sticks swapped.\nTurns off Twin Stick Aim.");
 
       const float padWidth = bindWidth + style.ItemInnerSpacing.x + clearWidth;
       const PADDeadZones* deadZones = PADGetDeadZones(kControlPort);
@@ -965,6 +1013,9 @@ void DrawTab() {
         ImGui::PushID(300 + i);
         padRow(ECapture::kPadAxis, i, axisLabels[i]);
         ImGui::PopID();
+      }
+      if (PADDeadZones* zones = PADGetDeadZones(kControlPort)) {
+        DrawDeadZones(*zones);
       }
     }
   }
