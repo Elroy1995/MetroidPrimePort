@@ -859,6 +859,7 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
   DropConnection();
   mReceiveBuffer.clear();
   mDecoder.Reset();
+  mPendingFrames.clear();
   mError.clear();
   mTimeoutMs = timeoutMs;
   auto fail = [this](const std::string& reason) {
@@ -866,6 +867,7 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
     DropConnection();
     mReceiveBuffer.clear();
     mDecoder.Reset();
+    mPendingFrames.clear();
     return false;
   };
 
@@ -1142,6 +1144,7 @@ void Client::Close() {
   DropConnection();
   mReceiveBuffer.clear();
   mDecoder.Reset();
+  mPendingFrames.clear();
 }
 
 bool Client::SendText(const std::string& message) {
@@ -1165,50 +1168,59 @@ bool Client::ReceiveText(std::string& message, int timeoutMs) {
   const bool infinite = timeoutMs <= 0;
   const Clock::time_point deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 0));
   for (;;) {
-    size_t consumed = 0;
-    while (consumed < mReceiveBuffer.size()) {
+    // Frames decoded earlier wait here in arrival order, so a read holding
+    // several messages hands them out one per call.
+    while (!mPendingFrames.empty()) {
+      Frame frame = std::move(mPendingFrames.front());
+      mPendingFrames.pop_front();
+      if (frame.opcode == 0x1) {
+        message = std::move(frame.payload);
+        return true;
+      }
+      if (frame.opcode == 0x8) {
+        uint32_t seed = 0;
+        if (RandomSeed(seed))
+          SendRaw(EncodeFrame(0x8, frame.payload, seed));
+        ShutdownTls();
+        DropConnection();
+        mReceiveBuffer.clear();
+        mDecoder.Reset();
+        mPendingFrames.clear();
+        mError = "server closed WebSocket";
+        return false;
+      }
+      if (frame.opcode == 0x9) {
+        uint32_t seed = 0;
+        if (!RandomSeed(seed) || !SendRaw(EncodeFrame(0xa, frame.payload, seed))) {
+          DropConnection();
+          mPendingFrames.clear();
+          return false;
+        }
+      } else if (frame.opcode != 0xa) {
+        mError = "unsupported WebSocket data opcode";
+        DropConnection();
+        mReceiveBuffer.clear();
+        mPendingFrames.clear();
+        return false;
+      }
+    }
+    if (!mReceiveBuffer.empty()) {
+      // The whole read goes to the decoder at once. Feeding it a byte at a
+      // time cost one decoder pass per byte, and a DataPackage message runs
+      // to megabytes.
       std::vector<Frame> frames;
-      const size_t appended = mDecoder.Feed(mReceiveBuffer.data() + consumed, 1, frames);
-      ++consumed;
+      mDecoder.Feed(mReceiveBuffer.data(), mReceiveBuffer.size(), frames);
+      mReceiveBuffer.clear();
       if (mDecoder.Failed()) {
         mError = "invalid WebSocket frame";
         DropConnection();
-        mReceiveBuffer.clear();
+        mPendingFrames.clear();
         return false;
       }
-      for (const Frame& frame : frames) {
-        if (frame.opcode == 0x1) {
-          message = frame.payload;
-          mReceiveBuffer.erase(0, consumed);
-          return true;
-        }
-        if (frame.opcode == 0x8) {
-          uint32_t seed = 0;
-          if (RandomSeed(seed))
-            SendRaw(EncodeFrame(0x8, frame.payload, seed));
-          ShutdownTls();
-          DropConnection();
-          mReceiveBuffer.clear();
-          mDecoder.Reset();
-          mError = "server closed WebSocket";
-          return false;
-        }
-        if (frame.opcode == 0x9) {
-          uint32_t seed = 0;
-          if (!RandomSeed(seed) || !SendRaw(EncodeFrame(0xa, frame.payload, seed))) {
-            DropConnection();
-            return false;
-          }
-        } else if (frame.opcode != 0xa) {
-          mError = "unsupported WebSocket data opcode";
-          DropConnection();
-          mReceiveBuffer.clear();
-          return false;
-        }
-      }
-      (void)appended;
+      for (Frame& frame : frames)
+        mPendingFrames.push_back(std::move(frame));
+      continue;
     }
-    mReceiveBuffer.clear();
 
     const int remaining = RemainingMs(deadline, infinite);
     if (remaining < 0) {

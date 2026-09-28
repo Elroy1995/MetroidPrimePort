@@ -1,6 +1,7 @@
 #ifndef METROID_PRIME_PORT_PORT_WS_H
 #define METROID_PRIME_PORT_PORT_WS_H
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -144,6 +145,8 @@ private:
   std::string mError = "not connected";
   std::string mReceiveBuffer;
   FrameDecoder mDecoder;
+  // Decoded frames not yet handed out by ReceiveText.
+  std::deque<Frame> mPendingFrames;
 };
 
 } // namespace PortWs
