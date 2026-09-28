@@ -4,6 +4,10 @@
 #include "port_controls.h"
 #include "port_debug.h"
 
+#include "MetroidPrime/CControlMapper.hpp"
+#include "MetroidPrime/Tweaks/CTweakPlayerControl.hpp"
+#include "MetroidPrime/Tweaks/CTweaks.hpp"
+
 #include <dolphin/pad.h>
 #include <imgui.h>
 
@@ -26,18 +30,103 @@ constexpr Uint64 kCaptureTimeoutMs = 5000;
 // Half travel, as PADGetNativeAxisPulled uses.
 constexpr Sint16 kAxisPullThreshold = 16384;
 
+typedef ControlMapper::EFunctionList EFunctionList;
+
 struct SControlPadButton {
   PADButton button;
   const char* label;
+  EFunctionList function;
 };
 const SControlPadButton kControlPadButtons[] = {
-    {PAD_BUTTON_A, "A"},             {PAD_BUTTON_B, "B"},
-    {PAD_BUTTON_X, "X"},             {PAD_BUTTON_Y, "Y"},
-    {PAD_TRIGGER_L, "L"},            {PAD_TRIGGER_R, "R"},
-    {PAD_TRIGGER_Z, "Z"},            {PAD_BUTTON_START, "Start"},
-    {PAD_BUTTON_UP, "D-pad Up"},     {PAD_BUTTON_DOWN, "D-pad Down"},
-    {PAD_BUTTON_LEFT, "D-pad Left"}, {PAD_BUTTON_RIGHT, "D-pad Right"},
+    {PAD_BUTTON_A, "A", ControlMapper::kFL_AButton},
+    {PAD_BUTTON_B, "B", ControlMapper::kFL_BButton},
+    {PAD_BUTTON_X, "X", ControlMapper::kFL_XButton},
+    {PAD_BUTTON_Y, "Y", ControlMapper::kFL_YButton},
+    {PAD_TRIGGER_L, "L", ControlMapper::kFL_LeftTriggerPress},
+    {PAD_TRIGGER_R, "R", ControlMapper::kFL_RightTriggerPress},
+    {PAD_TRIGGER_Z, "Z", ControlMapper::kFL_ZButton},
+    {PAD_BUTTON_START, "Start", ControlMapper::kFL_Start},
+    {PAD_BUTTON_UP, "D-pad Up", ControlMapper::kFL_DPadUp},
+    {PAD_BUTTON_DOWN, "D-pad Down", ControlMapper::kFL_DPadDown},
+    {PAD_BUTTON_LEFT, "D-pad Left", ControlMapper::kFL_DPadLeft},
+    {PAD_BUTTON_RIGHT, "D-pad Right", ControlMapper::kFL_DPadRight},
 };
+
+// Indexed by PADAxis.
+struct SControlPadAxis {
+  const char* label;
+  EFunctionList function;
+};
+const SControlPadAxis kControlPadAxes[PAD_AXIS_COUNT] = {
+    {"Stick Right", ControlMapper::kFL_LeftStickRight},
+    {"Stick Left", ControlMapper::kFL_LeftStickLeft},
+    {"Stick Up", ControlMapper::kFL_LeftStickUp},
+    {"Stick Down", ControlMapper::kFL_LeftStickDown},
+    {"C-Stick Right", ControlMapper::kFL_RightStickRight},
+    {"C-Stick Left", ControlMapper::kFL_RightStickLeft},
+    {"C-Stick Up", ControlMapper::kFL_RightStickUp},
+    {"C-Stick Down", ControlMapper::kFL_RightStickDown},
+    {"L Analog", ControlMapper::kFL_LeftTrigger},
+    {"R Analog", ControlMapper::kFL_RightTrigger},
+};
+
+// Game commands under the names players know, headline actions first: a row
+// is labelled with the first one the game maps its pad input to (the mapping
+// is the disc's CTweakPlayerControl, so the labels follow it).
+struct SCommandName {
+  ControlMapper::ECommands command;
+  const char* name;
+};
+const SCommandName kCommandNames[] = {
+    {ControlMapper::kC_FireOrBomb, "Fire / Bomb"},
+    {ControlMapper::kC_JumpOrBoost, "Jump / Boost"},
+    {ControlMapper::kC_MissileOrPowerBomb, "Missile / Power Bomb"},
+    {ControlMapper::kC_Morph, "Morph Ball"},
+    {ControlMapper::kC_OrbitObject, "Lock On"},
+    {ControlMapper::kC_LookHold1, "Free Look"},
+    {ControlMapper::kC_ScanItem, "Scan"},
+    {ControlMapper::kC_SpiderBall, "Spider Ball"},
+    {ControlMapper::kC_NoVisor, "Combat Visor"},
+    {ControlMapper::kC_EnviroVisor, "Scan Visor"},
+    {ControlMapper::kC_ThermoVisor, "Thermal Visor"},
+    {ControlMapper::kC_XrayVisor, "X-Ray Visor"},
+    {ControlMapper::kC_PowerBeam, "Power Beam"},
+    {ControlMapper::kC_IceBeam, "Ice Beam"},
+    {ControlMapper::kC_WaveBeam, "Wave Beam"},
+    {ControlMapper::kC_PlasmaBeam, "Plasma Beam"},
+    {ControlMapper::kC_Forward, "Forward"},
+    {ControlMapper::kC_Backward, "Back"},
+    {ControlMapper::kC_TurnLeft, "Turn Left"},
+    {ControlMapper::kC_TurnRight, "Turn Right"},
+    {ControlMapper::kC_StrafeLeft, "Strafe Left"},
+    {ControlMapper::kC_StrafeRight, "Strafe Right"},
+    {ControlMapper::kC_LookUp, "Look Up"},
+    {ControlMapper::kC_LookDown, "Look Down"},
+    {ControlMapper::kC_LookLeft, "Look Left"},
+    {ControlMapper::kC_LookRight, "Look Right"},
+};
+
+// "Fire / Bomb (A)", or just the pad label for an input no command uses (or
+// before the tweaks load).
+std::string ActionLabel(EFunctionList function, const char* padLabel) {
+  if (gpTweakPlayerControlCurrent != nullptr) {
+    for (const SCommandName& entry : kCommandNames) {
+      if (gpTweakPlayerControlCurrent->GetMapping(entry.command) == function) {
+        return std::string(entry.name) + " (" + padLabel + ")";
+      }
+    }
+  }
+  // The game reads these directly rather than through the command mapping
+  // (CMFGame: Z opens the map, Start pauses).
+  switch (function) {
+  case ControlMapper::kFL_ZButton:
+    return std::string("Map (") + padLabel + ")";
+  case ControlMapper::kFL_Start:
+    return std::string("Pause (") + padLabel + ")";
+  default:
+    return padLabel;
+  }
+}
 
 struct SMouseCode {
   Uint32 button;
@@ -317,15 +406,6 @@ std::string ScancodeName(s32 scancode) {
   return name != nullptr && name[0] != '\0' ? name : "(unknown)";
 }
 
-std::string PadAxisName(PADAxis axis) {
-  const char* name = PADGetAxisName(axis);
-  const char* dir = PADGetAxisDirectionLabel(axis);
-  if (name == nullptr) {
-    return "(axis)";
-  }
-  return dir != nullptr ? std::string(name) + " " + dir : std::string(name);
-}
-
 s32 KeyForPadButton(const PADKeyButtonBinding* list, u32 count, PADButton button) {
   for (u32 i = 0; list != nullptr && i < count; ++i) {
     if (list[i].padButton == button) {
@@ -353,6 +433,20 @@ u32 NativeButtonForPadButton(const PADButtonMapping* list, u32 count, PADButton 
   return PAD_NATIVE_BUTTON_INVALID;
 }
 
+// PADGetNativeAxisName leaves out the direction, which matters here: each
+// stick axis is bound one half at a time.
+std::string NativeAxisName(const PADSignedNativeAxis& axis) {
+  if (axis.nativeAxis < 0) {
+    return "(unbound)";
+  }
+  const char* name = PADGetNativeAxisName(axis);
+  std::string result = name != nullptr ? name : "(axis)";
+  if (axis.nativeAxis != SDL_GAMEPAD_AXIS_LEFT_TRIGGER && axis.nativeAxis != SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
+    result += axis.sign == AXIS_SIGN_NEGATIVE ? " -" : " +";
+  }
+  return result;
+}
+
 // The Bind button of one row; starts that row's capture when clicked.
 void BindButton(ECapture target, int index, float width) {
   if (ImGui::Button(Listening(target, index) ? "Press..." : "Bind", ImVec2(width, 0.f))) {
@@ -362,6 +456,16 @@ void BindButton(ECapture target, int index, float width) {
     sCapture.pressMin = ImGui::GetItemRectMin();
     sCapture.pressMax = ImGui::GetItemRectMax();
   }
+}
+
+// The rest of a row after its buttons: the action, then what it is bound to
+// in a column at labelWidth.
+void RowText(const std::string& label, float labelWidth, const char* binding) {
+  ImGui::SameLine();
+  const float x = ImGui::GetCursorPosX();
+  ImGui::TextUnformatted(label.c_str());
+  ImGui::SameLine(x + labelWidth + ImGui::GetStyle().ItemSpacing.x * 2.f);
+  ImGui::TextUnformatted(binding);
 }
 
 } // namespace
@@ -447,6 +551,18 @@ void DrawTab() {
   u32 padAxisCount = 0;
   PADAxisMapping* padAxes = PADGetAxisMappings(kControlPort, &padAxisCount);
 
+  std::string buttonLabels[std::size(kControlPadButtons)];
+  std::string axisLabels[PAD_AXIS_COUNT];
+  float labelWidth = 0.f;
+  for (size_t i = 0; i < std::size(kControlPadButtons); ++i) {
+    buttonLabels[i] = ActionLabel(kControlPadButtons[i].function, kControlPadButtons[i].label);
+    labelWidth = std::max(labelWidth, ImGui::CalcTextSize(buttonLabels[i].c_str()).x);
+  }
+  for (int i = 0; i < PAD_AXIS_COUNT; ++i) {
+    axisLabels[i] = ActionLabel(kControlPadAxes[i].function, kControlPadAxes[i].label);
+    labelWidth = std::max(labelWidth, ImGui::CalcTextSize(axisLabels[i].c_str()).x);
+  }
+
   if (ImGui::CollapsingHeader("Keyboard & mouse", ImGuiTreeNodeFlags_DefaultOpen)) {
     for (int i = 0; i < static_cast< int >(std::size(kControlPadButtons)); ++i) {
       ImGui::PushID(i);
@@ -460,9 +576,8 @@ void DrawTab() {
         PADSetKeyButtonBinding(kControlPort, binding);
         PADSerializeMappings();
       }
-      ImGui::SameLine();
-      ImGui::Text("%-12s %s", kControlPadButtons[i].label,
-                  ScancodeName(KeyForPadButton(keyButtons, keyButtonCount, button)).c_str());
+      RowText(buttonLabels[i], labelWidth,
+              ScancodeName(KeyForPadButton(keyButtons, keyButtonCount, button)).c_str());
       ImGui::PopID();
     }
     for (int i = 0; i < PAD_AXIS_COUNT; ++i) {
@@ -477,9 +592,8 @@ void DrawTab() {
         PADSetKeyAxisBinding(kControlPort, binding);
         PADSerializeMappings();
       }
-      ImGui::SameLine();
-      ImGui::Text("%-12s %s", PadAxisName(static_cast< PADAxis >(i)).c_str(),
-                  ScancodeName(KeyForPadAxis(keyAxes, keyAxisCount, static_cast< PADAxis >(i))).c_str());
+      RowText(axisLabels[i], labelWidth,
+              ScancodeName(KeyForPadAxis(keyAxes, keyAxisCount, static_cast< PADAxis >(i))).c_str());
       ImGui::PopID();
     }
   }
@@ -492,27 +606,23 @@ void DrawTab() {
       ImGui::PushID(200 + i);
       const PADButton button = kControlPadButtons[i].button;
       BindButton(ECapture::kPadButton, i, bindWidth);
-      ImGui::SameLine();
       const u32 native = NativeButtonForPadButton(padButtons, padButtonCount, button);
       const char* nativeName =
           native == PAD_NATIVE_BUTTON_INVALID ? "(unbound)" : PADGetNativeButtonName(native);
-      ImGui::Text("%-12s %s", kControlPadButtons[i].label,
-                  nativeName != nullptr ? nativeName : "(unknown)");
+      RowText(buttonLabels[i], labelWidth, nativeName != nullptr ? nativeName : "(unknown)");
       ImGui::PopID();
     }
     for (int i = 0; padAxes != nullptr && i < PAD_AXIS_COUNT; ++i) {
       ImGui::PushID(300 + i);
       BindButton(ECapture::kPadAxis, i, bindWidth);
-      ImGui::SameLine();
-      const char* nativeName = "(unbound)";
+      std::string nativeName = "(unbound)";
       for (u32 j = 0; j < padAxisCount; ++j) {
         if (padAxes[j].padAxis == static_cast< PADAxis >(i)) {
-          const char* axisName = PADGetNativeAxisName(padAxes[j].nativeAxis);
-          nativeName = axisName != nullptr ? axisName : "(axis)";
+          nativeName = NativeAxisName(padAxes[j].nativeAxis);
           break;
         }
       }
-      ImGui::Text("%-12s %s", PadAxisName(static_cast< PADAxis >(i)).c_str(), nativeName);
+      RowText(axisLabels[i], labelWidth, nativeName.c_str());
       ImGui::PopID();
     }
   }
