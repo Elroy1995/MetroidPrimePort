@@ -631,6 +631,19 @@ static void EnsureMappingLoaded(aurora::input::GameController* controller) {
   }
 }
 
+// A button mapping's native button, which may be an analog trigger.
+static bool native_button_held(const aurora::input::GameController* controller, u32 nativeButton) {
+  if (nativeButton == PAD_NATIVE_BUTTON_TRIGGER_LEFT || nativeButton == PAD_NATIVE_BUTTON_TRIGGER_RIGHT) {
+    const auto axis =
+        nativeButton == PAD_NATIVE_BUTTON_TRIGGER_LEFT ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+    return SDL_GetGamepadAxis(controller->m_controller, axis) >= 16384;
+  }
+  if (nativeButton >= SDL_GAMEPAD_BUTTON_COUNT) {
+    return false;
+  }
+  return SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(nativeButton));
+}
+
 static Sint16 _get_axis_value(const aurora::input::GameController* controller, //  NOLINT(*-reserved-identifier)
                               PADAxis axis) {
   const auto iter =
@@ -647,8 +660,7 @@ static Sint16 _get_axis_value(const aurora::input::GameController* controller, /
                  SDL_JOYSTICK_AXIS_MAX));
   }
 
-  assert(iter->nativeButton != -1);
-  if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(iter->nativeButton))) {
+  if (native_button_held(controller, static_cast<u32>(iter->nativeButton))) {
     return SDL_JOYSTICK_AXIS_MAX;
   }
   return 0;
@@ -814,7 +826,7 @@ u32 PADRead(PADStatus* status) {
       bool rightTriggerSet = false;
       std::ranges::for_each(controller->m_buttonMapping, [&controller, &i, &status, &leftTriggerSet,
                                                           &rightTriggerSet](const auto& mapping) {
-        if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(mapping.nativeButton))) {
+        if (native_button_held(controller, mapping.nativeButton)) {
           status[i].button |= mapping.padButton;
         }
 
@@ -1579,6 +1591,10 @@ const char* PADGetButtonName(const PADButton button) {
 }
 
 const char* PADGetNativeButtonName(u32 button) {
+  if (button == PAD_NATIVE_BUTTON_TRIGGER_LEFT || button == PAD_NATIVE_BUTTON_TRIGGER_RIGHT) {
+    return SDL_GetGamepadStringForAxis(button == PAD_NATIVE_BUTTON_TRIGGER_LEFT ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER
+                                                                              : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+  }
   return SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(button));
 }
 

@@ -161,6 +161,8 @@ const char* SuffixForSdlButton(int button) {
   case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return "rightshoulder";
   case SDL_GAMEPAD_BUTTON_LEFT_STICK: return "leftstick";
   case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return "rightstick";
+  case PAD_NATIVE_BUTTON_TRIGGER_LEFT: return "lt";
+  case PAD_NATIVE_BUTTON_TRIGGER_RIGHT: return "rt";
   default: return nullptr;
   }
 }
@@ -288,12 +290,6 @@ std::string IconStemForButton(PADButton button, const char* device) {
     return keyboard ? std::string("keyboard_arrows") : std::string(device) + "_stick";
   }
 
-  // A pad's L and R are analog triggers, so they have no SDL button for the
-  // mapping to name; the generated set carries them under one name per action.
-  if (!keyboard && (button == PAD_TRIGGER_L || button == PAD_TRIGGER_R)) {
-    return std::string(device) + (button == PAD_TRIGGER_L ? "_lt" : "_rt");
-  }
-
   u32 count = 0;
   if (keyboard) {
     // The main key's icon, else the alt key's.
@@ -313,18 +309,23 @@ std::string IconStemForButton(PADButton button, const char* device) {
     return {};
   }
 
+  // A pad's L and R are analog triggers unless remapped to a button (a preset
+  // puts R on a stick click); the generated set carries the triggers under one
+  // name per action.
+  const bool trigger = button == PAD_TRIGGER_L || button == PAD_TRIGGER_R;
+  const std::string triggerStem = std::string(device) + (button == PAD_TRIGGER_L ? "_lt" : "_rt");
   PADButtonMapping* mappings = PADGetButtonMappings(PAD_CHAN0, &count);
-  if (mappings == nullptr) {
-    return {};
-  }
-  for (u32 i = 0; i < count; ++i) {
+  for (u32 i = 0; mappings != nullptr && i < count; ++i) {
     if (mappings[i].padButton != button) {
       continue;
     }
     const char* suffix = SuffixForSdlButton(static_cast<int>(mappings[i].nativeButton));
-    return suffix != nullptr ? std::string(device) + "_" + suffix : std::string();
+    if (suffix != nullptr) {
+      return std::string(device) + "_" + suffix;
+    }
+    break;
   }
-  return {};
+  return trigger ? triggerStem : std::string();
 }
 
 void Apply(size_t index, const std::string& stem) {

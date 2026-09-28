@@ -88,6 +88,9 @@ extern "C" {
 #endif
 
 #define PAD_NATIVE_BUTTON_INVALID 0xFFFFFFFF
+/* An analog trigger as a button mapping's native button: pressed past half travel. */
+#define PAD_NATIVE_BUTTON_TRIGGER_LEFT 0x1000
+#define PAD_NATIVE_BUTTON_TRIGGER_RIGHT 0x1001
 
 typedef struct PADStatus {
   u16 button;

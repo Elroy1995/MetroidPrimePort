@@ -141,7 +141,9 @@ const SMouseCode kMouseCodes[] = {
 enum class ECapture { kNone, kKeyButton, kKeyAxis, kPadButton, kPadAxis };
 
 // One physical input: a key or mouse button (the negative PAD_KEY_MOUSE_*
-// codes), a controller button, or one direction of a controller axis.
+// codes), a controller button, or one direction of a controller axis. An
+// analog trigger is always the axis form, whether a button or an axis row
+// uses it, so the two compare equal.
 struct SInput {
   enum EKind { kKey, kPadButton, kPadAxis };
   EKind kind = kKey;
@@ -190,13 +192,15 @@ SDL_Gamepad* PortGamepad() {
 // the overlay shouldn't bind "Mouse Left".
 Uint32 MouseButtons() { return PortDebug::MouseHeldButtons(); }
 
+bool IsTrigger(int axis) { return axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER; }
+
 bool AxisPulled(SDL_Gamepad* pad, int axis, PADAxisSign sign) {
   const Sint16 value = SDL_GetGamepadAxis(pad, static_cast< SDL_GamepadAxis >(axis));
   if (sign == AXIS_SIGN_POSITIVE) {
     return value >= kAxisPullThreshold;
   }
   // Triggers only pull one way.
-  if (axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
+  if (IsTrigger(axis)) {
     return false;
   }
   return value <= -kAxisPullThreshold;
@@ -287,7 +291,9 @@ bool NewInput(SInput& out) {
   for (int i = 0; i < SDL_GAMEPAD_BUTTON_COUNT; ++i) {
     const bool held = SDL_GetGamepadButton(pad, static_cast< SDL_GamepadButton >(i));
     sCapture.heldPadButtons[i] = sCapture.heldPadButtons[i] && held;
-    if (sCapture.target == ECapture::kPadButton && !found && held && !sCapture.heldPadButtons[i]) {
+    // An axis row can be driven by a button too.
+    if ((sCapture.target == ECapture::kPadButton || sCapture.target == ECapture::kPadAxis) && !found && held &&
+        !sCapture.heldPadButtons[i]) {
       out = {SInput::kPadButton, i, AXIS_SIGN_POSITIVE};
       found = true;
     }
@@ -297,7 +303,10 @@ bool NewInput(SInput& out) {
       const PADAxisSign sign = s == 0 ? AXIS_SIGN_NEGATIVE : AXIS_SIGN_POSITIVE;
       const bool pulled = AxisPulled(pad, i, sign);
       sCapture.heldPadAxes[i][s] = sCapture.heldPadAxes[i][s] && pulled;
-      if (sCapture.target == ECapture::kPadAxis && !found && pulled && !sCapture.heldPadAxes[i][s]) {
+      // A button row takes an analog trigger, but not a stick.
+      const bool wanted = sCapture.target == ECapture::kPadAxis ||
+                          (sCapture.target == ECapture::kPadButton && IsTrigger(i));
+      if (wanted && !found && pulled && !sCapture.heldPadAxes[i][s]) {
         out = {SInput::kPadAxis, i, sign};
         found = true;
       }
@@ -330,15 +339,27 @@ void BindRow(ECapture kind, int index, int slot, const SInput& input) {
   }
   case ECapture::kPadButton: {
     PADButtonMapping mapping{};
-    mapping.nativeButton = static_cast< u32 >(input.code);
+    mapping.nativeButton = PAD_NATIVE_BUTTON_INVALID;
+    if (input.kind == SInput::kPadButton && input.code >= 0) {
+      mapping.nativeButton = static_cast< u32 >(input.code);
+    } else if (input.kind == SInput::kPadAxis && IsTrigger(input.code)) {
+      mapping.nativeButton = input.code == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ? PAD_NATIVE_BUTTON_TRIGGER_LEFT
+                                                                         : PAD_NATIVE_BUTTON_TRIGGER_RIGHT;
+    }
     mapping.padButton = kControlPadButtons[index].button;
     PADSetButtonMapping(kControlPort, mapping);
     break;
   }
   case ECapture::kPadAxis: {
+    // A button drives the axis fully while held; code -1 leaves it inert.
     PADAxisMapping mapping{};
-    mapping.nativeAxis = {input.code, input.sign};
+    mapping.nativeAxis = {-1, AXIS_SIGN_POSITIVE};
     mapping.nativeButton = static_cast< s32 >(PAD_NATIVE_BUTTON_INVALID);
+    if (input.kind == SInput::kPadAxis) {
+      mapping.nativeAxis = {input.code, input.sign};
+    } else if (input.kind == SInput::kPadButton) {
+      mapping.nativeButton = input.code;
+    }
     mapping.padAxis = static_cast< PADAxis >(index);
     PADSetAxisMapping(kControlPort, mapping);
     break;
@@ -367,14 +388,23 @@ SInput RowInput(ECapture kind, int index, int slot) {
   case ECapture::kPadButton: {
     const PADButtonMapping* list = PADGetButtonMappings(kControlPort, &count);
     const u32 native = NativeButtonForPadButton(list, count, kControlPadButtons[index].button);
+    if (native == PAD_NATIVE_BUTTON_TRIGGER_LEFT || native == PAD_NATIVE_BUTTON_TRIGGER_RIGHT) {
+      return {SInput::kPadAxis,
+              native == PAD_NATIVE_BUTTON_TRIGGER_LEFT ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
+              AXIS_SIGN_POSITIVE};
+    }
     return {SInput::kPadButton, static_cast< s32 >(native), AXIS_SIGN_POSITIVE};
   }
   case ECapture::kPadAxis: {
     const PADAxisMapping* list = PADGetAxisMappings(kControlPort, &count);
     for (u32 i = 0; list != nullptr && i < count; ++i) {
-      if (list[i].padAxis == static_cast< PADAxis >(index)) {
-        return {SInput::kPadAxis, list[i].nativeAxis.nativeAxis, list[i].nativeAxis.sign};
+      if (list[i].padAxis != static_cast< PADAxis >(index)) {
+        continue;
       }
+      if (list[i].nativeAxis.nativeAxis < 0) {
+        return {SInput::kPadButton, list[i].nativeButton, AXIS_SIGN_POSITIVE};
+      }
+      return {SInput::kPadAxis, list[i].nativeAxis.nativeAxis, list[i].nativeAxis.sign};
     }
     return {SInput::kPadAxis, -1, AXIS_SIGN_POSITIVE};
   }
@@ -389,21 +419,23 @@ bool SameInput(const SInput& a, const SInput& b) {
          (a.kind != SInput::kPadAxis || a.sign == b.sign);
 }
 
-// The keyboard has L and R twice, as the click and the analog trigger, and the
-// defaults put both on one key: that pair isn't a conflict, and binding one
-// half moves the other along while they still share a key.
+// L and R are there twice, as the click and the analog trigger, and a binding
+// may put both on one input (the keyboard defaults, a pad preset): that pair
+// isn't a conflict, and binding one half moves the other along while they
+// still share an input.
 bool PairedRow(ECapture kind, int index, ECapture& pairKind, int& pairIndex) {
-  if (kind == ECapture::kKeyButton) {
+  if (kind == ECapture::kKeyButton || kind == ECapture::kPadButton) {
     const PADButton button = kControlPadButtons[index].button;
-    pairKind = ECapture::kKeyAxis;
+    pairKind = kind == ECapture::kKeyButton ? ECapture::kKeyAxis : ECapture::kPadAxis;
     pairIndex = button == PAD_TRIGGER_L ? PAD_AXIS_TRIGGER_L : button == PAD_TRIGGER_R ? PAD_AXIS_TRIGGER_R : -1;
     return pairIndex >= 0;
   }
-  if (kind == ECapture::kKeyAxis && (index == PAD_AXIS_TRIGGER_L || index == PAD_AXIS_TRIGGER_R)) {
+  if ((kind == ECapture::kKeyAxis || kind == ECapture::kPadAxis) &&
+      (index == PAD_AXIS_TRIGGER_L || index == PAD_AXIS_TRIGGER_R)) {
     const PADButton button = index == PAD_AXIS_TRIGGER_L ? PAD_TRIGGER_L : PAD_TRIGGER_R;
     for (int i = 0; i < static_cast< int >(std::size(kControlPadButtons)); ++i) {
       if (kControlPadButtons[i].button == button) {
-        pairKind = ECapture::kKeyButton;
+        pairKind = kind == ECapture::kKeyAxis ? ECapture::kKeyButton : ECapture::kPadButton;
         pairIndex = i;
         return true;
       }
@@ -454,9 +486,8 @@ bool FindConflict(ECapture kind, int index, const SInput& input, ECapture& other
     return check(ECapture::kKeyButton, buttonRows, PAD_KEY_SLOT_COUNT) ||
            check(ECapture::kKeyAxis, PAD_AXIS_COUNT, PAD_KEY_SLOT_COUNT);
   case SInput::kPadButton:
-    return check(ECapture::kPadButton, buttonRows, 1);
   case SInput::kPadAxis:
-    return check(ECapture::kPadAxis, PAD_AXIS_COUNT, 1);
+    return check(ECapture::kPadButton, buttonRows, 1) || check(ECapture::kPadAxis, PAD_AXIS_COUNT, 1);
   }
   return false;
 }
@@ -617,18 +648,17 @@ void DrawConflict() {
   const std::string other = RowLabel(sCapture.otherKind, sCapture.otherIndex, sCapture.otherSlot);
   ImGui::Text("%s is already bound to %s.", InputName(sCapture.bound).c_str(), other.c_str());
   ImGui::BeginDisabled(!sCapture.conflictReleased);
-  // Aurora can't leave a controller axis unbound, so an axis row with nothing
-  // to hand over can't swap.
-  ImGui::BeginDisabled(sCapture.target == ECapture::kPadAxis && old.code == -1);
+  // A button row can't take a stick direction, so that swap is a move.
+  const bool handOver = old.code != -1 && !(sCapture.otherKind == ECapture::kPadButton &&
+                                            old.kind == SInput::kPadAxis && !IsTrigger(old.code));
   const std::string swapLabel =
-      (old.code == -1 ? "Move: " + other + " loses it" : "Swap: " + other + " gets " + InputName(old)) + "###swap";
+      (handOver ? "Swap: " + other + " gets " + InputName(old) : "Move: " + other + " loses it") + "###swap";
   if (ImGui::Button(swapLabel.c_str())) {
     BindWithPair(sCapture.target, sCapture.index, sCapture.slot, sCapture.bound);
-    BindWithPair(sCapture.otherKind, sCapture.otherIndex, sCapture.otherSlot, old);
+    BindWithPair(sCapture.otherKind, sCapture.otherIndex, sCapture.otherSlot, handOver ? old : SInput{});
     PADSerializeMappings();
     CancelCapture();
   }
-  ImGui::EndDisabled();
   ImGui::SameLine();
   if (ImGui::Button("Bind both")) {
     BindWithPair(sCapture.target, sCapture.index, sCapture.slot, sCapture.bound);
@@ -677,6 +707,64 @@ void KeyRow(ECapture kind, int index, const std::string& label, const float* slo
     ImGui::EndDisabled();
     ImGui::PopID();
   }
+}
+
+// Controller layouts. GameCube is Aurora's default for the pad type; the others
+// start from it. The twin-stick beam modifier is L or LB, so no preset uses LB.
+enum class EPadPreset { kGameCube, kModern, kSouthpaw };
+
+s32 OtherStick(s32 axis) {
+  switch (axis) {
+  case SDL_GAMEPAD_AXIS_LEFTX:
+    return SDL_GAMEPAD_AXIS_RIGHTX;
+  case SDL_GAMEPAD_AXIS_LEFTY:
+    return SDL_GAMEPAD_AXIS_RIGHTY;
+  case SDL_GAMEPAD_AXIS_RIGHTX:
+    return SDL_GAMEPAD_AXIS_LEFTX;
+  case SDL_GAMEPAD_AXIS_RIGHTY:
+    return SDL_GAMEPAD_AXIS_LEFTY;
+  default:
+    return axis;
+  }
+}
+
+void ApplyPadPreset(EPadPreset preset) {
+  PADRestoreDefaultMapping(kControlPort);
+  // The GameCube layouts use the C-stick; Modern turns twin-stick back on.
+  PortDebug::SetTwinStick(false);
+  switch (preset) {
+  case EPadPreset::kGameCube:
+    break;
+  case EPadPreset::kModern: {
+    // Fire on RT and lock on with LT (the default L), jump and morph on the
+    // face buttons, free look on the right stick click, which also drives the
+    // R analog so RT doesn't press R as well.
+    const PADButtonMapping buttons[] = {
+        {PAD_NATIVE_BUTTON_TRIGGER_RIGHT, PAD_BUTTON_A},
+        {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_B},
+        {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X},
+        {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_BUTTON_Y},
+        {SDL_GAMEPAD_BUTTON_NORTH, PAD_TRIGGER_Z},
+        {SDL_GAMEPAD_BUTTON_RIGHT_STICK, PAD_TRIGGER_R},
+    };
+    for (const PADButtonMapping& mapping : buttons) {
+      PADSetButtonMapping(kControlPort, mapping);
+    }
+    PADSetAxisMapping(kControlPort, {{-1, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_RIGHT_STICK, PAD_AXIS_TRIGGER_R});
+    // The right stick aims; without twin-stick it would be the C-stick.
+    PortDebug::SetTwinStick(true);
+    break;
+  }
+  case EPadPreset::kSouthpaw: {
+    u32 count = 0;
+    PADAxisMapping* axes = PADGetAxisMappings(kControlPort, &count);
+    for (u32 i = 0; axes != nullptr && i < count; ++i) {
+      axes[i].nativeAxis.nativeAxis = OtherStick(axes[i].nativeAxis.nativeAxis);
+    }
+    break;
+  }
+  }
+  PADSerializeMappings();
 }
 
 } // namespace
@@ -779,11 +867,6 @@ void DrawTab() {
     ApplyDefaultKeyBindings(kControlPort);
     PADSerializeMappings();
   }
-  ImGui::SameLine();
-  if (ImGui::Button("Restore controller defaults")) {
-    PADRestoreDefaultMapping(kControlPort);
-    PADSerializeMappings();
-  }
 
   std::string buttonLabels[std::size(kControlPadButtons)];
   std::string axisLabels[PAD_AXIS_COUNT];
@@ -830,13 +913,48 @@ void DrawTab() {
     if (PADGetButtonMappings(kControlPort, &padButtonCount) == nullptr) {
       ImGui::TextDisabled("No controller on pad 1.");
     } else {
+      const auto presetButton = [](const char* label, EPadPreset preset, const char* tooltip) {
+        if (ImGui::Button(label)) {
+          ApplyPadPreset(preset);
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled)) {
+          ImGui::SetTooltip("%s", tooltip);
+        }
+      };
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextUnformatted("Preset:");
+      ImGui::SameLine();
+      presetButton("GameCube", EPadPreset::kGameCube,
+                   "The default layout: the face buttons and shoulder as on a GameCube pad.\nTurns off Twin Stick Aim.");
+      ImGui::SameLine();
+      // A GameCube pad has no right stick click for free look.
+      ImGui::BeginDisabled(PADIsGCAdapter(kControlPort));
+      presetButton("Modern", EPadPreset::kModern,
+                   "RT fire, LT lock on, A jump, B morph ball, RB missile, Y map,\n"
+                   "right stick click free look. Turns on Twin Stick Aim; hold LB\n"
+                   "and press the D-pad to change beams.");
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+      presetButton("Southpaw", EPadPreset::kSouthpaw, "The GameCube layout with the two sticks swapped.\nTurns off Twin Stick Aim.");
+
       const float padWidth = bindWidth + style.ItemInnerSpacing.x + clearWidth;
+      const PADDeadZones* deadZones = PADGetDeadZones(kControlPort);
+      const bool emulateTriggers = deadZones != nullptr && deadZones->emulateTriggers;
       const auto padRow = [&](ECapture kind, int index, const std::string& label) {
         const float rowX = ImGui::GetCursorPosX();
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(label.c_str());
         ImGui::SameLine(rowX + slotX[0]);
-        BindingButton(kind, index, 0, InputName(RowInput(kind, index, 0)), padWidth);
+        const SInput input = RowInput(kind, index, 0);
+        std::string name = InputName(input);
+        // An unbound L or R click follows its analog trigger.
+        ECapture pairKind = ECapture::kNone;
+        int pairIndex = -1;
+        if (kind == ECapture::kPadButton && input.code == -1 && emulateTriggers &&
+            PairedRow(kind, index, pairKind, pairIndex)) {
+          name = std::string("(") + kControlPadAxes[pairIndex].label + ")";
+        }
+        BindingButton(kind, index, 0, name, padWidth);
       };
       for (int i = 0; i < static_cast< int >(std::size(kControlPadButtons)); ++i) {
         ImGui::PushID(200 + i);
