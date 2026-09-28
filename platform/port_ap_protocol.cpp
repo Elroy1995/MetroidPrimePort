@@ -3,6 +3,7 @@
 #include "port_randomizer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -93,6 +94,8 @@ bool ParseItemKey(const std::string& key, int64_t& value) {
   return parsed.ec == std::errc() && parsed.ptr == key.data() + key.size();
 }
 
+constexpr int64_t kMaxGrantValue = 9999;
+
 bool OptionalInt(const PortJson::Value& object, const char* field, int fallback, int& result,
                  std::string& error) {
   const PortJson::Value* value = Member(object, field);
@@ -100,10 +103,11 @@ bool OptionalInt(const PortJson::Value& object, const char* field, int fallback,
     result = fallback;
     return true;
   }
+  // Bounded well inside int so the game's own sums (amount plus what the
+  // player already has) cannot overflow.
   int64_t number = 0;
-  if (!Integer(value, number) || number < std::numeric_limits<int>::min() ||
-      number > std::numeric_limits<int>::max()) {
-    error = std::string("items.") + field + " must be an integer";
+  if (!Integer(value, number) || number < -kMaxGrantValue || number > kMaxGrantValue) {
+    error = std::string("items.") + field + " must be an integer between -9999 and 9999";
     return false;
   }
   result = static_cast<int>(number);
@@ -378,7 +382,11 @@ Config ParseConfig(const std::string& text) {
           config.error = "location id for " + entry.first + " must be an integer";
           return config;
         }
-        config.locations[entry.first] = integer;
+        // The game formats its keys in upper case (FormatLocationKey).
+        std::string key = entry.first;
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        config.locations[key] = integer;
       }
     }
     value = Member(root, "items");
@@ -633,7 +641,8 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
     }
   } else if (command == "ReceivedItems") {
     int64_t index = 0;
-    IntegerMember(packet, "index", index);
+    if (!IntegerMember(packet, "index", index) || index < 0)
+      return; // malformed; a negative index would re-grant received items
     const PortJson::Value* items = Member(packet, "items");
     const PortJson::Value::Elements empty;
     const auto& itemList = items != nullptr && items->IsArray() ? items->AsArray() : empty;

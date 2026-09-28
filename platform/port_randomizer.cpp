@@ -224,6 +224,15 @@ class Parser {
     Fail("unterminated string");
   }
 
+  // Bounded well inside int so the game's own sums (amount plus what the
+  // player already has) cannot overflow.
+  int ParseGrantValue() {
+    const int value = ParseInteger();
+    if (value < -9999 || value > 9999)
+      Fail("amount and capacity must be between -9999 and 9999");
+    return value;
+  }
+
   int ParseInteger() {
     SkipWhitespace();
     const size_t start = mPos;
@@ -379,10 +388,10 @@ class Parser {
             Fail("unknown item name");
           hasItem = true;
         } else if (key == "amount") {
-          placement.amount = ParseInteger();
+          placement.amount = ParseGrantValue();
           placement.hasAmount = true;
         } else if (key == "capacity") {
-          placement.capacity = ParseInteger();
+          placement.capacity = ParseGrantValue();
           placement.hasCapacity = true;
         } else {
           SkipValue();
@@ -403,6 +412,9 @@ class Parser {
       return;
     for (;;) {
       std::string key = ParseString();
+      // The game formats its keys in upper case (FormatLocationKey).
+      std::transform(key.begin(), key.end(), key.begin(),
+                     [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
       Expect(':');
       Placement placement = ParsePlacement();
       placements[std::move(key)] = placement;

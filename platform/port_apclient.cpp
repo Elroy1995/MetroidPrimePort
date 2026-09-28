@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <filesystem>
 #include <limits>
@@ -124,11 +125,23 @@ rstl::wstring ToHudWide(const std::string& text) {
 }
 
 struct Runtime {
-  ~Runtime() {
+  // Called once at exit. A worker blocked in a DNS lookup or a connect cannot
+  // be cut short, so it gets a moment to notice `stop` and is otherwise left
+  // behind (the Runtime is never freed) rather than holding up the exit.
+  void Shutdown() {
     stop.store(true, std::memory_order_release);
     wake.notify_all();
-    if (worker.joinable())
-      worker.join();
+    if (worker.joinable()) {
+      bool done;
+      {
+        std::unique_lock<std::mutex> lock(mutex);
+        done = wake.wait_for(lock, std::chrono::seconds(2), [this] { return workerDone; });
+      }
+      if (done)
+        worker.join();
+      else
+        worker.detach();
+    }
     FlushState(); // whatever the worker had not written yet
   }
 
@@ -192,6 +205,7 @@ struct Runtime {
   std::condition_variable wake;
   std::atomic<bool> stop{false};
   std::thread worker;
+  bool workerDone = false; // under mutex; set as the worker returns
   bool attempted = false;
   bool enabled = false;
   bool connected = false;
@@ -225,8 +239,15 @@ struct Runtime {
 };
 
 Runtime& GetRuntime() {
-  static Runtime runtime;
-  return runtime;
+  // Leaked on purpose, so a worker Shutdown() leaves behind never touches
+  // freed memory; the stopper runs Shutdown() with the other static
+  // destructors.
+  static Runtime* runtime = new Runtime;
+  static struct Stopper {
+    Runtime* runtime;
+    ~Stopper() { runtime->Shutdown(); }
+  } stopper{runtime};
+  return *runtime;
 }
 
 // Names the session a save's received items came from: FNV-1a over the seed
@@ -308,7 +329,7 @@ bool SendPacket(PortWs::Client& client, const std::string& packet, std::string& 
   return false;
 }
 
-void Worker(Runtime& runtime) {
+void WorkerLoop(Runtime& runtime) {
   Config config;
   std::string statePath;
   {
@@ -569,6 +590,29 @@ void Worker(Runtime& runtime) {
       break;
     backoff = std::min(backoff * 2, 60);
   }
+}
+
+// An exception escaping a std::thread terminates the game, and a broken or
+// hostile server can cause one (bad_alloc on a huge message, a packet the
+// session does not expect). It costs the connection instead, which retries.
+void Worker(Runtime& runtime) {
+  while (!runtime.stop.load(std::memory_order_acquire)) {
+    try {
+      WorkerLoop(runtime);
+      break;
+    } catch (const std::exception& error) {
+      PortLog::Write("archipelago: client error: %s\n", error.what());
+      runtime.SetError(std::string("internal error: ") + error.what());
+    } catch (...) {
+      PortLog::Write("archipelago: client error: unknown exception\n");
+      runtime.SetError("internal error");
+    }
+    if (!runtime.WaitBackoff(30))
+      break;
+  }
+  std::lock_guard<std::mutex> lock(runtime.mutex);
+  runtime.workerDone = true;
+  runtime.wake.notify_all();
 }
 
 void EnsureLoadedImpl(Runtime& runtime) {
@@ -841,10 +885,17 @@ void Poll(CStateManager& mgr) {
         const bool alive = player->IsAlive();
         if (alive) {
           runtime.deathAnnounced = false;
-        } else if (!runtime.deathAnnounced) {
+        } else if (!runtime.deathAnnounced && runtime.connected) {
+          // Only while connected: a death during an outage would otherwise
+          // be announced, stale, on the next connect.
           runtime.deathAnnounced = true;
           runtime.pendingBounce = "death";
         }
+        // A death that came in over DeathLink is not announced back: every
+        // other client would echo it too, and the deaths would go round the
+        // multiworld forever.
+        if (deathsOwed > 0)
+          runtime.deathAnnounced = true;
       }
     }
     for (int i = 0; i < deathsOwed; ++i)
