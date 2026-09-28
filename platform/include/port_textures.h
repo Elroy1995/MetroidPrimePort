@@ -4,11 +4,12 @@
 //
 // Replacements live in the folder given by MP_TEXTURES (or `textures` next to
 // the executable), in Aurora's naming convention. Inside it an optional
-// per-device subfolder is selected from the connected controller:
-// xbox, playstation, switch, gamecube, standard, or keyboard when no pad is
-// connected. The subfolder is used when it exists, otherwise the root is used,
-// so a single device-agnostic pack keeps working. MP_TEXTURE_DEVICE overrides
-// the detected name. The set is reloaded when the active device changes.
+// per-device subfolder is selected from the input the player last used
+// (PortPrompts::ActiveDevice): xbox, playstation, switch, gamecube or standard
+// for a pad, keyboard for a keyboard and mouse or when no pad is connected. The
+// subfolder is used when it exists, otherwise the root is used, so a single
+// device-agnostic pack keeps working. MP_TEXTURE_DEVICE overrides the name. The
+// set is reloaded when the active device changes.
 //
 // Texture dumping (for authoring replacements) is enabled with
 // MP_DUMP_TEXTURES; dumps land in <cachePath>/texture_dumps.
@@ -22,4 +23,7 @@ void Poll();
 
 // Name of the current device folder (never null).
 const char* DeviceName();
+
+// The folder name for the pad on channel 0, or "keyboard" when there is none.
+const char* PadDeviceName();
 } // namespace PortTextures

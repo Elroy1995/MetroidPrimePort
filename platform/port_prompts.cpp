@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -54,32 +55,18 @@ constexpr PromptKey kKeys[] = {
     // Stick prompts. Not a button, so there is no binding to follow; the icon
     // is the device's own stick (or the direction keys for a keyboard).
     //
-    // There is one of these, not two, and it was the second transcription error
-    // in this table.
-    //
-    // 0x1ff9d2b310c0b706 at 32x32 was not a stick prompt at all: it is the pause
-    // menu's Exit sphere, and calling it a stick made the generator write the
-    // C-stick's four-square arrow glyph into it and ship that to all four device
-    // folders. It was also the only 32x32 entry here with format 14 while the
-    // other eight are format 5, which is the tell.
-    //
-    // There are two of these after all, and getting to that took two wrong
-    // answers. 0x1ff9d2b310c0b706 at 32x32 was never a stick prompt at all: it
-    // is the pause menu's Exit sphere, and calling it a stick made the
-    // generator write the arrow glyph over the game's sphere. It was also the
-    // only 32x32 entry here with format 14 while the other eight are format 5,
-    // which is the tell.
+    // 0x1ff9d2b310c0b706 at 32x32 is not a stick prompt: it is the pause menu's
+    // Exit sphere, and listing it here once wrote the arrow glyph over it. It
+    // was also the only 32x32 entry with format 14 while the others are format
+    // 5, which is the tell.
     //
     // 0x2d26352b420db007 is the map screen's Rotate prompt. It was missing, so
     // the map showed no stick icon at all. Found by MP_DUMP_TEXTURES=1, which
     // dumps only the textures that have no replacement, and then LOOKING at
     // them - Rotate turned out to be a grey spiral emblem.
     //
-    // 0xe14dc493b5513d14 was in the table from the start and I wrongly removed
-    // it, on the reasoning that an unverified row is what caused the sphere
-    // bug. Dumping it shows a yellow "C" badge: it is a C-stick prompt, just
-    // not the map's. Unverified is not the same as wrong, and treating it as
-    // wrong threw away a real prompt. Both are kept.
+    // 0xe14dc493b5513d14 dumps as a yellow "C" badge: a C-stick prompt, just
+    // not the map's.
     {PAD_AXIS_CSTICK, 64, 32, 0x2d26352b420db007ull, "5"},
     {PAD_AXIS_CSTICK, 64, 32, 0xe14dc493b5513d14ull, "5"},
 };
@@ -177,59 +164,86 @@ Registration sRegistrations[kKeyCount];
 std::string sBindingsDir;
 bool sEnabled = false;
 
-// Which input the player last used. The prompts follow that rather than whatever
-// happens to be plugged in, so switching between a keyboard, a pad and the touch
-// overlay swaps the icons over. Pad is the starting state: with no pad connected
-// the texture device resolves to "keyboard" anyway, which is today's behaviour.
+// Which input the player last used. The prompts, and the static texture set
+// (PortTextures asks ActiveDevice too), follow that rather than whatever happens
+// to be plugged in, so switching between a keyboard, a pad and the touch overlay
+// swaps the icons over. Pad is the starting state: with no pad connected the pad
+// device resolves to "keyboard" anyway.
 enum class ActiveInput { Pad, Keyboard, TouchXbox, TouchGameCube };
 std::atomic< ActiveInput > sActiveInput{ActiveInput::Pad};
 
+// Keys sent by the phone or the OS rather than a keyboard in the player's hands.
+bool IsSystemKey(SDL_Scancode scancode) {
+  switch (scancode) {
+  case SDL_SCANCODE_AC_BACK:
+  case SDL_SCANCODE_VOLUMEUP:
+  case SDL_SCANCODE_VOLUMEDOWN:
+  case SDL_SCANCODE_MUTE:
+  case SDL_SCANCODE_MEDIA_PLAY:
+  case SDL_SCANCODE_MEDIA_PAUSE:
+  case SDL_SCANCODE_MEDIA_PLAY_PAUSE:
+  case SDL_SCANCODE_MEDIA_NEXT_TRACK:
+  case SDL_SCANCODE_MEDIA_PREVIOUS_TRACK:
+  case SDL_SCANCODE_MEDIA_STOP:
+  case SDL_SCANCODE_POWER:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool IsTouchMouse(SDL_MouseID which) { return which == SDL_TOUCH_MOUSEID || which == SDL_PEN_MOUSEID; }
+
+// Only deliberate input switches the device. The touch overlay is itself a
+// virtual pad, whose events would undo NoteTouchInput on the next pump; a touch
+// or pen also arrives as a mouse; and a stick resting a little off centre would
+// flip back to the pad every frame while the keyboard is in use, and each flip
+// re-registers textures and clears Aurora's texture cache.
 bool SDLCALL active_input_watch(void*, SDL_Event* event) {
   switch (event->type) {
   case SDL_EVENT_MOUSE_MOTION:
-    // A touch or pen reaching SDL is synthesised into a mouse too; it is not
-    // the player picking up a keyboard and mouse.
-    if (event->motion.which == SDL_TOUCH_MOUSEID || event->motion.which == SDL_PEN_MOUSEID) break;
-    sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    if (!IsTouchMouse(event->motion.which)) {
+      sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    }
     break;
   case SDL_EVENT_MOUSE_BUTTON_DOWN:
-  case SDL_EVENT_MOUSE_BUTTON_UP:
-    if (event->button.which == SDL_TOUCH_MOUSEID || event->button.which == SDL_PEN_MOUSEID) break;
-    sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    if (!IsTouchMouse(event->button.which)) {
+      sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    }
+    break;
+  case SDL_EVENT_MOUSE_WHEEL:
+    if (!IsTouchMouse(event->wheel.which)) {
+      sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    }
     break;
   case SDL_EVENT_KEY_DOWN:
-  case SDL_EVENT_KEY_UP:
-  case SDL_EVENT_TEXT_INPUT:
-  case SDL_EVENT_MOUSE_WHEEL:
-    sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    // Not TEXT_INPUT: on Android that is the soft keyboard typing into the
+    // overlay, not a physical keyboard.
+    if (!event->key.repeat && !IsSystemKey(event->key.scancode)) {
+      sActiveInput.store(ActiveInput::Keyboard, std::memory_order_relaxed);
+    }
     break;
   case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-  case SDL_EVENT_GAMEPAD_BUTTON_UP:
+    if (!SDL_IsJoystickVirtual(event->gbutton.which)) {
+      sActiveInput.store(ActiveInput::Pad, std::memory_order_relaxed);
+    }
+    break;
   case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+    // The same threshold the touch overlay uses to decide a pad is in use.
+    if (std::abs(static_cast< int >(event->gaxis.value)) > 16000 &&
+        !SDL_IsJoystickVirtual(event->gaxis.which)) {
+      sActiveInput.store(ActiveInput::Pad, std::memory_order_relaxed);
+    }
+    break;
   case SDL_EVENT_GAMEPAD_ADDED:
-    sActiveInput.store(ActiveInput::Pad, std::memory_order_relaxed);
+    if (!SDL_IsJoystickVirtual(event->gdevice.which)) {
+      sActiveInput.store(ActiveInput::Pad, std::memory_order_relaxed);
+    }
     break;
   default:
     break;
   }
   return true;
-}
-
-// The icon set for the input in use. "gamecube" has no generated icons, which is
-// deliberate: the game's own prompt art already is the GameCube set, so those
-// prompts are left alone.
-const char* ActiveDevice() {
-  switch (sActiveInput.load(std::memory_order_relaxed)) {
-  case ActiveInput::Keyboard:
-    return "keyboard";
-  case ActiveInput::TouchXbox:
-    return "xbox";
-  case ActiveInput::TouchGameCube:
-    return "gamecube";
-  case ActiveInput::Pad:
-  default:
-    return PortTextures::DeviceName();
-  }
 }
 
 // The width and height a DDS header declares, or false if the file is too short
@@ -384,8 +398,13 @@ void Apply(size_t index, const std::string& stem) {
       (iconWidth != key.width || iconHeight != key.height)) {
     return;
   }
+  // Above the static device set, which registers at the default priority. At
+  // equal priority the newest registration wins, so a reload of that set (a
+  // pad unplugged, say) buried the binding icons, and Poll does not re-apply a
+  // stem that has not changed.
   reg.handle = aurora::texture::register_virtual_replacement(
-      keyName, aurora::texture::VirtualFileSource{&ReadIconBytes, &reg.iconPath});
+      keyName, aurora::texture::VirtualFileSource{&ReadIconBytes, &reg.iconPath},
+      aurora::texture::ReplacementOptions{.priority = 1});
   reg.registered = reg.handle.id != 0;
 }
 
@@ -400,10 +419,33 @@ const char* LabelForButton(PADButton button) {
 } // namespace
 
 namespace PortPrompts {
+// "gamecube" has no generated icons, which is deliberate: the game's own prompt
+// art already is the GameCube set, and with no gamecube folder the static set
+// loads nothing, so those prompts are left alone.
+const char* ActiveDevice() {
+  const char* env = std::getenv("MP_TEXTURE_DEVICE");
+  if (env != nullptr && env[0] != '\0') {
+    return env;
+  }
+  switch (sActiveInput.load(std::memory_order_relaxed)) {
+  case ActiveInput::Keyboard:
+    return "keyboard";
+  case ActiveInput::TouchXbox:
+    return "xbox";
+  case ActiveInput::TouchGameCube:
+    return "gamecube";
+  case ActiveInput::Pad:
+  default:
+    return PortTextures::PadDeviceName();
+  }
+}
+
 void Initialize(const char* textureRoot) {
   if (textureRoot == nullptr || textureRoot[0] == '\0') {
     return;
   }
+  // Tracked even without generated icons, since the static set follows it too.
+  SDL_AddEventWatch(active_input_watch, nullptr);
   const std::filesystem::path bindingsDir = std::filesystem::path(textureRoot) / "bindings";
   std::error_code ec;
   if (!std::filesystem::is_directory(bindingsDir, ec)) {
@@ -411,7 +453,6 @@ void Initialize(const char* textureRoot) {
   }
   sBindingsDir = bindingsDir.string();
   sEnabled = true;
-  SDL_AddEventWatch(active_input_watch, nullptr);
   Poll();
 }
 

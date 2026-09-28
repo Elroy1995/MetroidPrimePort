@@ -2,12 +2,13 @@
 
 #include "port_textures.h"
 
+#include "port_prompts.h"
+
 #include <dolphin/gx.h>
 #include <dolphin/pad.h>
 #include <aurora/texture.hpp>
 
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -47,14 +48,8 @@ const char* DeviceDirForType(PADControllerType type) {
   }
 }
 
-// The override, else the name for the connected pad. Never allocates.
-const char* ResolveDeviceName() {
-  const char* env = std::getenv("MP_TEXTURE_DEVICE");
-  if (env != nullptr && env[0] != '\0') {
-    return env;
-  }
-  return DeviceDirForType(PADGetControllerType(PAD_CHAN0));
-}
+// The override, else the input in use. Never allocates.
+const char* ResolveDeviceName() { return PortPrompts::ActiveDevice(); }
 
 // Prefer the device folder, falling back to the root when it is absent. When
 // the root holds device folders but not the one we need, load nothing: the
@@ -123,4 +118,6 @@ void Poll() {
 }
 
 const char* DeviceName() { return sDevice.c_str(); }
+
+const char* PadDeviceName() { return DeviceDirForType(PADGetControllerType(PAD_CHAN0)); }
 } // namespace PortTextures

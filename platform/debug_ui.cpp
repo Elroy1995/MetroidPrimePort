@@ -1546,8 +1546,8 @@ void DrawRenderTab() {
 
   ImGui::Text("HD texture set: %s", PortTextures::DeviceName());
   ImGui::TextWrapped(
-      "Selected from the connected controller (xbox, playstation, switch, "
-      "gamecube, standard, keyboard); set MP_TEXTURE_DEVICE to override.");
+      "Follows the input last used (xbox, playstation, switch, gamecube, "
+      "standard, keyboard); set MP_TEXTURE_DEVICE to override.");
 }
 
 void DrawInputTab() {
