@@ -305,6 +305,18 @@ selected loads nothing rather than mixing packs. `MP_DUMP_TEXTURES=1` writes
 every source texture to `<cachePath>/texture_dumps` as DDS, for authoring
 replacements.
 
+A user pack is layered over that built-in set, with the same folder rules. It
+lives in `user_textures` in the pref folder (`~/.local/share/Metroid Prime/`
+on Linux, `~/.var/app/io.github.odrannnn.metroidprimeport/data/Metroid Prime/`
+in the Flatpak, `%APPDATA%\Metroid Prime\` on Windows), or wherever
+`MP_USER_TEXTURES` points, so updates never touch it; the overlay's Render page
+has a Reload button. On Android, Render > Texture pack > Choose texture pack
+folder opens the system folder picker and copies the folder's `.png`/`.dds`
+files into app storage (pick it again after changing it; Remove deletes the
+copy). The copy lands in `user_textures.new` and is swapped in on the next
+frame, or at the next start if the app closed first. Priorities: built-in 0,
+user pack 1, binding icons 2, so a remapped action still shows its binding.
+
 In-game button prompts are ordinary textures (`CFontImageDef` holds one texture
 per glyph), so they can be swapped the same way. To re-author them: dump the
 textures from a screen that shows the prompt, find the glyph by its size and

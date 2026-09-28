@@ -490,7 +490,17 @@ int main(int argc, char** argv) {
     if (textures == nullptr || textures[0] == '\0') {
         textures = DefaultTexturesPath();
     }
-    PortTextures::Initialize(textures);
+    // The user's own pack, over the built-in set. Kept in the pref folder, which
+    // updates never replace (the built-in set is read-only in an AppImage or
+    // Flatpak, and re-copied on every Android launch).
+    std::string userTextures;
+    if (const char* env = std::getenv("MP_USER_TEXTURES"); env != nullptr && env[0] != '\0') {
+        userTextures = env;
+    } else if (char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime")) {
+        userTextures = std::string(pref) + "user_textures";
+        SDL_free(pref);
+    }
+    PortTextures::Initialize(textures, userTextures.c_str());
     // Binding-aware prompt icons, served from <textures>/bindings.
     PortPrompts::Initialize(textures);
 

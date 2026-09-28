@@ -681,13 +681,13 @@ void Apply(size_t index, const std::string& stem) {
       (iconWidth != key.width || iconHeight != key.height)) {
     return;
   }
-  // Above the static device set, which registers at the default priority. At
-  // equal priority the newest registration wins, so a reload of that set (a
-  // pad unplugged, say) buried the binding icons, and Poll does not re-apply a
-  // stem that has not changed.
+  // Above the static device set (priority 0) and the user's texture pack (1).
+  // At equal priority the newest registration wins, so a reload of the static
+  // set (a pad unplugged, say) buried the binding icons, and Poll does not
+  // re-apply a stem that has not changed.
   reg.handle = aurora::texture::register_virtual_replacement(
       keyName, aurora::texture::VirtualFileSource{&ReadIconBytes, &reg.iconPath},
-      aurora::texture::ReplacementOptions{.priority = 1});
+      aurora::texture::ReplacementOptions{.priority = 2});
   reg.registered = reg.handle.id != 0;
 }
 } // namespace

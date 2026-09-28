@@ -46,6 +46,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <SDL3/SDL_joystick.h>
+#include <SDL3/SDL_system.h>
 #endif
 
 #include <algorithm>
@@ -55,6 +56,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1515,6 +1517,47 @@ void DrawCutscenesTab() {
   }
 }
 
+#if defined(__ANDROID__)
+// The folder picker's progress, set from the Java copy thread.
+std::mutex sTexturePackStatusMutex;
+std::string sTexturePackStatus;
+
+std::string TexturePackStatus() {
+  std::lock_guard lock(sTexturePackStatusMutex);
+  return sTexturePackStatus;
+}
+
+void SetTexturePackStatus(std::string status) {
+  std::lock_guard lock(sTexturePackStatusMutex);
+  sTexturePackStatus = std::move(status);
+}
+
+// MetroidPrimeActivity.pickTexturePack opens the system folder picker and
+// copies the chosen folder in the background, reporting back through the
+// nativeTexturePack* functions below.
+void PickTexturePack() {
+  JNIEnv* env = static_cast< JNIEnv* >(SDL_GetAndroidJNIEnv());
+  jobject activity = static_cast< jobject >(SDL_GetAndroidActivity());
+  if (env == nullptr || activity == nullptr) {
+    SetTexturePackStatus("Could not open the folder picker.");
+    return;
+  }
+  jclass cls = env->GetObjectClass(activity);
+  jmethodID method = env->GetMethodID(cls, "pickTexturePack", "()V");
+  if (method != nullptr) {
+    env->CallVoidMethod(activity, method);
+  }
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+    SetTexturePackStatus("Could not open the folder picker.");
+  }
+  env->DeleteLocalRef(cls);
+  env->DeleteLocalRef(activity);
+}
+#endif
+
+void DrawTexturePack();
+
 void DrawRenderTab() {
   bool vsync = sVsyncEnabled;
   if (ImGui::Checkbox("Vsync", &vsync)) {
@@ -1555,6 +1598,47 @@ void DrawRenderTab() {
   ImGui::TextWrapped(
       "Follows the input last used (xbox, playstation, switch, gamecube, "
       "standard, keyboard); set MP_TEXTURE_DEVICE to override.");
+  DrawTexturePack();
+}
+
+// The user's texture pack, layered over the built-in set (see port_textures.h).
+// On Android the folder is picked with the system folder picker and copied into
+// app storage; on the desktop the player fills the folder themselves.
+void DrawTexturePack() {
+  ImGui::SeparatorText("Texture pack");
+  const char* root = PortTextures::UserRoot();
+  if (root[0] == '\0') {
+    ImGui::TextUnformatted("No user texture folder.");
+    return;
+  }
+  const size_t count = PortTextures::UserPackCount();
+  if (count > 0) {
+    ImGui::Text("%zu replacements loaded, over the built-in set.", count);
+  } else {
+    ImGui::TextUnformatted("No texture pack loaded.");
+  }
+#if defined(__ANDROID__)
+  const std::string status = TexturePackStatus();
+  if (!status.empty()) {
+    ImGui::TextWrapped("%s", status.c_str());
+  }
+  if (ImGui::Button("Choose texture pack folder...")) {
+    PickTexturePack();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Remove texture pack")) {
+    PortTextures::RequestUserPackRemoval();
+    SetTexturePackStatus("Texture pack removed.");
+  }
+  ImGui::TextWrapped(
+      "The folder is copied into the app, so it keeps working if the original is "
+      "moved. Pick it again after changing it.");
+#else
+  ImGui::TextWrapped("Folder: %s", root);
+  if (ImGui::Button("Reload texture pack")) {
+    PortTextures::RequestUserPackReload();
+  }
+#endif
 }
 
 void DrawInputTab() {
@@ -2292,6 +2376,22 @@ Java_org_metroidprime_port_TouchControlsView_nativeTwinStick(JNIEnv*, jclass) {
 extern "C" JNIEXPORT void JNICALL
 Java_org_metroidprime_port_TouchControlsView_nativeToggleDebugOverlay(JNIEnv*, jclass) {
   PortDebug::RequestToggle();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_metroidprime_port_MetroidPrimeActivity_nativeTexturePackStatus(JNIEnv* env, jclass,
+                                                                       jstring status) {
+  const char* chars = env->GetStringUTFChars(status, nullptr);
+  if (chars != nullptr) {
+    PortDebug::SetTexturePackStatus(chars);
+    env->ReleaseStringUTFChars(status, chars);
+  }
+}
+
+// The copy landed in <user root>.new; the next frame swaps it in.
+extern "C" JNIEXPORT void JNICALL
+Java_org_metroidprime_port_MetroidPrimeActivity_nativeTexturePackReady(JNIEnv*, jclass) {
+  PortTextures::RequestUserPackReload();
 }
 
 // Whether a real pad, keyboard or mouse was used since the last call.

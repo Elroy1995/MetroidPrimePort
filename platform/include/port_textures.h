@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 // Device-aware HD texture replacements.
 //
 // Replacements live in the folder given by MP_TEXTURES (or `textures` next to
@@ -11,15 +13,35 @@
 // device-agnostic pack keeps working. MP_TEXTURE_DEVICE overrides the name. The
 // set is reloaded when the active device changes.
 //
+// A user pack (MP_USER_TEXTURES, else `user_textures` in the pref folder) is
+// layered over that built-in set, with the same device-folder rules. Nothing
+// the app does on update touches it. On Android it is filled by the overlay's
+// folder picker, which copies the chosen folder to `<user root>.new`; the swap
+// into place happens on the main thread (or at the next start).
+//
 // Texture dumping (for authoring replacements) is enabled with
 // MP_DUMP_TEXTURES; dumps land in <cachePath>/texture_dumps.
 namespace PortTextures {
-// Resolves the device folder, loads the replacement set and remembers the base
-// folder. `root` may be null or empty to leave replacements disabled.
-void Initialize(const char* root);
+// Resolves the device folder, loads both sets and remembers their folders.
+// Either root may be null or empty to leave that set disabled.
+void Initialize(const char* root, const char* userRoot);
 
-// Reloads the set when the active device changed. Call once per frame.
+// Reloads the sets when the active device changed, and installs a user pack
+// that finished copying. Call once per frame, on the main thread.
 void Poll();
+
+// Thread-safe: ask the next Poll to install `<user root>.new` if present and
+// reload the user pack.
+void RequestUserPackReload();
+
+// Thread-safe: ask the next Poll to unload and delete the user pack.
+void RequestUserPackRemoval();
+
+// The user pack folder (never null; empty when there is none).
+const char* UserRoot();
+
+// Replacements the user pack registered for the current device.
+size_t UserPackCount();
 
 // Name of the current device folder (never null).
 const char* DeviceName();
