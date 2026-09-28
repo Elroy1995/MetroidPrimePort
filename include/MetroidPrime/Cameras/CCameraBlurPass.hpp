@@ -57,6 +57,11 @@ private:
   bool x2c_usePersistent;
   mutable bool x2d_noPersistentCopy;
   void* x30_persistentBuf;
+#ifdef TARGET_PC
+  // Size of the texture in x30_persistentBuf, which outlives a viewport resize.
+  mutable ushort mPersistentWidth;
+  mutable ushort mPersistentHeight;
+#endif
 };
 CHECK_SIZEOF(CCameraBlurPass, 0x34)
 

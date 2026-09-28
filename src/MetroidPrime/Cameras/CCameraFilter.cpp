@@ -460,7 +460,13 @@ CCameraBlurPass::CCameraBlurPass()
 , x28_remainingTime(0.f)
 , x2c_usePersistent(false)
 , x2d_noPersistentCopy(false)
-, x30_persistentBuf(0) {}
+, x30_persistentBuf(0)
+#ifdef TARGET_PC
+, mPersistentWidth(0)
+, mPersistentHeight(0)
+#endif
+{
+}
 
 void CCameraBlurPass::Update(float dt) {
   if (x28_remainingTime > 0.f) {
@@ -576,6 +582,16 @@ void CCameraBlurPass::Draw() const {
 
   if (!x2d_noPersistentCopy || !x2c_usePersistent) {
     GetFbCopy(fmt, data);
+#ifdef TARGET_PC
+    mPersistentWidth = width;
+    mPersistentHeight = height;
+  } else {
+    // The pause screen keeps showing this copy with the world no longer drawn.
+    // If the aspect changed since, load it at the size it was taken at (and let
+    // the quad stretch it): at the new size it matches no copy and reads black.
+    width = mPersistentWidth;
+    height = mPersistentHeight;
+#endif
   }
 
   if (x10_curType == kBT_XRay) {

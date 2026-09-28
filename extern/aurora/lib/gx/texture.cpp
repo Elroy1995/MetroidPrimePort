@@ -874,6 +874,30 @@ void clear_copy_texture_cache() noexcept {
   texture::invalidate_bindings();
 }
 
+void trim_copy_texture_cache() noexcept {
+  // A resize keeps the latest copy at each address: the copies are standalone
+  // textures, and a paused game keeps sampling one it took before the resize
+  // (Metroid Prime's pause backdrop), which a full clear turned black. Pooled
+  // copies nothing points to are freed, as they would mostly be at the old size.
+  absl::flat_hash_set<const void*> live;
+  for (const auto& [_, ref] : g_gxState.copyTextures) {
+    if (ref.handle) {
+      live.insert(ref.handle.get());
+    }
+  }
+  for (auto it = g_gxState.copyTextureCache.begin(); it != g_gxState.copyTextureCache.end();) {
+    if (!it->second.handle || !live.contains(it->second.handle.get())) {
+      g_gxState.copyTextureCache.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+  for (auto& [_, cache] : s_tlutObjectCaches) {
+    cache.dynamicPaletteTextures.clear();
+  }
+  texture::invalidate_bindings();
+}
+
 void clear_static_texture_cache() noexcept { s_pendingCacheClears.fetch_add(1, std::memory_order_release); }
 
 void evict_copy_texture(const void* dest) noexcept {
