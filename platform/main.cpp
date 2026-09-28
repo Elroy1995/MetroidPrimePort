@@ -238,6 +238,13 @@ std::string CopyDiscFromContentUri(const std::string& uri) {
     for (;;) {
         const size_t got = SDL_ReadIO(in, buffer, sizeof(buffer));
         if (got == 0) {
+            // Zero is also what a failed read returns; only the stream status
+            // tells end of file from an error that would leave a truncated copy.
+            if (SDL_GetIOStatus(in) != SDL_IO_STATUS_EOF) {
+                PortLog::Write( "metroid_prime_port: reading the picked image failed: %s\n",
+                                SDL_GetError());
+                ok = false;
+            }
             break;
         }
         if (SDL_WriteIO(out, buffer, got) != got) {
@@ -280,10 +287,10 @@ std::string CopyDiscFromContentUri(const std::string& uri) {
     // truncated image fails to parse as a disc with no further clue.
     std::error_code ec;
     const auto written = std::filesystem::file_size(target, ec);
-    if (ec || static_cast<Sint64>(written) != done) {
-        PortLog::Write( "metroid_prime_port: %s is %lld bytes on disk, expected %lld\n",
+    if (ec || static_cast<Sint64>(written) != done || (total > 0 && done != total)) {
+        PortLog::Write( "metroid_prime_port: %s is %lld bytes on disk, copied %lld of %lld\n",
                         target.string().c_str(), static_cast<long long>(written),
-                        static_cast<long long>(done));
+                        static_cast<long long>(done), static_cast<long long>(total));
         std::filesystem::remove(target, ec);
         return {};
     }
