@@ -36,6 +36,13 @@ struct TrackedItem {
   int64_t total = 1; // steps in the sequence, 1 for a flat item
 };
 
+// One PrintJSON message for the chat log. `type` is the packet's type (Chat,
+// ServerChat, ItemSend, Hint, CommandResult, Join, ...), "" when it had none.
+struct ChatLine {
+  std::string type;
+  std::string text;
+};
+
 // A configured item: one grant, or a progressive sequence where the Nth copy
 // received grants step N and later copies repeat the last step. The inherited
 // fields are the flat grant, and mirror step 0 for a progressive item.
@@ -162,6 +169,9 @@ public:
   // receipts ("Energy Tank from Bob") and PrintJSON text. Drained by whoever
   // displays them, so nothing is shown twice. The queue is capped.
   bool TakeNotification(std::string& text);
+  // Every PrintJSON message in full, repeats included, for the chat log. Drained
+  // like the notifications; the queue is capped.
+  bool TakeChatLine(ChatLine& line);
   // Seed name from RoomInfo, or "" before it arrives.
   const std::string& SeedName() const { return mSeedName; }
   // Alias of a player slot from Connected, or "player <slot>" when unknown.
@@ -173,6 +183,8 @@ public:
   static std::string BuildSync();
   // StatusUpdate 30: this slot has reached its goal.
   static std::string BuildGoal();
+  // Say: chat text, or a server command such as "!hint Missile Launcher".
+  static std::string BuildSay(const std::string& text);
   // LocationScouts for `ids`, without creating hints.
   static std::string BuildLocationScouts(const std::vector< int64_t >& ids);
 
@@ -296,6 +308,7 @@ private:
   std::set< int64_t > mAnnounced;
   bool AnnouncedLocally(int64_t locationId, int64_t finder) const;
   std::vector< std::string > mNotifications;
+  std::vector< ChatLine > mChat;
   std::vector< TrackedItem > mTracked;
   SlotData mSlotData;
   // DeathLink bookkeeping: bounces owed to the game, and who to blame.

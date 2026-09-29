@@ -252,6 +252,21 @@ int main() {
   Check(packets.LastMessage() == "Hello world", "PrintJSON joins text and flattens newlines");
   Check(packets.TakeNotification(notification) && notification == "Hello world",
         "PrintJSON text is queued as a notification");
+  {
+    ChatLine line;
+    while (packets.TakeChatLine(line)) {
+    }
+    packets.HandlePacket(
+        Packet(R"({"cmd":"PrintJSON","type":"CommandResult","data":[{"text":"line one\nline two\n"}]})"),
+        outgoing, grants);
+    Check(packets.TakeChatLine(line) && line.type == "CommandResult" &&
+              line.text == "line one\nline two" && !packets.TakeChatLine(line),
+          "the chat log keeps a reply's line breaks, without the trailing one");
+    while (packets.TakeNotification(notification)) {
+    }
+  }
+  Check(Session::BuildSay("hi \"all\"\n") == R"({"cmd":"Say","text":"hi \"all\"\n"})",
+        "Say packet formatting escapes the text");
   std::string longText(250, 'x');
   const std::string printLong = "{\"cmd\":\"PrintJSON\",\"data\":[{\"text\":\"" + longText + "\"}]}";
   packets.HandlePacket(Packet(printLong), outgoing, grants);
@@ -947,6 +962,12 @@ int main() {
           "a find the pickup did not announce is still shown, an announced one is not");
     Check(session.LastMessage() == "Samus sent Hookshot",
           "an announced find still reaches the overlay's last message");
+    ChatLine line;
+    Check(session.TakeChatLine(line) && line.type == "ItemSend" &&
+              line.text == "Link sent Hookshot to Samus (Link's House)" &&
+              session.TakeChatLine(line) && line.text == "Samus sent Hookshot" &&
+              !session.TakeChatLine(line),
+          "the chat log keeps every PrintJSON, announced finds included");
   }
 
   std::filesystem::remove_all(testDir);

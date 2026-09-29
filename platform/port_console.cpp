@@ -398,7 +398,7 @@ void CmdHelp() {
   Out("shot                       take a screenshot and print its path");
   Out("wait <frames>              let frames pass");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
-  Out("ap [connect <server> <slot> [password] | disconnect | recent | resume <n>]   Archipelago, as the F1 Connect screen does");
+  Out("ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]   Archipelago, as the F1 Session tab does");
   Out("quit                       exit the game");
   Out("ids: hex editor id (002900A1), u<index> unique id, or an exact debug name");
 }
@@ -791,8 +791,18 @@ void RunFrame() {
         return Finish("no such recent game (see ap recent)");
       if (!PortAp::Connect(games[index], error))
         return Finish(error.c_str());
+    } else if (action == "say" && sCmd.args.size() >= 3) {
+      std::string text = sCmd.args[2];
+      for (size_t i = 3; i < sCmd.args.size(); ++i)
+        text += " " + sCmd.args[i];
+      if (!PortAp::SendChat(text, error))
+        return Finish(error.c_str());
+    } else if (action == "chat" && sCmd.args.size() == 2) {
+      for (const PortAp::ChatLine& line : PortAp::ChatLog())
+        Out("[%s] %s", line.type.c_str(), line.text.c_str());
     } else if (!action.empty()) {
-      return Finish("usage: ap [connect <server> <slot> [password] | disconnect | recent | resume <n>]");
+      return Finish("usage: ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | "
+                    "say <text> | chat]");
     }
     Out("%s (%s)", PortAp::StatusText(), PortAp::ConfigFilePath().c_str());
     Finish();

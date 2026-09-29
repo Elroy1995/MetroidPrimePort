@@ -216,6 +216,14 @@ struct Runtime {
     wake.notify_all();
   }
 
+  void AppendChatLocked(std::string type, std::string text) {
+    constexpr size_t kChatLines = 500;
+    if (chat.size() >= kChatLines)
+      chat.pop_front();
+    chat.push_back(ChatLine{std::move(type), std::move(text)});
+    ++chatSerial;
+  }
+
   // Writes the state file if it has changed. Only one thread calls this at a
   // time, so the snapshot taken under the lock is written in order.
   void FlushState() {
@@ -278,6 +286,11 @@ struct Runtime {
   bool stateDirty = false;
   bool stateWriteFailed = false; // only touched by the thread that flushes
   std::deque<std::string> notifications;
+  // The overlay's chat log, kept across reconnects, and Say texts waiting for
+  // the socket thread.
+  std::deque<ChatLine> chat;
+  uint64_t chatSerial = 0;
+  std::deque<std::string> pendingSay;
   int itemCount = 0;
   int checkCount = 0;
   // Locations collected in game that the table has no id for. Counted and
@@ -719,6 +732,8 @@ void WorkerLoop(Runtime& runtime) {
                 runtime.MarkStateDirtyLocked();
               runtime.grants.insert(runtime.grants.end(), newGrants.begin(), newGrants.end());
               runtime.lastMessage = runtime.session->LastMessage();
+              for (Protocol::ChatLine line; runtime.session->TakeChatLine(line);)
+                runtime.AppendChatLocked(std::move(line.type), std::move(line.text));
               const std::string& packetError = runtime.session->LastError();
               if (cmd != "ConnectionRefused" && !packetError.empty() && packetError != oldError &&
                   packetError != runtime.lastError) {
@@ -735,6 +750,7 @@ void WorkerLoop(Runtime& runtime) {
                 runtime.stateLabel = "connected";
                 runtime.lastError.clear();
                 runtime.LogStateLocked("connected as " + config.slot);
+                runtime.AppendChatLocked("port", "Connected to " + config.server + " as " + config.slot);
                 initialChecks = state.checkedLocations;
                 for (auto queued = runtime.queuedChecks.begin(); queued != runtime.queuedChecks.end();) {
                   if (std::find(initialChecks.begin(), initialChecks.end(), *queued) !=
@@ -806,6 +822,7 @@ void WorkerLoop(Runtime& runtime) {
         std::string pendingBounce;
         bool syncWanted = false;
         bool goalWanted = false;
+        std::vector<std::string> pendingSay;
         if (apConnected) {
           std::lock_guard<std::mutex> lock(runtime.mutex);
           goalWanted = runtime.goalWanted && !runtime.goalSent;
@@ -816,6 +833,8 @@ void WorkerLoop(Runtime& runtime) {
           }
           syncWanted = runtime.syncWanted;
           runtime.syncWanted = false;
+          pendingSay.assign(runtime.pendingSay.begin(), runtime.pendingSay.end());
+          runtime.pendingSay.clear();
           // DeathLink: a death the game thread noticed, announced once. The
           // pending flag is *cleared* rather than moved-from, because this block
           // runs on every loop iteration and a moved-from-but-not-cleared
@@ -856,6 +875,14 @@ void WorkerLoop(Runtime& runtime) {
           }
           PortLog::Write("archipelago: goal complete\n");
         }
+        for (const std::string& text : pendingSay) {
+          if (!SendPacket(client, Session::BuildSay(text), connectionError)) {
+            connectionFailed = true;
+            break;
+          }
+        }
+        if (connectionFailed)
+          break;
         runtime.FlushState();
 
         if (!received && !client.IsOpen()) {
@@ -870,6 +897,10 @@ void WorkerLoop(Runtime& runtime) {
     runtime.FlushState();
     {
       std::lock_guard<std::mutex> lock(runtime.mutex);
+      if (runtime.connected && !runtime.stop.load(std::memory_order_acquire))
+        runtime.AppendChatLocked("port", "Disconnected: " +
+                                             (connectionError.empty() ? std::string("connection closed")
+                                                                      : connectionError));
       runtime.connected = false;
     }
     if (runtime.stop.load(std::memory_order_acquire))
@@ -1031,6 +1062,7 @@ void Restart(Runtime& runtime) {
   // Unsent checks are in the state file and go out with the next handshake.
   runtime.queuedChecks.clear();
   runtime.notifications.clear();
+  runtime.pendingSay.clear();
   runtime.pendingBounce.clear();
   runtime.syncWanted = false;
   runtime.stateDirty = false;
@@ -1301,6 +1333,54 @@ std::vector< TrackedItem > TrackedItems() {
     }
   }
   return result;
+}
+
+std::vector< ChatLine > ChatLog(uint64_t* serial) {
+  std::vector< ChatLine > result;
+  try {
+    EnsureLoaded();
+    Runtime& runtime = GetRuntime();
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    result.assign(runtime.chat.begin(), runtime.chat.end());
+    if (serial != nullptr)
+      *serial = runtime.chatSerial;
+  } catch (...) {
+    result.clear();
+  }
+  return result;
+}
+
+bool SendChat(const std::string& text, std::string& error) {
+  try {
+    const size_t first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+      error = "nothing to send";
+      return false;
+    }
+    const size_t last = text.find_last_not_of(" \t\r\n");
+    constexpr size_t kSayLimit = 1000;
+    std::string trimmed = text.substr(first, std::min(last - first + 1, kSayLimit));
+    EnsureLoaded();
+    Runtime& runtime = GetRuntime();
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (!runtime.connected) {
+      error = "not connected";
+      return false;
+    }
+    // The socket thread sends these after its receive wait (up to a second).
+    constexpr size_t kPendingSay = 64;
+    if (runtime.pendingSay.size() >= kPendingSay) {
+      error = "still sending the last messages";
+      return false;
+    }
+    runtime.pendingSay.push_back(std::move(trimmed));
+    runtime.wake.notify_all();
+    error.clear();
+    return true;
+  } catch (...) {
+    error = "could not queue the message";
+    return false;
+  }
 }
 
 int CheckCount() {

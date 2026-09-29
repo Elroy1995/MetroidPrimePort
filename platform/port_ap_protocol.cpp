@@ -1157,6 +1157,16 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
                         IntegerMember(*sent, "location", sentLocation) &&
                         IntegerMember(*sent, "player", sentFinder) &&
                         AnnouncedLocally(sentLocation, sentFinder);
+    // The log keeps line breaks (command replies such as !help span lines) and
+    // far more text than the HUD shows.
+    constexpr size_t kChatLimit = 4000;
+    constexpr size_t kChatLines = 256;
+    if (mChat.size() >= kChatLines)
+      mChat.erase(mChat.begin());
+    std::string chatText = message.size() > kChatLimit ? message.substr(0, kChatLimit) + "..." : message;
+    while (!chatText.empty() && (chatText.back() == '\n' || chatText.back() == '\r'))
+      chatText.pop_back();
+    mChat.push_back(ChatLine{packet.StringOr("type"), std::move(chatText)});
     std::string normalized;
     normalized.reserve(message.size());
     bool previousWasNewline = false;
@@ -1227,6 +1237,18 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
   } catch (...) {
     // Malformed packets and allocation failures must not escape into the client.
   }
+
+bool Session::TakeChatLine(ChatLine& line) {
+  try {
+    if (mChat.empty())
+      return false;
+    line = std::move(mChat.front());
+    mChat.erase(mChat.begin());
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
 
 bool Session::TakeNotification(std::string& text) {
   try {
@@ -1300,6 +1322,10 @@ std::string Session::BuildLocationChecks(const std::vector<int64_t>& ids) {
 }
 
 std::string Session::BuildSync() { return "{\"cmd\":\"Sync\"}"; }
+
+std::string Session::BuildSay(const std::string& text) {
+  return "{\"cmd\":\"Say\",\"text\":" + Quote(text) + "}";
+}
 
 std::string Session::BuildGoal() { return "{\"cmd\":\"StatusUpdate\",\"status\":30}"; }
 

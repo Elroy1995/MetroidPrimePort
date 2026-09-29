@@ -164,6 +164,19 @@ def handle_client(sock, address, args, item_ids, bounce_sources=()):
                         "items": [[item_id, 0, 1, 0] for item_id in item_ids],
                     })
                     continue
+                # Say: chat is echoed to everyone, as a real server does; a
+                # command gets a two-line CommandResult, like !help's reply.
+                if packet_command(packet) == "Say":
+                    text = str(packet.get("text", ""))
+                    if text.startswith("!"):
+                        send_json(sock, {"cmd": "PrintJSON", "type": "CommandResult",
+                                         "data": [{"text": f"Fake server got {text}\n"
+                                                           "and has no commands."}]})
+                    else:
+                        send_json(sock, {"cmd": "PrintJSON", "type": "Chat", "team": 0,
+                                         "slot": 1, "message": text,
+                                         "data": [{"text": f"{args.slot}: {text}"}]})
+                    continue
                 if packet_command(packet) != "Connect":
                     continue
                 name = packet.get("name", "") if isinstance(packet, dict) else ""

@@ -2051,6 +2051,85 @@ void DrawArchipelagoConnect() {
   }
 }
 
+ImVec4 ChatLineColor(const std::string& type) {
+  if (type == "Chat")
+    return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+  if (type == "ServerChat" || type == "CommandResult" || type == "AdminCommandResult")
+    return ImVec4(0.55f, 0.85f, 1.0f, 1.0f);
+  if (type == "Hint")
+    return ImVec4(1.0f, 0.85f, 0.4f, 1.0f);
+  if (type == "ItemSend" || type == "ItemCheat")
+    return ImVec4(0.6f, 0.95f, 0.6f, 1.0f);
+  if (type == "Goal" || type == "Release" || type == "Collect" || type == "Countdown")
+    return ImVec4(1.0f, 0.6f, 1.0f, 1.0f);
+  if (type == "port")
+    return ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+  return ImVec4(0.8f, 0.8f, 0.8f, 1.0f); // Join, Part, TagsChanged, Tutorial, ...
+}
+
+// The multiworld's chat: every PrintJSON message the server sent, and a box that
+// sends Say, so server commands such as !hint work from inside the game.
+void DrawChatTab() {
+  static char sInput[512] = {};
+  static std::string sError;
+  static uint64_t sSeenSerial = ~uint64_t{0};
+
+  if (!PortAp::Enabled()) {
+    ImGui::TextWrapped("Connect to an Archipelago room in the Session tab to chat.");
+    return;
+  }
+  uint64_t serial = 0;
+  const std::vector< PortAp::ChatLine > log = PortAp::ChatLog(&serial);
+  // The log takes the tab down to the input row, the error and the help line.
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float below = ImGui::GetFrameHeightWithSpacing() + ImGui::GetTextLineHeightWithSpacing() * 3.0f;
+  // The window may reach past a small display, so stop at whichever ends first.
+  const float room = std::min(ImGui::GetContentRegionAvail().y,
+                              ImGui::GetIO().DisplaySize.y - style.WindowPadding.y -
+                                  ImGui::GetCursorScreenPos().y);
+  const float logHeight = std::max(ImGui::GetTextLineHeightWithSpacing() * 6.0f, room - below);
+  if (ImGui::BeginChild("apChat", ImVec2(0.0f, logHeight), ImGuiChildFlags_Borders)) {
+    // Follow new lines only while the log is scrolled to the bottom, so reading
+    // back is not interrupted.
+    const bool atBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f;
+    if (log.empty())
+      ImGui::TextDisabled("No messages yet.");
+    ImGui::PushTextWrapPos(0.0f);
+    for (const PortAp::ChatLine& line : log) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ChatLineColor(line.type));
+      ImGui::TextUnformatted(line.text.c_str());
+      ImGui::PopStyleColor();
+    }
+    ImGui::PopTextWrapPos();
+    if (serial != sSeenSerial && (atBottom || sSeenSerial == ~uint64_t{0}))
+      ImGui::SetScrollHereY(1.0f);
+    sSeenSerial = serial;
+  }
+  ImGui::EndChild();
+
+  const bool connected = PortAp::Connected();
+  ImGui::BeginDisabled(!connected);
+  const float sendWidth = ImGui::CalcTextSize("Send").x + style.FramePadding.x * 2.0f;
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - sendWidth - style.ItemSpacing.x);
+  bool send = ImGui::InputTextWithHint("##apSay", connected ? "Message or !command" : "Not connected",
+                                       sInput, sizeof(sInput), ImGuiInputTextFlags_EnterReturnsTrue);
+  if (send)
+    ImGui::SetKeyboardFocusHere(-1); // Enter keeps the box focused for the next line
+  ImGui::SameLine();
+  send = ImGui::Button("Send") || send;
+  ImGui::EndDisabled();
+  if (send && sInput[0] != '\0') {
+    if (PortAp::SendChat(sInput, sError))
+      sInput[0] = '\0';
+  }
+  if (!sError.empty())
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "%s", sError.c_str());
+  ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+  ImGui::TextWrapped("Commands: !hint <item>, !hint_location <location>, !remaining, !release, "
+                     "!collect, !help");
+  ImGui::PopStyleColor();
+}
+
 void DrawSessionTab() {
   if (ImGui::Button("Restart to menu")) {
     RequestReset();
@@ -2285,7 +2364,7 @@ const DebugPage kDebugPages[] = {
     {"Input", DrawInputTab},             {"Controls", PortControls::DrawTab},
     {"Render", DrawRenderTab},           {"Audio", DrawAudioTab},
     {"Voices", DrawVoicesTab},           {"Debug", DrawDebugTab},
-    {"Session", DrawSessionTab},
+    {"Session", DrawSessionTab},         {"Chat", DrawChatTab},
 };
 
 // The innermost window under the finger that can actually scroll vertically,

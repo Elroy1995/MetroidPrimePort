@@ -85,6 +85,20 @@ struct TrackedItem {
   int total = 1;
 };
 std::vector< TrackedItem > TrackedItems();
+// One line of the chat log: every PrintJSON message in full (chat, hints,
+// item sends, command replies), plus the port's own "port" lines for
+// connections. `type` is the packet's type, as the server named it.
+struct ChatLine {
+  std::string type;
+  std::string text;
+};
+// The chat log, oldest first. It outlives reconnects. `serial`, when given,
+// receives a number that changes whenever a line is added.
+std::vector< ChatLine > ChatLog(uint64_t* serial = nullptr);
+// Queues a Say for the socket thread: chat text, or a server command such as
+// "!hint Missile Launcher". False with `error` set when not connected or the
+// text is empty.
+bool SendChat(const std::string& text, std::string& error);
 // Seed name from the server's RoomInfo, or "" before it arrives.
 const char* SeedName();
 
