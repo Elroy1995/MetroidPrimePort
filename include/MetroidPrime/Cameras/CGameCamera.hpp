@@ -45,7 +45,14 @@ public:
   void UpdatePerspective(float dt);
   int GetControllerNumber() const { return x16c_controllerIdx; }
   const bool DisablesInput() const { return x170_25_disablesInput; }
+#ifdef TARGET_PC
+  // Port: the aspect can change mid-level (Options row, window resize), and every camera is
+  // built with the default aspect, so follow it instead of the value cached at construction.
+  // A stale aspect culls actors in the widened margins, which then stop animating.
+  float GetAspectRatio() const;
+#else
   float GetAspectRatio() const { return x168_aspect; }
+#endif
 
 protected:
   TUniqueId xe8_watchedObject;
@@ -54,6 +61,9 @@ protected:
   float x15c_currentFov;
   float x160_znear;
   float x164_zfar;
+#ifdef TARGET_PC
+  mutable
+#endif
   float x168_aspect;
   int x16c_controllerIdx;
   mutable bool x170_24_perspDirty : 1;

@@ -48,7 +48,21 @@ CGameCamera::CGameCamera(const TUniqueId uid, const bool active, const rstl::str
 
 CGameCamera::~CGameCamera() {}
 
+#ifdef TARGET_PC
+float CGameCamera::GetAspectRatio() const {
+  const float aspect = CCameraManager::GetDefaultAspectRatio();
+  if (aspect != x168_aspect) {
+    x168_aspect = aspect;
+    x170_24_perspDirty = true;
+  }
+  return aspect;
+}
+#endif
+
 const CMatrix4f& CGameCamera::GetPerspectiveMatrix() const {
+#ifdef TARGET_PC
+  GetAspectRatio();
+#endif
   if (x170_24_perspDirty == true) {
     xec_perspectiveMatrix =
         CGraphics::CalculatePerspectiveMatrix(x15c_currentFov, x168_aspect, x160_znear, x164_zfar);
