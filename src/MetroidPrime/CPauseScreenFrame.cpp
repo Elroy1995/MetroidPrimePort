@@ -195,6 +195,7 @@ enum EPortOption {
   kPO_HudScale,
   kPO_HideHelmet,
   kPO_HideVisorEffects,
+  kPO_SpeedrunTimer,
 };
 #define PORT_OPTION(opt) static_cast< EGameOption >(opt)
 
@@ -230,6 +231,7 @@ static const SGameOption skPortDisplayOptions[] = {
     {PORT_OPTION(kPO_HudScale), -1, PortDebug::kHudScaleMin, PortDebug::kHudScaleMax, 5.f, kOT_Float},
     {PORT_OPTION(kPO_Fov), -1, PortDebug::kFovMin, PortDebug::kFovMax, 1.f, kOT_Float},
     {PORT_OPTION(kPO_AntiAliasing), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_SpeedrunTimer), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static const SGameOption skPortControllerOptions[] = {
@@ -244,7 +246,7 @@ static const SGameOption skPortControllerOptions[] = {
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static SOptionCategory skPauseOptions[] = {
-    {8, skPortVisorOptions},      {10, skPortDisplayOptions}, {4, skSoundOptions},
+    {8, skPortVisorOptions},      {11, skPortDisplayOptions}, {4, skSoundOptions},
     {9, skPortControllerOptions}, {0, nullptr},
 };
 
@@ -278,6 +280,8 @@ static const wchar_t* PortOptionTitle(EGameOption option) {
     return L"Hide Helmet";
   case kPO_HideVisorEffects:
     return L"Hide Visor Effects";
+  case kPO_SpeedrunTimer:
+    return L"In-Game Timer";
   default:
     return L"";
   }
@@ -311,6 +315,8 @@ static int GetPortOption(EGameOption option) {
     return PortDebug::HideHelmet() ? 1 : 0;
   case kPO_HideVisorEffects:
     return PortDebug::HideVisorEffects() ? 1 : 0;
+  case kPO_SpeedrunTimer:
+    return PortDebug::SpeedrunTimer() ? 1 : 0;
   default:
     return 0;
   }
@@ -355,6 +361,9 @@ static void SetPortOption(EGameOption option, int value) {
     break;
   case kPO_HideHelmet:
     PortDebug::SetHideHelmet(value > 0);
+    break;
+  case kPO_SpeedrunTimer:
+    PortDebug::SetSpeedrunTimer(value > 0);
     break;
   case kPO_HideVisorEffects:
     PortDebug::SetHideVisorEffects(value > 0);
@@ -525,6 +534,7 @@ void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, in
         PortDebug::SetFirstPersonFov(PortDebug::kFovRetail);
         PortDebug::SetMsaa(1);
         PortDebug::SetHudScale(PortDebug::kHudScaleMax);
+        PortDebug::SetSpeedrunTimer(false);
         break;
       case 3:
         PortDebug::SetTwinStick(false);

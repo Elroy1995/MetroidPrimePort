@@ -6,6 +6,7 @@
 // tick, where every object pointer is live; the rest run once per frame.
 #include "port_apclient.h"
 #include "port_debug.h"
+#include "port_livesplit.h"
 #include "port_smoke.h"
 #include "MetroidPrime/CActor.hpp"
 #include "MetroidPrime/CGameArea.hpp"
@@ -404,6 +405,8 @@ void CmdHelp() {
   Out("msaa <1|4>, aniso <1..16>  anti-aliasing and anisotropic filtering, applied next frame");
   Out("hudscale <50..100>         HUD scale in percent, as the Options row does");
   Out("helmet <0|1>, visorfx <0|1> show (1) or hide (0) the helmet and visor effects");
+  Out("timer <0|1>                on-screen in-game time; igt <seconds> sets the play time");
+  Out("livesplit <0|1> | addr <host:port> | send <command> | status   LiveSplit Server client");
   Out("ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]   Archipelago, as the F1 Session tab does");
   Out("quit                       exit the game");
   Out("ids: hex editor id (002900A1), u<index> unique id, or an exact debug name");
@@ -824,6 +827,43 @@ void RunFrame() {
       PortDebug::SetHideHelmet(value == "0");
     } else {
       PortDebug::SetHideVisorEffects(value == "0");
+    }
+    Finish();
+  } else if (name == "timer") {
+    const std::string value = sCmd.args.size() > 1 ? sCmd.args[1] : "";
+    if (value != "0" && value != "1") {
+      return Finish("usage: timer <0|1>");
+    }
+    PortDebug::SetSpeedrunTimer(value == "1");
+    Finish();
+  } else if (name == "igt") {
+    const double value = sCmd.args.size() > 1 ? std::atof(sCmd.args[1].c_str()) : -1.0;
+    if (!(value >= 0.0) || gpGameState == nullptr) {
+      return Finish("usage: igt <seconds>");
+    }
+    gpGameState->SetTotalPlayTime(value);
+    Finish();
+  } else if (name == "livesplit") {
+    const std::string action = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";
+    if (action == "0" || action == "1") {
+      PortDebug::SetLiveSplit(action == "1");
+    } else if (action == "addr" && sCmd.args.size() == 3) {
+      PortDebug::SetLiveSplitAddress(sCmd.args[2]);
+    } else if (action == "send" && sCmd.args.size() > 2) {
+      std::string line = sCmd.args[2];
+      for (size_t i = 3; i < sCmd.args.size(); ++i) {
+        line += " " + sCmd.args[i];
+      }
+      PortLiveSplit::SendRaw(line);
+    } else if (action != "status") {
+      return Finish("usage: livesplit <0|1> | addr <host:port> | send <command> | status");
+    }
+    static const char* const kStatusNames[] = {"off", "connecting", "connected", "failed"};
+    Out("livesplit %s %s %s", PortDebug::LiveSplit() ? "on" : "off",
+        PortDebug::LiveSplitAddress().c_str(), kStatusNames[PortLiveSplit::Status()]);
+    const std::string error = PortLiveSplit::LastError();
+    if (!error.empty()) {
+      Out("last error: %s", error.c_str());
     }
     Finish();
   } else if (name == "ap") {

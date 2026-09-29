@@ -3,6 +3,7 @@
 #include "port_apclient.h"
 #include "port_debug.h"
 #include "port_hold_toggle.h"
+#include "port_livesplit.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 #endif
@@ -401,6 +402,9 @@ CStateManager::~CStateManager() {
   // title screen after a quit freed the manager.
   if (PortDebug::StateManager() == this) {
     PortDebug::SetStateManager(nullptr);
+  }
+  if (gpGameState != nullptr) {
+    PortLiveSplit::GameSessionEnd(gpGameState->GetTotalPlayTime());
   }
   CMemory::OffsetFakeStatics(
       -(x808_objectLists.size() * sizeof(CObjectList) + 0x11c)); // TODO what is this 11c?
@@ -1188,6 +1192,13 @@ void CStateManager::Update(float dt) {
       gpGameState->SetTotalPlayTime(dt + gpGameState->GetTotalPlayTime());
       UpdateHintState(dt);
     }
+    // Port: the speedrun timer's LiveSplit feed (game time, upgrade splits).
+    static_assert(PortLiveSplit::kItemCount == CPlayerState::kIT_Max, "item count");
+    int capacities[PortLiveSplit::kItemCount];
+    for (int i = 0; i < PortLiveSplit::kItemCount; ++i) {
+      capacities[i] = x8b8_playerState->GetItemCapacity(static_cast< CPlayerState::EItemType >(i));
+    }
+    PortLiveSplit::GameTick(gpGameState->GetTotalPlayTime(), capacities);
 
     CCameraFilterPass* filt = xb84_camFilterPasses.data();
     CCameraBlurPass* blur = xd14_camBlurPasses.data();

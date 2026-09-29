@@ -34,6 +34,7 @@
 #include "Kyoto/Math/CloseEnough.hpp"
 
 #include "port_apclient.h"
+#include "port_livesplit.h"
 #include "rstl/algorithm.hpp"
 #include "rstl/iterator.hpp"
 #include "rstl/math.hpp"
@@ -414,6 +415,7 @@ void CScriptSpecialFunction::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId
           gpMain->SetRestartMode(CMain::kRM_WinBest);
           break;
         }
+        PortLiveSplit::GameEnd(gpGameState->GetTotalPlayTime());
         mgr.QuitGame();
       }
       break;

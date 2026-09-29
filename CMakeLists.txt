@@ -103,6 +103,7 @@ set(MP_PORT_SOURCES
     platform/port_ap_protocol.cpp
     platform/port_apclient.cpp
     platform/port_json.cpp
+    platform/port_livesplit.cpp
     platform/port_ws.cpp
     platform/touch_pad.cpp
     platform/glibc_compat.c
@@ -311,6 +312,8 @@ if(MP_BUILD_TESTS)
         "MP_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
     add_executable(port_hold_toggle_tests tests/port_hold_toggle.cpp)
     target_include_directories(port_hold_toggle_tests PRIVATE platform/include)
+    add_executable(port_livesplit_tests tests/port_livesplit.cpp)
+    target_include_directories(port_livesplit_tests PRIVATE platform/include)
     add_executable(port_timing_tests tests/port_timing.cpp)
     target_include_directories(port_timing_tests PRIVATE platform/include)
     add_executable(port_audio_math_tests tests/port_audio_math.c)
@@ -320,7 +323,7 @@ if(MP_BUILD_TESTS)
     add_test(NAME port_card_tests COMMAND port_card_tests "${CMAKE_CURRENT_BINARY_DIR}/card-test-data")
     set_tests_properties(port_card_tests PROPERTIES TIMEOUT 15 LABELS port)
     aurora_copy_runtime_dlls(port_card_tests)
-    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_musyx_tests port_disc_tests port_mouse_tests port_touch_pad_tests port_json_tests port_ws_tests port_hold_toggle_tests port_timing_tests port_audio_math_tests)
+    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_musyx_tests port_disc_tests port_mouse_tests port_touch_pad_tests port_json_tests port_ws_tests port_hold_toggle_tests port_livesplit_tests port_timing_tests port_audio_math_tests)
         add_test(NAME ${test} COMMAND ${test})
         set_tests_properties(${test} PROPERTIES TIMEOUT 15 LABELS port)
         aurora_copy_runtime_dlls(${test})

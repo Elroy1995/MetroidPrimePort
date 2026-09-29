@@ -1,6 +1,7 @@
 #ifndef METROID_PRIME_PORT_PORT_DEBUG_H
 #define METROID_PRIME_PORT_PORT_DEBUG_H
 #include <cstdint>
+#include <string>
 
 // Runtime debug settings shared between the platform layer and the game.
 // Defaults come from environment variables so existing workflows keep working,
@@ -154,6 +155,15 @@ void SetTwinStickRightY(float y);
 // Morph Ball Bombs are held. A connected Archipelago seed overrides it.
 bool SpringBall();
 void SetSpringBall(bool enabled);
+// Speedrun support: an on-screen in-game time (the play time the save shows)
+// and the LiveSplit Server client (port_livesplit.h), which connects to
+// "host:port" while enabled.
+bool SpeedrunTimer();
+void SetSpeedrunTimer(bool enabled);
+bool LiveSplit();
+void SetLiveSplit(bool enabled);
+std::string LiveSplitAddress();
+void SetLiveSplitAddress(const std::string& address);
 // Fast Morph, as in Metroid Prime 4: short morph/unmorph transitions that keep
 // momentum (capped at walking speed when unmorphing on the ground).
 bool FastMorph();

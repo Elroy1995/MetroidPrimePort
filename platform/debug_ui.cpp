@@ -5,6 +5,7 @@
 #include "port_debug.h"
 #include "port_apclient.h"
 #include "port_controls.h"
+#include "port_livesplit.h"
 #include "port_prompts.h"
 #include "port_mouse.h"
 #include "port_textures.h"
@@ -118,6 +119,10 @@ int sAnisotropy = 16;
 bool sUnlockHardMode = false;
 bool sUnlockFusionSuit = false;
 bool sUnlockGalleries = false;
+bool sSpeedrunTimer = false;
+bool sLiveSplit = false;
+std::string sLiveSplitAddress = "127.0.0.1:16834";
+bool sLiveSplitSplitUpgrades = true;
 // Gyro aiming: off / hold / always, auto / controller / phone, and how fast a
 // rotation turns into aim travel.
 int sGyroMode = 0;
@@ -233,6 +238,10 @@ std::string Trim(const std::string& text) {
 
 void MarkDirty() { sSettingsDirty = true; }
 
+void ApplyLiveSplit() {
+  PortLiveSplit::Configure(sLiveSplit, sLiveSplitAddress, sLiveSplitSplitUpgrades);
+}
+
 void ApplySetting(const std::string& key, const std::string& value) {
   if (key == "frame_limit") {
     sFrameLimitEnabled = ParseBool(value);
@@ -323,6 +332,16 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "spring_ball") {
     sSpringBall = ParseBool(value);
+  } else if (key == "speedrun_timer") {
+    sSpeedrunTimer = ParseBool(value);
+  } else if (key == "livesplit") {
+    sLiveSplit = ParseBool(value);
+  } else if (key == "livesplit_address") {
+    if (!value.empty()) {
+      sLiveSplitAddress = value;
+    }
+  } else if (key == "livesplit_split_upgrades") {
+    sLiveSplitSplitUpgrades = ParseBool(value);
   } else if (key == "fast_morph") {
     sFastMorph = ParseBool(value);
   } else if (key == "lock_on_toggle") {
@@ -423,6 +442,10 @@ void SaveSettings() {
   file << "unlock_hard_mode=" << (sUnlockHardMode ? 1 : 0) << '\n';
   file << "unlock_fusion_suit=" << (sUnlockFusionSuit ? 1 : 0) << '\n';
   file << "unlock_galleries=" << (sUnlockGalleries ? 1 : 0) << '\n';
+  file << "speedrun_timer=" << (sSpeedrunTimer ? 1 : 0) << '\n';
+  file << "livesplit=" << (sLiveSplit ? 1 : 0) << '\n';
+  file << "livesplit_address=" << sLiveSplitAddress << '\n';
+  file << "livesplit_split_upgrades=" << (sLiveSplitSplitUpgrades ? 1 : 0) << '\n';
   file << "vsync=" << (sVsyncEnabled ? 1 : 0) << '\n';
   file << "overlay_windowed=" << (sOverlayWindowed ? 1 : 0) << '\n';
   file << "render_scale=" << sRenderScale << '\n';
@@ -604,6 +627,7 @@ void EnsureInitialized() {
   }
 
   std::atexit(SaveSettings);
+  ApplyLiveSplit();
 }
 } // namespace
 
@@ -921,6 +945,44 @@ bool SpringBall() {
 void SetSpringBall(bool enabled) {
   EnsureInitialized();
   sSpringBall = enabled;
+  MarkDirty();
+}
+
+bool SpeedrunTimer() {
+  EnsureInitialized();
+  return sSpeedrunTimer;
+}
+
+void SetSpeedrunTimer(bool enabled) {
+  EnsureInitialized();
+  sSpeedrunTimer = enabled;
+  MarkDirty();
+}
+
+bool LiveSplit() {
+  EnsureInitialized();
+  return sLiveSplit;
+}
+
+void SetLiveSplit(bool enabled) {
+  EnsureInitialized();
+  sLiveSplit = enabled;
+  ApplyLiveSplit();
+  MarkDirty();
+}
+
+std::string LiveSplitAddress() {
+  EnsureInitialized();
+  return sLiveSplitAddress;
+}
+
+void SetLiveSplitAddress(const std::string& address) {
+  EnsureInitialized();
+  if (address.empty()) {
+    return;
+  }
+  sLiveSplitAddress = address;
+  ApplyLiveSplit();
   MarkDirty();
 }
 
@@ -1892,6 +1954,55 @@ void DrawExtrasTab() {
       "Metroid Fusion), and all four image galleries. Nothing is written into the "
       "save, so turning an option off locks it again. Metroid (NES) stays locked: "
       "its emulator can't run in the port.");
+
+  ImGui::SeparatorText("Speedrun");
+  bool timer = sSpeedrunTimer;
+  if (ImGui::Checkbox("On-screen in-game time", &timer)) {
+    SetSpeedrunTimer(timer);
+  }
+  bool liveSplit = sLiveSplit;
+  if (ImGui::Checkbox("LiveSplit", &liveSplit)) {
+    SetLiveSplit(liveSplit);
+  }
+  ImGui::SameLine();
+  switch (PortLiveSplit::Status()) {
+  case PortLiveSplit::kStatus_Off:
+    ImGui::TextDisabled("off");
+    break;
+  case PortLiveSplit::kStatus_Connecting:
+    ImGui::TextUnformatted("connecting...");
+    break;
+  case PortLiveSplit::kStatus_Connected:
+    ImGui::TextColored(ImVec4(0.4f, 1.f, 0.4f, 1.f), "connected");
+    break;
+  case PortLiveSplit::kStatus_Failed:
+    ImGui::TextColored(ImVec4(1.f, 0.5f, 0.3f, 1.f), "%s", PortLiveSplit::LastError().c_str());
+    break;
+  }
+  // Applied when the field loses focus; until then the text is left alone.
+  static char address[128];
+  static bool editingAddress = false;
+  if (!editingAddress) {
+    std::snprintf(address, sizeof(address), "%s", sLiveSplitAddress.c_str());
+  }
+  ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.f);
+  ImGui::InputText("Server (host:port)", address, sizeof(address));
+  editingAddress = ImGui::IsItemActive();
+  if (ImGui::IsItemDeactivatedAfterEdit()) {
+    SetLiveSplitAddress(address);
+  }
+  bool splitUpgrades = sLiveSplitSplitUpgrades;
+  if (ImGui::Checkbox("Split on upgrades", &splitUpgrades)) {
+    sLiveSplitSplitUpgrades = splitUpgrades;
+    ApplyLiveSplit();
+    MarkDirty();
+  }
+  ImGui::TextWrapped(
+      "The in-game time is the play time the save file shows: it stops in cutscenes, "
+      "menus and loads. LiveSplit: right-click it, Control > Start TCP Server (port "
+      "16834), and compare against Game Time. A new file resets and starts the timer; "
+      "the game time follows the in-game time; it splits on each new upgrade or "
+      "artifact (not expansions or energy tanks) when enabled, and on the final blow.");
 }
 
 #if defined(__ANDROID__)
@@ -2929,6 +3040,32 @@ bool DrawDesktopWindow() {
   return open;
 }
 
+// The in-game time in the bottom-right corner while a game runs.
+void DrawSpeedrunTimer() {
+  if (!sSpeedrunTimer || sStateManager == nullptr || gpGameState == nullptr) {
+    return;
+  }
+  const long long cs =
+      static_cast< long long >(std::floor(gpGameState->GetTotalPlayTime() * 100.0));
+  char text[32];
+  if (cs >= 360000) {
+    std::snprintf(text, sizeof(text), "%lld:%02lld:%02lld.%02lld", cs / 360000, cs / 6000 % 60,
+                  cs / 100 % 60, cs % 100);
+  } else {
+    std::snprintf(text, sizeof(text), "%lld:%02lld.%02lld", cs / 6000, cs / 100 % 60, cs % 100);
+  }
+  ImDrawList* draw = ImGui::GetForegroundDrawList();
+  ImFont* font = ImGui::GetFont();
+  const ImVec2 display = ImGui::GetIO().DisplaySize;
+  const float size = std::max(ImGui::GetFontSize() * 1.5f, display.y * 0.035f);
+  const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.f, text);
+  const float margin = size * 0.6f;
+  const ImVec2 pos(display.x - extent.x - margin, display.y - extent.y - margin);
+  const float shadow = std::max(1.f, size / 12.f);
+  draw->AddText(font, size, ImVec2(pos.x + shadow, pos.y + shadow), IM_COL32(0, 0, 0, 200), text);
+  draw->AddText(font, size, pos, IM_COL32(255, 255, 255, 230), text);
+}
+
 void DrawUI() {
   EnsureInitialized();
   if (!sAudioSettingsApplied) {
@@ -2943,6 +3080,7 @@ void DrawUI() {
     sPresentationSettingsApplied = true;
     aurora_enable_vsync(sVsyncEnabled && !sTurbo);
   }
+  DrawSpeedrunTimer();
   if (!sVisible) {
     sTouchScroll = TouchScroll{};
     return;

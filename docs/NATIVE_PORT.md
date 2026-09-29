@@ -533,6 +533,21 @@ a temporary directory instead of mounting.
   second drops the faceplate decoration, Samus's face reflection and the
   on-visor billboard effects (rain, splashes, steam). Console:
   `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>` (0 hides).
+- Speedrun timer and LiveSplit (F1 > Extras; the timer also in pause Options >
+  Display as In-Game Timer). `speedrun_timer` draws the in-game time (the play
+  time the save shows, which stops in cutscenes, menus and loads) in the bottom
+  right while a game runs. `livesplit` connects to LiveSplit's TCP server
+  (right-click LiveSplit > Control > Start TCP Server) at `livesplit_address`
+  (default `127.0.0.1:16834`), retrying every 3 s. A new file sends `reset`,
+  `starttimer` and `pausegametime`, so LiveSplit's Game Time then follows the
+  in-game time (`setgametime` every 0.1 s of it); compare against Game Time. It
+  splits when an upgrade or artifact is first gained (`livesplit_split_upgrades`,
+  on by default; not expansions or energy tanks, and items found again after the
+  frigate split again) and on the final blow (the EndGame special function).
+  Loading a save does not start the timer, and nothing resets it but a new file.
+  The logic is `PortLiveSplit::Tracker` (`platform/include/port_livesplit.h`,
+  covered by `port_livesplit_tests`). Console: `timer <0|1>`, `igt <seconds>`,
+  `livesplit <0|1> | addr <host:port> | send <command> | status`.
 - Unlocks (F1 > Extras, persisted as `unlock_hard_mode`, `unlock_fusion_suit`,
   `unlock_galleries`, all off by default): offer what finishing the game
   unlocks without finishing it. Hard mode adds Normal/Hard to a new file; the
@@ -609,7 +624,7 @@ a temporary directory instead of mounting.
   the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
   gyro rates in rad/s), `shot` (prints the bmp path),
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the
