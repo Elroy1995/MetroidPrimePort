@@ -78,6 +78,13 @@ int AmmoCapacity(const std::map< int64_t, int64_t >& counts, bool missiles, bool
 // Whether this item id feeds one of the ammo pools, and which.
 bool IsAmmoItem(int64_t itemId, bool& missiles);
 
+// Pickup model keys past the item types (0-40), matching the table
+// tools/gen_ap_pickup_patches.py writes.
+enum : int { kModelMainPowerBomb = 41, kModelOtherGame = 42 };
+// The model key a pickup holding this item id (with the base) is drawn with.
+// kModelOtherGame for ids this world doesn't have.
+int PickupModelKey(int64_t itemId);
+
 } // namespace MetroidPrime
 } // namespace PortAp
 

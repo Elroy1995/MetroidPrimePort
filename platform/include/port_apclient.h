@@ -5,6 +5,9 @@
 #include <vector>
 
 class CStateManager;
+namespace PortRandomizer {
+struct PickupModel;
+}
 
 // Archipelago client.
 //
@@ -119,6 +122,12 @@ void RecordPickup(uint32_t world, uint32_t area, uint32_t entity);
 // Shows on the HUD what an owned pickup held ("Found X for Bob"), or its
 // location name when the server has not said yet. Call after QueueCheck.
 void AnnouncePickup(uint32_t world, uint32_t area, uint32_t entity);
+
+// The model for the item the server scouted at an AP pickup: that item's
+// retail pickup model, or a stand-in for another game's item. False (keep the
+// retail model) when AP is off, the location isn't scouted yet, or the item
+// has no pickup on the disc.
+bool PickupModel(uint32_t world, uint32_t area, uint32_t entity, PortRandomizer::PickupModel& out);
 
 // A spawn point's Reset message replaced the whole inventory. Any received items
 // the game held are gone, so the next Poll rewinds the session and the server

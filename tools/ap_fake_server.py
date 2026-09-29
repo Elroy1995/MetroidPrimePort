@@ -182,6 +182,15 @@ def handle_client(sock, address, args, item_ids, bounce_sources=()):
                                          "slot": 1, "message": text,
                                          "data": [{"text": f"{args.slot}: {text}"}]})
                     continue
+                # LocationScouts: answer from --scouts; locations it doesn't
+                # name are left out, as if the server didn't know them.
+                if packet_command(packet) == "LocationScouts":
+                    send_json(sock, {"cmd": "LocationInfo", "locations": [
+                        {"item": item, "location": location, "player": player, "flags": 0}
+                        for location, (item, player) in args.scouts.items()
+                        if location in packet.get("locations", [])
+                    ]})
+                    continue
                 if packet_command(packet) != "Connect":
                     continue
                 name = packet.get("name", "") if isinstance(packet, dict) else ""
@@ -227,6 +236,18 @@ def parse_item_ids(text):
         raise argparse.ArgumentTypeError("item IDs must be colon-separated decimal integers") from error
 
 
+def parse_scouts(text):
+    scouts = {}
+    try:
+        for entry in filter(None, text.split(",")):
+            location, target = entry.split("=")
+            item, _, player = target.partition("@")
+            scouts[int(location, 10)] = (int(item, 10), int(player or "1", 10))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("scouts must look like LOC=ITEM[@PLAYER],...") from error
+    return scouts
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1", help="interface to listen on (default: %(default)s)")
@@ -239,6 +260,9 @@ def main():
                         metavar="ID[:ID...]", help="item IDs sent in ReceivedItems (default: 1234:5678)")
     parser.add_argument("--slot-data", type=json.loads, default={}, metavar="JSON",
                         help="slot_data object sent in Connected (default: {})")
+    parser.add_argument("--scouts", type=parse_scouts, default={}, metavar="LOC=ITEM[@PLAYER],...",
+                        help="LocationInfo answers to LocationScouts; PLAYER defaults to 1 (this "
+                             "slot), any other player is another game")
     parser.add_argument("--tls", action="store_true", help="serve wss:// (requires --cert and --key)")
     parser.add_argument("--cert", metavar="FILE", help="PEM server certificate chain for --tls")
     parser.add_argument("--key", metavar="FILE", help="PEM private key for --tls")

@@ -203,6 +203,11 @@ public:
   // LocationText for the game to show as the player collects the location.
   // The server's own announcement of that find is then left off the HUD.
   std::string AnnounceLocation(int64_t locationId);
+  // The item at one of this slot's locations, from the LocationScouts reply,
+  // and whether a slot playing this game receives it (this one or another
+  // Metroid Prime slot), so the id is one of this game's. False before the
+  // reply, or for a location it did not cover.
+  bool ScoutedAt(int64_t locationId, int64_t& item, bool& sameGame) const;
 
   // slot_data from Connected, for built-in tables; defaults before it arrives.
   const SlotData& GetSlotData() const { return mSlotData; }

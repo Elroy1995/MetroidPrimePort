@@ -1,5 +1,7 @@
 #pragma once
 
+#include "port_randomizer.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -18,7 +20,14 @@ bool Forced();
 // Patches the SCLY section of area `mreaId` into `out`. Returns false (and
 // leaves `out` empty) when not Active, when the room has no patch, or when
 // the room's script doesn't match the disc (a mod replaced it).
+// In Archipelago games it also applies randomprime's pickup patches
+// (tools/gen_ap_pickup_patches.py), so pickups don't play their retail
+// item's cutscene.
 bool PatchArea(uint32_t mreaId, const uint8_t* scly, size_t size, std::vector< uint8_t >& out);
+
+// The disc's pickup model for a key from PortAp::MetroidPrime::PickupModelKey.
+// False for keys without one (Power Beam, visors...).
+bool PickupModel(int key, PortRandomizer::PickupModel& out);
 
 // Applies an op stream to a SCLY section (big-endian, as on the disc).
 // Returns the number of ops whose target was missing; `out` holds the result

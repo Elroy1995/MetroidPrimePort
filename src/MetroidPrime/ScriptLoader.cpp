@@ -15,6 +15,7 @@
 #include "MetroidPrime/CModelData.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
+#include "port_apclient.h"
 #include "port_log.h"
 #include "port_randomizer.h"
 
@@ -918,6 +919,22 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
         PortLog::Write("randomizer: model %08X/%08X for item %d is not on this disc; "
                        "keeping the retail model\n",
                        randomModel.model, randomModel.acs, randoItem);
+      }
+    }
+    // An AP pickup draws the item the server scouted there (the item itself is
+    // granted by the server, not by itemType).
+    PortRandomizer::PickupModel apModel;
+    if (PortAp::PickupModel(randoWorld, randoArea,
+                            static_cast< uint32_t >(info.GetEditorId().Value()), apModel)) {
+      if (gpResourceFactory->GetResourceTypeById(static_cast< CAssetId >(apModel.model)) != 0 ||
+          gpResourceFactory->GetResourceTypeById(static_cast< CAssetId >(apModel.acs)) != 0) {
+        staticModel = static_cast< CAssetId >(apModel.model);
+        aParms = CAnimationParameters(static_cast< CAssetId >(apModel.acs), apModel.character,
+                                      apModel.animation);
+      } else {
+        PortLog::Write("archipelago: pickup model %08X/%08X is not on this disc; "
+                       "keeping the retail model\n",
+                       apModel.model, apModel.acs);
       }
     }
   }

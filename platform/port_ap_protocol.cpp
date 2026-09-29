@@ -1408,6 +1408,20 @@ bool Session::AnnouncedLocally(int64_t locationId, int64_t finder) const {
   return mOwnSlot != 0 && finder == mOwnSlot && mAnnounced.count(locationId) != 0;
 }
 
+bool Session::ScoutedAt(int64_t locationId, int64_t& item, bool& sameGame) const {
+  const auto scout = mScouts.find(locationId);
+  if (scout == mScouts.end())
+    return false;
+  item = scout->second.item;
+  if (mOwnSlot != 0 && scout->second.player == mOwnSlot) {
+    sameGame = true;
+  } else {
+    const auto game = mSlotGames.find(scout->second.player);
+    sameGame = game != mSlotGames.end() && game->second == mConfig.game;
+  }
+  return true;
+}
+
 std::string Session::AnnounceLocation(int64_t locationId) {
   std::string text = LocationText(locationId);
   if (!text.empty())

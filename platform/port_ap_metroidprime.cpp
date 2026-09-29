@@ -235,6 +235,42 @@ int AmmoCapacity(const std::map< int64_t, int64_t >& counts, bool missiles, bool
   return static_cast<int>(result < 9999 ? result : 9999);
 }
 
+int PickupModelKey(int64_t itemId) {
+  // The AP world's own choices (RoomData.py get_config_item_model), where the
+  // disc has the model: randomprime's Shiny Missile, refills and Cog are
+  // custom assets, so those fall back to the nearest retail pickup or the
+  // other-game stand-in.
+  const int64_t local = itemId - kItemBase;
+  if (local >= 0 && local <= kArtifactNewborn)
+    return static_cast<int>(local);
+  switch (local) {
+  case kUnlimitedMissiles:
+  case kMissileLauncher:
+    return kMissileExpansion;
+  case kUnlimitedPowerBombs:
+    return kPowerBombExpansion;
+  case kMainPowerBomb:
+    return kModelMainPowerBomb;
+  case 49: // Progressive Power Beam, shown as a Super Missile
+    return 11;
+  case 51: // Progressive Ice, Wave and Plasma Beam
+    return 1;
+  case 52:
+    return 2;
+  case 53:
+    return 3;
+  case kProgressiveBomb:
+    return 6;
+  case 55: // the four Charge Beams
+  case 56:
+  case 57:
+  case 58:
+    return 10;
+  default:
+    return kModelOtherGame;
+  }
+}
+
 bool IsAmmoItem(int64_t itemId, bool& missiles) {
   const int64_t local = itemId - kItemBase;
   if (local == kMissileExpansion || local == kMissileLauncher) {

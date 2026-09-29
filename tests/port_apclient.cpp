@@ -1,3 +1,4 @@
+#include "port_ap_metroidprime.h"
 #include "port_ap_protocol.h"
 
 #include "port_randomizer.h"
@@ -936,6 +937,22 @@ int main() {
     Check(session.ItemName(10, 2) == "Hookshot" && session.ItemName(99, 2) == "item 99" &&
               session.LocationName(5031158, 1) == "Tallon Overworld: Landing Site",
           "item and location names follow the receiving slot's game");
+    int64_t scoutedItem = 0;
+    bool sameGame = true;
+    Check(session.ScoutedAt(5031158, scoutedItem, sameGame) && scoutedItem == 10 && !sameGame,
+          "another game's item is scouted as such");
+    Check(session.ScoutedAt(5031100, scoutedItem, sameGame) && scoutedItem == 5031024 &&
+              sameGame && !session.ScoutedAt(5031101, scoutedItem, sameGame),
+          "an own item is scouted as this game's; an unscouted location isn't");
+    {
+      using namespace PortAp::MetroidPrime;
+      Check(PickupModelKey(kItemBase + 16) == 16 && PickupModelKey(kItemBase + 42) == 7 &&
+                PickupModelKey(kItemBase + 44) == kModelMainPowerBomb &&
+                PickupModelKey(kItemBase + 54) == 6 && PickupModelKey(kItemBase + 57) == 10 &&
+                PickupModelKey(kItemBase + 99) == kModelOtherGame &&
+                PickupModelKey(10) == kModelOtherGame,
+            "AP items map to the retail pickup that shows them");
+    }
     std::string notification;
     while (session.TakeNotification(notification)) {
     }

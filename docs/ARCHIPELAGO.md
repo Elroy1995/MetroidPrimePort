@@ -39,8 +39,17 @@ With the built-in tables, the client does what the AP ISO patch would:
 - Touching a pickup at an AP location sends the check and grants nothing; the
   item arrives through the multiworld like any other. Locations are scouted on
   connect, so the HUD says `Found <item> for <player>` (`Checked <location>` if
-  the scout reply has not arrived yet). The pickup still looks like its retail
-  item.
+  the scout reply has not arrived yet).
+- A pickup shows the scouted item's retail pickup model (the AP world's
+  choices, e.g. a Super Missile for a Progressive Power Beam). Another game's
+  item shows as a large energy orb, since randomprime's Cog and Zoomer models
+  are not on the disc. Items without a pickup of their own (Power Beam, Scan
+  and Combat Visor, Power and Phazon Suit) keep the location's model, as does
+  every pickup in a room loaded before the scout reply, or while offline.
+- randomprime's pickup room patches (`tools/gen_ap_pickup_patches.py`, from its
+  `pickup_meta.rs.in`) remove the script objects tied to each pickup's retail
+  item (its cutscene, and the artifact special functions), and move what the cutscene's end did onto a relay that
+  the pickup fires, so a pickup no longer plays its retail item's cutscene.
 - Slot data sets the Missile Launcher and main Power Bomb requirements (ammo
   capacity follows the world's rules), DeathLink, and `non_varia_heat_damage`
   (on by default: only the Varia Suit keeps out heat, rather than any suit).
@@ -439,7 +448,8 @@ still works; anything marked as a gap still limits a session.
   UltiNaruto's `Items.py` (checked at `daace5a`, 2026-09). What no test here
   covers is a session against a real server; an unconfigured key is still
   reported once rather than dropped silently.
-- **Pickup models — gap.** A pickup at an AP location keeps its retail model,
-  so it does not show what it holds until it is touched (the HUD then names
-  it). The AP ISO patch swaps the models; the port has the names from the
-  scouts but does not change the model.
+- **Pickup models.** Swapped from the scouts at load time (see above). Checked
+  with `ap_fake_server.py --scouts`: Ruined Shrine's Morph Ball shows and
+  collects as a Missile Expansion without the cutscene, the Alcove shows Varia,
+  and another game's item shows the energy orb. Scouts are not saved, so an
+  offline session shows retail models.

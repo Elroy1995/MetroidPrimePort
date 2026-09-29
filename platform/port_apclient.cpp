@@ -4,6 +4,7 @@
 #include "port_ap_metroidprime.h"
 #include "port_ap_protocol.h"
 #include "port_randomizer.h"
+#include "port_skip_cutscenes.h"
 #include "port_ws.h"
 
 #include "MetroidPrime/CHealthInfo.hpp"
@@ -1544,6 +1545,27 @@ void AnnouncePickup(uint32_t world, uint32_t area, uint32_t entity) {
     PortLog::Write("archipelago: %s\n", text.c_str());
     CSamusHud::DisplayHudMemo(ToHudWide(text), CHUDMemoParms(5.f, true, false, false));
   } catch (...) {
+  }
+}
+
+bool PickupModel(uint32_t world, uint32_t area, uint32_t entity, PortRandomizer::PickupModel& out) {
+  try {
+    const MetroidPrime::Location* location = MetroidPrime::FindPickup(world, area, entity);
+    if (location == nullptr || !BuiltinRules())
+      return false;
+    int64_t item = 0;
+    bool sameGame = false;
+    {
+      Runtime& runtime = GetRuntime();
+      std::lock_guard<std::mutex> lock(runtime.mutex);
+      if (!runtime.enabled || runtime.session == nullptr ||
+          !runtime.session->ScoutedAt(location->id, item, sameGame))
+        return false;
+    }
+    const int key = sameGame ? MetroidPrime::PickupModelKey(item) : MetroidPrime::kModelOtherGame;
+    return PortSkipCutscenes::PickupModel(key, out);
+  } catch (...) {
+    return false;
   }
 }
 
