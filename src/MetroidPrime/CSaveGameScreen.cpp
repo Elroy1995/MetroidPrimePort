@@ -338,6 +338,18 @@ CIOWin::EMessageReturn CSaveGameScreen::Update(float dt) {
   x50_loadedFrame->Update(dt);
   x6c_cardDriver->Update();
 
+#ifdef TARGET_PC
+  // Port: each Archipelago game has a card of its own. The front end moves to
+  // the one the client wants, or back to the default card, whenever the card is
+  // idle. In game the card never changes: the game would take it for another.
+  if (x0_saveCtx == kSC_FrontEnd && !x90_needsDriverReset && x80_iowRet == CIOWin::kMR_Normal &&
+      !CMemoryCardDriver::IsCardBusy(x6c_cardDriver->GetState()) &&
+      CMemoryCardSys::PortSwitchCard(PortAp::SaveCardDirectory().c_str())) {
+    ResetCardDriver();
+    return CIOWin::kMR_Normal;
+  }
+#endif
+
   const EState state = x6c_cardDriver->GetState();
   const CMemoryCardDriver::EError error = x6c_cardDriver->GetError();
   if (state == kS_DriverClosed) {

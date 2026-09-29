@@ -14,10 +14,21 @@
 #include "Kyoto/Basics/CBasics.hpp"
 #include "port_log.h"
 
+#include <aurora/card.h>
+#include <filesystem>
+#include <string>
+
 bool CMemoryCardSys::mIsInitialized;
 bool CMemoryCardSys::mIsCardSysExists;
 rstl::vector< char, rstl::aligned_allocator > CMemoryCardSys::mWorkAreaA;
 rstl::vector< char, rstl::aligned_allocator > CMemoryCardSys::mWorkAreaB;
+
+namespace {
+// Port: the card chosen at init, and the one in use (an Archipelago game's own
+// card, or that one).
+std::string sDefaultCardBase;
+std::string sCardBase;
+} // namespace
 
 ECardResult SMemoryCardFileInfo::FileRead() {
   rstl::vector< uchar >& saveData = x34_saveData;
@@ -263,12 +274,32 @@ void CMemoryCardSys::Initialize() {
       return;
     }
     CARDSetBasePath(base, 2);
+    sDefaultCardBase = base;
+    sCardBase = base;
     SDL_free(ownedBase);
     PortLog::Write("memory card: storing under %s\n", base);
     // Aurora's CARDInit takes the game id and maker code.
     CARDInit("GM8E", "01");
     mIsInitialized = true;
   }
+}
+
+bool CMemoryCardSys::PortSwitchCard(const char* directory) {
+  if (!mIsInitialized || sDefaultCardBase.empty())
+    return false;
+  const std::string target =
+      directory != nullptr && directory[0] != '\0' ? std::string(directory) : sDefaultCardBase;
+  if (target == sCardBase)
+    return false;
+  std::error_code error;
+  std::filesystem::create_directories(target, error);
+  const bool mounted = aurora_card_set_base_path(target.c_str());
+  // Taken even when it did not mount, so a bad directory is not retried every
+  // frame; the front end then shows no card, which is the truth.
+  sCardBase = target;
+  PortLog::Write("memory card: switched to %s%s\n", target.c_str(),
+                 mounted ? "" : " (no card could be mounted there)");
+  return true;
 }
 
 CMemoryCardSys::~CMemoryCardSys() {

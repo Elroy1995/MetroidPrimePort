@@ -15,9 +15,11 @@ class CStateManager;
 // calls once per simulation tick. Nothing here runs when no configuration is
 // present.
 //
-// Configuration: $MP_AP_CONFIG, else <user dir>/archipelago.json. State (the
-// last processed item index and the checks already sent) lives beside it in
-// archipelago_state.json so reconnecting does not re-grant items.
+// Configuration: $MP_AP_CONFIG, else <user dir>/archipelago.json. Each slot's
+// game in each seed has a directory beside it, archipelago_games/<slot>-<seed>,
+// holding its save card, game.json (how to reconnect) and archipelago_state.json
+// (the last processed item index and the checks already sent, so reconnecting
+// does not re-grant items).
 //
 // Environment:
 //   MP_AP_DISABLE=1  ignore the configuration entirely
@@ -44,6 +46,9 @@ ConnectionDetails SavedConnection();
 bool Connect(const ConnectionDetails& details, std::string& error);
 // Ends the session and keeps it off at the next launch, until Connect.
 bool Disconnect(std::string& error);
+// The directory whose memory card the running Archipelago game saves to, or ""
+// for the default card (no session, or its seed not known yet).
+std::string SaveCardDirectory();
 // Where the configuration is read from and saved to.
 std::string ConfigFilePath();
 // A configuration with a server and a slot was loaded.

@@ -137,6 +137,36 @@ bool aurora_card_remount(const s32 channel) {
   return CardChannels[channel]->open(cardPaths[channel]);
 }
 
+bool aurora_card_set_base_path(const char* path) {
+  if (!Initialized || path == nullptr || path[0] == '\0') {
+    return false;
+  }
+  const auto base = aurora::io::fs_path_from_string(path);
+  bool loadedCard = false;
+  for (int i = 0; i < 2; ++i) {
+    if (CardChannels[i] == nullptr) {
+      continue;
+    }
+    CardChannels[i]->close();
+    cardPaths[i] =
+        get_card_full_path(base, aurora::g_gameName, selected_card_type(), static_cast<aurora::card::ECardSlot>(i));
+    std::error_code ec;
+    if (!cardPaths[i].empty() && std::filesystem::exists(cardPaths[i], ec) && CardChannels[i]->open(cardPaths[i])) {
+      loadedCard = true;
+    }
+  }
+  std::error_code createError;
+  if (!loadedCard && CardChannels[0] != nullptr && !cardPaths[0].empty() &&
+      !std::filesystem::exists(cardPaths[0], createError) && !createError) {
+    CardChannels[0]->open(cardPaths[0]);
+    CardChannels[0]->format(aurora::card::ECardSlot::SlotA);
+    CardChannels[0]->close();
+    CardChannels[0]->open(cardPaths[0]);
+  }
+  Log.info("Card base moved to: {}", aurora::io::fs_path_to_string(base));
+  return card_ready(0);
+}
+
 bool aurora_card_raw_list(const char* imagePath, const char* game, const char* maker,
                           void (*visit)(const char* fileName, void* userData), void* userData) {
   if (imagePath == nullptr || game == nullptr || std::strlen(game) != 4 || maker == nullptr ||

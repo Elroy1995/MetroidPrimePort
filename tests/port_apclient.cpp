@@ -357,6 +357,21 @@ int main() {
               LoadConfigFile(connectionPath.string()).valid,
           "connecting again re-enables it");
 
+    connection.seed = "S1";
+    connection.lastPlayed = 1790000000;
+    Check(SaveConnectionFile(connectionPath.string(), connection, error),
+          "a connection with a seed saves");
+    const Connection seeded = LoadConnectionFile(connectionPath.string());
+    Check(seeded.seed == "S1" && seeded.lastPlayed == 1790000000 &&
+              Contains(Read(connectionPath), R"("last_played":1790000000)"),
+          "the seed and the last played time round-trip");
+    connection.seed.clear();
+    connection.lastPlayed = 0;
+    Check(SaveConnectionFile(connectionPath.string(), connection, error) &&
+              !Contains(Read(connectionPath), "seed") &&
+              !Contains(Read(connectionPath), "last_played"),
+          "an unknown seed and time are removed, not written empty");
+
     {
       std::ofstream file(connectionPath, std::ios::binary | std::ios::trunc);
       file << "{ not json";
@@ -367,6 +382,21 @@ int main() {
     const Connection absent = LoadConnectionFile((testDir / "none.json").string());
     Check(absent.server.empty() && absent.slot.empty() && absent.enabled,
           "an absent file has no connection");
+  }
+
+  // Each slot's game in each seed has a directory: plain names stay readable,
+  // anything else is made safe and told apart by a hash.
+  {
+    Check(GameDirectoryName("Samus", "12345678901234567890") == "Samus-12345678901234567890",
+          "a plain slot and seed name the directory as they are");
+    const std::string odd = GameDirectoryName("Sa/mus", "..");
+    Check(odd.find('/') == std::string::npos && odd.rfind("Sa_mus-_..-", 0) == 0 &&
+              odd.size() == std::string("Sa_mus-_..-").size() + 8,
+          "separators and dot names are replaced, with a hash appended");
+    Check(GameDirectoryName("a/b", "s") != GameDirectoryName("a?b", "s"),
+          "names that clean to the same text stay apart");
+    Check(GameDirectoryName(std::string(60, 'x'), "s").size() == 40 + 3 + 8,
+          "a long slot is cut to 40 bytes");
   }
 
   // Progress belongs to the session that granted it. A different seed must not

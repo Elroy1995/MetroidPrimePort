@@ -168,6 +168,7 @@ Every key, with hand-written tables (which turn the built-in world rules off):
 | `death_link` | Optional; when unset, the seed's DeathLink option decides. |
 | `tls_ca` | Optional PEM CA bundle to verify a `wss://` server that is not in the system trust store. Relative paths resolve against this file's directory. |
 | `slot` | Required. Player name in the multiworld. |
+| `seed` | Written by the client: the seed the server last reported, which picks the game's card before the server answers. Cleared when the server or slot changes. |
 | `game` | Default `Metroid Prime`; must match the AP world's game name. |
 | `password` | Room password, default empty. |
 | `items_handling` | Default 7 (other worlds' items, this world's items, starting inventory). |
@@ -190,19 +191,30 @@ Environment:
 
 ## State
 
-`archipelago_state.json` sits next to the configuration and remembers the last
-processed item index, the checks already sent, and the progressive step counts,
-so reconnecting does not hand the player the same items twice.
+**Every seed and slot pair is its own game**, with its own directory next to
+the configuration: `archipelago_games/<slot>-<seed>/` (unsafe characters become
+`_`, and a hash is appended when the name had to change). It holds:
 
-It is tied to the **slot name and the seed**. A file with a different slot is
-ignored, and so is progress recorded against a different seed: the first
-`RoomInfo` compares the server's seed name with the one in the file, and when
-they differ it throws the progress away, says so in the log, and continues with
-an empty state. That is deliberate — those checks were only true for the session
-that granted them, and replaying them into a different multiworld makes the
-client claim locations it never collected while skipping the items the server
-still owes it. A file written before the seed was recorded has no seed in it, so
-the first connect adopts the server's and keeps the progress.
+- `USA/Card A`: the memory card that game's saves go to, so AP games never share
+  file slots with each other or with the retail game.
+- `archipelago_state.json`: the last processed item index, the checks already
+  sent, and the progressive step counts, so reconnecting does not hand the
+  player the same items twice.
+- `game.json`: server, slot, password, seed and when it was last played.
+
+The seed is only known once the server's `RoomInfo` arrives, so the
+configuration remembers the last one (`seed`) and the port picks that game's
+card at startup, even with the server down. When the server reports another
+seed (a new multiworld behind the same address), the client switches to that
+game's directory and starts it with an empty state, keeping the old one on
+disk. The card only changes on the title screen's file select, when it is idle:
+connecting or disconnecting mid-game keeps the card the game was loaded from
+until the player is back at the title. With the client off, the port uses the
+retail card.
+
+Saves made before per-game cards existed stay on the retail card; they are not
+copied. An old `archipelago_state.json` next to the configuration that records a
+slot and seed is moved into its game's directory on first start.
 
 On every connect the whole recorded check list is re-sent, so a reconnect or a
 reloaded save re-announces what was already collected.
@@ -224,8 +236,7 @@ connected", and sets the location's bit in the save. The next session that
 loads or reconnects to that game sends every recorded check the server has not
 had. A save from another seed or slot has its bits cleared. What still needs a
 session: Spring Ball's AP unlock, `non_varia_heat_damage`, unlimited ammo and
-the artifact totems. A retail save loaded while the client is on adopts the
-session's seed and becomes an AP game.
+the artifact totems.
 
 **Set `MP_AP_RESET_STATE=1` to discard the file before connecting.** Checks and
 progressive counts start over; the items the game holds are still worked out

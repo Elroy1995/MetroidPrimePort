@@ -683,6 +683,10 @@ Connection LoadConnectionFile(const std::string& path) {
     connection.password = root.StringOr("password");
     const PortJson::Value* enabled = Member(root, "enabled");
     connection.enabled = enabled == nullptr || !enabled->IsBool() || enabled->AsBool();
+    connection.seed = root.StringOr("seed");
+    const PortJson::Value* lastPlayed = Member(root, "last_played");
+    if (lastPlayed != nullptr)
+      connection.lastPlayed = lastPlayed->AsInt(0);
   } catch (...) {
     return Connection();
   }
@@ -729,6 +733,9 @@ bool SaveConnectionFile(const std::string& path, const Connection& connection,
     set("password", PortJson::Value::MakeString(connection.password),
         !connection.password.empty());
     set("enabled", PortJson::Value::MakeBool(false), !connection.enabled);
+    set("seed", PortJson::Value::MakeString(connection.seed), !connection.seed.empty());
+    set("last_played", PortJson::Value::MakeNumber(static_cast<double>(connection.lastPlayed)),
+        connection.lastPlayed != 0);
     std::string text;
     AppendJson(PortJson::Value::MakeObject(std::move(members)), text);
     text += '\n';
@@ -744,6 +751,41 @@ bool SaveConnectionFile(const std::string& path, const Connection& connection,
     error = "could not write the configuration";
     return false;
   }
+}
+
+std::string GameDirectoryName(const std::string& slot, const std::string& seed) {
+  bool changed = false;
+  const auto clean = [&changed](const std::string& text) {
+    std::string out;
+    for (const char c : text) {
+      const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                        c == '.' || c == '_' || c == '-';
+      out.push_back(safe ? c : '_');
+      changed = changed || !safe;
+    }
+    if (out.size() > 40) {
+      out.resize(40);
+      changed = true;
+    }
+    // "." and ".." are not names, and a leading dot hides the directory.
+    if (out.empty() || out[0] == '.') {
+      out.insert(out.begin(), '_');
+      changed = true;
+    }
+    return out;
+  };
+  std::string name = clean(slot) + "-" + clean(seed);
+  if (changed) {
+    uint32_t hash = 2166136261u; // FNV-1a over both, as they were
+    for (const char c : slot + std::string(1, '\0') + seed) {
+      hash ^= static_cast<uint8_t>(c);
+      hash *= 16777619u;
+    }
+    char suffix[16];
+    std::snprintf(suffix, sizeof(suffix), "-%08x", hash);
+    name += suffix;
+  }
+  return name;
 }
 
 Session::Session(const Config& config, const State& state) : mConfig(config), mState(state) {}

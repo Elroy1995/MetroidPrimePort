@@ -37,6 +37,13 @@ size_t aurora_card_get_path(const char* gameName, AuroraCardType type, s32 chann
 /** Closes and reopens a mounted channel so external filesystem changes are discovered. */
 bool aurora_card_remount(s32 channel);
 
+/**
+ * Moves both channels to the cards under another base directory after CARDInit, as CARDSetBasePath
+ * does before it. A base with no card gets a formatted slot A, as at init. Returns whether slot A is
+ * mounted afterwards. The game must not hold open files on the old card.
+ */
+bool aurora_card_set_base_path(const char* path);
+
 /** Calls visit for each filename matching game and maker. Returns false if the image cannot be read. */
 bool aurora_card_raw_list(const char* imagePath, const char* game, const char* maker,
                           void (*visit)(const char* fileName, void* userData), void* userData);

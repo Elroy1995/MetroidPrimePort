@@ -125,6 +125,12 @@ public:
   static ECardResult FormatCard(EMemoryCardPort port);
 
   static ProbeResults IsMemoryCardInserted(EMemoryCardPort);
+#ifdef TARGET_PC
+  // Port: moves the card to the one under `directory` (created if missing), or
+  // back to the default card for "". Only safe while no card operation runs.
+  // True when the card changed.
+  static bool PortSwitchCard(const char* directory);
+#endif
   static ECardResult GetSerialNo(EMemoryCardPort port, long long& serialOut);
   static ECardResult UnmountCard(EMemoryCardPort);
   static ECardResult Rename(EMemoryCardPort, const rstl::string&, const rstl::string&);

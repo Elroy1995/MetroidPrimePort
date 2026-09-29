@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <deque>
 #include <exception>
 #include <functional>
@@ -68,6 +69,28 @@ std::string ConfigPath() {
       return env;
   }
   return (std::filesystem::path(UserDirectory()) / "archipelago.json").string();
+}
+
+// archipelago.json and the per-game directories live here.
+std::filesystem::path ConfigDirectory() {
+  std::filesystem::path parent = std::filesystem::path(ConfigPath()).parent_path();
+  return parent.empty() ? std::filesystem::path(".") : parent;
+}
+
+// One slot's game in one seed: its save card, state file and game.json.
+std::filesystem::path GameDirectory(const std::string& slot, const std::string& seed) {
+  return ConfigDirectory() / "archipelago_games" / Protocol::GameDirectoryName(slot, seed);
+}
+
+std::string GameStatePath(const std::string& slot, const std::string& seed) {
+  return (GameDirectory(slot, seed) / "archipelago_state.json").string();
+}
+
+// archipelago.json is written from the overlay (Connect, Disconnect) and by the
+// socket thread (the seed), so the read-modify-writes take turns.
+std::mutex& ConnectionFileMutex() {
+  static std::mutex mutex;
+  return mutex;
 }
 
 std::string ErrorText(const char* text) {
@@ -198,16 +221,24 @@ struct Runtime {
   void FlushState() {
     std::lock_guard<std::mutex> flushing(flushMutex); // a restart and the exit may overlap
     Protocol::State snapshot;
+    std::string path;
     {
       std::lock_guard<std::mutex> lock(mutex);
       if (!stateDirty || session == nullptr)
         return;
       stateDirty = false;
+      // No seed yet, so no game to write it for. The save records the checks,
+      // and the state is written once the server names the seed.
+      if (statePath.empty())
+        return;
       snapshot = session->GetState();
+      path = statePath;
     }
-    const bool written = Protocol::SaveStateFile(statePath, snapshot);
+    std::error_code error;
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
+    const bool written = Protocol::SaveStateFile(path, snapshot);
     if (!written && !stateWriteFailed) // said once, not on every pickup
-      PortLog::Write("archipelago: could not write %s\n", statePath.c_str());
+      PortLog::Write("archipelago: could not write %s\n", path.c_str());
     stateWriteFailed = !written;
   }
 
@@ -228,7 +259,11 @@ struct Runtime {
   std::string lastError;
   std::string lastLogged;
   std::string lastMessage;
+  // The seed's own state file, in its game directory; empty until the seed is
+  // known (remembered in archipelago.json, or named by the server).
   std::string statePath;
+  // MP_AP_RESET_STATE=1 at launch, waiting for the seed's state to be loaded.
+  bool resetPending = false;
   Config config;
   std::unique_ptr<Session> session;
   std::deque<ItemGrant> grants;
@@ -475,6 +510,91 @@ std::vector<std::string> ServerUrls(const std::string& server) {
   return {"ws://" + address, "wss://" + address};
 }
 
+// Records a game in its directory's game.json (for the recent-games list) and
+// remembers its seed in archipelago.json, so the next launch picks its save card
+// before the server answers.
+void RecordGame(const Config& config, const std::string& seed) {
+  const std::filesystem::path dir = GameDirectory(config.slot, seed);
+  std::error_code ignored;
+  std::filesystem::create_directories(dir, ignored);
+  Protocol::Connection game;
+  game.server = config.server;
+  game.slot = config.slot;
+  game.password = config.password;
+  game.seed = seed;
+  game.lastPlayed = static_cast<int64_t>(std::time(nullptr));
+  std::string error;
+  if (!Protocol::SaveConnectionFile((dir / "game.json").string(), game, error))
+    PortLog::Write("archipelago: %s\n", error.c_str());
+  std::lock_guard<std::mutex> lock(ConnectionFileMutex());
+  Protocol::Connection saved = Protocol::LoadConnectionFile(ConfigPath());
+  if (saved.server != config.server || saved.slot != config.slot || saved.seed == seed)
+    return; // changed by a Connect since this session started, or already known
+  saved.seed = seed;
+  if (!Protocol::SaveConnectionFile(ConfigPath(), saved, error))
+    PortLog::Write("archipelago: %s\n", error.c_str());
+}
+
+// The server named its seed. Each game keeps its progress in its own
+// directory, so a seed other than the one loaded swaps that game's state in.
+// Runs on the socket thread before the session sees the RoomInfo.
+void EnterSeed(Runtime& runtime, const std::string& seed) {
+  if (seed.empty())
+    return;
+  Config config;
+  std::string oldPath;
+  {
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (runtime.session == nullptr)
+      return;
+    config = runtime.config;
+    oldPath = runtime.statePath;
+  }
+  RecordGame(config, seed);
+  const std::string path = GameStatePath(config.slot, seed);
+  if (path == oldPath)
+    return;
+  runtime.FlushState(); // the old game's progress, to its own file
+  Protocol::State state = Protocol::LoadStateFile(path);
+  if (state.slot != config.slot || (!state.seed.empty() && state.seed != seed))
+    state = Protocol::State();
+  state.slot = config.slot;
+  state.seed = seed;
+
+  std::lock_guard<std::mutex> lock(runtime.mutex);
+  if (runtime.session == nullptr)
+    return;
+  const Protocol::State& current = runtime.session->GetState();
+  if (current.seed.empty()) {
+    // Checks made before the seed was known are this game's.
+    for (const int64_t id : current.checkedLocations) {
+      if (std::find(state.checkedLocations.begin(), state.checkedLocations.end(), id) ==
+          state.checkedLocations.end())
+        state.checkedLocations.push_back(id);
+    }
+  } else {
+    // Another game's: its items and unsent checks do not carry over.
+    PortLog::Write("archipelago: the server has seed \"%s\", not \"%s\"; switching games\n",
+                   seed.c_str(), current.seed.c_str());
+    runtime.grants.clear();
+    runtime.queuedChecks.clear();
+  }
+  if (runtime.resetPending) {
+    PortLog::Write("archipelago: MP_AP_RESET_STATE=1 discarded saved progress for %s\n",
+                   config.slot.c_str());
+    state.nextItemIndex = 0;
+    state.checkedLocations.clear();
+    state.progressive.clear();
+    runtime.resetPending = false;
+  }
+  runtime.session->SetState(state);
+  runtime.statePath = path;
+  runtime.recordSynced = false;
+  runtime.MarkStateDirtyLocked();
+  PortLog::Write("archipelago: game directory %s\n",
+                 std::filesystem::path(path).parent_path().string().c_str());
+}
+
 void WorkerLoop(Runtime& runtime) {
   Config config;
   std::string statePath;
@@ -567,6 +687,11 @@ void WorkerLoop(Runtime& runtime) {
             std::vector<int64_t> sendAllChecks;
             bool connectedNow = false;
             bool refused = false;
+            if (cmd == "RoomInfo") {
+              const PortJson::Value* seedName = command.Find("seed_name");
+              if (seedName != nullptr && seedName->IsString())
+                EnterSeed(runtime, seedName->AsString());
+            }
             {
               std::lock_guard<std::mutex> lock(runtime.mutex);
               if (runtime.session == nullptr)
@@ -782,6 +907,29 @@ void Worker(Runtime& runtime) {
   runtime.wake.notify_all();
 }
 
+// Before games had directories, one archipelago_state.json sat beside the
+// configuration. It moves into its game's directory, if it names one.
+void MigrateLegacyState(const std::filesystem::path& parent) {
+  const std::filesystem::path legacy = parent / "archipelago_state.json";
+  std::error_code error;
+  if (!std::filesystem::exists(legacy, error))
+    return;
+  const Protocol::State state = Protocol::LoadStateFile(legacy.string());
+  if (state.slot.empty() || state.seed.empty())
+    return;
+  const std::filesystem::path target = GameStatePath(state.slot, state.seed);
+  if (std::filesystem::exists(target, error))
+    return;
+  std::filesystem::create_directories(target.parent_path(), error);
+  std::filesystem::rename(legacy, target, error);
+  if (error)
+    PortLog::Write("archipelago: could not move %s to %s: %s\n", legacy.string().c_str(),
+                   target.string().c_str(), error.message().c_str());
+  else
+    PortLog::Write("archipelago: moved %s to %s\n", legacy.string().c_str(),
+                   target.string().c_str());
+}
+
 // Loads the configuration and starts the worker. `mutex` is held and no worker
 // is running. `firstStart` is the launch, as opposed to a Connect from the
 // overlay, which must not run the launch-only MP_AP_RESET_STATE again.
@@ -801,18 +949,33 @@ void StartLocked(Runtime& runtime, bool firstStart) {
   // tls_ca is written relative to the config file, not the working directory.
   if (!runtime.config.tlsCa.empty() && std::filesystem::path(runtime.config.tlsCa).is_relative())
     runtime.config.tlsCa = (parent / runtime.config.tlsCa).string();
-  runtime.statePath = (parent / "archipelago_state.json").string();
-  Protocol::State state = Protocol::LoadStateFile(runtime.statePath);
-  if (state.slot != runtime.config.slot)
-    state = Protocol::State();
+  MigrateLegacyState(parent);
+  // The seed this slot had last time picks the game (and its save card) until
+  // the server says otherwise.
+  const std::string seed = Protocol::LoadConnectionFile(configPath).seed;
+  Protocol::State state;
+  runtime.statePath.clear();
+  if (!seed.empty()) {
+    runtime.statePath = GameStatePath(runtime.config.slot, seed);
+    state = Protocol::LoadStateFile(runtime.statePath);
+    if (state.slot != runtime.config.slot || (!state.seed.empty() && state.seed != seed))
+      state = Protocol::State();
+    state.seed = seed;
+  }
   // A rewind the client cannot see - a new game or an older save on the same
   // slot and seed - leaves the recorded checks looking valid, so this is the
-  // way out: it drops them before the first connect.
-  if (firstStart && EnvEnabled("MP_AP_RESET_STATE") &&
-      (state.nextItemIndex != 0 || !state.checkedLocations.empty() || !state.progressive.empty())) {
-    PortLog::Write( "archipelago: MP_AP_RESET_STATE=1 discarded saved progress for %s\n",
-                 runtime.config.slot.c_str());
-    state = Protocol::State();
+  // way out: it drops them before the first connect (or once the seed is known).
+  runtime.resetPending = false;
+  if (firstStart && EnvEnabled("MP_AP_RESET_STATE")) {
+    if (runtime.statePath.empty()) {
+      runtime.resetPending = true;
+    } else if (state.nextItemIndex != 0 || !state.checkedLocations.empty() ||
+               !state.progressive.empty()) {
+      PortLog::Write("archipelago: MP_AP_RESET_STATE=1 discarded saved progress for %s\n",
+                     runtime.config.slot.c_str());
+      state = Protocol::State();
+      state.seed = seed;
+    }
   }
   state.slot = runtime.config.slot;
   runtime.session = std::make_unique<Session>(runtime.config, state);
@@ -973,8 +1136,16 @@ bool Connect(const ConnectionDetails& details, std::string& error) {
       error = "MP_AP_DISABLE is set";
       return false;
     }
-    if (!Protocol::SaveConnectionFile(ConfigPath(), connection, error))
-      return false;
+    {
+      std::lock_guard<std::mutex> lock(ConnectionFileMutex());
+      // The same slot on the same server is most likely the same game, so its
+      // seed (and save card) stays until the server says otherwise.
+      const Protocol::Connection saved = Protocol::LoadConnectionFile(ConfigPath());
+      if (saved.server == connection.server && saved.slot == connection.slot)
+        connection.seed = saved.seed;
+      if (!Protocol::SaveConnectionFile(ConfigPath(), connection, error))
+        return false;
+    }
     EnsureLoaded();
     Runtime& runtime = GetRuntime();
     {
@@ -994,10 +1165,13 @@ bool Connect(const ConnectionDetails& details, std::string& error) {
 
 bool Disconnect(std::string& error) {
   try {
-    Protocol::Connection connection = Protocol::LoadConnectionFile(ConfigPath());
-    connection.enabled = false;
-    if (!Protocol::SaveConnectionFile(ConfigPath(), connection, error))
-      return false;
+    {
+      std::lock_guard<std::mutex> lock(ConnectionFileMutex());
+      Protocol::Connection connection = Protocol::LoadConnectionFile(ConfigPath());
+      connection.enabled = false;
+      if (!Protocol::SaveConnectionFile(ConfigPath(), connection, error))
+        return false;
+    }
     EnsureLoaded();
     StartRestart(GetRuntime());
     return true;
@@ -1007,6 +1181,19 @@ bool Disconnect(std::string& error) {
   } catch (...) {
     error = "could not disconnect";
     return false;
+  }
+}
+
+std::string SaveCardDirectory() {
+  try {
+    EnsureLoaded();
+    Runtime& runtime = GetRuntime();
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (!runtime.enabled || runtime.statePath.empty())
+      return std::string();
+    return std::filesystem::path(runtime.statePath).parent_path().string();
+  } catch (...) {
+    return std::string();
   }
 }
 

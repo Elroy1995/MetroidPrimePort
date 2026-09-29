@@ -92,6 +92,12 @@ struct Connection {
   // False once the player disconnects: the file keeps the details for next
   // time, but the client does not start from it ("enabled": false).
   bool enabled = true;
+  // The seed the server had when this slot last connected ("seed"), so the
+  // game's own save card is known before the server answers. Empty if unknown.
+  std::string seed;
+  // Unix time this game was last connected ("last_played"), in the per-game
+  // copies of the file; 0 when absent.
+  int64_t lastPlayed = 0;
 };
 // Reads those fields; absent ones stay empty. Never throws.
 Connection LoadConnectionFile(const std::string& path);
@@ -100,6 +106,11 @@ Connection LoadConnectionFile(const std::string& path);
 // the reason is put in `error`. Never throws.
 bool SaveConnectionFile(const std::string& path, const Connection& connection,
                         std::string& error);
+// The directory name of one slot's game in one seed: "<slot>-<seed>", with
+// anything but letters, digits, '.', '_' and '-' replaced, each part cut to 40
+// bytes, and a hash of the originals appended when that changed them, so two
+// games never share a name.
+std::string GameDirectoryName(const std::string& slot, const std::string& seed);
 
 // archipelago_state.json: what the client must remember between sessions so a
 // reconnect does not hand the player the same items twice.
@@ -229,7 +240,12 @@ public:
   // replayed from the start, granting only the items from `heldCount` on and
   // rebuilding the progressive counts from the ones before it.
   void RewindTo(int64_t heldCount);
-  void SetState(const State& state) { mState = state; }
+  // Swaps in another game's progress (a seed's own state file); no item it
+  // replays counts as already held.
+  void SetState(const State& state) {
+    mState = state;
+    mGrantFrom = 0;
+  }
   bool HandshakeComplete() const { return mHandshakeComplete; }
   // "slot 3, team 0" after Connected, empty before.
   const std::string& SlotDescription() const { return mSlotDescription; }
