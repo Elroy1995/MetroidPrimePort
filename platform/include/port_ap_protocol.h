@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -139,6 +140,21 @@ public:
   static std::string BuildSync();
   // StatusUpdate 30: this slot has reached its goal.
   static std::string BuildGoal();
+  // LocationScouts for `ids`, without creating hints.
+  static std::string BuildLocationScouts(const std::vector< int64_t >& ids);
+
+  // Name of an item id in the game of the slot that receives it: the server's
+  // DataPackage, else the configured or built-in names for this game, else
+  // "item <id>". Location names work the same way.
+  std::string ItemName(int64_t itemId, int64_t slot) const;
+  std::string LocationName(int64_t locationId, int64_t slot) const;
+  // HUD text for collecting one of this slot's locations, from the
+  // LocationScouts reply: "Found X" or "Found X for Bob". Empty before the
+  // reply, or for a location it did not cover.
+  std::string LocationText(int64_t locationId) const;
+  // LocationText for the game to show as the player collects the location.
+  // The server's own announcement of that find is then left off the HUD.
+  std::string AnnounceLocation(int64_t locationId);
 
   // slot_data from Connected, for built-in tables; defaults before it arrives.
   const SlotData& GetSlotData() const { return mSlotData; }
@@ -223,6 +239,24 @@ private:
   std::string mResetReason;
   int64_t mOwnSlot = 0;
   std::map< int64_t, std::string > mPlayers;
+  // Slot -> game, from Connected's slot_info.
+  std::map< int64_t, std::string > mSlotGames;
+  // Id -> name per game, from DataPackage.
+  struct GameNames {
+    std::map< int64_t, std::string > items;
+    std::map< int64_t, std::string > locations;
+  };
+  std::map< std::string, GameNames > mGameNames;
+  // What sits at this slot's locations, from LocationInfo.
+  struct ScoutedItem {
+    int64_t item = 0;
+    int64_t player = 0;
+  };
+  std::map< int64_t, ScoutedItem > mScouts;
+  // Locations whose text the HUD showed when they were collected, so the
+  // server's own announcement of those finds would repeat it.
+  std::set< int64_t > mAnnounced;
+  bool AnnouncedLocally(int64_t locationId, int64_t finder) const;
   std::vector< std::string > mNotifications;
   std::vector< TrackedItem > mTracked;
   SlotData mSlotData;

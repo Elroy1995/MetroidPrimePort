@@ -713,9 +713,13 @@ int main() {
           "slot_data main-item requirements parse");
     Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "elevator"),
           "only the unsupported option is warned about");
-    Check(session.GetConfig().deathLink && outgoing.size() == 1 &&
+    Check(session.GetConfig().deathLink && outgoing.size() == 2 &&
               Contains(outgoing[0], "ConnectUpdate") && Contains(outgoing[0], "DeathLink"),
           "the seed's DeathLink option adds the tag");
+    Check(outgoing.size() == 2 && Contains(outgoing[1], "\"cmd\":\"LocationScouts\"") &&
+              Contains(outgoing[1], "5031100") && Contains(outgoing[1], "5031199") &&
+              Contains(outgoing[1], "\"create_as_hint\":0"),
+          "the built-in tables scout every location without hinting");
     outgoing.clear();
     session.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":0,"items":[
         {"item":5031004,"location":1,"player":1,"flags":0},
@@ -751,7 +755,8 @@ int main() {
     Check(grants.size() == 3 && grants[0].capacity == 4 && grants[1].capacity == 1 &&
               grants[2].capacity == 1,
           "without the main requirement the first expansion carries the main amount");
-    Check(outgoing.empty(), "no DeathLink update when the seed has it off");
+    Check(outgoing.size() == 1 && !Contains(outgoing[0], "ConnectUpdate"),
+          "no DeathLink update when the seed has it off");
   }
   {
     const Config optedOut =
@@ -762,8 +767,69 @@ int main() {
     session.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,"players":[],
         "checked_locations":[],"slot_data":{"death_link":true}})"),
                          outgoing, grants);
-    Check(outgoing.empty() && !session.GetConfig().deathLink,
+    Check(outgoing.size() == 1 && !Contains(outgoing[0], "ConnectUpdate") &&
+              !session.GetConfig().deathLink,
           "archipelago.json's death_link overrides the seed's");
+  }
+  {
+    // Names from DataPackage, what sits at each location from LocationInfo,
+    // and no second HUD line for a find the pickup already announced.
+    Session session(builtin, State());
+    std::vector<std::string> outgoing;
+    std::vector<ItemGrant> grants;
+    session.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,
+        "players":[{"team":0,"slot":1,"alias":"Samus","name":"Samus"},
+                   {"team":0,"slot":2,"alias":"Link","name":"Link"}],
+        "slot_info":{"1":{"name":"Samus","game":"Metroid Prime"},
+                     "2":{"name":"Link","game":"A Link to the Past"}},
+        "checked_locations":[],"slot_data":{}})"),
+                         outgoing, grants);
+    Check(!outgoing.empty() && Contains(outgoing[0], "\"cmd\":\"GetDataPackage\"") &&
+              Contains(outgoing[0], "A Link to the Past") && Contains(outgoing[0], "Metroid Prime"),
+          "Connected asks for every game's names");
+    session.HandlePacket(Packet(R"({"cmd":"DataPackage","data":{"games":{
+        "A Link to the Past":{"item_name_to_id":{"Hookshot":10},
+                              "location_name_to_id":{"Link's House":20}}}}})"),
+                         outgoing, grants);
+    session.HandlePacket(Packet(R"({"cmd":"LocationInfo","locations":[
+        {"item":10,"location":5031158,"player":2,"flags":1},
+        {"item":5031024,"location":5031100,"player":1,"flags":1}]})"),
+                         outgoing, grants);
+    Check(session.LocationText(5031158) == "Found Hookshot for Link" &&
+              session.LocationText(5031100) == "Found Energy Tank" &&
+              session.LocationText(5031101).empty(),
+          "scouted locations read as what they hold and for whom");
+    Check(session.ItemName(10, 2) == "Hookshot" && session.ItemName(99, 2) == "item 99" &&
+              session.LocationName(5031158, 1) == "Tallon Overworld: Landing Site",
+          "item and location names follow the receiving slot's game");
+    std::string notification;
+    while (session.TakeNotification(notification)) {
+    }
+    session.HandlePacket(Packet(R"j({"cmd":"PrintJSON","type":"ItemSend","receiving":2,
+        "item":{"item":10,"location":20,"player":2,"flags":1},"data":[
+        {"type":"player_id","text":"2"},{"text":" sent "},
+        {"type":"item_id","text":"10","player":2,"flags":1},{"text":" to "},
+        {"type":"player_id","text":"1"},{"text":" ("},
+        {"type":"location_id","text":"20","player":2},{"text":")"}]})j"),
+                         outgoing, grants);
+    Check(session.TakeNotification(notification) &&
+              notification == "Link sent Hookshot to Samus (Link's House)",
+          "PrintJSON ids read as player, item and location names");
+    Check(session.AnnounceLocation(5031158) == "Found Hookshot for Link",
+          "the pickup announces its scouted item");
+    session.HandlePacket(Packet(R"({"cmd":"PrintJSON","type":"ItemSend","receiving":2,
+        "item":{"item":10,"location":5031158,"player":1,"flags":1},"data":[
+        {"type":"player_id","text":"1"},{"text":" sent "},
+        {"type":"item_id","text":"10","player":2,"flags":1}]})"),
+                         outgoing, grants);
+    session.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":0,"items":[
+        {"item":5031024,"location":5031100,"player":1,"flags":1}]})"),
+                         outgoing, grants);
+    Check(session.TakeNotification(notification) && notification == "Energy Tank" &&
+              !session.TakeNotification(notification),
+          "a find the pickup did not announce is still shown, an announced one is not");
+    Check(session.LastMessage() == "Samus sent Hookshot",
+          "an announced find still reaches the overlay's last message");
   }
 
   std::filesystem::remove_all(testDir);

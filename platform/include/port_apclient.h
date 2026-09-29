@@ -64,6 +64,15 @@ const char* SeedName();
 // "world:area:entity" key). No-op when unconfigured, unmapped, or already sent.
 void QueueCheck(const char* locationKey);
 
+// With the built-in tables, the pickups at this slot's locations hold the
+// multiworld's items rather than the retail ones: touching one sends the check
+// and grants nothing locally, and its "acquired" memo stays quiet.
+bool OwnsPickup(uint32_t world, uint32_t area, uint32_t entity);
+bool OwnsMemo(uint32_t world, uint32_t area, uint32_t entity);
+// Shows on the HUD what an owned pickup held ("Found X for Bob"), or its
+// location name when the server has not said yet. Call after QueueCheck.
+void AnnouncePickup(uint32_t world, uint32_t area, uint32_t entity);
+
 // A spawn point's Reset message replaced the whole inventory. Any received items
 // the game held are gone, so the next Poll rewinds the session and the server
 // replays them. No-op when AP is off.

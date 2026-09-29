@@ -4,6 +4,12 @@
 
 #include "Kyoto/Text/CStringTable.hpp"
 
+#ifdef TARGET_PC
+#include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/CWorld.hpp"
+#include "port_apclient.h"
+#endif
+
 CScriptHUDMemo::CScriptHUDMemo(TUniqueId uid, const rstl::string& name, const CEntityInfo& info,
                                const CHUDMemoParms& parms, const EDisplayType disp, CAssetId msg,
                                const bool active)
@@ -20,6 +26,16 @@ CScriptHUDMemo::~CScriptHUDMemo() {}
 void CScriptHUDMemo::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CStateManager& mgr) {
   switch (msg) {
   case kSM_SetToZero:
+#ifdef TARGET_PC
+    // An Archipelago location's "acquired" memo names the retail item, which
+    // the pickup no longer holds; the pickup announced what it did hold.
+    if (mgr.GetWorld() != nullptr && GetAreaId() != kInvalidAreaId &&
+        PortAp::OwnsMemo(
+            static_cast< uint32_t >(mgr.GetWorld()->IGetWorldAssetId()),
+            static_cast< uint32_t >(mgr.GetWorld()->IGetAreaAlways(GetAreaId())->IGetAreaAssetId()),
+            static_cast< uint32_t >(GetEditorId().Value())))
+      break;
+#endif
     if (GetActive()) {
       if (x3c_dispType == kDT_MessageBox) {
         mgr.ShowPausedHUDMemo(x40_stringTableId, x34_parms.GetDisplayTime());

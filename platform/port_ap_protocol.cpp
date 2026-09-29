@@ -683,6 +683,34 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
           mPlayers[playerSlot] = std::move(name);
       }
     }
+    // Item and location ids only mean something within a game, and the server
+    // announces other players' finds by id, so fetch every game's names.
+    mSlotGames.clear();
+    mScouts.clear();
+    const PortJson::Value* slotInfo = Member(packet, "slot_info");
+    if (slotInfo != nullptr && slotInfo->IsObject()) {
+      std::vector< std::string > games;
+      for (const auto& [key, info] : slotInfo->AsObject()) {
+        int64_t infoSlot = 0;
+        const PortJson::Value* game = info.IsObject() ? Member(info, "game") : nullptr;
+        if (!ParseItemKey(key, infoSlot) || game == nullptr || !game->IsString())
+          continue;
+        mSlotGames[infoSlot] = game->AsString();
+        if (std::find(games.begin(), games.end(), game->AsString()) == games.end() &&
+            mGameNames.find(game->AsString()) == mGameNames.end())
+          games.push_back(game->AsString());
+      }
+      if (!games.empty()) {
+        std::string request = "{\"cmd\":\"GetDataPackage\",\"games\":[";
+        for (size_t i = 0; i < games.size(); ++i) {
+          if (i != 0)
+            request.push_back(',');
+          request += Quote(games[i]);
+        }
+        request += "]}";
+        outgoing.push_back(std::move(request));
+      }
+    }
     const PortJson::Value* checked = Member(packet, "checked_locations");
     if (checked != nullptr && checked->IsArray()) {
       for (const PortJson::Value& location : checked->AsArray()) {
@@ -719,6 +747,55 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
         update += "\"DeathLink\"]}";
         outgoing.push_back(std::move(update));
       }
+    }
+    // The built-in tables take the retail item out of each pickup, so what the
+    // pickup holds instead is asked for up front and named when collected.
+    if (mConfig.builtin) {
+      const std::vector< int64_t > ids = AllLocationIds();
+      if (!ids.empty())
+        outgoing.push_back(BuildLocationScouts(ids));
+    }
+  } else if (command == "DataPackage") {
+    const PortJson::Value* data = Member(packet, "data");
+    const PortJson::Value* games =
+        data != nullptr && data->IsObject() ? Member(*data, "games") : nullptr;
+    if (games == nullptr || !games->IsObject())
+      return;
+    for (const auto& [game, package] : games->AsObject()) {
+      if (!package.IsObject())
+        continue;
+      GameNames& names = mGameNames[game];
+      const auto invert = [&package](const char* field, std::map< int64_t, std::string >& out) {
+        const PortJson::Value* table = Member(package, field);
+        if (table == nullptr || !table->IsObject())
+          return;
+        for (const auto& [name, idValue] : table->AsObject()) {
+          int64_t id = 0;
+          if (Integer(&idValue, id))
+            out[id] = name;
+        }
+      };
+      invert("item_name_to_id", names.items);
+      invert("location_name_to_id", names.locations);
+    }
+  } else if (command == "LocationInfo") {
+    const PortJson::Value* locations = Member(packet, "locations");
+    if (locations == nullptr || !locations->IsArray())
+      return;
+    for (const PortJson::Value& entry : locations->AsArray()) {
+      int64_t item = 0;
+      int64_t location = 0;
+      int64_t player = 0;
+      bool ok = false;
+      if (entry.IsObject()) {
+        ok = IntegerMember(entry, "item", item) && IntegerMember(entry, "location", location) &&
+             IntegerMember(entry, "player", player);
+      } else if (entry.IsArray() && entry.Size() == 4) {
+        ok = Integer(&entry.AsArray()[0], item) && Integer(&entry.AsArray()[1], location) &&
+             Integer(&entry.AsArray()[2], player);
+      }
+      if (ok)
+        mScouts[location] = ScoutedItem{item, player};
     }
   } else if (command == "ReceivedItems") {
     int64_t index = 0;
@@ -818,9 +895,14 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       } else if (item.IsArray() && item.Size() == 4) {
         hasPlayer = Integer(&item.AsArray()[2], itemPlayer);
       }
+      int64_t itemLocation = 0;
+      if (item.IsObject())
+        IntegerMember(item, "location", itemLocation);
+      else if (item.IsArray() && item.Size() == 4)
+        Integer(&item.AsArray()[1], itemLocation);
       if (hasPlayer && mOwnSlot != 0 && itemPlayer != mOwnSlot)
         notification += " from " + PlayerName(itemPlayer);
-      if (!alreadyHeld)
+      if (!alreadyHeld && !(hasPlayer && AnnouncedLocally(itemLocation, itemPlayer)))
         AppendNotification(mNotifications, std::move(notification));
       // The tracker keeps the same receipt with its parts separated, so a
       // session's worth of items stays readable after the HUD line is gone.
@@ -862,10 +944,34 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
     if (data != nullptr && data->IsArray()) {
       for (const PortJson::Value& part : data->AsArray()) {
         const PortJson::Value* text = Member(part, "text");
-        if (text != nullptr && text->IsString())
+        if (text == nullptr || !text->IsString())
+          continue;
+        // Players, items and locations arrive as ids in `text`; the part's
+        // type says which, and `player` whose game an item or location is.
+        const std::string type = part.StringOr("type");
+        int64_t id = 0;
+        int64_t owner = 0;
+        const bool isId = ParseItemKey(text->AsString(), id);
+        const bool hasOwner = IntegerMember(part, "player", owner);
+        if (isId && type == "player_id")
+          message += PlayerName(id);
+        else if (isId && hasOwner && type == "item_id")
+          message += ItemName(id, owner);
+        else if (isId && hasOwner && type == "location_id")
+          message += LocationName(id, owner);
+        else
           message += text->AsString();
       }
     }
+    // An ItemSend for a find of this slot's that the HUD already named.
+    const PortJson::Value* sent = Member(packet, "item");
+    int64_t sentLocation = 0;
+    int64_t sentFinder = 0;
+    const bool repeat = Member(packet, "type") != nullptr && packet.StringOr("type") == "ItemSend" &&
+                        sent != nullptr && sent->IsObject() &&
+                        IntegerMember(*sent, "location", sentLocation) &&
+                        IntegerMember(*sent, "player", sentFinder) &&
+                        AnnouncedLocally(sentLocation, sentFinder);
     std::string normalized;
     normalized.reserve(message.size());
     bool previousWasNewline = false;
@@ -885,7 +991,8 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       normalized += "...";
     }
     mLastMessage = std::move(normalized);
-    AppendNotification(mNotifications, mLastMessage);
+    if (!repeat)
+      AppendNotification(mNotifications, mLastMessage);
   } else if (command == "InvalidPacket") {
     const PortJson::Value* text = Member(packet, "text");
     mLastError = text != nullptr && text->IsString() ? text->AsString() : std::string();
@@ -1010,6 +1117,91 @@ std::string Session::BuildLocationChecks(const std::vector<int64_t>& ids) {
 std::string Session::BuildSync() { return "{\"cmd\":\"Sync\"}"; }
 
 std::string Session::BuildGoal() { return "{\"cmd\":\"StatusUpdate\",\"status\":30}"; }
+
+std::string Session::BuildLocationScouts(const std::vector< int64_t >& ids) {
+  std::string result = "{\"cmd\":\"LocationScouts\",\"locations\":[";
+  for (size_t i = 0; i < ids.size(); ++i) {
+    if (i != 0)
+      result.push_back(',');
+    AppendInt(result, ids[i]);
+  }
+  result += "],\"create_as_hint\":0}";
+  return result;
+}
+
+std::string Session::ItemName(int64_t itemId, int64_t slot) const {
+  try {
+    const auto game = mSlotGames.find(slot);
+    const std::string& gameName =
+        game != mSlotGames.end() ? game->second : (slot == mOwnSlot ? mConfig.game : std::string());
+    const auto names = mGameNames.find(gameName);
+    if (names != mGameNames.end()) {
+      const auto name = names->second.items.find(itemId);
+      if (name != names->second.items.end())
+        return name->second;
+    }
+    if (gameName == mConfig.game) {
+      if (mConfig.builtin) {
+        const char* name = MetroidPrime::ItemName(itemId);
+        if (name != nullptr)
+          return name;
+      }
+      const auto entry = mConfig.items.find(itemId);
+      if (entry != mConfig.items.end())
+        return ItemDisplay(entry->second, 0);
+    }
+    return "item " + std::to_string(itemId);
+  } catch (...) {
+    return std::string();
+  }
+}
+
+std::string Session::LocationName(int64_t locationId, int64_t slot) const {
+  try {
+    const auto game = mSlotGames.find(slot);
+    const std::string& gameName =
+        game != mSlotGames.end() ? game->second : (slot == mOwnSlot ? mConfig.game : std::string());
+    const auto names = mGameNames.find(gameName);
+    if (names != mGameNames.end()) {
+      const auto name = names->second.locations.find(locationId);
+      if (name != names->second.locations.end())
+        return name->second;
+    }
+    if (gameName == mConfig.game && mConfig.builtin) {
+      const MetroidPrime::Location* location = MetroidPrime::FindLocation(locationId);
+      if (location != nullptr)
+        return location->name;
+    }
+    return "location " + std::to_string(locationId);
+  } catch (...) {
+    return std::string();
+  }
+}
+
+std::string Session::LocationText(int64_t locationId) const {
+  try {
+    const auto scout = mScouts.find(locationId);
+    if (scout == mScouts.end())
+      return std::string();
+    std::string text = "Found " + ItemName(scout->second.item, scout->second.player);
+    if (mOwnSlot != 0 && scout->second.player != mOwnSlot)
+      text += " for " + PlayerName(scout->second.player);
+    return text;
+  } catch (...) {
+    return std::string();
+  }
+}
+
+bool Session::AnnouncedLocally(int64_t locationId, int64_t finder) const {
+  return mOwnSlot != 0 && finder == mOwnSlot && mAnnounced.count(locationId) != 0;
+}
+
+std::string Session::AnnounceLocation(int64_t locationId) {
+  std::string text = LocationText(locationId);
+  if (!text.empty())
+    mAnnounced.insert(locationId);
+  return text;
+}
 
 int64_t Session::ReceivedCount(int64_t itemId) const {
   const auto found = mState.progressive.find(itemId);

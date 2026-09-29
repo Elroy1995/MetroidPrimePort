@@ -910,6 +910,54 @@ void QueueCheck(const char* locationKey) {
   }
 }
 
+namespace {
+
+bool BuiltinEnabled() {
+  EnsureLoaded();
+  Runtime& runtime = GetRuntime();
+  std::lock_guard<std::mutex> lock(runtime.mutex);
+  return runtime.enabled && runtime.session != nullptr && runtime.session->GetConfig().builtin;
+}
+
+} // namespace
+
+bool OwnsPickup(uint32_t world, uint32_t area, uint32_t entity) {
+  try {
+    return MetroidPrime::FindPickup(world, area, entity) != nullptr && BuiltinEnabled();
+  } catch (...) {
+    return false;
+  }
+}
+
+bool OwnsMemo(uint32_t world, uint32_t area, uint32_t entity) {
+  try {
+    return MetroidPrime::FindMemo(world, area, entity) != nullptr && BuiltinEnabled();
+  } catch (...) {
+    return false;
+  }
+}
+
+void AnnouncePickup(uint32_t world, uint32_t area, uint32_t entity) {
+  try {
+    const MetroidPrime::Location* location = MetroidPrime::FindPickup(world, area, entity);
+    if (location == nullptr)
+      return;
+    std::string text;
+    {
+      Runtime& runtime = GetRuntime();
+      std::lock_guard<std::mutex> lock(runtime.mutex);
+      if (!runtime.enabled || runtime.session == nullptr)
+        return;
+      text = runtime.session->AnnounceLocation(location->id);
+    }
+    if (text.empty())
+      text = std::string("Checked ") + location->name;
+    PortLog::Write("archipelago: %s\n", text.c_str());
+    CSamusHud::DisplayHudMemo(ToHudWide(text), CHUDMemoParms(5.f, true, false, false));
+  } catch (...) {
+  }
+}
+
 void OnInventoryReset() {
   try {
     if (!Enabled() || gpGameState == nullptr)

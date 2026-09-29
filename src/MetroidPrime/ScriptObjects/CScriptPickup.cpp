@@ -147,7 +147,15 @@ void CScriptPickup::Think(float dt, CStateManager& mgr) {
 void CScriptPickup::Touch(CActor& act, CStateManager& mgr) {
   if (GetActive() && !(x278_delayTimer >= 0) && TCastToPtr< CPlayer >(act)) {
     CPlayerState::EItemType itemType = x258_itemType;
-    if (itemType >= CPlayerState::kIT_Truth && itemType <= CPlayerState::kIT_Newborn) {
+    // An Archipelago location: the server gives whatever this pickup holds,
+    // so the retail item is not granted here.
+    const bool apOwned =
+        mgr.GetWorld() != nullptr &&
+        PortAp::OwnsPickup(
+            static_cast< uint32_t >(mgr.GetWorld()->IGetWorldAssetId()),
+            static_cast< uint32_t >(mgr.GetWorld()->IGetAreaAlways(GetAreaId())->IGetAreaAssetId()),
+            static_cast< uint32_t >(GetEditorId().Value()));
+    if (!apOwned && itemType >= CPlayerState::kIT_Truth && itemType <= CPlayerState::kIT_Newborn) {
       CAssetId id = CArtifactDoll::GetArtifactHeadScanFromItemType(itemType);
       if (id != kInvalidAssetId) {
         mgr.PlayerState()->SetScanTime(id, 0.5f);
@@ -177,11 +185,17 @@ void CScriptPickup::Touch(CActor& act, CStateManager& mgr) {
       PortRandomizer::FormatLocationKey(randoWorld, randoArea, randoEntity, checkKey,
                                         sizeof(checkKey));
       PortAp::QueueCheck(checkKey);
+      if (apOwned)
+        PortAp::AnnouncePickup(randoWorld, randoArea, randoEntity);
     }
-    mgr.PlayerState()->InitializePowerUp(itemType, x260_capacity);
-    mgr.PlayerState()->IncrPickUp(itemType, x25c_amount);
+    if (!apOwned) {
+      mgr.PlayerState()->InitializePowerUp(itemType, x260_capacity);
+      mgr.PlayerState()->IncrPickUp(itemType, x25c_amount);
+    }
     mgr.DeleteObjectRequest(GetUniqueId());
     SendScriptMsgs(kSS_Arrived, mgr, kSM_None);
+    if (apOwned)
+      return;
 
     if (x260_capacity > 0) {
       const CPlayerState* playerState = mgr.GetPlayerState();
