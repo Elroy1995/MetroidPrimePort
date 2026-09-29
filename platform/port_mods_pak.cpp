@@ -1,0 +1,343 @@
+// The self-contained half of the mods folder (port_mods.h): PAK tables, the
+// virtual file layout and its reader. Kept apart from the startup code so the
+// unit test needs neither Aurora nor a disc.
+
+#include "port_mods.h"
+
+#include <algorithm>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+
+namespace PortMods {
+namespace {
+
+constexpr uint32_t kPakVersion = 0x00030005;
+// Far past any retail PAK; only here to reject garbage before allocating.
+constexpr uint32_t kMaxNameLength = 1024;
+constexpr uint32_t kMaxResources = 1000000;
+
+uint32_t ReadBE32(const uint8_t* data) {
+  return (uint32_t(data[0]) << 24) | (uint32_t(data[1]) << 16) | (uint32_t(data[2]) << 8) | uint32_t(data[3]);
+}
+
+void WriteBE32(uint8_t* data, uint32_t value) {
+  data[0] = uint8_t(value >> 24);
+  data[1] = uint8_t(value >> 16);
+  data[2] = uint8_t(value >> 8);
+  data[3] = uint8_t(value);
+}
+
+uint64_t RoundUp32(uint64_t value) { return (value + 31) & ~uint64_t(31); }
+
+int HexDigit(char c) {
+  if (c >= '0' && c <= '9') {
+    return c - '0';
+  }
+  if (c >= 'a' && c <= 'f') {
+    return c - 'a' + 10;
+  }
+  if (c >= 'A' && c <= 'F') {
+    return c - 'A' + 10;
+  }
+  return -1;
+}
+
+std::filesystem::path HostPath(const std::string& text) {
+  return std::filesystem::path(std::u8string(text.begin(), text.end()));
+}
+
+} // namespace
+
+bool ParsePakTable(const uint8_t* data, size_t size, PakTable& table, size_t& needed) {
+  table = {};
+  needed = 12;
+  if (size < needed) {
+    return false;
+  }
+  if (ReadBE32(data) != kPakVersion) {
+    needed = 0;
+    return false;
+  }
+  const uint32_t nameCount = ReadBE32(data + 8);
+  if (nameCount > kMaxResources) {
+    needed = 0;
+    return false;
+  }
+  size_t pos = 12;
+  for (uint32_t i = 0; i < nameCount; ++i) {
+    needed = pos + 12;
+    if (size < needed) {
+      return false;
+    }
+    const uint32_t nameLength = ReadBE32(data + pos + 8);
+    if (nameLength > kMaxNameLength) {
+      needed = 0;
+      return false;
+    }
+    pos += 12 + nameLength;
+  }
+  needed = pos + 4;
+  if (size < needed) {
+    return false;
+  }
+  const uint32_t count = ReadBE32(data + pos);
+  if (count > kMaxResources) {
+    needed = 0;
+    return false;
+  }
+  pos += 4;
+  needed = pos + size_t(count) * 20;
+  if (size < needed) {
+    return false;
+  }
+  table.resources.reserve(count);
+  for (uint32_t i = 0; i < count; ++i, pos += 20) {
+    PakResource& resource = table.resources.emplace_back();
+    resource.compressed = ReadBE32(data + pos);
+    resource.type = ReadBE32(data + pos + 4);
+    resource.id = ReadBE32(data + pos + 8);
+    resource.size = ReadBE32(data + pos + 12);
+    resource.offset = ReadBE32(data + pos + 16);
+    resource.entryOffset = pos;
+  }
+  table.headerEnd = pos;
+  return true;
+}
+
+bool ParseLooseName(const std::string& fileName, uint32_t& type, uint32_t& id) {
+  if (fileName.size() != 13 || fileName[8] != '.') {
+    return false;
+  }
+  id = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    const int digit = HexDigit(fileName[i]);
+    if (digit < 0) {
+      return false;
+    }
+    id = (id << 4) | uint32_t(digit);
+  }
+  type = 0;
+  for (size_t i = 9; i < 13; ++i) {
+    char c = fileName[i];
+    if (c >= 'a' && c <= 'z') {
+      c = char(c - 'a' + 'A');
+    }
+    if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) {
+      return false;
+    }
+    type = (type << 8) | uint8_t(c);
+  }
+  return true;
+}
+
+std::string FourCCString(uint32_t type) {
+  std::string text(4, ' ');
+  for (int i = 0; i < 4; ++i) {
+    const char c = char(type >> (24 - 8 * i));
+    text[i] = c >= 32 && c < 127 ? c : '?';
+  }
+  return text;
+}
+
+VirtualFile PatchPak(const std::vector<uint8_t>& header, const PakTable& table, uint64_t originalSize,
+                     const std::vector<const LooseResource*>& loose, const std::string& sourceHost) {
+  VirtualFile file;
+  if (header.size() < table.headerEnd || originalSize < table.headerEnd) {
+    return file;
+  }
+  // memory[0] is the header, patched below.
+  file.memory.emplace_back(header.begin(), header.begin() + table.headerEnd);
+  file.segments.push_back({Segment::kMemory, 0, table.headerEnd, 0});
+
+  Segment original;
+  original.start = table.headerEnd;
+  original.length = originalSize - table.headerEnd;
+  original.sourceOffset = table.headerEnd;
+  if (!sourceHost.empty()) {
+    original.kind = Segment::kHost;
+    original.hostPath = sourceHost;
+    original.hostSize = originalSize;
+  } else {
+    original.kind = Segment::kSource;
+  }
+  if (original.length > 0) {
+    file.segments.push_back(original);
+  }
+  uint64_t end = RoundUp32(originalSize);
+  if (end > originalSize) {
+    file.memory.emplace_back(end - originalSize, uint8_t(0));
+    file.segments.push_back({Segment::kMemory, originalSize, end - originalSize, file.memory.size() - 1});
+  }
+  for (const LooseResource* resource : loose) {
+    const uint64_t length = RoundUp32(resource->hostSize);
+    if (length == 0) {
+      continue;
+    }
+    bool used = false;
+    for (const PakResource& entry : table.resources) {
+      if (entry.type != resource->type || entry.id != resource->id) {
+        continue;
+      }
+      uint8_t* bytes = file.memory[0].data() + entry.entryOffset;
+      WriteBE32(bytes, 0);
+      WriteBE32(bytes + 12, uint32_t(length));
+      WriteBE32(bytes + 16, uint32_t(end));
+      used = true;
+    }
+    if (!used) {
+      continue;
+    }
+    Segment appended;
+    appended.kind = Segment::kHost;
+    appended.start = end;
+    appended.length = length;
+    appended.hostPath = resource->hostPath;
+    appended.hostSize = resource->hostSize;
+    file.segments.push_back(appended);
+    end += length;
+  }
+  file.size = end;
+  return file;
+}
+
+// --- Reader ---------------------------------------------------------------------
+
+struct Reader::Host {
+  std::string path;
+  std::ifstream in;
+};
+
+Reader::Reader(std::shared_ptr<const VirtualFile> file, const SourceIo* io) : mFile(std::move(file)), mIo(io) {}
+
+Reader::~Reader() {
+  if (mSource != nullptr && mIo != nullptr && mIo->close != nullptr) {
+    mIo->close(mSource);
+  }
+}
+
+int64_t Reader::Seek(int64_t offset, int32_t whence) {
+  int64_t base = 0;
+  switch (whence) {
+  case 0:
+    break;
+  case 1:
+    base = int64_t(mPos);
+    break;
+  case 2:
+    base = int64_t(mFile->size);
+    break;
+  default:
+    return -1;
+  }
+  const int64_t target = base + offset;
+  if (target < 0) {
+    return -1;
+  }
+  mPos = uint64_t(target);
+  return target;
+}
+
+int64_t Reader::Read(uint8_t* buffer, size_t length) {
+  const std::vector<Segment>& segments = mFile->segments;
+  size_t done = 0;
+  while (done < length && mPos < mFile->size) {
+    // The last segment starting at or before mPos.
+    auto next = std::upper_bound(segments.begin(), segments.end(), mPos,
+                                 [](uint64_t pos, const Segment& segment) { return pos < segment.start; });
+    if (next == segments.begin()) {
+      return done > 0 ? int64_t(done) : -1;
+    }
+    const Segment& segment = *(next - 1);
+    const uint64_t within = mPos - segment.start;
+    if (within >= segment.length) {
+      return done > 0 ? int64_t(done) : -1;
+    }
+    const size_t chunk = size_t(std::min<uint64_t>(length - done, segment.length - within));
+    const int64_t got = ReadSegment(segment, within, buffer + done, chunk);
+    if (got < 0) {
+      return done > 0 ? int64_t(done) : -1;
+    }
+    done += size_t(got);
+    mPos += uint64_t(got);
+    if (size_t(got) < chunk) {
+      break;
+    }
+  }
+  return int64_t(done);
+}
+
+int64_t Reader::ReadSegment(const Segment& segment, uint64_t at, uint8_t* buffer, size_t length) {
+  switch (segment.kind) {
+  case Segment::kMemory:
+    std::memcpy(buffer, mFile->memory[segment.memory].data() + at, length);
+    return int64_t(length);
+  case Segment::kSource: {
+    if (!mSourceTried) {
+      mSourceTried = true;
+      if (mIo != nullptr && mIo->open != nullptr) {
+        mSource = mIo->open(*mFile);
+      }
+    }
+    if (mSource == nullptr) {
+      return -1;
+    }
+    return mIo->readAt(mSource, segment.sourceOffset + at, buffer, length);
+  }
+  case Segment::kHost: {
+    if (mHost == nullptr) {
+      mHost = std::make_unique<Host>();
+    }
+    const uint64_t offset = segment.sourceOffset + at;
+    // Past the file's end (the 32-byte padding, or a file that shrank since
+    // startup) reads as zeros, so the table's sizes stay true.
+    size_t fromFile = 0;
+    if (offset < segment.hostSize) {
+      fromFile = size_t(std::min<uint64_t>(length, segment.hostSize - offset));
+      if (mHost->path != segment.hostPath || !mHost->in.is_open()) {
+        mHost->in = std::ifstream(HostPath(segment.hostPath), std::ios::binary);
+        mHost->path = segment.hostPath;
+      }
+      mHost->in.clear();
+      mHost->in.seekg(std::streamoff(offset));
+      mHost->in.read(reinterpret_cast<char*>(buffer), std::streamsize(fromFile));
+      const size_t got = size_t(std::max<std::streamsize>(mHost->in.gcount(), 0));
+      if (got < fromFile) {
+        std::memset(buffer + got, 0, fromFile - got);
+      }
+    }
+    std::memset(buffer + fromFile, 0, length - fromFile);
+    return int64_t(length);
+  }
+  }
+  return -1;
+}
+
+std::vector<std::string> SplitDisabled(const std::string& list) {
+  std::vector<std::string> names;
+  size_t start = 0;
+  while (start <= list.size()) {
+    const size_t end = std::min(list.find('/', start), list.size());
+    if (end > start) {
+      names.push_back(list.substr(start, end - start));
+    }
+    start = end + 1;
+  }
+  return names;
+}
+
+std::string JoinDisabled(const std::vector<std::string>& names) {
+  std::string list;
+  for (const std::string& name : names) {
+    if (name.empty() || name.find('/') != std::string::npos) {
+      continue;
+    }
+    if (!list.empty()) {
+      list += '/';
+    }
+    list += name;
+  }
+  return list;
+}
+
+} // namespace PortMods

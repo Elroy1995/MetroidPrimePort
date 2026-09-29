@@ -164,6 +164,12 @@ bool LiveSplit();
 void SetLiveSplit(bool enabled);
 std::string LiveSplitAddress();
 void SetLiveSplitAddress(const std::string& address);
+// Mods folder (port_mods.h): all mods on or off, and the folder names turned
+// off, '/'-separated. Both take effect on the next launch.
+bool ModsEnabled();
+void SetModsEnabled(bool enabled);
+std::string ModsDisabled();
+void SetModsDisabled(const std::string& list);
 // Memory card transfer to and from Dolphin (port_gci.h), for the overlay and
 // the console. Each returns a message for the user. Imports are refused in
 // game; `path` may be a .gci, a raw card image, a folder of .gci files or an

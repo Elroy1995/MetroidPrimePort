@@ -122,6 +122,24 @@ void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles, s32
  */
 s32 aurora_dvd_base_entry_count();
 
+/**
+ * \brief Opens a file of the loaded disc by its base EntryNum, ignoring overlays.
+ *
+ * Lets an overlay serve a patched version of the file it replaces. Does not take the FST lock, so it may be called
+ * from overlay callbacks. Returns null for directories, EntryNums past aurora_dvd_base_entry_count(), or with no disc
+ * open. The handle must be closed with aurora_dvd_base_close before the disc is closed.
+ */
+void* aurora_dvd_base_open(s32 entrynum);
+
+/** \brief Reads from a handle from aurora_dvd_base_open. Returns the amount read, or -1 on error. */
+int64_t aurora_dvd_base_read(void* handle, uint8_t* buf, size_t len);
+
+/** \brief Seeks a handle from aurora_dvd_base_open. Returns the resulting position, or -1 on error. */
+int64_t aurora_dvd_base_seek(void* handle, int64_t offset, int32_t whence);
+
+/** \brief Closes a handle from aurora_dvd_base_open. */
+void aurora_dvd_base_close(void* handle);
+
 #ifdef __cplusplus
 }
 #endif

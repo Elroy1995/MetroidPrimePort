@@ -20,6 +20,7 @@
 #include "port_prompts.h"
 #include "port_build_info.h"
 #include "port_log.h"
+#include "port_mods.h"
 
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
@@ -578,6 +579,7 @@ int main(int argc, char** argv) {
         aurora_shutdown();
         return 1;
     }
+    PortMods::Initialize();
 
     // Prime the window/event state so the game's first aurora_begin_frame can
     // succeed (the game submits GX during early init, before its main loop).

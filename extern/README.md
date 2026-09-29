@@ -19,7 +19,7 @@ Retain and review individual source notices as well as the top-level licenses.
 
 Port-specific changes include deferred ARQ callbacks, FIFO draw-sync tokens,
 bounded/validated ARAM copies, paused event-pump servicing, Windows runtime DLL
-packaging, PC audio stream buffers, pointer-width corrections, atomic muting,
+packaging, DVD base-file reads for overlays (`aurora_dvd_base_*`), PC audio stream buffers, pointer-width corrections, atomic muting,
 and synchronous voice retirement before releasing group resources.
 
 Aurora still obtains its transitive dependencies through its provider system;

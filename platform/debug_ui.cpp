@@ -6,6 +6,7 @@
 #include "port_apclient.h"
 #include "port_controls.h"
 #include "port_gci.h"
+#include "port_mods.h"
 #include "port_livesplit.h"
 #include "port_prompts.h"
 #include "port_mouse.h"
@@ -128,6 +129,9 @@ bool sSpeedrunTimer = false;
 bool sLiveSplit = false;
 std::string sLiveSplitAddress = "127.0.0.1:16834";
 bool sLiveSplitSplitUpgrades = true;
+// Mods folder (port_mods.h): read at startup only.
+bool sModsEnabled = true;
+std::string sModsDisabled;
 // Gyro aiming: off / hold / always, auto / controller / phone, and how fast a
 // rotation turns into aim travel.
 int sGyroMode = 0;
@@ -347,6 +351,10 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "livesplit_split_upgrades") {
     sLiveSplitSplitUpgrades = ParseBool(value);
+  } else if (key == "mods") {
+    sModsEnabled = ParseBool(value);
+  } else if (key == "mods_disabled") {
+    sModsDisabled = value;
   } else if (key == "fast_morph") {
     sFastMorph = ParseBool(value);
   } else if (key == "lock_on_toggle") {
@@ -451,6 +459,8 @@ void SaveSettings() {
   file << "livesplit=" << (sLiveSplit ? 1 : 0) << '\n';
   file << "livesplit_address=" << sLiveSplitAddress << '\n';
   file << "livesplit_split_upgrades=" << (sLiveSplitSplitUpgrades ? 1 : 0) << '\n';
+  file << "mods=" << (sModsEnabled ? 1 : 0) << '\n';
+  file << "mods_disabled=" << sModsDisabled << '\n';
   file << "vsync=" << (sVsyncEnabled ? 1 : 0) << '\n';
   file << "overlay_windowed=" << (sOverlayWindowed ? 1 : 0) << '\n';
   file << "render_scale=" << sRenderScale << '\n';
@@ -988,6 +998,28 @@ void SetLiveSplitAddress(const std::string& address) {
   }
   sLiveSplitAddress = address;
   ApplyLiveSplit();
+  MarkDirty();
+}
+
+bool ModsEnabled() {
+  EnsureInitialized();
+  return sModsEnabled;
+}
+
+void SetModsEnabled(bool enabled) {
+  EnsureInitialized();
+  sModsEnabled = enabled;
+  MarkDirty();
+}
+
+std::string ModsDisabled() {
+  EnsureInitialized();
+  return sModsDisabled;
+}
+
+void SetModsDisabled(const std::string& list) {
+  EnsureInitialized();
+  sModsDisabled = list;
   MarkDirty();
 }
 
@@ -2262,6 +2294,62 @@ void DrawMemoryCard() {
       "An import replaces the card's saves; the old ones move to _replaced in the card "
       "folder.");
 }
+
+void DrawMods() {
+  ImGui::SeparatorText("Mods");
+  const PortMods::Status& status = PortMods::CurrentStatus();
+  bool enabled = sModsEnabled;
+  if (ImGui::Checkbox("Load mods", &enabled)) {
+    SetModsEnabled(enabled);
+  }
+  // What the settings would load next time, against what this launch loaded.
+  std::vector<std::string> disabled = PortMods::SplitDisabled(sModsDisabled);
+  bool changed = sModsEnabled != status.active;
+  if (status.mods.empty()) {
+    ImGui::TextDisabled("No mods in the folder.");
+  }
+  for (const PortMods::ModInfo& mod : status.mods) {
+    const auto found = std::find(disabled.begin(), disabled.end(), mod.name);
+    bool on = found == disabled.end();
+    ImGui::BeginDisabled(!sModsEnabled);
+    if (ImGui::Checkbox(mod.name.c_str(), &on)) {
+      if (on) {
+        disabled.erase(std::remove(disabled.begin(), disabled.end(), mod.name), disabled.end());
+      } else {
+        disabled.push_back(mod.name);
+      }
+      SetModsDisabled(PortMods::JoinDisabled(disabled));
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (mod.enabled) {
+      ImGui::TextDisabled("%d file(s), %d resource(s)", mod.files, mod.resources);
+    } else {
+      ImGui::TextDisabled("not loaded");
+    }
+    changed = changed || (sModsEnabled && on) != mod.enabled;
+  }
+  if (changed) {
+    ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), "Restart the game to apply.");
+  }
+  for (const std::string& message : status.messages) {
+    ImGui::TextColored(ImVec4(1.f, 0.5f, 0.3f, 1.f), "%s", message.c_str());
+  }
+  ImGui::TextWrapped("Folder: %s", status.folder.c_str());
+#if !defined(__ANDROID__)
+  if (!status.folder.empty() && ImGui::Button("Open mods folder")) {
+    std::string url = status.folder.front() == '/' ? "file://" : "file:///";
+    for (const char c : status.folder) {
+      url += c == ' ' ? std::string("%20") : std::string(1, c == '\\' ? '/' : c);
+    }
+    SDL_OpenURL(url.c_str());
+  }
+#endif
+  ImGui::TextWrapped(
+      "Each folder in the mods folder is a mod; later names win. A file at a disc path "
+      "(Metroid1.pak, Audio/..., Video/...) replaces that file, and a resource named "
+      "by id and type (1A2B3C4D.TXTR) replaces it in every PAK. Mods load at startup.");
+}
 } // namespace
 
 void DrawExtrasTab() {
@@ -2343,6 +2431,7 @@ void DrawExtrasTab() {
       "artifact (not expansions or energy tanks) when enabled, and on the final blow.");
 
   DrawMemoryCard();
+  DrawMods();
 }
 
 #if defined(__ANDROID__)

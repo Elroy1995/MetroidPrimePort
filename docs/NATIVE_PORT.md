@@ -373,6 +373,35 @@ needs a `-DMP_ENABLE_SMOKE_DRIVER=ON` build such as `build/smoke-gcc`, and
 `MP_FAST_BOOT=1 MP_SKIP_CUTSCENES=1 MP_SMOKE_PAUSE=<ticks>` reaches the pause
 screen quickly to see the result.
 
+### Mods folder
+
+`mods` in the pref folder (or wherever `MP_MODS` points; created on first
+start) replaces disc data without touching the disc image. Each folder in it is
+a mod, applied in name order so a later name wins; folders starting with `.` are
+skipped. Inside a mod:
+
+- a file at a disc path (`Metroid1.pak`, `Audio/frigate.dsp`,
+  `Video/attract0.thp`; case does not matter) replaces that file. Only
+  existing disc files can be replaced; others are reported and ignored.
+- a file named `<8 hex digits>.<type>` (`1A2B3C4D.TXTR`, `0552A456.STRG`),
+  anywhere in the mod, replaces that resource, uncompressed, in every PAK that
+  holds it. The PAK is served as a virtual file: its table is patched to point
+  past the original data, where the loose file is appended (32-byte aligned). A
+  loose resource also applies inside a PAK another mod replaced whole. New ids
+  that no PAK holds are reported and ignored.
+- text and image files (`.txt`, `.md`, `.json`, `.png`, ...) are ignored
+  silently, so a mod can carry its readme.
+
+Mods load at startup, after the disc is opened (the game caches PAK tables when
+it boots), and everything reads through Aurora's DVD overlays, so the game code
+is unchanged. The log lists each mod's counts and any problems ("mods: ..."),
+and F1 > Extras > Mods shows the same, with a Load mods switch (`mods`) and a
+checkbox per mod (`mods_disabled`, `/`-separated names); both take effect on
+the next start. `tools/extract_textures.py`'s `disc_files`/`pak_resources` get
+a resource's original bytes to edit. Checked with a `0552A456.STRG` (the file
+select's "New Game") read from the disc and from a whole-file `MiscData.pak`
+mod. On Android the folder is in app storage with no picker yet.
+
 ### Platforms
 
 The port is built and tested on Linux and Windows. Its own platform code is

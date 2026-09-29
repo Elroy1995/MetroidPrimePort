@@ -1102,6 +1102,29 @@ BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) {
   return TRUE;
 }
 
+// The base disc's EntryNums are its own FST indexes, which nod opens directly.
+// No FST lock: overlay open callbacks run under it.
+void* aurora_dvd_base_open(s32 entrynum) {
+  if (s_partition == nullptr || entrynum <= 0 || entrynum >= s_baseEntryCount) {
+    return nullptr;
+  }
+  NodHandle* handle = nullptr;
+  if (nod_partition_open_file(s_partition, entrynum, &handle) != NOD_RESULT_OK || handle == nullptr) {
+    return nullptr;
+  }
+  return new CommandDataNod(handle);
+}
+
+int64_t aurora_dvd_base_read(void* handle, uint8_t* buf, size_t len) {
+  return handle != nullptr ? static_cast<CommandDataNod*>(handle)->read(buf, len) : -1;
+}
+
+int64_t aurora_dvd_base_seek(void* handle, int64_t offset, int32_t whence) {
+  return handle != nullptr ? static_cast<CommandDataNod*>(handle)->seek(offset, whence) : -1;
+}
+
+void aurora_dvd_base_close(void* handle) { delete static_cast<CommandDataNod*>(handle); }
+
 BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
   s32 entrynum = DVDConvertPathToEntrynum(fileName);
   if (entrynum < 0) {
