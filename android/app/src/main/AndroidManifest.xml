@@ -13,7 +13,7 @@
         <activity
             android:name="org.metroidprime.port.MetroidPrimeActivity"
             android:alwaysRetainTaskState="true"
-            android:configChanges="layoutDirection|locale|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
+            android:configChanges="density|fontScale|fontWeightAdjustment|grammaticalGender|keyboard|keyboardHidden|layoutDirection|locale|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
             android:exported="true"
             android:hardwareAccelerated="true"
             android:launchMode="singleTask"

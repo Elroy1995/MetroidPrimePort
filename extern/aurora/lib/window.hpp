@@ -45,6 +45,13 @@ bool is_backgrounded() noexcept;
 bool is_surface_ready() noexcept;
 bool consume_surface_invalidated() noexcept;
 void set_surface_ready(bool ready) noexcept;
+bool is_surface_changing() noexcept;
+void set_surface_changing(bool changing) noexcept;
+// Tracks whether the renderer holds a surface for the platform window. Android's
+// surfaceDestroyed waits for it to drop, since the native window must not be used
+// after that callback returns.
+void set_surface_held(bool held) noexcept;
+bool wait_surface_released(int timeoutMs) noexcept;
 void set_title(const char* title);
 void set_fullscreen(bool fullscreen);
 bool get_fullscreen();

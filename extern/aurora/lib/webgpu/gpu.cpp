@@ -732,6 +732,7 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
 
 static void release_surface_locked() noexcept {
   g_surface = {};
+  window::set_surface_held(false);
 }
 
 static bool create_surface() {
@@ -748,6 +749,7 @@ static bool create_surface() {
     return false;
   }
   g_surfaceWindow = window::get_native_window_handle();
+  window::set_surface_held(true);
   return true;
 }
 
@@ -1084,6 +1086,7 @@ void shutdown() {
   g_depthBuffer = {};
   g_queue = {};
   g_surface = {};
+  window::set_surface_held(false);
   g_device = {};
   g_adapter = {};
   g_instance = {};
@@ -1129,7 +1132,7 @@ static void resize_swapchain_internal(uint32_t width, uint32_t height, uint32_t 
 
 bool refresh_surface(bool recreate) {
   gfx::gpu_synchronize();
-  if (!g_instance || !g_device) {
+  if (!g_instance || !g_device || window::is_surface_changing()) {
     return false;
   }
   if (!window::is_presentable()) {

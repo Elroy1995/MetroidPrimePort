@@ -30,7 +30,10 @@ extern "C" void Android_UnlockActivityMutex(void);
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <deque>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -58,6 +61,12 @@ std::atomic_bool g_surfaceReady = true;
 // Set when the platform surface is destroyed. The swapchain still refers to the
 // old native window and must be rebuilt before it can be configured again.
 std::atomic_bool g_surfaceInvalidated = false;
+// Set while Android's surfaceChanged runs. The native window stays the same, so the
+// surface is kept: presenting pauses, and a refresh afterwards picks up the new size.
+std::atomic_bool g_surfaceChanging = false;
+std::mutex g_surfaceHeldMutex;
+std::condition_variable g_surfaceHeldCv;
+bool g_surfaceHeld = false;
 bool g_lastPaused = false;
 bool g_gotFocus = false;
 
@@ -127,6 +136,9 @@ void resize_swapchain() noexcept {
     SDL_SetRenderScale(g_renderer, size.scale, size.scale);
   }
 #ifdef AURORA_ENABLE_GX
+  if (is_surface_changing()) {
+    return;
+  }
   const bool invalidated = consume_surface_invalidated();
   if (!is_presentable() || (invalidated && webgpu::surface_window_changed())) {
     // The surface was destroyed since the swapchain was created, so configuring
@@ -540,7 +552,16 @@ bool is_paused() noexcept {
 
 bool is_presentable() noexcept {
   return g_window != nullptr && !g_backgrounded.load(std::memory_order_acquire) &&
-         g_surfaceReady.load(std::memory_order_acquire);
+         g_surfaceReady.load(std::memory_order_acquire) && !g_surfaceChanging.load(std::memory_order_acquire);
+}
+
+bool is_surface_changing() noexcept { return g_surfaceChanging.load(std::memory_order_acquire); }
+
+void set_surface_changing(bool changing) noexcept {
+  g_surfaceChanging.store(changing, std::memory_order_release);
+  if (!changing && g_window != nullptr) {
+    push_custom_event(CustomEvent::RefreshSurface);
+  }
 }
 
 bool is_backgrounded() noexcept { return g_backgrounded.load(std::memory_order_acquire); }
@@ -557,6 +578,21 @@ void set_surface_ready(bool ready) noexcept {
 
 bool consume_surface_invalidated() noexcept {
   return g_surfaceInvalidated.exchange(false, std::memory_order_acq_rel);
+}
+
+void set_surface_held(bool held) noexcept {
+  {
+    std::lock_guard lock{g_surfaceHeldMutex};
+    g_surfaceHeld = held;
+  }
+  if (!held) {
+    g_surfaceHeldCv.notify_all();
+  }
+}
+
+bool wait_surface_released(int timeoutMs) noexcept {
+  std::unique_lock lock{g_surfaceHeldMutex};
+  return g_surfaceHeldCv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [] { return !g_surfaceHeld; });
 }
 
 SurfaceLock::SurfaceLock() noexcept {
@@ -640,5 +676,23 @@ void set_background_input(bool value) { SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACK
 extern "C" JNIEXPORT void JNICALL Java_dev_encounter_aurora_AuroraSurface_nativeSetSurfaceReady(JNIEnv*, jclass,
                                                                                                 jboolean ready) {
   aurora::window::set_surface_ready(ready == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_dev_encounter_aurora_AuroraSurface_nativeSetSurfaceChanging(JNIEnv*, jclass,
+                                                                                                   jboolean changing) {
+  aurora::window::set_surface_changing(changing == JNI_TRUE);
+}
+
+// Called from surfaceDestroyed after the surface was marked not ready: the main
+// thread's next frame drops the swapchain. Presenting to a destroyed window can
+// lose the device on some drivers, and a lost device is fatal. The timeout keeps
+// a busy main thread (a long load) from turning this into an ANR.
+extern "C" JNIEXPORT jboolean JNICALL Java_dev_encounter_aurora_AuroraSurface_nativeWaitSurfaceReleased(JNIEnv*,
+                                                                                                       jclass) {
+  const bool released = aurora::window::wait_surface_released(2000);
+  if (!released) {
+    aurora::window::Log.warn("surfaceDestroyed: renderer still holds the surface after 2 s");
+  }
+  return released ? JNI_TRUE : JNI_FALSE;
 }
 #endif

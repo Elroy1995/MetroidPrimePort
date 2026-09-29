@@ -313,6 +313,12 @@ bool begin_frame() noexcept {
   ZoneScoped;
 #ifdef AURORA_ENABLE_GX
   {
+    // Android keeps the native window across surfaceChanged. Releasing the surface here
+    // would rebuild it on that same window while the old swapchain is still connected,
+    // which fails with VK_ERROR_NATIVE_WINDOW_IN_USE_KHR (a lost device). Skip the frame.
+    if (window::is_surface_changing()) {
+      return false;
+    }
     const bool invalidated = window::consume_surface_invalidated();
     if (!window::is_presentable() || (invalidated && webgpu::surface_window_changed())) {
       static int sNotPresentable = 0;
@@ -382,12 +388,14 @@ void end_frame() noexcept {
     wgpu::Texture currentTexture;
     wgpu::TextureView currentView;
     auto surfaceStatus = wgpu::SurfaceGetCurrentTextureStatus::Error;
+    bool acquireAttempted = false;
     {
       window::SurfaceLock surfaceLock;
       if (window::is_presentable() && g_surface) {
         ZoneScopedN("Acquire texture");
         wgpu::SurfaceTexture surfaceTexture;
         g_surface.GetCurrentTexture(&surfaceTexture);
+        acquireAttempted = true;
         surfaceStatus = surfaceTexture.status;
         if (surfaceStatus == wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal) {
           currentTexture = std::move(surfaceTexture.texture);
@@ -480,7 +488,11 @@ void end_frame() noexcept {
         Log.warn("Surface present failed");
         webgpu::release_surface();
       }
-    } else if (g_surface) {
+    } else if (g_surface && acquireAttempted) {
+      // Without an attempt, surfaceStatus is only the Error placeholder: the window was briefly
+      // not presentable (an Android surfaceChanged, say). Dropping the surface then made
+      // begin_frame build a second VkSurface on the same ANativeWindow while the old swapchain
+      // was still connected, which fails with VK_ERROR_NATIVE_WINDOW_IN_USE_KHR (device lost).
       switch (surfaceStatus) {
       case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
         Log.warn("Surface texture acquisition timed out");
@@ -497,6 +509,7 @@ void end_frame() noexcept {
       case wgpu::SurfaceGetCurrentTextureStatus::Error:
         Log.warn("Surface texture is {}, dropping surface", magic_enum::enum_name(surfaceStatus));
         g_surface = {};
+        window::set_surface_held(false);
         break;
       default:
         if (!window::is_presentable()) {
