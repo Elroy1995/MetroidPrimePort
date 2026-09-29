@@ -93,6 +93,7 @@ unsigned sTimingFrames = 0, sTimingTicks = 0;
 double sActualFps = 0.0, sActualTps = 0.0;
 double sThroughputFps = 0.0;
 bool sVsyncEnabled = false;
+bool sOverlayWindowed = false; // desktop: the old floating tabbed window
 float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
 bool sHudWide = false;
@@ -224,6 +225,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sFrameLimitEnabled = ParseBool(value);
   } else if (key == "vsync") {
     sVsyncEnabled = ParseBool(value);
+  } else if (key == "overlay_windowed") {
+    sOverlayWindowed = ParseBool(value);
   } else if (key == "disc_path") {
     sDiscPath = value;
   } else if (key == "render_scale") {
@@ -368,6 +371,7 @@ void SaveSettings() {
   file << "aspect=" << aspect << '\n';
   file << "hud_wide=" << (sHudWide ? 1 : 0) << '\n';
   file << "vsync=" << (sVsyncEnabled ? 1 : 0) << '\n';
+  file << "overlay_windowed=" << (sOverlayWindowed ? 1 : 0) << '\n';
   file << "render_scale=" << sRenderScale << '\n';
   file << "frame_limit=" << (sFrameLimitEnabled ? 1 : 0) << '\n';
   file << "skip_cutscenes=" << (sSkipCutscenes ? 1 : 0) << '\n';
@@ -1458,15 +1462,16 @@ void SaveSettingsNow() {
   SaveSettings();
 }
 
-// The overlay was laid out for a mouse. On a touchscreen it gets a full-screen
-// panel with a page list instead of tabs, bigger targets and drag scrolling.
-// MP_TOUCH_UI forces that layout on the desktop, to try it without a phone.
-bool TouchUi() {
+// The overlay is a full-screen panel with a page list instead of tabs, which
+// fits a touchscreen and reads better on the desktop too. The desktop can go
+// back to the old floating tabbed window (Render > Overlay as a floating
+// window); MP_TOUCH_UI forces the page layout regardless.
+bool PageLayout() {
 #if defined(__ANDROID__)
   return true;
 #else
-  static const bool sTouchUi = std::getenv("MP_TOUCH_UI") != nullptr;
-  return sTouchUi;
+  static const bool sForced = std::getenv("MP_TOUCH_UI") != nullptr;
+  return sForced || !sOverlayWindowed;
 #endif
 }
 
@@ -1524,10 +1529,9 @@ void UpdateUiScale() {
     // The overlay has to size itself to the scaled font, so do not restore a
     // window size remembered from a previous, smaller run.
     ImGui::GetIO().IniFilename = nullptr;
-    // Before any scaling, so the scaling applies to these sizes too.
-    if (TouchUi()) {
-      ApplyTouchStyle(ImGui::GetStyle());
-    }
+    // Before any scaling, so the scaling applies to these sizes too. Both
+    // layouts use it, so switching layout needs no restyle.
+    ApplyTouchStyle(ImGui::GetStyle());
   }
   SDL_Window* window = MainWindow();
   if (window == nullptr) {
@@ -1716,6 +1720,11 @@ void PickTexturePack() {
 void DrawTexturePack();
 
 void DrawRenderTab() {
+#if !defined(__ANDROID__)
+  if (ImGui::Checkbox("Overlay as a floating window", &sOverlayWindowed)) {
+    MarkDirty();
+  }
+#endif
   bool vsync = sVsyncEnabled;
   if (ImGui::Checkbox("Vsync", &vsync)) {
     SetVsyncEnabled(vsync);
@@ -2517,7 +2526,7 @@ void ClearTouchHover() {
 // Full screen inside the display's safe area (clear of the notch and the
 // gesture bars), no title bar to drag, a Close button a thumb can hit, and a
 // page list down the side in place of a tab strip too narrow to tap.
-bool DrawTouchWindow() {
+bool DrawPageWindow() {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
   ImVec2 pos = viewport->WorkPos;
   ImVec2 size = viewport->WorkSize;
@@ -2545,8 +2554,19 @@ bool DrawTouchWindow() {
     const ImGuiStyle& style = ImGui::GetStyle();
     const char* const kClose = "Close";
     const float closeWidth = ImGui::CalcTextSize(kClose).x + style.FramePadding.x * 4.f;
+    const char* const kTitle = "Metroid Prime Port";
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Metroid Prime Port");
+    ImGui::TextUnformatted(kTitle);
+#if !defined(__ANDROID__)
+    // Only when it fits beside the title and the Close button.
+    const char* const kKeys = "F1: hide   F10: frame limit   F12: screenshot";
+    if (ImGui::GetContentRegionAvail().x > ImGui::CalcTextSize(kTitle).x +
+                                               ImGui::CalcTextSize(kKeys).x + closeWidth +
+                                               style.ItemSpacing.x * 5.f) {
+      ImGui::SameLine(0.f, style.ItemSpacing.x * 3.f);
+      ImGui::TextDisabled("%s", kKeys);
+    }
+#endif
     ImGui::SameLine();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - closeWidth);
     if (ImGui::Button(kClose, ImVec2(closeWidth, 0.f))) {
@@ -2555,6 +2575,16 @@ bool DrawTouchWindow() {
     ImGui::Separator();
 
     static int sPage = 0;
+    // MP_DEBUG_TAB=<name> opens on that page, for captures of the overlay.
+    static const char* sStartPage = std::getenv("MP_DEBUG_TAB");
+    if (sStartPage != nullptr) {
+      for (int i = 0; i < static_cast< int >(ARRAY_SIZE(kDebugPages)); ++i) {
+        if (SDL_strcasecmp(sStartPage, kDebugPages[i].name) == 0) {
+          sPage = i;
+        }
+      }
+      sStartPage = nullptr;
+    }
     float listWidth = 0.f;
     for (const DebugPage& page : kDebugPages) {
       listWidth = std::max(listWidth, ImGui::CalcTextSize(page.name).x);
@@ -2634,7 +2664,7 @@ void DrawUI() {
   }
 
   UpdateTouchScroll();
-  const bool open = TouchUi() ? DrawTouchWindow() : DrawDesktopWindow();
+  const bool open = PageLayout() ? DrawPageWindow() : DrawDesktopWindow();
   ClearTouchHover();
 
   if (!open) {

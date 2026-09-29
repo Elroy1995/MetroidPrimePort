@@ -571,10 +571,11 @@ a temporary directory instead of mounting.
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the
   title screen or while paused. Pair with `MP_TURBO` for speed.
-- `MP_TOUCH_UI=1`: use the touch layout for the debug overlay on desktop (always
-  on for Android): a full-screen window inside the safe area, with a page list
-  instead of tabs, larger hit targets, drag-to-scroll with fling and a Close
-  button.
+- `MP_TOUCH_UI=1`: force the page layout for the debug overlay even when
+  Render > "Overlay as a floating window" is set. The page layout is the default
+  everywhere (the only one on Android): a full-screen window inside the safe
+  area, with a page list instead of tabs, larger hit targets, drag-to-scroll
+  with fling for touches and a Close button.
 - `MP_VALIDATE_SAMPLES=1`: log MusyX sample-directory validation.
 - `MP_SIM_RATE=<hz>`: experimental simulation tick rate (30–480, default 60).
   60 is console-accurate; higher values step the game logic at the display rate
