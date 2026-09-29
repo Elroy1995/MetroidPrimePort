@@ -110,6 +110,14 @@ void SetMouseAim(bool enabled);
 // game's free-look. Works with or without mouse aim.
 bool TwinStick();
 void SetTwinStick(bool enabled);
+// Right stick Y (-1..1) before twin-stick consumed it, for the Spring Ball;
+// 0 when twin-stick is off (the game input still carries it then).
+float TwinStickRightY();
+void SetTwinStickRightY(float y);
+// Spring Ball (C-stick up in morph ball, as in Metroid Prime Trilogy) once the
+// Morph Ball Bombs are held. A connected Archipelago seed overrides it.
+bool SpringBall();
+void SetSpringBall(bool enabled);
 // Aim travel in pixels per second at full stick deflection (scaled by the mouse
 // sensitivity, so both share the same feel).
 float StickAimRate();

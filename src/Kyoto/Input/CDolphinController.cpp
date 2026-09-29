@@ -106,6 +106,7 @@ void CDolphinController::ReadDevices() {
     const float sx = static_cast< float >(x4_status[0].substickX) / 127.f;
     const float sy = static_cast< float >(x4_status[0].substickY) / 127.f;
     PortDebug::AddStickAim(sx, sy, PortDebug::TickPeriod());
+    PortDebug::SetTwinStickRightY(sy);
     x4_status[0].substickX = 0;
     x4_status[0].substickY = 0;
 
@@ -131,6 +132,8 @@ void CDolphinController::ReadDevices() {
       x4_status[0].substickY = static_cast< s8 >(y);
       x4_status[0].button &= ~(PAD_BUTTON_UP | PAD_BUTTON_DOWN | PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT);
     }
+  } else {
+    PortDebug::SetTwinStickRightY(0.f);
   }
 
   // Start+Back is the debug overlay chord; do not also pause the game with it.

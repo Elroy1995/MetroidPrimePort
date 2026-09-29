@@ -784,6 +784,7 @@ int main() {
     Check(slot.received && slot.requireMissileLauncher && !slot.requireMainPowerBomb,
           "slot_data main-item requirements parse");
     Check(slot.variaOnlyHeat, "non_varia_heat_damage parses");
+    Check(slot.springBall == 1, "spring_ball parses");
     Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "elevator"),
           "only the unsupported option is warned about");
     Check(session.GetConfig().deathLink && outgoing.size() == 2 &&
@@ -830,7 +831,8 @@ int main() {
           "without the main requirement the first expansion carries the main amount");
     Check(outgoing.size() == 1 && !Contains(outgoing[0], "ConnectUpdate"),
           "no DeathLink update when the seed has it off");
-    Check(session.GetSlotData().warnings.empty(), "a seed without spring_ball gets no warning");
+    Check(session.GetSlotData().warnings.empty() && session.GetSlotData().springBall == 0,
+          "a seed without spring_ball has none and gets no warning");
   }
   {
     Session session(builtin, State());
@@ -840,8 +842,8 @@ int main() {
         "checked_locations":[],"slot_data":{"spring_ball":3}})"),
                          outgoing, grants);
     const SlotData& slot = session.GetSlotData();
-    Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "Spring Ball"),
-          "Spring Ball as its own item is warned about");
+    Check(slot.springBall == 3 && slot.warnings.empty(),
+          "Spring Ball as a progressive item is supported");
   }
   {
     const Config optedOut =

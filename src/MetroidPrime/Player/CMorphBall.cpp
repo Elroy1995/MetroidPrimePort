@@ -38,6 +38,7 @@
 #include "MetroidPrime/TGameTypes.hpp"
 
 #include "Kyoto/Math/CMath.hpp"
+#include "port_apclient.h"
 #include "port_debug.h"
 #include "Kyoto/Math/CPlane.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
@@ -425,7 +426,51 @@ float CMorphBall::ForwardInput(const CFinalInput& input) const {
   return forwardInput - backwardInput;
 }
 
+#ifdef TARGET_PC
+namespace {
+// Time left before the next Spring Ball: randomprime's 40 frames. Seconds, as
+// the port's tick rate varies. There is one morph ball, so a static will do.
+float sSpringBallCooldown = 0.f;
+
+bool SpringBallUnlocked(const CStateManager& mgr) {
+  const bool bombs = mgr.GetPlayerState()->HasPowerUp(CPlayerState::kIT_MorphBallBombs);
+  const int rule = PortAp::SpringBallRule();
+  if (rule >= 0) {
+    return rule == 2 || (rule == 1 && bombs);
+  }
+  return PortDebug::SpringBall() && bombs;
+}
+} // namespace
+#endif
+
 void CMorphBall::ComputeBallMovement(const CFinalInput& input, CStateManager& mgr, float dt) {
+#ifdef TARGET_PC
+  // Spring Ball, as randomprime patches it into the discs the Archipelago world
+  // makes (and as Metroid Prime Trilogy has it): C-stick up on the ground is a
+  // bomb jump from the ball's own position that keeps the horizontal speed.
+  // Twin stick consumes the C-stick, so its raw right stick counts too, but not
+  // in the frozen-controls calls, whose blank input has no time. (It is the
+  // clamped pad value over 127, so full tilt reads about 0.46.)
+  if (sSpringBallCooldown > 0.f) {
+    sSpringBallCooldown -= dt;
+  } else if ((input.ARAUp() > 0.f ||
+              (input.Time() > 0.f && PortDebug::TwinStickRightY() > 0.25f)) &&
+             x0_player.GetPlayerMovementState() == NPlayer::kMS_OnGround &&
+             x0_player.GetSurfaceRestraint() != CPlayer::kSR_Shrubbery && IsMovementAllowed() &&
+             !x0_player.IsAttached() &&
+             x0_player.GetPlayerEnergyDrain().GetEnergyDrainIntensity() <= 0.f &&
+             GetSpiderBallState() == kSBS_Inactive && SpringBallUnlocked(mgr)) {
+    const CVector3f before = x0_player.GetVelocityWR();
+    x0_player.BombJump(x0_player.GetTranslation(), mgr);
+    float up = x0_player.GetVelocityWR().GetZ();
+    if (x1dfc_touchHalfPipeCooldown > 0.f) {
+      up /= 1.5f;
+    }
+    x0_player.SetVelocityWR(CVector3f(before.GetX(), before.GetY(), up));
+    x0_player.SetMoveState(NPlayer::kMS_FallingMorphed, mgr);
+    sSpringBallCooldown = 40.f / 60.f;
+  }
+#endif
   ComputeBoostBallMovement(input, mgr, dt);
   ComputeMarioMovement(input, mgr, dt);
 }
@@ -1351,9 +1396,15 @@ void CMorphBall::EnterMorphBallState(CStateManager& mgr) {
   DisableHalfPipeStatus();
   x30_ballTiltAngle = 0.f;
   x2c_tireLeanAngle = 0.f;
+#ifdef TARGET_PC
+  sSpringBallCooldown = 0.f;
+#endif
 }
 
 void CMorphBall::LeaveMorphBallState(CStateManager&) {
+#ifdef TARGET_PC
+  sSpringBallCooldown = 0.f;
+#endif
   LeaveBoosting();
   CancelBoosting();
   CSfxManager::SfxStop(x1e24_boostSfxHandle);

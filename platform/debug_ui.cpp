@@ -97,6 +97,8 @@ PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
 bool sHudWide = false;
 bool sMouseAim = false;
 bool sTwinStick = false;
+float sTwinStickRightY = 0.f;
+bool sSpringBall = false;
 float sStickAimRate = 900.f;
 // Gyro aiming: off / hold / always, auto / controller / phone, and how fast a
 // rotation turns into aim travel.
@@ -266,6 +268,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     if (std::isfinite(f) && f > 0.f && f <= 1.f) {
       sMouseSensitivity = f;
     }
+  } else if (key == "spring_ball") {
+    sSpringBall = ParseBool(value);
   } else if (key == "skip_cutscenes") {
     sSkipCutscenes = ParseBool(value);
   } else if (key == "cutscene_speed") {
@@ -353,6 +357,7 @@ void SaveSettings() {
   file << "sim_adaptive=" << (sSimAdaptive ? 1 : 0) << '\n';
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
+  file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
   file << "stick_aim_rate=" << sStickAimRate << '\n';
   file << "gyro_mode=" << sGyroMode << '\n';
   file << "gyro_source=" << sGyroSource << '\n';
@@ -711,6 +716,21 @@ bool TwinStick() {
 void SetTwinStick(bool enabled) {
   EnsureInitialized();
   sTwinStick = enabled;
+  MarkDirty();
+}
+
+float TwinStickRightY() { return sTwinStickRightY; }
+
+void SetTwinStickRightY(float y) { sTwinStickRightY = y; }
+
+bool SpringBall() {
+  EnsureInitialized();
+  return sSpringBall;
+}
+
+void SetSpringBall(bool enabled) {
+  EnsureInitialized();
+  sSpringBall = enabled;
   MarkDirty();
 }
 
@@ -1670,6 +1690,24 @@ void DrawInputTab() {
       "Twin stick uses the right stick as a direct camera aim (the same path as "
       "the mouse) and consumes it, so it no longer free-looks. Fire stays on "
       "whatever is bound to A; remap it in the Controls tab.");
+  ImGui::SeparatorText("Morph ball");
+  const int springRule = PortAp::SpringBallRule();
+  ImGui::BeginDisabled(springRule >= 0);
+  bool springBall = sSpringBall;
+  if (ImGui::Checkbox("Spring Ball (C-stick up)", &springBall)) {
+    SetSpringBall(springBall);
+  }
+  ImGui::EndDisabled();
+  if (springRule >= 0) {
+    ImGui::TextWrapped("Set by the connected Archipelago seed: %s.",
+                       springRule == 0   ? "off"
+                       : springRule == 1 ? "with the Morph Ball Bombs"
+                                         : "unlocked");
+  } else {
+    ImGui::TextWrapped(
+        "A small jump in morph ball, as in Metroid Prime Trilogy, once the Morph "
+        "Ball Bombs are held. Twin stick still passes the right stick up to it.");
+  }
   ImGui::SeparatorText("Gyro aim");
   const char* gyroModes[] = {"Off", "Hold to aim", "Always aim"};
   int gyroMode = sGyroMode;

@@ -377,11 +377,7 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
     if (number(option.key, option.vanilla) != option.vanilla)
       slot.warnings.push_back(std::string("not supported: ") + option.text);
   }
-  // The port has no Spring Ball. The default (1, with the bombs) is fine: the
-  // logic then never counts on a ball jump. As its own item (2, or 3 as the
-  // first Progressive Bomb), it can stand in for bombs in the logic.
-  if (number("spring_ball", 0) >= 2)
-    slot.warnings.push_back("not supported: Spring Ball as its own item");
+  slot.springBall = static_cast< int >(std::clamp< int64_t >(number("spring_ball", 0), 0, 3));
   const PortJson::Value* room = Member(data, "starting_room_name");
   if (room != nullptr && room->IsString() && room->AsString() != "Landing Site")
     slot.warnings.push_back("not supported: starting in " + room->AsString());

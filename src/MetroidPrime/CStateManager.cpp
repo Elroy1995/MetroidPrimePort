@@ -1314,6 +1314,10 @@ void CStateManager::ProcessInput(const CFinalInput& input) {
     if (disableInput) {
       xb54_finalInput = skDefaultInput;
       xb54_finalInput.SetTime(input.Time());
+#ifdef TARGET_PC
+      // Twin stick's raw right stick (Spring Ball) is input too.
+      PortDebug::SetTwinStickRightY(0.f);
+#endif
     } else {
       xb54_finalInput = input;
     }

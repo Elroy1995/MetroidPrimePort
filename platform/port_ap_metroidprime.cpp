@@ -39,9 +39,9 @@ struct ItemInfo {
 };
 
 // Items.py. Ids 0-40 are the player-state item types themselves; the rest are
-// the AP world's own. Items the port has nothing to grant for (Spring Ball,
+// the AP world's own. Items with no player-state item type (Spring Ball,
 // Nothing, the unused slots) resolve to no item type and only count. The
-// unlimited-ammo items are applied from their counts by the client.
+// client applies the unlimited-ammo items and Spring Ball from their counts.
 const ItemInfo kItems[] = {
     {0, "Power Beam", 0},
     {1, "Ice Beam", 1},
@@ -115,8 +115,8 @@ struct ProgressiveInfo {
 };
 
 // PROGRESSIVE_ITEM_MAPPING: the Nth copy grants step N, and later copies
-// repeat the last. Spring Ball has no counterpart in the game, so the first
-// Progressive Bomb only counts.
+// repeat the last. Spring Ball is no player-state item, so the first
+// Progressive Bomb only counts (PortAp::SpringBallRule reads the count).
 const ProgressiveInfo kProgressive[] = {
     {49, {{"Power Beam", kPowerBeam}, {"Charge Beam", kChargeBeam}, {"Super Missile", kSuperMissile}}, 3},
     {51, {{"Ice Beam", kIceBeam}, {"Charge Beam", kChargeBeam}, {"Ice Spreader", kIceSpreader}}, 3},

@@ -130,6 +130,9 @@ struct SlotData {
   int requiredArtifacts = 12;
   // Only the Varia Suit keeps out heat (retail: any suit past the Power Suit).
   bool variaOnlyHeat = false;
+  // spring_ball: 0 none, 1 with the Morph Ball Bombs, 2 its own item (Spring
+  // Ball), 3 the first Progressive Bomb.
+  int springBall = 0;
   // Options the port does not implement, one line each, for the log and HUD.
   std::vector< std::string > warnings;
 };

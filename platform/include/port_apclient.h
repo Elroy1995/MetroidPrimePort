@@ -104,6 +104,12 @@ uint32_t NewGameWorld();
 // (the AP world's non_varia_heat_damage, on by default). False when AP is off.
 bool VariaOnlyHeatProtection();
 
+// Spring Ball as the connected seed has it, for a seed on the built-in tables
+// whose slot_data has arrived: 0 off, 1 once the Morph Ball Bombs are held,
+// 2 on (its item, or the first Progressive Bomb, has been received). -1 when
+// no such seed is connected, so the port's own setting applies.
+int SpringBallRule();
+
 // Called once per simulation tick by CStateManager::Update. Sends queued checks
 // and grants queued items to the player state.
 void Poll(CStateManager& mgr);

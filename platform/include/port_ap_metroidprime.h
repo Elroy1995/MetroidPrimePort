@@ -27,6 +27,8 @@ enum : int64_t {
   kUnlimitedPowerBombs = 42,
   kMissileLauncher = 43,
   kMainPowerBomb = 44,
+  kSpringBall = 45,
+  kProgressiveBomb = 54, // Spring Ball first, then the Morph Ball Bombs
 };
 
 // World asset ids the client cares about.

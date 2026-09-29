@@ -1174,6 +1174,30 @@ bool VariaOnlyHeatProtection() {
   }
 }
 
+int SpringBallRule() {
+  namespace Prime = MetroidPrime;
+  try {
+    Runtime& runtime = GetRuntime();
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (!runtime.enabled || !runtime.config.builtin || runtime.session == nullptr ||
+        !runtime.session->GetSlotData().received)
+      return -1;
+    switch (runtime.session->GetSlotData().springBall) {
+    case 1:
+      return 1;
+    case 2:
+      return runtime.session->ReceivedCount(Prime::kItemBase + Prime::kSpringBall) > 0 ? 2 : 0;
+    case 3:
+      return runtime.session->ReceivedCount(Prime::kItemBase + Prime::kProgressiveBomb) > 0 ? 2
+                                                                                            : 0;
+    default:
+      return 0;
+    }
+  } catch (...) {
+    return -1;
+  }
+}
+
 void OnInventoryReset() {
   try {
     if (!Enabled() || gpGameState == nullptr)

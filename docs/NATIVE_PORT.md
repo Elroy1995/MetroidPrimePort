@@ -466,6 +466,13 @@ a temporary directory instead of mounting.
   the same sensitivity/invert apply, tuned by `stick_aim_rate`, default 900 px/s)
   and is consumed, so it no longer drives the game's free-look. Fire stays on
   whatever is bound to A; remap it in the Controls tab.
+- Spring Ball (Input tab, persisted as `spring_ball`, off by default): C-stick
+  up in morph ball jumps, as in Metroid Prime Trilogy and the randomprime discs
+  the Archipelago world makes, once the Morph Ball Bombs are held. It is a bomb
+  jump from the ball's position that keeps the horizontal speed, with the same
+  conditions (on the ground, not in shrubbery, spider ball or an energy drain)
+  and 40-frame cooldown as randomprime's patch. With twin stick on, the right
+  stick's up still triggers it. A connected Archipelago seed decides it instead.
 - The overlay's **Controls** tab rebinds pad 1: click Bind, then press the input.
   "Keyboard & mouse" assigns a key or mouse button to each pad button and stick
   axis; "Controller" assigns a physical controller button or axis. Bindings are

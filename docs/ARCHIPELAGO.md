@@ -45,18 +45,21 @@ With the built-in tables, the client does what the AP ISO patch would:
   randomisation, locked doors, a random starting beam, a starting room other
   than the Landing Site, a final boss choice, Hive Mecha removal, backwards
   Lower Mines, Flaahgra power bombs, a shuffled Scan Visor, removed X-Ray or
-  Thermal requirements, a changed energy tank capacity, fewer than 12
-  artifacts, and Spring Ball as its own (or progressive) item. Such a seed can
-  expect a door, an elevator, a start or a ball jump the game does not have.
-  The default Spring Ball setting (with the bombs) is fine: the port has no
-  Spring Ball, but the logic then never counts on one.
+  Thermal requirements, a changed energy tank capacity, and fewer than 12
+  artifacts. Such a seed can expect a door, an elevator or a start the game
+  does not have.
+- Spring Ball (C-stick up in morph ball) follows the seed's `spring_ball`: with
+  the Morph Ball Bombs (the default), as its own item (Spring Ball), as the
+  first Progressive Bomb, or off. The port's own Spring Ball setting is ignored
+  while such a seed is connected.
 
 ### Items
 
 The built-in item table mirrors the world's `Items.py` (ids from 5031000): ids
 0-28 correspond 1:1 with the port's `CPlayerState::EItemType`, 29-40 are the
 artifacts, 41/42 Unlimited Missiles and Power Bombs, 43/44 the Missile Launcher
-and main Power Bomb, 45 Spring Ball and 46 Nothing (both grant nothing), and
+and main Power Bomb, 45 Spring Ball (unlocks the Spring Ball, see above), 46
+Nothing (grants nothing), and
 55-58 the per-beam Charge Beams, which all grant the one Charge Beam.
 
 The progressive items (49, 51-53 beams, 54 bomb) follow the world's
