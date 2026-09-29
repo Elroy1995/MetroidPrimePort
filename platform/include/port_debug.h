@@ -99,6 +99,13 @@ inline int FourThreeWidth(int width, int height) {
 // the aspect-matched in-game HUD frames.
 bool HudWide();
 void SetHudWide(bool enabled);
+// First-person vertical field of view in degrees (retail 55). The arm cannon is
+// drawn at the retail FOV whatever this is, like a view-model FOV.
+const float kFovRetail = 55.f;
+const float kFovMin = 45.f;
+const float kFovMax = 90.f;
+float FirstPersonFov();
+void SetFirstPersonFov(float degrees);
 
 // Mouse FPS mode owns aim only in playable first person; target locks retain
 // their native camera and synchronize the mouse angles for a clean handoff.

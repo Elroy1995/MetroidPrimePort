@@ -509,6 +509,12 @@ a temporary directory instead of mounting.
   the rotation leaves what is seen of the element unchanged and the angle is
   derived from the aspect ratio, so it holds at any aspect rather than only
   16:9. Menus, the credits and other non-aspect-matched frames are unaffected.
+- Field of view (Render tab and pause Options > Display, persisted as `fov`,
+  45-90, retail 55): the first-person camera's vertical FOV. The overlay also
+  shows the horizontal FOV it gives at the current aspect. The arm cannon is
+  drawn at the retail FOV whatever the setting (a view-model FOV), so it keeps
+  its size and place. Morph ball, cutscene and other scripted cameras keep
+  their own FOVs; cutscenes that end in Samus's eyes ease to the setting.
 - The in-game pause and map screens (`FRME_PauseScreen`, `FRME_PauseScreenInstructions`,
   `FRME_MapScreen`) are aspect-matched like the HUD, so they keep their
   proportions and spread across a wide viewport instead of stretching.
@@ -575,7 +581,7 @@ a temporary directory instead of mounting.
   the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
   gyro rates in rad/s), `shot` (prints the bmp path),
-  `aspect <4:3|16:9|window>`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

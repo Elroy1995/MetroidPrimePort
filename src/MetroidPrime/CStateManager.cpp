@@ -2530,7 +2530,27 @@ void CStateManager::DrawWorld() const {
     const_cast< CStateManager* >(this)->CacheReflection();
   }
   if (x84c_player != nullptr) {
+#ifdef TARGET_PC
+    // Port: with the FOV slider off retail, draw the arm cannon at the retail
+    // FOV (a view-model FOV), so a wide view doesn't shrink it or push it off
+    // the screen's corner.
+    const CGameCamera& gunCam = x870_cameraManager->GetCurrentCamera(*this);
+    const bool gunFov = x870_cameraManager->IsInFPCamera() &&
+                        gunCam.GetFov() != PortDebug::kFovRetail;
+    const CGraphics::CProjectionState gunProj = CGraphics::GetProjectionState();
+    if (gunFov) {
+      const CViewport& gunViewport = CGraphics::GetViewport();
+      gpRender->SetPerspective(PortDebug::kFovRetail, static_cast< float >(gunViewport.mWidth),
+                               static_cast< float >(gunViewport.mHeight),
+                               gunCam.GetNearClipDistance(), gunCam.GetFarClipDistance());
+    }
+#endif
     x84c_player->RenderGun(*this, x870_cameraManager->GetGlobalCameraTranslation(*this));
+#ifdef TARGET_PC
+    if (gunFov) {
+      CGraphics::SetProjectionState(gunProj);
+    }
+#endif
   }
   if (!renderLast.empty()) {
     CGraphics::SetDepthRange(0.015625f, 0.03125f);

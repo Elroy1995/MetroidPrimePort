@@ -1,5 +1,7 @@
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
 
+#include "port_debug.h"
+
 #include "Kyoto/Math/CQuaternion.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
 #include "MetroidPrime/CExplosion.hpp"
@@ -94,7 +96,14 @@ CCameraManager::CCameraManager(TUniqueId curCamera)
 
 float CCameraManager::GetDefaultThirdPersonVerticalFOV() { return sThirdPersonFOV; }
 
-float CCameraManager::GetDefaultFirstPersonVerticalFOV() { return sFirstPersonFOV; }
+float CCameraManager::GetDefaultFirstPersonVerticalFOV() {
+#ifdef TARGET_PC
+  // Port: the FOV slider. Retail keeps the tweak's value (55).
+  return PortDebug::FirstPersonFov();
+#else
+  return sFirstPersonFOV;
+#endif
+}
 
 float CCameraManager::GetDefaultFirstPersonNearClipDistance() { return sNearPlane; }
 
@@ -147,6 +156,14 @@ void CCameraManager::UpdateCameras(float dt, CStateManager& mgr) {
     }
     idx = objList.GetNextObjectIndex(idx);
   }
+
+#ifdef TARGET_PC
+  // Port: the first-person camera is built with the default FOV and nothing
+  // retail changes it later, so follow the FOV slider here.
+  if (x7c_fpCamera != nullptr && x7c_fpCamera->GetFov() != GetDefaultFirstPersonVerticalFOV()) {
+    x7c_fpCamera->SetFov(GetDefaultFirstPersonVerticalFOV());
+  }
+#endif
 
   if (!IsInCinematicCamera()) {
     return;
@@ -378,7 +395,7 @@ void CCameraManager::AddCinemaCamera(TUniqueId uid, CStateManager& mgr) {
         delayTime = 0.f;
         time = duration;
       }
-      cam->InterpolateFOV(cam->GetFov(), sFirstPersonFOV, time, delayTime);
+      cam->InterpolateFOV(cam->GetFov(), GetDefaultFirstPersonVerticalFOV(), time, delayTime);
     }
   }
 }

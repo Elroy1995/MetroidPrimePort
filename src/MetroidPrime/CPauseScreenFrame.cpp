@@ -190,6 +190,7 @@ enum EPortOption {
   kPO_FastMorph,
   kPO_LockOnToggle,
   kPO_StickyCharge,
+  kPO_Fov,
 };
 #define PORT_OPTION(opt) static_cast< EGameOption >(opt)
 
@@ -220,6 +221,7 @@ static const SGameOption skPortDisplayOptions[] = {
     {kGO_ScreenStretch, 28, -10.f, 10.f, 1.f, kOT_Float},
     {PORT_OPTION(kPO_AspectRatio), -1, 0.f, 2.f, 1.f, kOT_TripleEnum},
     {PORT_OPTION(kPO_WidescreenHUD), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_Fov), -1, PortDebug::kFovMin, PortDebug::kFovMax, 1.f, kOT_Float},
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static const SGameOption skPortControllerOptions[] = {
@@ -234,7 +236,7 @@ static const SGameOption skPortControllerOptions[] = {
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static SOptionCategory skPauseOptions[] = {
-    {6, skPortVisorOptions},      {7, skPortDisplayOptions}, {4, skSoundOptions},
+    {6, skPortVisorOptions},      {8, skPortDisplayOptions}, {4, skSoundOptions},
     {9, skPortControllerOptions}, {0, nullptr},
 };
 
@@ -258,6 +260,8 @@ static const wchar_t* PortOptionTitle(EGameOption option) {
     return L"Toggle Lock-On";
   case kPO_StickyCharge:
     return L"Sticky Charge";
+  case kPO_Fov:
+    return L"Field of View";
   default:
     return L"";
   }
@@ -281,6 +285,8 @@ static int GetPortOption(EGameOption option) {
     return PortDebug::LockOnToggle() ? 1 : 0;
   case kPO_StickyCharge:
     return PortDebug::StickyCharge() ? 1 : 0;
+  case kPO_Fov:
+    return static_cast< int >(PortDebug::FirstPersonFov() + 0.5f);
   default:
     return 0;
   }
@@ -313,6 +319,9 @@ static void SetPortOption(EGameOption option, int value) {
     break;
   case kPO_StickyCharge:
     PortDebug::SetStickyCharge(value > 0);
+    break;
+  case kPO_Fov:
+    PortDebug::SetFirstPersonFov(static_cast< float >(value));
     break;
   default:
     break;
@@ -475,6 +484,7 @@ void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, in
       case 1:
         PortDebug::SetAspectMode(PortDebug::kAspect_4_3);
         PortDebug::SetHudWide(false);
+        PortDebug::SetFirstPersonFov(PortDebug::kFovRetail);
         break;
       case 3:
         PortDebug::SetTwinStick(false);

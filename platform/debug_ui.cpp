@@ -13,6 +13,7 @@
 #include "touch_pad.h"
 #endif
 
+#include "MetroidPrime/Cameras/CCameraManager.hpp"
 #include "MetroidPrime/CHealthInfo.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMapWorld.hpp"
@@ -107,6 +108,7 @@ bool sStickyCharge = false;
 bool sSpringFlick = false;
 float sSpringFlickRate = 6.f;
 float sStickAimRate = 900.f;
+float sFirstPersonFov = PortDebug::kFovRetail;
 // Gyro aiming: off / hold / always, auto / controller / phone, and how fast a
 // rotation turns into aim travel.
 int sGyroMode = 0;
@@ -246,6 +248,11 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "hud_wide") {
     sHudWide = ParseBool(value);
+  } else if (key == "fov") {
+    const float f = static_cast< float >(std::atof(value.c_str()));
+    if (std::isfinite(f) && f >= PortDebug::kFovMin && f <= PortDebug::kFovMax) {
+      sFirstPersonFov = f;
+    }
   } else if (key == "mouse_aim") {
     sMouseAim = ParseBool(value);
   } else if (key == "twin_stick") {
@@ -376,6 +383,7 @@ void SaveSettings() {
   file << "# Environment variables (MP_*) override these for a single run.\n";
   file << "aspect=" << aspect << '\n';
   file << "hud_wide=" << (sHudWide ? 1 : 0) << '\n';
+  file << "fov=" << sFirstPersonFov << '\n';
   file << "vsync=" << (sVsyncEnabled ? 1 : 0) << '\n';
   file << "overlay_windowed=" << (sOverlayWindowed ? 1 : 0) << '\n';
   file << "render_scale=" << sRenderScale << '\n';
@@ -729,6 +737,19 @@ void SetHudWide(bool enabled) {
   EnsureInitialized();
   sHudWide = enabled;
   MarkDirty();
+}
+
+float FirstPersonFov() {
+  EnsureInitialized();
+  return sFirstPersonFov;
+}
+
+void SetFirstPersonFov(float degrees) {
+  EnsureInitialized();
+  if (std::isfinite(degrees)) {
+    sFirstPersonFov = std::clamp(degrees, kFovMin, kFovMax);
+    MarkDirty();
+  }
 }
 
 bool MouseAim() {
@@ -1775,6 +1796,26 @@ void DrawRenderTab() {
   ImGui::TextWrapped(
       "Keeps each HUD element's shape but spreads its position so edge elements "
       "reach the wide corners. Only affects the in-game HUD, not menus.");
+
+  float fov = sFirstPersonFov;
+  if (ImGui::SliderFloat("Field of view", &fov, kFovMin, kFovMax, "%.0f deg")) {
+    SetFirstPersonFov(std::round(fov));
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Retail##fov")) {
+    SetFirstPersonFov(kFovRetail);
+  }
+  {
+    // The horizontal FOV this gives at the current aspect, which is the number
+    // most PC games show.
+    const float aspect = CCameraManager::GetDefaultAspectRatio();
+    const float hfov = 2.f * std::atan(std::tan(sFirstPersonFov * 0.5f * 0.017453292f) * aspect) /
+                       0.017453292f;
+    ImGui::TextWrapped(
+        "First-person vertical FOV (retail 55); about %.0f deg horizontal at this aspect. "
+        "The arm cannon stays at the retail FOV. Morph ball and cutscene cameras are unchanged.",
+        hfov);
+  }
 
   bool autoScale = sRenderScale <= 0.f;
   if (ImGui::Checkbox("Auto render scale (native)", &autoScale)) {

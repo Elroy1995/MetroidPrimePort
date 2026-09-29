@@ -400,6 +400,7 @@ void CmdHelp() {
   Out("shot                       take a screenshot and print its path");
   Out("wait <frames>              let frames pass");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
+  Out("fov <45..90>               first-person vertical FOV, as the Options row does");
   Out("ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]   Archipelago, as the F1 Session tab does");
   Out("quit                       exit the game");
   Out("ids: hex editor id (002900A1), u<index> unique id, or an exact debug name");
@@ -784,6 +785,14 @@ void RunFrame() {
     } else {
       return Finish("usage: aspect <4:3|16:9|window>");
     }
+    Finish();
+  } else if (name == "fov") {
+    const float fov =
+        sCmd.args.size() > 1 ? static_cast< float >(std::atof(sCmd.args[1].c_str())) : 0.f;
+    if (!(fov >= PortDebug::kFovMin && fov <= PortDebug::kFovMax)) {
+      return Finish("usage: fov <45..90>   first-person vertical FOV (retail 55)");
+    }
+    PortDebug::SetFirstPersonFov(fov);
     Finish();
   } else if (name == "ap") {
     const std::string action = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "";
