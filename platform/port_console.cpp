@@ -392,7 +392,8 @@ void CmdHelp() {
   Out("take <item> [n]            remove item capacity (drops a suit)");
   Out("items                      the player's inventory");
   Out("heal                       refill health");
-  Out("press <a+b+...> [frames]   hold pad buttons (a b x y z l r start up down left right)");
+  Out("press <a+b+...> [frames]   hold pad buttons (a b x y z l r start up down left right;");
+  Out("                           sx:<n> sy:<n> cx:<n> cy:<n> also hold a stick axis)");
   Out("stick <x> <y> [frames]     hold the main stick (-127..127); cstick for the C stick");
   Out("gyro <pitch> [yaw] [frames] fake gyro rates in rad/s (pitch > 0 tilts up; a flick is ~6)");
   Out("shot                       take a screenshot and print its path");
@@ -713,7 +714,8 @@ void RunTick(CStateManager& mgr) {
   }
 }
 
-bool ParseButtons(const std::string& spec, u16& buttons, u8& left, u8& right) {
+bool ParseButtons(const std::string& spec, PADStatus& pad) {
+  u16& buttons = pad.button;
   size_t start = 0;
   while (start <= spec.size()) {
     size_t end = spec.find_first_of("+,", start);
@@ -721,13 +723,25 @@ bool ParseButtons(const std::string& spec, u16& buttons, u8& left, u8& right) {
       end = spec.size();
     }
     const std::string b = Lower(spec.substr(start, end - start));
+    // sx:<n>, sy:<n>, cx:<n>, cy:<n> hold a stick axis along with the buttons.
+    if (b.size() > 3 && b[2] == ':' && (b[0] == 's' || b[0] == 'c') && (b[1] == 'x' || b[1] == 'y')) {
+      float v;
+      if (!ParseFloat(b.substr(3), v)) {
+        return false;
+      }
+      const s8 axis = static_cast< s8 >(std::clamp(v, -127.f, 127.f));
+      (b[0] == 's' ? (b[1] == 'x' ? pad.stickX : pad.stickY)
+                   : (b[1] == 'x' ? pad.substickX : pad.substickY)) = axis;
+      start = end + 1;
+      continue;
+    }
     if (b == "a") buttons |= PAD_BUTTON_A;
     else if (b == "b") buttons |= PAD_BUTTON_B;
     else if (b == "x") buttons |= PAD_BUTTON_X;
     else if (b == "y") buttons |= PAD_BUTTON_Y;
     else if (b == "z") buttons |= PAD_TRIGGER_Z;
-    else if (b == "l") { buttons |= PAD_TRIGGER_L; left = 255; }
-    else if (b == "r") { buttons |= PAD_TRIGGER_R; right = 255; }
+    else if (b == "l") { buttons |= PAD_TRIGGER_L; pad.triggerLeft = 255; }
+    else if (b == "r") { buttons |= PAD_TRIGGER_R; pad.triggerRight = 255; }
     else if (b == "start") buttons |= PAD_BUTTON_START;
     else if (b == "up") buttons |= PAD_BUTTON_UP;
     else if (b == "down") buttons |= PAD_BUTTON_DOWN;
@@ -826,8 +840,7 @@ void RunFrame() {
       pad.err = PAD_ERR_NONE;
       size_t framesArg;
       if (name == "press") {
-        if (sCmd.args.size() < 2 || !ParseButtons(sCmd.args[1], pad.button, pad.triggerLeft,
-                                                   pad.triggerRight)) {
+        if (sCmd.args.size() < 2 || !ParseButtons(sCmd.args[1], pad)) {
           return Finish("usage: press <a+b+...> [frames]");
         }
         framesArg = 2;
