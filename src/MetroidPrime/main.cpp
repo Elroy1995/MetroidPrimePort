@@ -878,9 +878,6 @@ int CMain::RsMain(int argc, const char* const* argv) {
             nextFrameDeadline = SDL_GetTicksNS();
             fprintf(stderr, "Frame limit: %s\n",
                     PortDebug::FrameLimitEnabled() ? "60 FPS" : "unlimited");
-          } else if (event->type == AURORA_SDL_EVENT && event->sdl.type == SDL_EVENT_KEY_DOWN &&
-                     !event->sdl.key.repeat && event->sdl.key.scancode == SDL_SCANCODE_F1) {
-            PortDebug::Toggle();
           } else if (event->type == AURORA_WINDOW_RESIZED ||
                      event->type == AURORA_DISPLAY_SCALE_CHANGED) {
             ApplyAspectMode();
