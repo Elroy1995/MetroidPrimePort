@@ -473,6 +473,12 @@ a temporary directory instead of mounting.
   conditions (on the ground, not in shrubbery, spider ball or an energy drain)
   and 40-frame cooldown as randomprime's patch. With twin stick on, the right
   stick's up still triggers it. A connected Archipelago seed decides it instead.
+  **Spring Ball on gyro flick** (`spring_ball_flick`, off by default) also
+  springs when the pad or phone is tilted up faster than `spring_ball_flick_rate`
+  (default 6 rad/s), like Trilogy's nunchuk flick: once per swing, and a flick up
+  to 0.2 s before landing still counts. It reads the gyro aim's source but works
+  with gyro aim off. The phone's gyro is turned to the screen's orientation, so
+  pitch and yaw stay right in landscape.
 - The overlay's **Controls** tab rebinds pad 1: click Bind, then press the input.
   "Keyboard & mouse" assigns a key or mouse button to each pad button and stick
   axis; "Controller" assigns a physical controller button or axis. Bindings are
@@ -549,7 +555,8 @@ a temporary directory instead of mounting.
   `obj <id>` (AI state, health, body state and animation, connections, whether
   it is frustum-culled),
   `send <id> <msg>`, `give <item> [n]`, `take <item> [n]`, `items`, `heal`, `press <a+b> [frames]`,
-  `stick`/`cstick <x> <y> [frames]`, `shot` (prints the bmp path),
+  `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
+  gyro rates in rad/s), `shot` (prints the bmp path),
   `aspect <4:3|16:9|window>`, `ap [connect <server> <slot> [password] | disconnect]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands

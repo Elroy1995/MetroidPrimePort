@@ -394,6 +394,7 @@ void CmdHelp() {
   Out("heal                       refill health");
   Out("press <a+b+...> [frames]   hold pad buttons (a b x y z l r start up down left right)");
   Out("stick <x> <y> [frames]     hold the main stick (-127..127); cstick for the C stick");
+  Out("gyro <pitch> [yaw] [frames] fake gyro rates in rad/s (pitch > 0 tilts up; a flick is ~6)");
   Out("shot                       take a screenshot and print its path");
   Out("wait <frames>              let frames pass");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
@@ -832,6 +833,24 @@ void RunFrame() {
       PADStatus released{};
       released.err = PAD_ERR_NONE;
       PADSetVirtualStatus(0, &released);
+      Finish();
+    }
+  } else if (name == "gyro") {
+    if (sCmd.phase == 0) {
+      float pitch = 0.f;
+      float yaw = 0.f;
+      unsigned frames = 6;
+      if (sCmd.args.size() < 2 || !ParseFloat(sCmd.args[1], pitch) ||
+          (sCmd.args.size() > 2 && !ParseFloat(sCmd.args[2], yaw)) ||
+          (sCmd.args.size() > 3 && !ParseUnsigned(sCmd.args[3], frames))) {
+        return Finish("usage: gyro <pitch> [yaw] [frames]");
+      }
+      PortDebug::SetGyroOverride(true, pitch, yaw);
+      sCmd.phase = 1;
+      sCmd.untilFrame = sFrame + std::max(frames, 1u);
+    }
+    if (sFrame >= sCmd.untilFrame) {
+      PortDebug::SetGyroOverride(false, 0.f, 0.f);
       Finish();
     }
   } else if (name == "shot") {

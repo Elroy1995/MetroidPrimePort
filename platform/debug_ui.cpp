@@ -99,6 +99,8 @@ bool sMouseAim = false;
 bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
 bool sSpringBall = false;
+bool sSpringFlick = false;
+float sSpringFlickRate = 6.f;
 float sStickAimRate = 900.f;
 // Gyro aiming: off / hold / always, auto / controller / phone, and how fast a
 // rotation turns into aim travel.
@@ -133,12 +135,18 @@ std::atomic< bool > sTwinStickFlag{false};
 // Set when a real pad, keyboard or mouse is used; the Android touch overlay takes
 // it to get out of the way.
 std::atomic< bool > sPhysicalInput{false};
-// Gyro state: the pad's gyro sensor is enabled once, and the phone's sensor is
-// looked up once, so neither is touched on every tick.
-bool sControllerGyroEnabled = false;
+// Gyro state: the phone's sensor is looked up once, so the sensor list is not
+// walked on every tick.
 bool sPhoneGyroSearched = false;
 SDL_Sensor* sPhoneGyro = nullptr;
 const char* sGyroStatus = "off";
+// Flick state: seconds left on the last flick, and whether the pitch has dropped
+// back since, so a long flick counts once.
+float sSpringFlickLatch = 0.f;
+bool sSpringFlickArmed = true;
+bool sGyroOverride = false;
+float sGyroOverridePitch = 0.f;
+float sGyroOverrideYaw = 0.f;
 bool sVisible = false;
 bool sSettingsDirty = false;
 bool sAudioSettingsApplied = false;
@@ -270,6 +278,13 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "spring_ball") {
     sSpringBall = ParseBool(value);
+  } else if (key == "spring_ball_flick") {
+    sSpringFlick = ParseBool(value);
+  } else if (key == "spring_ball_flick_rate") {
+    const float f = static_cast< float >(std::atof(value.c_str()));
+    if (std::isfinite(f) && f >= 2.f && f <= 20.f) {
+      sSpringFlickRate = f;
+    }
   } else if (key == "skip_cutscenes") {
     sSkipCutscenes = ParseBool(value);
   } else if (key == "cutscene_speed") {
@@ -358,6 +373,8 @@ void SaveSettings() {
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
+  file << "spring_ball_flick=" << (sSpringFlick ? 1 : 0) << '\n';
+  file << "spring_ball_flick_rate=" << sSpringFlickRate << '\n';
   file << "stick_aim_rate=" << sStickAimRate << '\n';
   file << "gyro_mode=" << sGyroMode << '\n';
   file << "gyro_source=" << sGyroSource << '\n';
@@ -734,6 +751,40 @@ void SetSpringBall(bool enabled) {
   MarkDirty();
 }
 
+bool SpringBallFlick() {
+  EnsureInitialized();
+  return sSpringFlick;
+}
+
+void SetSpringBallFlick(bool enabled) {
+  EnsureInitialized();
+  sSpringFlick = enabled;
+  MarkDirty();
+}
+
+float SpringBallFlickRate() {
+  EnsureInitialized();
+  return sSpringFlickRate;
+}
+
+void SetSpringBallFlickRate(float radiansPerSecond) {
+  EnsureInitialized();
+  if (std::isfinite(radiansPerSecond) && radiansPerSecond >= 2.f && radiansPerSecond <= 20.f) {
+    sSpringFlickRate = radiansPerSecond;
+    MarkDirty();
+  }
+}
+
+bool SpringBallFlickPending() { return sSpringFlickLatch > 0.f; }
+
+void ClearSpringBallFlick() { sSpringFlickLatch = 0.f; }
+
+void SetGyroOverride(bool active, float pitch, float yaw) {
+  sGyroOverride = active;
+  sGyroOverridePitch = pitch;
+  sGyroOverrideYaw = yaw;
+}
+
 float StickAimRate() {
   EnsureInitialized();
   return sStickAimRate;
@@ -807,31 +858,41 @@ void SetGyroRate(float pixelsPerSecondPerRad) {
 
 const char* GyroStatus() { return sGyroStatus; }
 
-void PollGyro() {
-  EnsureInitialized();
-  if (sGyroMode == 0) {
-    sGyroStatus = "off";
-    return;
+namespace {
+// Quarter turns from portrait, as SDL numbers Android rotations (landscape is
+// the phone's right side up).
+int OrientationQuarters(SDL_DisplayOrientation orientation) {
+  switch (orientation) {
+  case SDL_ORIENTATION_LANDSCAPE:
+    return 1;
+  case SDL_ORIENTATION_PORTRAIT_FLIPPED:
+    return 2;
+  case SDL_ORIENTATION_LANDSCAPE_FLIPPED:
+    return 3;
+  default:
+    return 0;
   }
-  // Gyro feeds the same aim state the mouse and twin stick use, so it only has
-  // an effect where that is driving the camera.
-  if (!sMouseAim && !sTwinStick) {
-    sGyroStatus = "needs mouse aim or twin stick";
-    return;
-  }
+}
 
+// Pitch (x, positive tilts the far edge up) and yaw rates in rad/s from the
+// chosen source; false when there is none.
+bool ReadGyroRates(float& pitch, float& yaw) {
+  if (sGyroOverride) {
+    pitch = sGyroOverridePitch;
+    yaw = sGyroOverrideYaw;
+    sGyroStatus = "console";
+    return true;
+  }
   const bool wantController = sGyroSource == 0 || sGyroSource == 1;
   const bool wantPhone = sGyroSource == 0 || sGyroSource == 2;
-  float yaw = 0.f;
-  float pitch = 0.f;
   bool haveRates = false;
 
   if (wantController) {
     if (SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0)) {
       if (SDL_GamepadHasSensor(pad, SDL_SENSOR_GYRO)) {
-        if (!sControllerGyroEnabled) {
+        // Asked per pad, so a reconnected or swapped pad gets its gyro on too.
+        if (!SDL_GamepadSensorEnabled(pad, SDL_SENSOR_GYRO)) {
           SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_GYRO, true);
-          sControllerGyroEnabled = true;
         }
         float data[3];
         if (SDL_GetGamepadSensorData(pad, SDL_SENSOR_GYRO, data, 3)) {
@@ -862,16 +923,77 @@ void PollGyro() {
     if (sPhoneGyro != nullptr) {
       float data[3];
       if (SDL_GetSensorData(sPhoneGyro, data, 3)) {
-        yaw = data[1];
-        pitch = data[0];
+        // The phone reports its own axes (x right, y up in its natural
+        // orientation), so turn them to the screen's, as SDL does for its
+        // accelerometer: landscape would otherwise swap pitch and yaw.
+        const SDL_DisplayID display = SDL_GetPrimaryDisplay();
+        const int quarters = (OrientationQuarters(SDL_GetCurrentDisplayOrientation(display)) -
+                              OrientationQuarters(SDL_GetNaturalDisplayOrientation(display)) + 4) %
+                             4;
+        switch (quarters) {
+        case 1:
+          pitch = -data[1];
+          yaw = data[0];
+          break;
+        case 2:
+          pitch = -data[0];
+          yaw = -data[1];
+          break;
+        case 3:
+          pitch = data[1];
+          yaw = -data[0];
+          break;
+        default:
+          pitch = data[0];
+          yaw = data[1];
+          break;
+        }
         haveRates = true;
         sGyroStatus = "phone";
       }
     }
   }
+  return haveRates;
+}
+} // namespace
 
-  if (!haveRates) {
+void PollGyro() {
+  EnsureInitialized();
+  const float dt = TickPeriod();
+  if (sSpringFlickLatch > 0.f && std::isfinite(dt)) {
+    sSpringFlickLatch -= dt;
+  }
+  // Gyro feeds the same aim state the mouse and twin stick use, so aiming only
+  // has an effect where that is driving the camera. Flicks need no aim.
+  const bool aim = sGyroMode != 0 && (sMouseAim || sTwinStick);
+  if (!aim && !sSpringFlick) {
+    sGyroStatus = sGyroMode == 0 ? "off" : "needs mouse aim or twin stick";
+    return;
+  }
+
+  float yaw = 0.f;
+  float pitch = 0.f;
+  if (!ReadGyroRates(pitch, yaw)) {
     sGyroStatus = "no gyro found";
+    sSpringFlickArmed = true;
+    return;
+  }
+
+  if (sSpringFlick) {
+    // One flick per upward swing: it re-arms once the pitch speed has dropped
+    // to half the threshold. The latch outlives the tick so a flick just before
+    // the ball lands still springs.
+    if (sSpringFlickArmed && pitch > sSpringFlickRate) {
+      sSpringFlickLatch = 0.2f;
+      sSpringFlickArmed = false;
+    } else if (pitch < sSpringFlickRate * 0.5f) {
+      sSpringFlickArmed = true;
+    }
+  }
+  if (!aim) {
+    if (sGyroMode != 0) {
+      sGyroStatus = "flicks only (aim needs mouse aim or twin stick)";
+    }
     return;
   }
 
@@ -891,7 +1013,6 @@ void PollGyro() {
     return;
   }
 
-  const float dt = TickPeriod();
   if (!std::isfinite(dt) || dt <= 0.f) {
     return;
   }
@@ -1708,24 +1829,41 @@ void DrawInputTab() {
         "A small jump in morph ball, as in Metroid Prime Trilogy, once the Morph "
         "Ball Bombs are held. Twin stick still passes the right stick up to it.");
   }
+  bool springFlick = sSpringFlick;
+  if (ImGui::Checkbox("Spring Ball on gyro flick", &springFlick)) {
+    SetSpringBallFlick(springFlick);
+  }
+  ImGui::BeginDisabled(!sSpringFlick);
+  float flickRate = sSpringFlickRate;
+  if (ImGui::SliderFloat("Flick strength", &flickRate, 2.f, 20.f, "%.1f rad/s")) {
+    SetSpringBallFlickRate(flickRate);
+  }
+  ImGui::EndDisabled();
+  ImGui::TextWrapped(
+      "Tilt the pad or phone up sharply to spring, like Trilogy's nunchuk flick. "
+      "Uses the gyro source below; gyro aim can stay off. Raise the strength if "
+      "it springs by accident.");
   ImGui::SeparatorText("Gyro aim");
   const char* gyroModes[] = {"Off", "Hold to aim", "Always aim"};
   int gyroMode = sGyroMode;
   if (ImGui::Combo("Mode", &gyroMode, gyroModes, 3)) {
     SetGyroMode(gyroMode);
   }
-  ImGui::BeginDisabled(sGyroMode == 0);
+  ImGui::BeginDisabled(sGyroMode == 0 && !sSpringFlick);
   const char* gyroSources[] = {"Auto", "Controller", "Phone"};
   int gyroSource = sGyroSource;
   if (ImGui::Combo("Source", &gyroSource, gyroSources, 3)) {
     SetGyroSource(gyroSource);
   }
+  ImGui::Text("Gyro: %s", GyroStatus());
+  ImGui::EndDisabled();
+  ImGui::BeginDisabled(sGyroMode == 0);
   float gyroRate = sGyroRate;
-  if (ImGui::SliderFloat("Sensitivity", &gyroRate, 50.f, 3000.f, "%.0f px/s per rad/s",
+  // The ## suffix keeps its ImGui id apart from the mouse Sensitivity slider.
+  if (ImGui::SliderFloat("Sensitivity##gyro", &gyroRate, 50.f, 3000.f, "%.0f px/s per rad/s",
                          ImGuiSliderFlags_Logarithmic)) {
     SetGyroRate(gyroRate);
   }
-  ImGui::Text("Gyro: %s", GyroStatus());
   ImGui::TextWrapped(
       "Tilt the pad or the phone to aim. Hold to aim uses right stick click or "
       "left ctrl. Needs mouse aim or twin stick, since the gyro feeds that same "

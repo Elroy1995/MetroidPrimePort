@@ -118,6 +118,18 @@ void SetTwinStickRightY(float y);
 // Morph Ball Bombs are held. A connected Archipelago seed overrides it.
 bool SpringBall();
 void SetSpringBall(bool enabled);
+// Spring Ball on a gyro flick (pad or phone tilted up sharply, like Trilogy's
+// nunchuk flick), on top of C-stick up. Rate is the pitch speed in rad/s a flick
+// must pass. The gyro source is the aim's.
+bool SpringBallFlick();
+void SetSpringBallFlick(bool enabled);
+float SpringBallFlickRate();
+void SetSpringBallFlickRate(float radiansPerSecond);
+// True for a short while after a flick, so one just before landing still counts.
+bool SpringBallFlickPending();
+void ClearSpringBallFlick();
+// Debug console: stand-in gyro rates (rad/s) instead of the sensors.
+void SetGyroOverride(bool active, float pitch, float yaw);
 // Aim travel in pixels per second at full stick deflection (scaled by the mouse
 // sensitivity, so both share the same feel).
 float StickAimRate();
@@ -132,7 +144,8 @@ int GyroSource();
 void SetGyroSource(int source);
 float GyroRate();
 void SetGyroRate(float pixelsPerSecondPerRad);
-// Reads the gyro and feeds the aim. Call once per tick, before the frame.
+// Reads the gyro, feeds the aim and spots Spring Ball flicks. Call once per
+// tick, before the frame.
 void PollGyro();
 // Short description of what the gyro is doing, for the overlay.
 const char* GyroStatus();

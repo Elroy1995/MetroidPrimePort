@@ -450,11 +450,13 @@ void CMorphBall::ComputeBallMovement(const CFinalInput& input, CStateManager& mg
   // bomb jump from the ball's own position that keeps the horizontal speed.
   // Twin stick consumes the C-stick, so its raw right stick counts too, but not
   // in the frozen-controls calls, whose blank input has no time. (It is the
-  // clamped pad value over 127, so full tilt reads about 0.46.)
+  // clamped pad value over 127, so full tilt reads about 0.46.) A gyro flick,
+  // when that option is on, counts as well.
   if (sSpringBallCooldown > 0.f) {
     sSpringBallCooldown -= dt;
   } else if ((input.ARAUp() > 0.f ||
-              (input.Time() > 0.f && PortDebug::TwinStickRightY() > 0.25f)) &&
+              (input.Time() > 0.f && (PortDebug::TwinStickRightY() > 0.25f ||
+                                      PortDebug::SpringBallFlickPending()))) &&
              x0_player.GetPlayerMovementState() == NPlayer::kMS_OnGround &&
              x0_player.GetSurfaceRestraint() != CPlayer::kSR_Shrubbery && IsMovementAllowed() &&
              !x0_player.IsAttached() &&
@@ -469,6 +471,7 @@ void CMorphBall::ComputeBallMovement(const CFinalInput& input, CStateManager& mg
     x0_player.SetVelocityWR(CVector3f(before.GetX(), before.GetY(), up));
     x0_player.SetMoveState(NPlayer::kMS_FallingMorphed, mgr);
     sSpringBallCooldown = 40.f / 60.f;
+    PortDebug::ClearSpringBallFlick();
   }
 #endif
   ComputeBoostBallMovement(input, mgr, dt);
