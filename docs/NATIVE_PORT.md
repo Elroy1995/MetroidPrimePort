@@ -483,7 +483,7 @@ a temporary directory instead of mounting.
   precedence. SDL controllers are supported.
 - F1: debug overlay. F10: 60 FPS cap/unlimited presentation. F12: screenshot.
 - Settings changed in the F1 overlay (aspect, vsync, render scale, frame limit,
-  cutscene options, mouse aim/inversion/sensitivity, audio mutes) are saved to
+  mouse aim/inversion/sensitivity, audio mutes) are saved to
   `port_settings.ini` in the user directory (`MP_USER_PATH`, else Aurora's SDL
   preference path) and restored on the next launch. The Session tab shows the
   path and has a **Save settings now** button. Environment variables still
@@ -662,6 +662,8 @@ a temporary directory instead of mounting.
 - `MP_FAST_BOOT=1`, `MP_SKIP_CUTSCENES=1`, `MP_CUTSCENE_SPEED=8`,
   `MP_SHOW_DEBUG_UI=1`: development controls. Presence flags are enabled by
   being set; unset them to disable them. Cutscene speed is restricted to 1–32.
+  Cutscene skipping is only available this way, for tests: it is not a player
+  setting, since skipping every cinematic at once broke script state.
   `MP_DEBUG_TAB=<name>` (e.g. `Session`) opens the desktop overlay on that tab,
   enlarged, for captures. The console's `shot` leaves the overlay out; grab the
   X display instead (PIL `ImageGrab.grab(xdisplay=':99')` under Xvfb).

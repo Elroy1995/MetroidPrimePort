@@ -388,13 +388,6 @@ void ApplySetting(const std::string& key, const std::string& value) {
     if (std::isfinite(f) && f >= 2.f && f <= 20.f) {
       sSpringFlickRate = f;
     }
-  } else if (key == "skip_cutscenes") {
-    sSkipCutscenes = ParseBool(value);
-  } else if (key == "cutscene_speed") {
-    const float f = static_cast< float >(std::atof(value.c_str()));
-    if (std::isfinite(f) && f >= 1.f && f <= 32.f) {
-      sCutsceneSpeed = f;
-    }
   } else if (key == "sim_rate") {
     const long rate = std::strtol(value.c_str(), nullptr, 10);
     if (rate >= 30 && rate <= 480) {
@@ -487,8 +480,6 @@ void SaveSettings() {
   file << "overlay_windowed=" << (sOverlayWindowed ? 1 : 0) << '\n';
   file << "render_scale=" << sRenderScale << '\n';
   file << "frame_limit=" << (sFrameLimitEnabled ? 1 : 0) << '\n';
-  file << "skip_cutscenes=" << (sSkipCutscenes ? 1 : 0) << '\n';
-  file << "cutscene_speed=" << sCutsceneSpeed << '\n';
   file << "sim_rate=" << sSimRate << '\n';
   file << "sim_adaptive=" << (sSimAdaptive ? 1 : 0) << '\n';
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
@@ -600,6 +591,9 @@ void EnsureInitialized() {
       sTurboTicks = static_cast< unsigned >(ticks);
     }
   }
+  // Cutscene skipping is a test aid only: skipping on the first frame of each
+  // cinematic left script state unbalanced (stuck visor filters, missing
+  // music), so it is no longer a player setting.
   if (std::getenv("MP_SKIP_CUTSCENES") != nullptr) {
     sSkipCutscenes = true;
   }
@@ -679,12 +673,6 @@ bool FastBoot() {
 bool SkipCutscenes() {
   EnsureInitialized();
   return sSkipCutscenes;
-}
-
-void SetSkipCutscenes(bool enabled) {
-  EnsureInitialized();
-  sSkipCutscenes = enabled;
-  MarkDirty();
 }
 
 float CutsceneSpeed() {
@@ -1997,19 +1985,6 @@ void DrawPerformanceTab() {
   }
 }
 
-void DrawCutscenesTab() {
-  if (ImGui::Checkbox("Skip / fast-forward cutscenes", &sSkipCutscenes)) {
-    MarkDirty();
-  }
-  if (ImGui::SliderFloat("Cutscene speed", &sCutsceneSpeed, 1.f, 32.f, "%.0fx")) {
-    MarkDirty();
-  }
-  if (ImGui::Button("Reset cutscene speed")) {
-    sCutsceneSpeed = 8.f;
-    MarkDirty();
-  }
-}
-
 // Memory card transfer (port_gci.h). The work runs on the main thread; the
 // file dialogs answer on another one, so their picks wait in sCardPicks.
 namespace {
@@ -3306,7 +3281,7 @@ struct DebugPage {
 };
 
 const DebugPage kDebugPages[] = {
-    {"Performance", DrawPerformanceTab}, {"Cutscenes", DrawCutscenesTab},
+    {"Performance", DrawPerformanceTab},
     {"Input", DrawInputTab},             {"Controls", PortControls::DrawTab},
     {"Render", DrawRenderTab},           {"Audio", DrawAudioTab},
     {"Voices", DrawVoicesTab},           {"Debug", DrawDebugTab},

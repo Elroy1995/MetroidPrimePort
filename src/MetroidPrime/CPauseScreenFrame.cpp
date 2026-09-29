@@ -182,8 +182,7 @@ static SOptionCategory skGameOptions[] = {
 // Options keeps the retail tables: its frame has no scrolling. These rows have
 // no STRG entries, so their labels live here.
 enum EPortOption {
-  kPO_SkipCutscenes = kGO_RestoreDefaults + 1,
-  kPO_AspectRatio,
+  kPO_AspectRatio = kGO_RestoreDefaults + 1,
   kPO_WidescreenHUD,
   kPO_TwinStick,
   kPO_AimSpeed,
@@ -216,7 +215,6 @@ static const SGameOption skPortVisorOptions[] = {
     {kGO_HelmetOpacity, 22, 0.f, 255.f, 1.f, kOT_Float},
     {kGO_HUDLag, 23, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {kGO_HintSystem, 24, 0.f, 1.f, 1.f, kOT_DoubleEnum},
-    {PORT_OPTION(kPO_SkipCutscenes), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_HideHelmet), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_HideVisorEffects), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
@@ -246,7 +244,7 @@ static const SGameOption skPortControllerOptions[] = {
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static SOptionCategory skPauseOptions[] = {
-    {8, skPortVisorOptions},      {11, skPortDisplayOptions}, {4, skSoundOptions},
+    {7, skPortVisorOptions},      {11, skPortDisplayOptions}, {4, skSoundOptions},
     {9, skPortControllerOptions}, {0, nullptr},
 };
 
@@ -254,8 +252,6 @@ static bool IsPortOption(EGameOption option) { return option > kGO_RestoreDefaul
 
 static const wchar_t* PortOptionTitle(EGameOption option) {
   switch (static_cast< int >(option)) {
-  case kPO_SkipCutscenes:
-    return L"Skip Cutscenes";
   case kPO_AspectRatio:
     return L"Aspect Ratio";
   case kPO_WidescreenHUD:
@@ -289,8 +285,6 @@ static const wchar_t* PortOptionTitle(EGameOption option) {
 
 static int GetPortOption(EGameOption option) {
   switch (static_cast< int >(option)) {
-  case kPO_SkipCutscenes:
-    return PortDebug::SkipCutscenes() ? 1 : 0;
   case kPO_AspectRatio:
     return PortDebug::AspectMode();
   case kPO_WidescreenHUD:
@@ -324,9 +318,6 @@ static int GetPortOption(EGameOption option) {
 
 static void SetPortOption(EGameOption option, int value) {
   switch (static_cast< int >(option)) {
-  case kPO_SkipCutscenes:
-    PortDebug::SetSkipCutscenes(value > 0);
-    break;
   case kPO_AspectRatio:
     if (value >= PortDebug::kAspect_4_3 && value <= PortDebug::kAspect_Window) {
       PortDebug::SetAspectMode(static_cast< PortDebug::EAspectMode >(value));
@@ -524,7 +515,6 @@ void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, in
     if (!frontEnd) {
       switch (category) {
       case 0:
-        PortDebug::SetSkipCutscenes(false);
         PortDebug::SetHideHelmet(false);
         PortDebug::SetHideVisorEffects(false);
         break;
