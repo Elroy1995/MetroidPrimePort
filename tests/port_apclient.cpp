@@ -304,6 +304,71 @@ int main() {
   Check(emptyReloaded.progressive.empty() && Contains(Read(emptyStatePath), "\"progressive\":{}"),
         "empty state writes an empty progressive map");
 
+  // The overlay's Connect screen rewrites archipelago.json; the rest of the
+  // file is the player's and must survive it.
+  {
+    const std::filesystem::path connectionPath = testDir / "connect" / "archipelago.json";
+    Connection connection;
+    connection.server = "archipelago.gg:38281";
+    connection.slot = "Samus";
+    std::string error;
+    Check(SaveConnectionFile(connectionPath.string(), connection, error),
+          "connection saves to a new file");
+    const Config fresh = LoadConfigFile(connectionPath.string());
+    Check(fresh.valid && fresh.builtin && fresh.server == "archipelago.gg:38281" &&
+              fresh.slot == "Samus" && fresh.password.empty(),
+          "a saved connection alone is a valid built-in configuration");
+    Check(!Contains(Read(connectionPath), "password") && !Contains(Read(connectionPath), "enabled"),
+          "an empty password and an enabled connection are not written");
+
+    {
+      std::ofstream file(connectionPath, std::ios::binary | std::ios::trunc);
+      file << R"({"slot":"Old","death_link":true,"tls_ca":"ca.pem","extra":[1,2.5,null,"x\"y"],)"
+              R"("locations":{"39F2DE28:B2701146:0000007E":5031158},"server":"ws://a:1"})";
+    }
+    connection.password = "pw";
+    Check(SaveConnectionFile(connectionPath.string(), connection, error),
+          "connection saves over an existing file");
+    const std::string rewritten = Read(connectionPath);
+    Check(Contains(rewritten, R"("slot":"Samus")") && Contains(rewritten, R"("death_link":true)") &&
+              Contains(rewritten, R"("tls_ca":"ca.pem")") &&
+              Contains(rewritten, R"("extra":[1,2.5,null,"x\"y"])") &&
+              Contains(rewritten, R"("39F2DE28:B2701146:0000007E":5031158)") &&
+              Contains(rewritten, R"("password":"pw")") &&
+              rewritten.find("\"slot\"") < rewritten.find("\"death_link\""),
+          "other keys and their order survive a connection save");
+    const Config merged = LoadConfigFile(connectionPath.string());
+    Check(merged.valid && merged.deathLink && merged.password == "pw" &&
+              merged.locations.size() == 1,
+          "the merged file still parses as the same configuration");
+
+    connection.enabled = false;
+    Check(SaveConnectionFile(connectionPath.string(), connection, error),
+          "a disconnect saves");
+    const Config disabled = LoadConfigFile(connectionPath.string());
+    const Connection kept = LoadConnectionFile(connectionPath.string());
+    Check(!disabled.valid && Contains(disabled.error, "enabled"),
+          "a disconnected configuration does not start the client");
+    Check(!kept.enabled && kept.server == "archipelago.gg:38281" && kept.slot == "Samus" &&
+              kept.password == "pw",
+          "a disconnected configuration keeps its details for the Connect screen");
+    connection.enabled = true;
+    Check(SaveConnectionFile(connectionPath.string(), connection, error) &&
+              LoadConfigFile(connectionPath.string()).valid,
+          "connecting again re-enables it");
+
+    {
+      std::ofstream file(connectionPath, std::ios::binary | std::ios::trunc);
+      file << "{ not json";
+    }
+    Check(!SaveConnectionFile(connectionPath.string(), connection, error) && !error.empty() &&
+              Read(connectionPath) == "{ not json",
+          "a broken file is reported, not overwritten");
+    const Connection absent = LoadConnectionFile((testDir / "none.json").string());
+    Check(absent.server.empty() && absent.slot.empty() && absent.enabled,
+          "an absent file has no connection");
+  }
+
   // Progress belongs to the session that granted it. A different seed must not
   // inherit it, or the client claims locations it never collected and skips the
   // items the server still owes it.

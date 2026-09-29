@@ -84,6 +84,23 @@ Config ParseConfig(const std::string& text);
 // configuration whose `error` says so.
 Config LoadConfigFile(const std::string& path);
 
+// The part of archipelago.json the overlay's Connect screen edits.
+struct Connection {
+  std::string server;
+  std::string slot;
+  std::string password;
+  // False once the player disconnects: the file keeps the details for next
+  // time, but the client does not start from it ("enabled": false).
+  bool enabled = true;
+};
+// Reads those fields; absent ones stay empty. Never throws.
+Connection LoadConnectionFile(const std::string& path);
+// Writes them into the file and keeps every other key (tables, DeathLink, a
+// CA bundle). A file that exists but is not a JSON object is left alone and
+// the reason is put in `error`. Never throws.
+bool SaveConnectionFile(const std::string& path, const Connection& connection,
+                        std::string& error);
+
 // archipelago_state.json: what the client must remember between sessions so a
 // reconnect does not hand the player the same items twice.
 struct State {

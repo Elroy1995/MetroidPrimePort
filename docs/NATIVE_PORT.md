@@ -522,6 +522,9 @@ a temporary directory instead of mounting.
 - `MP_FAST_BOOT=1`, `MP_SKIP_CUTSCENES=1`, `MP_CUTSCENE_SPEED=8`,
   `MP_SHOW_DEBUG_UI=1`: development controls. Presence flags are enabled by
   being set; unset them to disable them. Cutscene speed is restricted to 1–32.
+  `MP_DEBUG_TAB=<name>` (e.g. `Session`) opens the desktop overlay on that tab,
+  enlarged, for captures. The console's `shot` leaves the overlay out; grab the
+  X display instead (PIL `ImageGrab.grab(xdisplay=':99')` under Xvfb).
 - `MP_TURBO[=<ticks>]`: lockstep for automated runs. Every frame runs exactly
   `<ticks>` fixed ticks (default 1, at most 16) with no frame limiter and no
   vsync, so a run goes as fast as the machine renders it; game time per tick
@@ -540,7 +543,7 @@ a temporary directory instead of mounting.
   it is frustum-culled),
   `send <id> <msg>`, `give <item> [n]`, `items`, `heal`, `press <a+b> [frames]`,
   `stick`/`cstick <x> <y> [frames]`, `shot` (prints the bmp path),
-  `aspect <4:3|16:9|window>`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `ap [connect <server> <slot> [password] | disconnect]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

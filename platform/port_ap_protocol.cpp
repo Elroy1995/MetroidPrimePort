@@ -71,6 +71,89 @@ std::string EscapeJson(const std::string& text) {
 
 std::string Quote(const std::string& text) { return "\"" + EscapeJson(text) + "\""; }
 
+// Writes through a temporary file and a rename, so a crash mid-write leaves
+// the old file rather than half of the new one.
+bool WriteFileAtomically(const std::string& path, const std::string& contents) {
+  const std::filesystem::path target(path);
+  if (!target.parent_path().empty())
+    std::filesystem::create_directories(target.parent_path());
+  const std::string temporary = path + ".tmp";
+  {
+    std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+    if (!file.is_open())
+      return false;
+    file << contents;
+    file.flush();
+    if (!file)
+      return false;
+    file.close();
+    if (!file)
+      return false;
+  }
+  if (std::rename(temporary.c_str(), path.c_str()) == 0)
+    return true;
+#ifdef _WIN32
+  // The C rename operation replaces an existing destination on POSIX, but
+  // not on Windows. Retry there after removing the old file.
+  std::error_code filesystemError;
+  if (!std::filesystem::exists(target, filesystemError) || filesystemError)
+    return false;
+  std::filesystem::remove(target, filesystemError);
+  if (filesystemError)
+    return false;
+  return std::rename(temporary.c_str(), path.c_str()) == 0;
+#else
+  return false;
+#endif
+}
+
+// Serialises a parsed value back to compact JSON, for rewriting a file the
+// player may have extended by hand. Integral numbers (the AP ids) print
+// exactly; anything else round-trips through %.17g.
+void AppendJson(const PortJson::Value& value, std::string& out) {
+  switch (value.GetType()) {
+  case PortJson::Value::Type::Null: out += "null"; break;
+  case PortJson::Value::Type::Bool: out += value.AsBool() ? "true" : "false"; break;
+  case PortJson::Value::Type::Number: {
+    const double number = value.AsNumber();
+    char buffer[40];
+    if (std::isfinite(number) && std::trunc(number) == number && std::fabs(number) < 9.0e15)
+      std::snprintf(buffer, sizeof(buffer), "%lld", static_cast<long long>(number));
+    else
+      std::snprintf(buffer, sizeof(buffer), "%.17g", std::isfinite(number) ? number : 0.0);
+    out += buffer;
+    break;
+  }
+  case PortJson::Value::Type::String: out += Quote(value.AsString()); break;
+  case PortJson::Value::Type::Array: {
+    out += '[';
+    bool first = true;
+    for (const PortJson::Value& element : value.AsArray()) {
+      if (!first)
+        out += ',';
+      AppendJson(element, out);
+      first = false;
+    }
+    out += ']';
+    break;
+  }
+  case PortJson::Value::Type::Object: {
+    out += '{';
+    bool first = true;
+    for (const auto& member : value.AsObject()) {
+      if (!first)
+        out += ',';
+      out += Quote(member.first);
+      out += ':';
+      AppendJson(member.second, out);
+      first = false;
+    }
+    out += '}';
+    break;
+  }
+  }
+}
+
 bool ValidLocationKey(const std::string& key) {
   if (key.size() != 26 || key[8] != ':' || key[17] != ':')
     return false;
@@ -342,7 +425,12 @@ Config ParseConfig(const std::string& text) {
       return config;
     }
 
-    const PortJson::Value* value = Member(root, "password");
+    const PortJson::Value* value = Member(root, "enabled");
+    if (value != nullptr && value->IsBool() && !value->AsBool()) {
+      config.error = "disconnected (\"enabled\": false in the configuration)";
+      return config;
+    }
+    value = Member(root, "password");
     if (value != nullptr) {
       if (!value->IsString()) {
         config.error = "password must be a string";
@@ -551,54 +639,108 @@ State LoadStateFile(const std::string& path) {
 
 bool SaveStateFile(const std::string& path, const State& state) {
   try {
-    const std::filesystem::path target(path);
-    if (!target.parent_path().empty())
-      std::filesystem::create_directories(target.parent_path());
-    const std::string temporary = path + ".tmp";
-    {
-      std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-      if (!file.is_open())
-        return false;
-      file << "{\"slot\":" << Quote(state.slot) << ",\"seed\":" << Quote(state.seed)
-           << ",\"next_item_index\":";
-      file << state.nextItemIndex << ",\"checked_locations\":[";
-      for (size_t i = 0; i < state.checkedLocations.size(); ++i) {
-        if (i != 0)
-          file << ',';
-        file << state.checkedLocations[i];
-      }
-      file << "],\"progressive\":{";
-      bool firstCount = true;
-      for (const auto& count : state.progressive) {
-        if (!firstCount)
-          file << ',';
-        file << '"' << count.first << "\":" << count.second;
-        firstCount = false;
-      }
-      file << "}}";
-      file.flush();
-      if (!file)
-        return false;
-      file.close();
-      if (!file)
-        return false;
+    std::ostringstream text;
+    text << "{\"slot\":" << Quote(state.slot) << ",\"seed\":" << Quote(state.seed)
+         << ",\"next_item_index\":";
+    text << state.nextItemIndex << ",\"checked_locations\":[";
+    for (size_t i = 0; i < state.checkedLocations.size(); ++i) {
+      if (i != 0)
+        text << ',';
+      text << state.checkedLocations[i];
     }
-    if (std::rename(temporary.c_str(), path.c_str()) == 0)
-      return true;
-#ifdef _WIN32
-    // The C rename operation replaces an existing destination on POSIX, but
-    // not on Windows. Retry there after removing the old state file.
-    std::error_code filesystemError;
-    if (!std::filesystem::exists(target, filesystemError) || filesystemError)
-      return false;
-    std::filesystem::remove(target, filesystemError);
-    if (filesystemError)
-      return false;
-    return std::rename(temporary.c_str(), path.c_str()) == 0;
-#else
-    return false;
-#endif
+    text << "],\"progressive\":{";
+    bool firstCount = true;
+    for (const auto& count : state.progressive) {
+      if (!firstCount)
+        text << ',';
+      text << '"' << count.first << "\":" << count.second;
+      firstCount = false;
+    }
+    text << "}}";
+    return WriteFileAtomically(path, text.str());
   } catch (...) {
+    return false;
+  }
+}
+
+Connection LoadConnectionFile(const std::string& path) {
+  Connection connection;
+  try {
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+      return connection;
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    PortJson::Value root;
+    size_t errorOffset = 0;
+    const char* errorReason = nullptr;
+    if (file.bad() || !PortJson::Parse(contents.str(), root, errorOffset, &errorReason) ||
+        !root.IsObject())
+      return connection;
+    connection.server = root.StringOr("server");
+    connection.slot = root.StringOr("slot");
+    connection.password = root.StringOr("password");
+    const PortJson::Value* enabled = Member(root, "enabled");
+    connection.enabled = enabled == nullptr || !enabled->IsBool() || enabled->AsBool();
+  } catch (...) {
+    return Connection();
+  }
+  return connection;
+}
+
+bool SaveConnectionFile(const std::string& path, const Connection& connection,
+                        std::string& error) {
+  try {
+    PortJson::Value::Members members;
+    std::ifstream file(path, std::ios::binary);
+    if (file.is_open()) {
+      std::ostringstream contents;
+      contents << file.rdbuf();
+      file.close();
+      if (contents.str().find_first_not_of(" \t\r\n") != std::string::npos) {
+        PortJson::Value root;
+        size_t errorOffset = 0;
+        const char* errorReason = nullptr;
+        // Anything else in the file (tables, DeathLink, a CA bundle) is the
+        // player's; a file that cannot be read back is not overwritten blind.
+        if (!PortJson::Parse(contents.str(), root, errorOffset, &errorReason) ||
+            !root.IsObject()) {
+          error = path + " is not a JSON object; fix or delete it first";
+          return false;
+        }
+        members = root.AsObject();
+      }
+    }
+    const auto set = [&members](const char* key, PortJson::Value value, bool keep) {
+      auto found = std::find_if(members.begin(), members.end(),
+                                [key](const auto& member) { return member.first == key; });
+      if (!keep) {
+        if (found != members.end())
+          members.erase(found);
+      } else if (found != members.end()) {
+        found->second = std::move(value);
+      } else {
+        members.emplace_back(key, std::move(value));
+      }
+    };
+    set("server", PortJson::Value::MakeString(connection.server), true);
+    set("slot", PortJson::Value::MakeString(connection.slot), true);
+    set("password", PortJson::Value::MakeString(connection.password),
+        !connection.password.empty());
+    set("enabled", PortJson::Value::MakeBool(false), !connection.enabled);
+    std::string text;
+    AppendJson(PortJson::Value::MakeObject(std::move(members)), text);
+    text += '\n';
+    if (!WriteFileAtomically(path, text)) {
+      error = "could not write " + path;
+      return false;
+    }
+    return true;
+  } catch (const std::exception& exception) {
+    error = std::string("could not write the configuration: ") + exception.what();
+    return false;
+  } catch (...) {
+    error = "could not write the configuration";
     return false;
   }
 }

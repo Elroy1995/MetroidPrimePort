@@ -133,6 +133,10 @@ struct Runtime {
   // be cut short, so it gets a moment to notice `stop` and is otherwise left
   // behind (the Runtime is never freed) rather than holding up the exit.
   void Shutdown() {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      exiting = true; // a restart still in flight must not start a new worker
+    }
     stop.store(true, std::memory_order_release);
     wake.notify_all();
     if (worker.joinable()) {
@@ -191,6 +195,7 @@ struct Runtime {
   // Writes the state file if it has changed. Only one thread calls this at a
   // time, so the snapshot taken under the lock is written in order.
   void FlushState() {
+    std::lock_guard<std::mutex> flushing(flushMutex); // a restart and the exit may overlap
     Protocol::State snapshot;
     {
       std::lock_guard<std::mutex> lock(mutex);
@@ -211,6 +216,11 @@ struct Runtime {
   std::thread worker;
   bool workerDone = false; // under mutex; set as the worker returns
   bool attempted = false;
+  bool exiting = false; // under mutex; Shutdown() has begun
+  std::mutex flushMutex;
+  // Held for the whole of a restart (Connect/Disconnect), so two in a row run
+  // one after the other.
+  std::mutex restartMutex;
   bool enabled = false;
   bool connected = false;
   std::string stateLabel = "off";
@@ -388,6 +398,20 @@ bool SendPacket(PortWs::Client& client, const std::string& packet, std::string& 
   return false;
 }
 
+// The URLs to try for the configured server. A bare "host:port", as the
+// Archipelago site shows it, is tried as ws:// and then wss://, the way the
+// official client does, and gets Archipelago's default port when it has none.
+std::vector<std::string> ServerUrls(const std::string& server) {
+  if (server.find("://") != std::string::npos)
+    return {server};
+  std::string address = server;
+  const size_t close = address.rfind(']');
+  const size_t colon = address.rfind(':');
+  if (colon == std::string::npos || (close != std::string::npos && colon < close))
+    address += ":38281";
+  return {"ws://" + address, "wss://" + address};
+}
+
 void WorkerLoop(Runtime& runtime) {
   Config config;
   std::string statePath;
@@ -416,13 +440,18 @@ void WorkerLoop(Runtime& runtime) {
     PortWs::TlsOptions tls;
     tls.caFile = config.tlsCa;
     bool transportReady = false;
-    if (!PortWs::ParseUrl(config.server, host, port, path, secure)) {
-      connectionError = "invalid server URL: " + config.server;
-    } else if (!client.Connect(host, port, path, 10000, secure, tls)) {
-      connectionError = ErrorText(client.Error());
-    } else {
-      transportReady = true;
-      client.SetTimeoutMs(10000);
+    for (const std::string& url : ServerUrls(config.server)) {
+      if (!PortWs::ParseUrl(url, host, port, path, secure)) {
+        connectionError = "invalid server URL: " + config.server;
+      } else if (!client.Connect(host, port, path, 10000, secure, tls)) {
+        connectionError = ErrorText(client.Error());
+      } else {
+        transportReady = true;
+        client.SetTimeoutMs(10000);
+        break;
+      }
+      if (runtime.stop.load(std::memory_order_acquire))
+        break;
     }
 
     bool connectionFailed = !transportReady;
@@ -690,20 +719,15 @@ void Worker(Runtime& runtime) {
   runtime.wake.notify_all();
 }
 
-void EnsureLoadedImpl(Runtime& runtime) {
-  std::lock_guard<std::mutex> lock(runtime.mutex);
-  if (runtime.attempted)
-    return;
-  runtime.attempted = true;
-  if (EnvEnabled("MP_AP_DISABLE")) {
-    runtime.stateLabel = "off";
-    return;
-  }
-
+// Loads the configuration and starts the worker. `mutex` is held and no worker
+// is running. `firstStart` is the launch, as opposed to a Connect from the
+// overlay, which must not run the launch-only MP_AP_RESET_STATE again.
+void StartLocked(Runtime& runtime, bool firstStart) {
   const std::string configPath = ConfigPath();
   runtime.config = Protocol::LoadConfigFile(configPath);
   if (!runtime.config.valid) {
     runtime.stateLabel = "off";
+    runtime.lastError = runtime.config.error;
     PortLog::Write( "archipelago: %s\n", runtime.config.error.c_str());
     return;
   }
@@ -721,7 +745,7 @@ void EnsureLoadedImpl(Runtime& runtime) {
   // A rewind the client cannot see - a new game or an older save on the same
   // slot and seed - leaves the recorded checks looking valid, so this is the
   // way out: it drops them before the first connect.
-  if (EnvEnabled("MP_AP_RESET_STATE") &&
+  if (firstStart && EnvEnabled("MP_AP_RESET_STATE") &&
       (state.nextItemIndex != 0 || !state.checkedLocations.empty() || !state.progressive.empty())) {
     PortLog::Write( "archipelago: MP_AP_RESET_STATE=1 discarded saved progress for %s\n",
                  runtime.config.slot.c_str());
@@ -731,7 +755,85 @@ void EnsureLoadedImpl(Runtime& runtime) {
   runtime.session = std::make_unique<Session>(runtime.config, state);
   runtime.enabled = true;
   runtime.stateLabel = "connecting";
+  runtime.stop.store(false, std::memory_order_release);
+  runtime.workerDone = false;
   runtime.worker = std::thread(Worker, std::ref(runtime));
+}
+
+void EnsureLoadedImpl(Runtime& runtime) {
+  std::lock_guard<std::mutex> lock(runtime.mutex);
+  if (runtime.attempted)
+    return;
+  runtime.attempted = true;
+  if (EnvEnabled("MP_AP_DISABLE")) {
+    runtime.stateLabel = "off";
+    return;
+  }
+  StartLocked(runtime, true);
+}
+
+// Runs on its own thread, because stopping the old worker can wait on a DNS
+// lookup that cannot be cut short and the overlay must not freeze meanwhile.
+// Stops the session, writes what it had, and starts again from the file.
+void Restart(Runtime& runtime) {
+  std::lock_guard<std::mutex> restarting(runtime.restartMutex);
+  std::thread old;
+  {
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (runtime.exiting)
+      return;
+    old = std::move(runtime.worker);
+  }
+  runtime.stop.store(true, std::memory_order_release);
+  runtime.wake.notify_all();
+  if (old.joinable())
+    old.join();
+  runtime.FlushState(); // the old session's progress, before the file is reread
+
+  std::lock_guard<std::mutex> lock(runtime.mutex);
+  if (runtime.exiting)
+    return;
+  const std::string oldSlot = runtime.config.slot;
+  const std::string oldServer = runtime.config.server;
+  runtime.session.reset();
+  runtime.enabled = false;
+  runtime.connected = false;
+  runtime.stateLabel = "off";
+  runtime.lastError.clear();
+  runtime.lastMessage.clear();
+  runtime.lastLogged.clear();
+  // Unsent checks are in the state file and go out with the next handshake.
+  runtime.queuedChecks.clear();
+  runtime.notifications.clear();
+  runtime.pendingBounce.clear();
+  runtime.syncWanted = false;
+  runtime.stateDirty = false;
+  runtime.itemCount = 0;
+  runtime.checkCount = 0;
+  runtime.unmappedCount = 0;
+  runtime.deathAnnounced = false;
+  runtime.goalWanted = false;
+  runtime.goalSent = false;
+  StartLocked(runtime, false);
+  // Items received but not yet handed to the game belong to that slot; the
+  // state file already counts them as processed, so a new session on the same
+  // slot would not send them again.
+  if (runtime.config.slot != oldSlot || runtime.config.server != oldServer || !runtime.enabled)
+    runtime.grants.clear();
+}
+
+void StartRestart(Runtime& runtime) {
+  std::thread(
+      [&runtime] {
+        try {
+          Restart(runtime);
+        } catch (const std::exception& error) {
+          PortLog::Write("archipelago: restart failed: %s\n", error.what());
+        } catch (...) {
+          PortLog::Write("archipelago: restart failed\n");
+        }
+      })
+      .detach();
 }
 
 } // namespace
@@ -757,6 +859,101 @@ void EnsureLoaded() {
   }
 }
 
+ConnectionDetails SavedConnection() {
+  try {
+    const Protocol::Connection saved = Protocol::LoadConnectionFile(ConfigPath());
+    ConnectionDetails details;
+    details.server = saved.server;
+    details.slot = saved.slot;
+    details.password = saved.password;
+    details.enabled = saved.enabled;
+    return details;
+  } catch (...) {
+    return ConnectionDetails();
+  }
+}
+
+bool Connect(const ConnectionDetails& details, std::string& error) {
+  try {
+    Protocol::Connection connection;
+    connection.server = details.server;
+    connection.slot = details.slot;
+    connection.password = details.password;
+    connection.enabled = true;
+    const auto trim = [](std::string text) {
+      const size_t first = text.find_first_not_of(" \t\r\n");
+      if (first == std::string::npos)
+        return std::string();
+      return text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
+    };
+    connection.server = trim(connection.server);
+    connection.slot = trim(connection.slot);
+    // The room page shows "/connect host:port"; pasting that whole is fine.
+    if (connection.server.rfind("/connect ", 0) == 0)
+      connection.server = trim(connection.server.substr(9));
+    if (connection.server.empty() || connection.slot.empty()) {
+      error = "a server and a slot name are needed";
+      return false;
+    }
+    std::string host;
+    std::string path;
+    uint16_t port = 0;
+    bool secure = false;
+    const bool bare = connection.server.find("://") == std::string::npos;
+    if ((bare && connection.server.find('/') != std::string::npos) ||
+        !PortWs::ParseUrl(ServerUrls(connection.server).front(), host, port, path, secure)) {
+      error = "not a server address: " + connection.server;
+      return false;
+    }
+    if (EnvEnabled("MP_AP_DISABLE")) {
+      error = "MP_AP_DISABLE is set";
+      return false;
+    }
+    if (!Protocol::SaveConnectionFile(ConfigPath(), connection, error))
+      return false;
+    EnsureLoaded();
+    Runtime& runtime = GetRuntime();
+    {
+      std::lock_guard<std::mutex> lock(runtime.mutex);
+      runtime.stateLabel = "connecting";
+    }
+    StartRestart(runtime);
+    return true;
+  } catch (const std::exception& exception) {
+    error = exception.what();
+    return false;
+  } catch (...) {
+    error = "could not connect";
+    return false;
+  }
+}
+
+bool Disconnect(std::string& error) {
+  try {
+    Protocol::Connection connection = Protocol::LoadConnectionFile(ConfigPath());
+    connection.enabled = false;
+    if (!Protocol::SaveConnectionFile(ConfigPath(), connection, error))
+      return false;
+    EnsureLoaded();
+    StartRestart(GetRuntime());
+    return true;
+  } catch (const std::exception& exception) {
+    error = exception.what();
+    return false;
+  } catch (...) {
+    error = "could not disconnect";
+    return false;
+  }
+}
+
+std::string ConfigFilePath() {
+  try {
+    return ConfigPath();
+  } catch (...) {
+    return std::string();
+  }
+}
+
 bool Enabled() {
   EnsureLoaded();
   Runtime& runtime = GetRuntime();
@@ -778,7 +975,7 @@ const char* StatusText() {
   {
     std::lock_guard<std::mutex> lock(runtime.mutex);
     if (!runtime.enabled) {
-      text = "ap: off";
+      text = runtime.stateLabel == "connecting" ? "ap: connecting" : "ap: off";
     } else if (runtime.connected) {
       text = "ap: connected, " + std::to_string(runtime.itemCount) + " items, " +
              std::to_string(runtime.checkCount) + " checks";

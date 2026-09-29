@@ -29,6 +29,23 @@ namespace PortAp {
 // Loads the configuration and starts the client thread once. Idempotent, never
 // throws, and a no-op when disabled or unconfigured.
 void EnsureLoaded();
+// The overlay's Connect screen. The details live in the configuration file
+// (other keys there are kept), so they survive a restart.
+struct ConnectionDetails {
+  std::string server;
+  std::string slot;
+  std::string password;
+  bool enabled = true; // false after Disconnect: kept, but not connected at launch
+};
+ConnectionDetails SavedConnection();
+// Saves the details and restarts the client with them, on a background thread
+// (the status line shows the progress). False, with `error`, when the details
+// are incomplete or the file cannot be written; nothing changes then.
+bool Connect(const ConnectionDetails& details, std::string& error);
+// Ends the session and keeps it off at the next launch, until Connect.
+bool Disconnect(std::string& error);
+// Where the configuration is read from and saved to.
+std::string ConfigFilePath();
 // A configuration with a server and a slot was loaded.
 bool Enabled();
 // The handshake with the server finished.

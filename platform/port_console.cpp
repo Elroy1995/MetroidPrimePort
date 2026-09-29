@@ -4,6 +4,7 @@
 // Every reply ends with a line `=> ok` or `=> err: <why>`. tools/mpcon.py is
 // the client. Commands that touch the game run inside the state manager's
 // tick, where every object pointer is live; the rest run once per frame.
+#include "port_apclient.h"
 #include "port_debug.h"
 #include "port_smoke.h"
 #include "MetroidPrime/CActor.hpp"
@@ -395,6 +396,7 @@ void CmdHelp() {
   Out("shot                       take a screenshot and print its path");
   Out("wait <frames>              let frames pass");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
+  Out("ap [connect <server> <slot> [password] | disconnect]   Archipelago, as the F1 Connect screen does");
   Out("quit                       exit the game");
   Out("ids: hex editor id (002900A1), u<index> unique id, or an exact debug name");
 }
@@ -755,6 +757,24 @@ void RunFrame() {
     } else {
       return Finish("usage: aspect <4:3|16:9|window>");
     }
+    Finish();
+  } else if (name == "ap") {
+    const std::string action = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "";
+    std::string error;
+    if (action == "connect" && (sCmd.args.size() == 4 || sCmd.args.size() == 5)) {
+      PortAp::ConnectionDetails details;
+      details.server = sCmd.args[2];
+      details.slot = sCmd.args[3];
+      details.password = sCmd.args.size() == 5 ? sCmd.args[4] : "";
+      if (!PortAp::Connect(details, error))
+        return Finish(error.c_str());
+    } else if (action == "disconnect") {
+      if (!PortAp::Disconnect(error))
+        return Finish(error.c_str());
+    } else if (!action.empty()) {
+      return Finish("usage: ap [connect <server> <slot> [password] | disconnect]");
+    }
+    Out("%s (%s)", PortAp::StatusText(), PortAp::ConfigFilePath().c_str());
     Finish();
   } else if (name == "wait") {
     unsigned frames = 0;

@@ -1779,6 +1779,51 @@ void DrawVoicesTab() {  PortMusyxVoice voices[64];
   }
 }
 
+// Archipelago's Connect screen: the room's address, the slot name and the
+// room password, saved to archipelago.json. The built-in Metroid Prime tables
+// mean nothing else is needed, so this works where editing a file does not.
+void DrawArchipelagoConnect() {
+  static bool sLoaded = false;
+  static char sServer[256];
+  static char sSlot[64];
+  static char sPassword[128];
+  static std::string sResult;
+  if (!sLoaded) {
+    sLoaded = true;
+    const PortAp::ConnectionDetails saved = PortAp::SavedConnection();
+    SDL_strlcpy(sServer, saved.server.c_str(), sizeof(sServer));
+    SDL_strlcpy(sSlot, saved.slot.c_str(), sizeof(sSlot));
+    SDL_strlcpy(sPassword, saved.password.c_str(), sizeof(sPassword));
+  }
+
+  ImGui::SeparatorText("Archipelago");
+  ImGui::InputTextWithHint("Server", "archipelago.gg:38281", sServer, sizeof(sServer));
+  ImGui::InputTextWithHint("Slot name", "your player name in the seed", sSlot, sizeof(sSlot));
+  ImGui::InputTextWithHint("Password", "only if the room has one", sPassword, sizeof(sPassword),
+                           ImGuiInputTextFlags_Password);
+  if (ImGui::Button(PortAp::Enabled() ? "Reconnect" : "Connect")) {
+    PortAp::ConnectionDetails details;
+    details.server = sServer;
+    details.slot = sSlot;
+    details.password = sPassword;
+    std::string error;
+    sResult = PortAp::Connect(details, error) ? std::string() : error;
+    // The saved form (trimmed, "/connect " dropped) goes back into the fields.
+    if (sResult.empty())
+      sLoaded = false;
+  }
+  if (PortAp::Enabled()) {
+    ImGui::SameLine();
+    if (ImGui::Button("Disconnect")) {
+      std::string error;
+      sResult = PortAp::Disconnect(error) ? std::string() : error;
+    }
+  }
+  if (!sResult.empty())
+    ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", sResult.c_str());
+  ImGui::TextDisabled("Start a new game after connecting to a new seed.");
+}
+
 void DrawSessionTab() {
   if (ImGui::Button("Restart to menu")) {
     RequestReset();
@@ -1798,8 +1843,8 @@ void DrawSessionTab() {
   ImGui::SameLine();
   ImGui::TextUnformatted(sSettingsDirty ? "Unsaved changes" : "Saved");
 
+  DrawArchipelagoConnect();
   if (PortAp::Enabled()) {
-    ImGui::SeparatorText("Archipelago");
     ImGui::TextWrapped("Status: %s", PortAp::StatusText());
     const char* seedName = PortAp::SeedName();
     if (seedName != nullptr && seedName[0] != '\0')
@@ -2212,6 +2257,8 @@ bool DrawTouchWindow() {
 bool DrawDesktopWindow() {
   ImGui::SetNextWindowPos(ImVec2(8.f, 8.f), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSize(ImVec2(440.f, 200.f), ImGuiCond_FirstUseEver);
+  if (std::getenv("MP_DEBUG_TAB") != nullptr) // a capture wants to see the tab
+    ImGui::SetNextWindowSize(ImVec2(520.f, 620.f), ImGuiCond_Once);
   bool open = true;
   if (ImGui::Begin("Metroid Prime Port", &open, ImGuiWindowFlags_MenuBar)) {
     if (ImGui::BeginMenuBar()) {
@@ -2220,8 +2267,13 @@ bool DrawDesktopWindow() {
     }
 
     if (ImGui::BeginTabBar("##debug_tabs", ImGuiTabBarFlags_FittingPolicyScroll)) {
+      // MP_DEBUG_TAB=<name> opens on that tab, for captures of the overlay.
+      static const char* sStartTab = std::getenv("MP_DEBUG_TAB");
       for (const DebugPage& page : kDebugPages) {
-        if (ImGui::BeginTabItem(page.name)) {
+        const bool start = sStartTab != nullptr && SDL_strcasecmp(sStartTab, page.name) == 0;
+        if (ImGui::BeginTabItem(page.name, nullptr, start ? ImGuiTabItemFlags_SetSelected : 0)) {
+          if (start)
+            sStartTab = nullptr;
           page.draw();
           ImGui::EndTabItem();
         }
