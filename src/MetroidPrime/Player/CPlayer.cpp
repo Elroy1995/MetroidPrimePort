@@ -2268,6 +2268,11 @@ void CPlayer::RenderReflectedPlayer(CStateManager& mgr) {
   case kMS_Unmorphed:
   case kMS_Morphing:
   case kMS_Unmorphing:
+#ifdef TARGET_PC
+    if (x2f8_morphBallState != kMS_Unmorphed && IsFastMorphTransition()) {
+      break;
+    }
+#endif
     SetCalculateLighting(true);
     if (x2f4_cameraState == kCS_FirstPerson) {
       CActor::PreRender(mgr, frustum);
@@ -2321,9 +2326,18 @@ void CPlayer::Render(const CStateManager& mgr) const {
       break;
     }
 
+#ifdef TARGET_PC
+    // A fast morph shows only the ball forming in its flash, with the ball
+    // effects retail plays over the second half spread over the whole of it.
+    const bool fastMorph = doTransitionRender && IsFastMorphTransition();
+#else
+    const bool fastMorph = false;
+#endif
     if (doTransitionRender) {
-      CPhysicsActor::Render(mgr);
-      if (HasTransitionBeamModel()) {
+      if (!fastMorph) {
+        CPhysicsActor::Render(mgr);
+      }
+      if (HasTransitionBeamModel() && !fastMorph) {
         const CModelFlags& flags =
             CModelFlags::AlphaBlended(x588_alpha).DepthCompareUpdate(true, true);
         x7f0_ballTransitionBeamModel->Render(CModelData::kWM_Normal, x7f4_gunWorldXf,
@@ -2363,6 +2377,9 @@ void CPlayer::Render(const CStateManager& mgr) const {
 
       if (doBallRender) {
         float morphFactor = x574_morphTime / x578_morphDuration;
+        if (fastMorph) {
+          morphFactor = .5f + .5f * morphFactor;
+        }
         float ballAlphaStart = 0.75f;
         float ballAlphaMag = 4.f;
         if (x2f8_morphBallState == kMS_Unmorphing) {

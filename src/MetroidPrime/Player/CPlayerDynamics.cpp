@@ -38,12 +38,11 @@
 static const float skTransitionFilterTime = .95f;
 
 #ifdef TARGET_PC
-// Fast Morph (PortDebug::FastMorph): UpdateMorphBallState gives the transition
-// a duration under the retail 1 s. Such transitions keep the player's velocity
-// (capped at walking speed when unmorphing on the ground) instead of stopping.
-static bool IsFastMorphDuration(float duration) { return duration > 0.f && duration < 1.f; }
-// Set by an unmorph in the air: the jump's horizontal speed is not clamped to
-// walking speed until the player lands or morphs again.
+// Fast Morph transitions (CPlayer::IsFastMorphTransition) keep the player's
+// velocity (capped at walking speed when unmorphing on the ground) instead of
+// stopping. sFastMorphAirCarry is set by an unmorph in the air: the jump's
+// horizontal speed is not clamped to walking speed until the player lands or
+// morphs again.
 static bool sFastMorphAirCarry = false;
 #endif
 
@@ -332,14 +331,9 @@ void CPlayer::ComputeMovement(const CFinalInput& input, CStateManager& mgr, floa
     SetAngularVelocityOR(CAxisAngle::Identity());
   }
 #ifdef TARGET_PC
-  // A Fast Morph transition carries its velocity through without friction
-  // (gravity still applies through JumpInput). Standing up on the ground is
-  // held at walking speed, or held input would push past it until it ends.
-  if (IsMorphBallTransitioning() && IsFastMorphDuration(x578_morphDuration)) {
-    if (x2f8_morphBallState == kMS_Unmorphing && x258_movementState == NPlayer::kMS_OnGround) {
-      ClampFastMorphGroundVelocity(dt);
-    }
-  } else
+  // A fast morph carries its velocity through without friction (gravity still
+  // applies through JumpInput). A fast unmorph is instant.
+  if (!IsMorphBallTransitioning() || !IsFastMorphTransition())
 #endif
   SetVelocityWR(GetDampedClampedVelocityWR());
   float turnSpeedMultiplier = gpTweakPlayer->GetTurnSpeedMultiplier();
@@ -1438,9 +1432,11 @@ void CPlayer::TransitionToMorphBallState(float dt, CStateManager& mgr) {
   SetMomentumWR(CVector3f::Zero());
 #ifdef TARGET_PC
   sFastMorphAirCarry = false;
-  if (IsFastMorphDuration(x578_morphDuration)) {
+  if (IsFastMorphTransition()) {
     ClearForcesAndTorques();
     SetAngularVelocityWR(CAxisAngle::Identity());
+    // The flash retail starts halfway through covers the whole fast morph.
+    x768_morphball->ResetMorphBallTransitionFlash();
   } else
 #endif
   Stop();
@@ -1574,7 +1570,7 @@ void CPlayer::TransitionFromMorphBallState(float dt, CStateManager& mgr) {
   AddMaterial(kMT_GroundCollider, mgr);
   SetMomentumWR(CVector3f::Zero());
 #ifdef TARGET_PC
-  if (IsFastMorphDuration(x578_morphDuration)) {
+  if (IsFastMorphTransition()) {
     if (x258_movementState == NPlayer::kMS_OnGround) {
       // As in Metroid Prime 4: standing up on the ground drops to walking speed.
       ClampFastMorphGroundVelocity(dt);
@@ -1592,7 +1588,15 @@ void CPlayer::TransitionFromMorphBallState(float dt, CStateManager& mgr) {
   x824_transitionFilterTimer = .01f;
   x57c_ = 0;
   x580_ = 0;
+#ifdef TARGET_PC
+  // A fast unmorph cuts straight to first person behind the transition flash,
+  // rather than flying the camera into a sped-up stand-up animation.
+  const bool immediate =
+      IsFastMorphTransition() ||
+      !mgr.CameraManager()->BallCamera()->TransitionFromMorphBallState(mgr);
+#else
   const bool immediate = !mgr.CameraManager()->BallCamera()->TransitionFromMorphBallState(mgr);
+#endif
   if (immediate) {
     x824_transitionFilterTimer = .95f;
     LeaveMorphBallState(mgr);
@@ -1620,7 +1624,7 @@ void CPlayer::LeaveMorphBallState(CStateManager& mgr) {
 #ifdef TARGET_PC
   // Only the end of a Fast Morph unmorph keeps velocity, not a scripted one.
   const bool keepVelocity =
-      x2f8_morphBallState == kMS_Unmorphing && IsFastMorphDuration(x578_morphDuration);
+      x2f8_morphBallState == kMS_Unmorphing && IsFastMorphTransition();
 #endif
   x730_transitionModels.clear();
   AddMaterial(kMT_GroundCollider, mgr);
@@ -1739,12 +1743,10 @@ void CPlayer::UpdateMorphBallTransition(float dt, CStateManager& mgr) {
     break;
   }
 #ifdef TARGET_PC
-  // Fast Morph plays the animation at the transition's pace and lets the kept
-  // velocity move the player rather than the animation's root motion.
-  const bool fastMorph = IsFastMorphDuration(x578_morphDuration);
-  const CAdvancementDeltas deltas =
-      UpdateAnimation(fastMorph ? dt / x578_morphDuration : dt, mgr, true);
-  if (!fastMorph) {
+  // In a fast morph the kept velocity moves the player, not the (hidden)
+  // animation's root motion.
+  const CAdvancementDeltas deltas = UpdateAnimation(dt, mgr, true);
+  if (!IsFastMorphTransition()) {
     MoveInOneFrameOR(deltas.GetOffsetDelta(), dt);
   }
 #else
@@ -1822,6 +1824,9 @@ void CPlayer::UpdateMorphBallTransition(float dt, CStateManager& mgr) {
       }
     }
     if (GetMorphBallTransitionFactor() >= .5f &&
+#ifdef TARGET_PC
+        !IsFastMorphTransition() &&
+#endif
         !x768_morphball->IsMorphBallTransitionFlashValid()) {
       x768_morphball->ResetMorphBallTransitionFlash();
     }

@@ -323,6 +323,11 @@ public:
   float GetActualBallMaxVelocity(float dt) const;
 #ifdef TARGET_PC
   void ClampFastMorphGroundVelocity(float dt);
+  // Fast Morph (PortDebug::FastMorph) gives a transition a duration under the
+  // retail 1 s; such a transition hides Samus behind the ball's energy flash.
+  bool IsFastMorphTransition() const {
+    return x578_morphDuration > 0.f && x578_morphDuration < 1.f;
+  }
 #endif
   const CScriptWater* GetVisorRunoffEffect(const CStateManager& mgr) const;
   void SetMorphBallState(EPlayerMorphBallState state, CStateManager& mgr);

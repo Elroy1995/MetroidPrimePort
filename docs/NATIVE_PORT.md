@@ -481,11 +481,12 @@ a temporary directory instead of mounting.
   pitch and yaw stay right in landscape.
 - Fast Morph (Input tab and pause Options > Controller, persisted as
   `fast_morph`, off by default): morph ball transitions in the style of Metroid
-  Prime 4. Morphing and unmorphing take 0.2 s instead of 1 s and keep the
-  player's velocity instead of stopping them. Unmorphing on the ground holds
-  the speed at walking speed; unmorphing in the air keeps the whole arc until
-  landing. Retail's animation root motion is not applied during a fast
-  transition.
+  Prime 4. Morphing takes 0.2 s instead of 1 s and unmorphing is instant; both
+  keep the player's velocity instead of stopping them. Unmorphing on the ground
+  holds the speed at walking speed; unmorphing in the air keeps the whole arc
+  until landing. Samus's curl-up animation is not shown: the ball forms inside
+  the transition flash while the camera eases out, and an unmorph cuts to first
+  person behind the transition filter.
 - The overlay's **Controls** tab rebinds pad 1: click Bind, then press the input.
   "Keyboard & mouse" assigns a key or mouse button to each pad button and stick
   axis; "Controller" assigns a physical controller button or axis. Bindings are
