@@ -14,6 +14,8 @@
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/BodyState/CBodyController.hpp"
+#include "MetroidPrime/Cameras/CCameraManager.hpp"
+#include "MetroidPrime/Cameras/CGameCamera.hpp"
 #include "MetroidPrime/Enemies/CPatterned.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
@@ -392,6 +394,7 @@ void CmdHelp() {
   Out("stick <x> <y> [frames]     hold the main stick (-127..127); cstick for the C stick");
   Out("shot                       take a screenshot and print its path");
   Out("wait <frames>              let frames pass");
+  Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
   Out("quit                       exit the game");
   Out("ids: hex editor id (002900A1), u<index> unique id, or an exact debug name");
 }
@@ -433,6 +436,9 @@ void CmdStatus(CStateManager& mgr) {
       ps.CalculateHealth(), m >= 0 && m < 4 ? morph[m] : "?", v >= 0 && v < 4 ? visors[v] : "?",
       b >= 0 && b < 5 ? beams[b] : "?", ps.GetItemAmount(CPlayerState::kIT_Missiles),
       ps.GetItemCapacity(CPlayerState::kIT_Missiles));
+  const CGameCamera& cam = mgr.GetCameraManager()->GetCurrentCamera(mgr);
+  Out("camera u%u fov %.1f aspect %.3f (viewport %.3f)", cam.GetUniqueId().Value(), cam.GetFov(),
+      cam.GetAspectRatio(), CCameraManager::GetDefaultAspectRatio());
   if (const CEntity* target = mgr.GetObjectById(player.GetOrbitTargetId())) {
     Out("orbit target u%u %08X %s", target->GetUniqueId().Value(), target->GetEditorId().Value(),
         target->GetDebugName().data());
@@ -486,6 +492,10 @@ void CmdObj(CStateManager& mgr) {
   if (CActor* actor = TCastToPtr< CActor >(ent)) {
     const CVector3f fwd = actor->GetTransform().GetForward();
     Out("forward (%.3f, %.3f, %.3f)", fwd.GetX(), fwd.GetY(), fwd.GetZ());
+    if (actor->HasModelData()) {
+      Out("%s", actor->GetPreRenderClipped() ? "outside the view frustum (not animated or drawn)"
+                                             : "inside the view frustum");
+    }
     if (const CHealthInfo* health = actor->GetHealthInfo(mgr)) {
       Out("hp %.2f", health->GetHP());
     }
@@ -734,6 +744,18 @@ void RunFrame() {
   } else if (name == "quit") {
     Finish();
     sQuit = true;
+  } else if (name == "aspect") {
+    const std::string mode = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "";
+    if (mode == "4:3") {
+      PortDebug::SetAspectMode(PortDebug::kAspect_4_3);
+    } else if (mode == "16:9") {
+      PortDebug::SetAspectMode(PortDebug::kAspect_16_9);
+    } else if (mode == "window") {
+      PortDebug::SetAspectMode(PortDebug::kAspect_Window);
+    } else {
+      return Finish("usage: aspect <4:3|16:9|window>");
+    }
+    Finish();
   } else if (name == "wait") {
     unsigned frames = 0;
     if (sCmd.phase == 0) {

@@ -536,10 +536,11 @@ a temporary directory instead of mounting.
   (`-f file`) or an interactive prompt with no arguments. Commands: `status`,
   `worlds`, `areas`, `warp <world id or name prefix> [mrea]` (replies once the
   new world runs), `tp x y z`, `face <yaw>`, `look <id>`, `objs [filter]`,
-  `obj <id>` (AI state, health, body state and animation, connections),
+  `obj <id>` (AI state, health, body state and animation, connections, whether
+  it is frustum-culled),
   `send <id> <msg>`, `give <item> [n]`, `items`, `heal`, `press <a+b> [frames]`,
   `stick`/`cstick <x> <y> [frames]`, `shot` (prints the bmp path),
-  `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the
