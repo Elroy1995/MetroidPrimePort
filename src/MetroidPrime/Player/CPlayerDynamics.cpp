@@ -1599,6 +1599,13 @@ void CPlayer::TransitionFromMorphBallState(float dt, CStateManager& mgr) {
 #endif
   if (immediate) {
     x824_transitionFilterTimer = .95f;
+#ifdef TARGET_PC
+    if (IsFastMorphTransition() && HasAnimation()) {
+      // Play the skipped stand-up animation (retail's 1 s unmorph) out at once
+      // for its sound events.
+      UpdateAnimation(1.f, mgr, true);
+    }
+#endif
     LeaveMorphBallState(mgr);
   }
 }
@@ -1743,10 +1750,13 @@ void CPlayer::UpdateMorphBallTransition(float dt, CStateManager& mgr) {
     break;
   }
 #ifdef TARGET_PC
-  // In a fast morph the kept velocity moves the player, not the (hidden)
-  // animation's root motion.
-  const CAdvancementDeltas deltas = UpdateAnimation(dt, mgr, true);
-  if (!IsFastMorphTransition()) {
+  // A fast morph runs the (hidden) animation at the transition's pace, so its
+  // sound events still play, and the kept velocity moves the player rather
+  // than the animation's root motion.
+  const bool fastMorph = IsFastMorphTransition();
+  const CAdvancementDeltas deltas =
+      UpdateAnimation(fastMorph ? dt / x578_morphDuration : dt, mgr, true);
+  if (!fastMorph) {
     MoveInOneFrameOR(deltas.GetOffsetDelta(), dt);
   }
 #else
