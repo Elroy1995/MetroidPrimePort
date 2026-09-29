@@ -83,6 +83,10 @@ public:
     // Hash of the seed and slot that granted the items, 0 when none has yet.
     uint identity;
     uint appliedIndex;
+    // The built-in locations this game has collected, one bit per index in the
+    // location table. Kept with the save so checks made while disconnected
+    // reach the server on the next connection.
+    uint checked[4];
     // Not saved: the client has lined its session up with this state.
     bool reconciled;
   };

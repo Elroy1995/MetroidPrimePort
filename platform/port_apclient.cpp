@@ -3,6 +3,7 @@
 
 #include "port_ap_metroidprime.h"
 #include "port_ap_protocol.h"
+#include "port_randomizer.h"
 #include "port_ws.h"
 
 #include "MetroidPrime/CHealthInfo.hpp"
@@ -254,6 +255,8 @@ struct Runtime {
   // (`goalWanted`) until the socket thread has sent it once (`goalSent`).
   bool goalWanted = false;
   bool goalSent = false;
+  // The checks the running game records have been handed to this session.
+  bool recordSynced = false;
 };
 
 Runtime& GetRuntime() {
@@ -284,11 +287,60 @@ uint32_t SessionIdentity(const std::string& seed, const std::string& slot) {
   return hash != 0 ? hash : 1;
 }
 
+// A game some session has given items to. Its pickups at the built-in
+// locations stay the multiworld's while the client is off.
+bool IsApGame(const CGameState::ApProgress& progress) {
+  return progress.recorded && progress.identity != 0;
+}
+
+// A built-in location's bit in the save's checked record, or -1.
+int CheckedBit(const MetroidPrime::Location* location) {
+  size_t count = 0;
+  const MetroidPrime::Location* first = MetroidPrime::Locations(count);
+  if (location == nullptr)
+    return -1;
+  const ptrdiff_t index = location - first;
+  return index >= 0 && static_cast<size_t>(index) < count && index < 128 ? static_cast<int>(index)
+                                                                          : -1;
+}
+
+void ClearChecked(CGameState::ApProgress& progress) {
+  for (uint& word : progress.checked)
+    word = 0;
+}
+
+// Hands the session the checks the game records but the session has not:
+// ones made while the client was off, which go out on the next connection.
+void QueueRecordedChecksLocked(Runtime& runtime, const CGameState::ApProgress& progress) {
+  size_t count = 0;
+  const MetroidPrime::Location* locations = MetroidPrime::Locations(count);
+  int queued = 0;
+  for (size_t i = 0; i < count && i < 128; ++i) {
+    if (((progress.checked[i / 32] >> (i % 32)) & 1) == 0)
+      continue;
+    char key[32];
+    PortRandomizer::FormatLocationKey(locations[i].world, locations[i].area, locations[i].pickup,
+                                      key, sizeof(key));
+    int64_t id = 0;
+    if (runtime.session->MarkLocationChecked(key, id)) {
+      runtime.queuedChecks.push_back(id);
+      ++queued;
+    }
+  }
+  if (queued == 0)
+    return;
+  runtime.MarkStateDirtyLocked();
+  PortLog::Write("archipelago: the loaded game holds %d checks the server has not had; "
+                 "sending them\n",
+                 queued);
+}
+
 // Lines the session up with the loaded game. The state file's item index says
 // what this client has received, but not what the game holds: quitting without
 // saving, or loading an older save, drops items the index has moved past. So
 // the save records how many it holds, and on load the session rewinds to that
-// many and has the server replay the rest.
+// many and has the server replay the rest. The other way round, the save
+// records the checks it made, some of which the session may not have seen.
 void ReconcileLocked(Runtime& runtime, CGameState::ApProgress& progress) {
   const Protocol::State& state = runtime.session->GetState();
   if (state.seed.empty())
@@ -300,10 +352,21 @@ void ReconcileLocked(Runtime& runtime, CGameState::ApProgress& progress) {
     if (progress.identity != identity) {
       progress.identity = identity;
       progress.appliedIndex = 0;
+      ClearChecked(progress);
+    } else if (!runtime.recordSynced) {
+      QueueRecordedChecksLocked(runtime, progress); // reconnected mid-game
     }
+    runtime.recordSynced = true;
     return;
   }
   progress.reconciled = true;
+  runtime.recordSynced = true;
+  // Checks made in another seed or slot are not this one's. A new game's
+  // (identity 0) were made under this session before its seed was known.
+  if (progress.identity != 0 && progress.identity != identity)
+    ClearChecked(progress);
+  else
+    QueueRecordedChecksLocked(runtime, progress);
   // Where the game's items end on the session's side: grants still queued
   // for the game are about to be applied, so they count as not held yet.
   const int64_t firstPending =
@@ -814,6 +877,7 @@ void Restart(Runtime& runtime) {
   runtime.deathAnnounced = false;
   runtime.goalWanted = false;
   runtime.goalSent = false;
+  runtime.recordSynced = false;
   StartLocked(runtime, false);
   // Items received but not yet handed to the game belong to that slot; the
   // state file already counts them as processed, so a new session on the same
@@ -1116,11 +1180,24 @@ bool BuiltinEnabled() {
   return runtime.enabled && runtime.session != nullptr && runtime.session->GetConfig().builtin;
 }
 
+// The built-in locations belong to the multiworld: a session on the built-in
+// tables is running, or, with the client off, the running game is an AP game.
+bool BuiltinRules() {
+  EnsureLoaded();
+  Runtime& runtime = GetRuntime();
+  {
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (runtime.enabled && runtime.session != nullptr)
+      return runtime.session->GetConfig().builtin;
+  }
+  return gpGameState != nullptr && IsApGame(gpGameState->PortApProgress());
+}
+
 } // namespace
 
 bool OwnsPickup(uint32_t world, uint32_t area, uint32_t entity) {
   try {
-    return MetroidPrime::FindPickup(world, area, entity) != nullptr && BuiltinEnabled();
+    return MetroidPrime::FindPickup(world, area, entity) != nullptr && BuiltinRules();
   } catch (...) {
     return false;
   }
@@ -1128,9 +1205,19 @@ bool OwnsPickup(uint32_t world, uint32_t area, uint32_t entity) {
 
 bool OwnsMemo(uint32_t world, uint32_t area, uint32_t entity) {
   try {
-    return MetroidPrime::FindMemo(world, area, entity) != nullptr && BuiltinEnabled();
+    return MetroidPrime::FindMemo(world, area, entity) != nullptr && BuiltinRules();
   } catch (...) {
     return false;
+  }
+}
+
+void RecordPickup(uint32_t world, uint32_t area, uint32_t entity) {
+  try {
+    const int bit = CheckedBit(MetroidPrime::FindPickup(world, area, entity));
+    if (bit < 0 || gpGameState == nullptr)
+      return;
+    gpGameState->PortApProgress().checked[bit / 32] |= 1u << (bit % 32);
+  } catch (...) {
   }
 }
 
@@ -1140,14 +1227,18 @@ void AnnouncePickup(uint32_t world, uint32_t area, uint32_t entity) {
     if (location == nullptr)
       return;
     std::string text;
+    bool offline = true;
     {
       Runtime& runtime = GetRuntime();
       std::lock_guard<std::mutex> lock(runtime.mutex);
-      if (!runtime.enabled || runtime.session == nullptr)
-        return;
-      text = runtime.session->AnnounceLocation(location->id);
+      if (runtime.enabled && runtime.session != nullptr) {
+        text = runtime.session->AnnounceLocation(location->id);
+        offline = false;
+      }
     }
-    if (text.empty())
+    if (offline)
+      text = std::string("Checked ") + location->name + ", sent when connected";
+    else if (text.empty())
       text = std::string("Checked ") + location->name;
     PortLog::Write("archipelago: %s\n", text.c_str());
     CSamusHud::DisplayHudMemo(ToHudWide(text), CHUDMemoParms(5.f, true, false, false));
@@ -1200,9 +1291,11 @@ int SpringBallRule() {
 
 void OnInventoryReset() {
   try {
-    if (!Enabled() || gpGameState == nullptr)
+    if (gpGameState == nullptr)
       return;
     CGameState::ApProgress& progress = gpGameState->PortApProgress();
+    if (!Enabled() && !IsApGame(progress))
+      return;
     progress.appliedIndex = 0;
     progress.reconciled = false; // reconcile again, now holding nothing
   } catch (...) {

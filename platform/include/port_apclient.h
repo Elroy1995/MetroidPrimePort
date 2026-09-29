@@ -83,9 +83,14 @@ void QueueCheck(const char* locationKey);
 
 // With the built-in tables, the pickups at this slot's locations hold the
 // multiworld's items rather than the retail ones: touching one sends the check
-// and grants nothing locally, and its "acquired" memo stays quiet.
+// and grants nothing locally, and its "acquired" memo stays quiet. This holds
+// for an AP game (a save some session has given items to) while the client is
+// off too.
 bool OwnsPickup(uint32_t world, uint32_t area, uint32_t entity);
 bool OwnsMemo(uint32_t world, uint32_t area, uint32_t entity);
+// Records an owned pickup in the game's save, so the check reaches the server
+// on a later connection if this one cannot send it. Call before QueueCheck.
+void RecordPickup(uint32_t world, uint32_t area, uint32_t entity);
 // Shows on the HUD what an owned pickup held ("Found X for Bob"), or its
 // location name when the server has not said yet. Call after QueueCheck.
 void AnnouncePickup(uint32_t world, uint32_t area, uint32_t entity);

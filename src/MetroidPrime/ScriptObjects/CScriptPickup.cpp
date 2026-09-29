@@ -184,6 +184,8 @@ void CScriptPickup::Touch(CActor& act, CStateManager& mgr) {
       char checkKey[32];
       PortRandomizer::FormatLocationKey(randoWorld, randoArea, randoEntity, checkKey,
                                         sizeof(checkKey));
+      if (apOwned)
+        PortAp::RecordPickup(randoWorld, randoArea, randoEntity);
       PortAp::QueueCheck(checkKey);
       if (apOwned)
         PortAp::AnnouncePickup(randoWorld, randoArea, randoEntity);

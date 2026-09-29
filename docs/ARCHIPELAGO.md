@@ -208,13 +208,24 @@ On every connect the whole recorded check list is re-sent, so a reconnect or a
 reloaded save re-announces what was already collected.
 
 The file's item index says what the client has received, not what the game
-holds, so the game save records that too: a 12-byte trailer after the retail
-save data (magic `APIX`, a hash of seed and slot, and how many received items
-the save holds). When a game is loaded, or a new one started, the client
-compares the two. If the game holds fewer (quit without saving, an older save,
-a new game) or items from another seed or slot, the session rewinds to what the
-game holds and sends a `Sync`, and the server replays the rest. Saves written
-before the trailer existed are taken to hold what the state file says.
+holds, so the game save records that too: a 28-byte trailer after the retail
+save data (magic `APX2`, a hash of seed and slot, how many received items the
+save holds, and one bit per built-in location it has collected). When a game is
+loaded, or a new one started, the client compares the two. If the game holds
+fewer (quit without saving, an older save, a new game) or items from another
+seed or slot, the session rewinds to what the game holds and sends a `Sync`, and
+the server replays the rest. Saves written before the trailer existed are taken
+to hold what the state file says; `APIX` saves (no location bits) still load.
+
+**Playing while disconnected.** A save some session has given items to is an
+AP game, and its pickups at the built-in locations stay the multiworld's with
+the client off: touching one grants nothing, shows "Checked X, sent when
+connected", and sets the location's bit in the save. The next session that
+loads or reconnects to that game sends every recorded check the server has not
+had. A save from another seed or slot has its bits cleared. What still needs a
+session: Spring Ball's AP unlock, `non_varia_heat_damage`, unlimited ammo and
+the artifact totems. A retail save loaded while the client is on adopts the
+session's seed and becomes an AP game.
 
 **Set `MP_AP_RESET_STATE=1` to discard the file before connecting.** Checks and
 progressive counts start over; the items the game holds are still worked out
