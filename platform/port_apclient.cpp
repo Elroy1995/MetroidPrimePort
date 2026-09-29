@@ -502,8 +502,10 @@ void CountChecks(Runtime& runtime, size_t count) {
   runtime.checkCount += static_cast<int>(std::min(count, room));
 }
 
+// Archipelago servers take each message as a JSON array of commands; a bare
+// object makes MultiServer iterate its keys and drop the connection.
 bool SendPacket(PortWs::Client& client, const std::string& packet, std::string& error) {
-  if (client.SendText(packet))
+  if (client.SendText(!packet.empty() && packet.front() == '[' ? packet : "[" + packet + "]"))
     return true;
   error = ErrorText(client.Error());
   return false;

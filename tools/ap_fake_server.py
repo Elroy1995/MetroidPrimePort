@@ -152,7 +152,12 @@ def handle_client(sock, address, args, item_ids, bounce_sources=()):
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 print(f"[server] invalid client JSON: {error}", flush=True)
                 continue
-            packets = packet_data if isinstance(packet_data, list) else [packet_data]
+            if not isinstance(packet_data, list):
+                # MultiServer iterates the message as a list of commands and
+                # drops the client on anything else.
+                print("[server] client sent a bare JSON object, not a list; closing", flush=True)
+                return
+            packets = packet_data
             for packet in packets:
                 print(f"[server] {packet_command(packet)} {json.dumps(packet, separators=(',', ':'))}",
                       flush=True)
