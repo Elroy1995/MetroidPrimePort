@@ -636,12 +636,14 @@ bool PortSmokeMouseEnabled() {
 // still reports *present* while every button is discarded. A scripted press is
 // then silently dropped and the screen never advances, which is indistinguishable
 // from the button doing nothing. The mouse hook already claims focus for itself
-// (PortSmokeMouseEnabled is OR'd into inputFocused); the script needs the same,
+// (PortSmokeMouseEnabled is OR'd into inputFocused); the script and the console
+// (MP_CONSOLE press/stick) need the same,
 // since a press that is thrown away before it is read cannot test anything.
 bool PortSmokeScriptedInput() {
   static const bool enabled = std::getenv("MP_SMOKE_SCRIPT") != nullptr ||
                               std::getenv("MP_SMOKE_FRONTEND") != nullptr ||
                               std::getenv("MP_SMOKE_DASH") != nullptr ||
+                              std::getenv("MP_CONSOLE") != nullptr ||
                               PortSmokeContinueEnabled();
   return enabled;
 }

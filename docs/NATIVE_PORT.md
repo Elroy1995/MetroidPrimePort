@@ -578,7 +578,8 @@ a temporary directory instead of mounting.
   keep up. Not saved to the settings file. On exit the port prints
   `MP run: <frames> frames in <s> s`.
 - `MP_CONSOLE=<port>` (smoke builds only, `1` = 4777, POSIX only): a debug
-  command console on 127.0.0.1. `tools/mpcon.py` is the client: one-shot
+  command console on 127.0.0.1. Its `press`/`stick` input is read even when
+  the window has no keyboard focus. `tools/mpcon.py` is the client: one-shot
   (`tools/mpcon.py 'warp chozo 492CBF4A' 'objs eyeball' shot`), a script
   (`-f file`) or an interactive prompt with no arguments. Commands: `status`,
   `worlds`, `areas`, `warp <world id or name prefix> [mrea]` (replies once the
