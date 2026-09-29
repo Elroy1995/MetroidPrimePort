@@ -5,6 +5,7 @@
 #include "port_debug.h"
 #include "port_apclient.h"
 #include "port_controls.h"
+#include "port_gci.h"
 #include "port_livesplit.h"
 #include "port_prompts.h"
 #include "port_mouse.h"
@@ -34,7 +35,10 @@
 #include <imgui_internal.h>
 #include <musyx/port_voices.h>
 
+#include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_iostream.h>
+#include <SDL3/SDL_misc.h>
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_gamepad.h>
@@ -59,6 +63,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -1926,6 +1931,339 @@ void DrawCutscenesTab() {
   }
 }
 
+// Memory card transfer (port_gci.h). The work runs on the main thread; the
+// file dialogs answer on another one, so their picks wait in sCardPicks.
+namespace {
+enum CardPick { kCardPick_Import, kCardPick_ExportFolder, kCardPick_ExportFile };
+std::mutex sCardPickMutex;
+std::vector<std::pair<CardPick, std::string>> sCardPicks;
+std::atomic<bool> sCardDialogOpen{false};
+std::string sCardStatus;
+// Android has no folder dialog: each file gets its own save dialog, in turn.
+std::vector<std::filesystem::path> sCardExportQueue;
+
+// The last path segment, for messages; content:// URIs keep theirs escaped.
+std::string CardDisplayName(const std::string& path) {
+  std::string name = path.substr(path.find_last_of("/\\") + 1);
+  const size_t escaped = name.rfind("%2F");
+  return escaped == std::string::npos ? name : name.substr(escaped + 3);
+}
+
+std::string CardImportTarget(std::filesystem::path& folder) {
+  if (sStateManager != nullptr) {
+    return "Return to the title screen to import: saving the game in progress would "
+           "overwrite the imported save.";
+  }
+  folder = PortGci::MountedCardFolder();
+  if (folder.empty()) {
+    return "The memory card is not a GCI folder, so there is nowhere to import to.";
+  }
+  return {};
+}
+
+std::string CardExportSource(std::filesystem::path& folder) {
+  folder = PortGci::MountedCardFolder();
+  if (folder.empty()) {
+    return "The memory card is not a GCI folder.";
+  }
+  if (PortGci::GameFiles(folder).empty()) {
+    return "There are no saves on the memory card yet.";
+  }
+  return {};
+}
+
+std::string FinishCardImport(const PortGci::Report& report) {
+  if (report.copied > 0) {
+    // The save screen remounts the card and reads it again once it is idle.
+    PortGci::MarkCardChanged();
+  }
+  return report.Summary("Imported");
+}
+} // namespace
+
+std::string CardList() {
+  const std::filesystem::path folder = PortGci::MountedCardFolder();
+  if (folder.empty()) {
+    return "The memory card is not a GCI folder.";
+  }
+  std::string text = "card: " + PortGci::PathString(folder);
+  for (const std::filesystem::path& file : PortGci::GameFiles(folder)) {
+    std::error_code ec;
+    text += "\n  " + PortGci::PathString(file.filename()) + " (" +
+            std::to_string(std::filesystem::file_size(file, ec)) + " bytes)";
+  }
+  const PortGci::DolphinCard dolphin = PortGci::FindDolphinCard();
+  if (!dolphin.gciFolder.empty()) {
+    text += "\ndolphin folder: " + PortGci::PathString(dolphin.gciFolder);
+  }
+  if (!dolphin.rawImage.empty()) {
+    text += "\ndolphin raw: " + PortGci::PathString(dolphin.rawImage);
+  }
+  return text;
+}
+
+std::string CardImport(const std::string& path) {
+  std::filesystem::path folder;
+  const std::string refusal = CardImportTarget(folder);
+  if (!refusal.empty()) {
+    return refusal;
+  }
+  std::error_code ec;
+  if (std::filesystem::is_directory(PortGci::PathFromString(path), ec)) {
+    return FinishCardImport(PortGci::ImportFolder(PortGci::PathFromString(path), folder));
+  }
+  // SDL reads content:// URIs from the Android picker as well as paths.
+  size_t size = 0;
+  void* data = SDL_LoadFile(path.c_str(), &size);
+  if (data == nullptr) {
+    return "Could not read " + CardDisplayName(path) + ": " + SDL_GetError();
+  }
+  const uint8_t* bytes = static_cast< const uint8_t* >(data);
+  const std::vector<uint8_t> contents(bytes, bytes + size);
+  SDL_free(data);
+  return FinishCardImport(
+      PortGci::ImportBytes(contents, CardDisplayName(path), folder, folder.parent_path()));
+}
+
+std::string CardExport(const std::string& dest) {
+  std::filesystem::path folder;
+  const std::string refusal = CardExportSource(folder);
+  if (!refusal.empty()) {
+    return refusal;
+  }
+  const std::filesystem::path target = PortGci::PathFromString(dest);
+  if (target.extension() == ".raw") {
+    return PortGci::ExportRaw(folder, target).Summary("Exported");
+  }
+  return PortGci::ExportFolder(folder, target).Summary("Exported");
+}
+
+std::string CardImportDolphin() {
+  std::filesystem::path folder;
+  const std::string refusal = CardImportTarget(folder);
+  if (!refusal.empty()) {
+    return refusal;
+  }
+  const PortGci::DolphinCard dolphin = PortGci::FindDolphinCard();
+  if (!dolphin.Found()) {
+    return "No Dolphin memory card found (GC/USA/Card A or GC/MemoryCardA.USA.raw in "
+           "Dolphin's user folder).";
+  }
+  // Dolphin uses one or the other, per its settings: try the one written last.
+  std::error_code ec;
+  std::filesystem::file_time_type folderTime = std::filesystem::file_time_type::min();
+  for (const std::filesystem::path& file : PortGci::GameFiles(dolphin.gciFolder)) {
+    folderTime = std::max(folderTime, std::filesystem::last_write_time(file, ec));
+  }
+  const auto rawTime = dolphin.rawImage.empty() ? std::filesystem::file_time_type::min()
+                                                : std::filesystem::last_write_time(dolphin.rawImage, ec);
+  std::vector<std::filesystem::path> sources;
+  if (!dolphin.gciFolder.empty() && folderTime != std::filesystem::file_time_type::min()) {
+    sources.push_back(dolphin.gciFolder);
+  }
+  if (!dolphin.rawImage.empty()) {
+    sources.insert(rawTime > folderTime ? sources.begin() : sources.end(), dolphin.rawImage);
+  }
+  for (const std::filesystem::path& source : sources) {
+    const PortGci::Report report = source == dolphin.gciFolder
+                                       ? PortGci::ImportFolder(source, folder)
+                                       : PortGci::ImportFile(source, folder, folder.parent_path());
+    if (report.copied > 0 || !report.errors.empty()) {
+      return "From " + PortGci::PathString(source) + ": " + FinishCardImport(report);
+    }
+  }
+  return "Dolphin's memory card holds no Metroid Prime saves.";
+}
+
+std::string CardExportDolphin() {
+  std::filesystem::path folder;
+  const std::string refusal = CardExportSource(folder);
+  if (!refusal.empty()) {
+    return refusal;
+  }
+  const PortGci::DolphinCard dolphin = PortGci::FindDolphinCard();
+  if (!dolphin.Found()) {
+    return "No Dolphin memory card found (GC/USA/Card A or GC/MemoryCardA.USA.raw in "
+           "Dolphin's user folder); start a GameCube game in Dolphin once to create it.";
+  }
+  std::string text;
+  if (!dolphin.gciFolder.empty()) {
+    text = "To " + PortGci::PathString(dolphin.gciFolder) + ": " +
+           PortGci::ExportFolder(folder, dolphin.gciFolder).Summary("Exported");
+  }
+  if (!dolphin.rawImage.empty()) {
+    text += std::string(text.empty() ? "" : "\n") + "To " +
+            PortGci::PathString(dolphin.rawImage) + ": " +
+            PortGci::ExportRaw(folder, dolphin.rawImage).Summary("Exported");
+  }
+  return text;
+}
+
+namespace {
+void OpenCardDialog(CardPick pick) {
+  int windowCount = 0;
+  SDL_Window** windows = SDL_GetWindows(&windowCount);
+  SDL_Window* window = windows != nullptr && windowCount > 0 ? windows[0] : nullptr;
+  SDL_free(windows);
+  const SDL_DialogFileCallback done = [](void* userdata, const char* const* files, int) {
+    std::lock_guard lock(sCardPickMutex);
+    const CardPick kind = static_cast< CardPick >(reinterpret_cast< intptr_t >(userdata));
+    // An empty path means cancelled (or a failed dialog, with the error set).
+    sCardPicks.emplace_back(kind, files != nullptr && files[0] != nullptr ? files[0] : "");
+    if (files == nullptr) {
+      sCardPicks.back().second = std::string("\x01") + SDL_GetError();
+    }
+    sCardDialogOpen = false;
+  };
+  void* userdata = reinterpret_cast< void* >(static_cast< intptr_t >(pick));
+  sCardDialogOpen = true;
+  switch (pick) {
+  case kCardPick_Import: {
+#if defined(__ANDROID__)
+    // Android turns filters into MIME types, and .gci has none.
+    SDL_ShowOpenFileDialog(done, userdata, window, nullptr, 0, nullptr, false);
+#else
+    static const SDL_DialogFileFilter filters[] = {
+        {"GameCube saves (.gci, card images)", "gci;raw;mcp;sav"},
+        {"All files", "*"},
+    };
+    SDL_ShowOpenFileDialog(done, userdata, window, filters, 2, nullptr, false);
+#endif
+    break;
+  }
+  case kCardPick_ExportFolder:
+    SDL_ShowOpenFolderDialog(done, userdata, window, nullptr, false);
+    break;
+  case kCardPick_ExportFile: {
+    static std::string location;
+    location = sCardExportQueue.empty()
+                   ? std::string()
+                   : PortGci::PathString(sCardExportQueue.front().filename());
+    SDL_ShowSaveFileDialog(done, userdata, window, nullptr, 0,
+                           location.empty() ? nullptr : location.c_str());
+    break;
+  }
+  }
+}
+
+std::string CardSaveTo(const std::filesystem::path& source, const std::string& target) {
+  std::ifstream in(source, std::ios::binary);
+  const std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  SDL_IOStream* out = in ? SDL_IOFromFile(target.c_str(), "wb") : nullptr;
+  bool ok = out != nullptr && SDL_WriteIO(out, bytes.data(), bytes.size()) == bytes.size();
+  if (out != nullptr) {
+    ok = SDL_CloseIO(out) && ok;
+  }
+  return ok ? "Saved " + PortGci::PathString(source.filename()) + " as " + CardDisplayName(target) + "."
+            : "Could not save " + PortGci::PathString(source.filename()) + ": " + SDL_GetError();
+}
+
+// Runs every frame, overlay open or not, so a dialog's answer is acted on.
+void ProcessCardPicks() {
+  std::vector<std::pair<CardPick, std::string>> picks;
+  {
+    std::lock_guard lock(sCardPickMutex);
+    picks.swap(sCardPicks);
+  }
+  for (const auto& [kind, path] : picks) {
+    if (path.empty() || path[0] == '\x01') {
+      if (path.size() > 1) {
+        sCardStatus = "The file dialog failed: " + path.substr(1);
+      }
+      sCardExportQueue.clear();
+      continue;
+    }
+    switch (kind) {
+    case kCardPick_Import:
+      sCardStatus = CardImport(path);
+      break;
+    case kCardPick_ExportFolder:
+      sCardStatus = CardExport(path);
+      break;
+    case kCardPick_ExportFile:
+      if (!sCardExportQueue.empty()) {
+        sCardStatus = CardSaveTo(sCardExportQueue.front(), path);
+        sCardExportQueue.erase(sCardExportQueue.begin());
+        if (!sCardExportQueue.empty()) {
+          OpenCardDialog(kCardPick_ExportFile);
+        }
+      }
+      break;
+    }
+  }
+}
+
+void DrawMemoryCard() {
+  ImGui::SeparatorText("Memory card");
+  const std::filesystem::path folder = PortGci::MountedCardFolder();
+  if (folder.empty()) {
+    ImGui::TextDisabled("The card is not a GCI folder; nothing to import to or export.");
+    return;
+  }
+  const size_t saves = PortGci::GameFiles(folder).size();
+  ImGui::TextWrapped("Card: %s (%zu save file%s)", PortGci::PathString(folder).c_str(), saves,
+                     saves == 1 ? "" : "s");
+  const bool inGame = sStateManager != nullptr;
+  const bool busy = sCardDialogOpen;
+  ImGui::BeginDisabled(inGame || busy);
+  if (ImGui::Button("Import file...")) {
+    OpenCardDialog(kCardPick_Import);
+  }
+#if !defined(__ANDROID__)
+  ImGui::SameLine();
+  if (ImGui::Button("Import from Dolphin")) {
+    sCardStatus = CardImportDolphin();
+  }
+#endif
+  ImGui::EndDisabled();
+  ImGui::BeginDisabled(busy || saves == 0);
+#if defined(__ANDROID__)
+  if (ImGui::Button("Export...")) {
+    sCardExportQueue = PortGci::GameFiles(folder);
+    OpenCardDialog(kCardPick_ExportFile);
+  }
+#else
+  if (ImGui::Button("Export to folder...")) {
+    OpenCardDialog(kCardPick_ExportFolder);
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Export to Dolphin")) {
+    sCardStatus = CardExportDolphin();
+  }
+#endif
+  ImGui::EndDisabled();
+#if !defined(__ANDROID__)
+  ImGui::SameLine();
+  if (ImGui::Button("Open card folder")) {
+    // "Card A" has a space, which a URL can't carry as is.
+    const std::string path = PortGci::PathString(folder);
+    std::string url = path.front() == '/' ? "file://" : "file:///"; // C:\ on Windows
+    for (const char c : path) {
+      url += c == ' ' ? std::string("%20") : std::string(1, c == '\\' ? '/' : c);
+    }
+    SDL_OpenURL(url.c_str());
+  }
+#endif
+  if (inGame) {
+    ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), "Return to the title screen to import.");
+  }
+  if (!sCardStatus.empty()) {
+    ImGui::TextWrapped("%s", sCardStatus.c_str());
+  }
+  ImGui::TextWrapped(
+#if defined(__ANDROID__)
+      "Imports Dolphin .gci saves or a whole card image (.raw). Export saves each file "
+      "in turn; keep Dolphin's names (01-GM8E-MetroidPrime A.gci) for its GCI folder. "
+#else
+      "Imports Dolphin .gci saves or a whole card image (.raw). Dolphin's card is looked "
+      "for in its user folder (GC/USA/Card A, GC/MemoryCardA.USA.raw); close Dolphin "
+      "before exporting to it, and a raw card is backed up to .raw.bak first. "
+#endif
+      "An import replaces the card's saves; the old ones move to _replaced in the card "
+      "folder.");
+}
+} // namespace
+
 void DrawExtrasTab() {
   ImGui::SeparatorText("Unlocks");
   bool hardMode = sUnlockHardMode;
@@ -2003,6 +2341,8 @@ void DrawExtrasTab() {
       "16834), and compare against Game Time. A new file resets and starts the timer; "
       "the game time follows the in-game time; it splits on each new upgrade or "
       "artifact (not expansions or energy tanks) when enabled, and on the final blow.");
+
+  DrawMemoryCard();
 }
 
 #if defined(__ANDROID__)
@@ -3081,6 +3421,7 @@ void DrawUI() {
     aurora_enable_vsync(sVsyncEnabled && !sTurbo);
   }
   DrawSpeedrunTimer();
+  ProcessCardPicks();
   if (!sVisible) {
     sTouchScroll = TouchScroll{};
     return;

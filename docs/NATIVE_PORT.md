@@ -548,6 +548,27 @@ a temporary directory instead of mounting.
   The logic is `PortLiveSplit::Tracker` (`platform/include/port_livesplit.h`,
   covered by `port_livesplit_tests`). Console: `timer <0|1>`, `igt <seconds>`,
   `livesplit <0|1> | addr <host:port> | send <command> | status`.
+- Memory card transfer (F1 > Extras > Memory card): moves saves between the
+  port's card (a GCI folder, `USA/Card A` in the pref folder, or the current
+  Archipelago game's) and Dolphin's. Import takes a Dolphin `.gci`, a whole raw
+  card image (`MemoryCardA.USA.raw`, every Metroid Prime file in it) or, from the
+  console, a folder of `.gci` files; only GM8E/01 files are taken. The game
+  alternates between `MetroidPrime A` and `B` and loads the newer, so an import
+  replaces the whole set: the card's existing game files move to `_replaced/`
+  (timestamped, never deleted). Imports are refused in game, since the next save
+  would overwrite them; at the front end the file select re-reads the card once
+  it is idle (`PortGci::RemountIfChanged` in `CSaveGameScreen::Update`). Export
+  copies the game files to a folder, or into a raw image when the path ends in
+  `.raw` (backed up to `.raw.bak` first; game files not being exported are
+  removed from it). Desktop also has Import from / Export to Dolphin, which finds
+  Dolphin's user folder (`XDG_DATA_HOME`/`~/.local/share/dolphin-emu`, the
+  Flatpak's, `~/.dolphin-emu`; the registry's UserConfigPath or Documents on
+  Windows) and uses its `GC/USA/Card A` folder and/or `GC/MemoryCardA.USA.raw`
+  (import takes the more recently written one); close Dolphin before exporting.
+  Android uses the system pickers: one save dialog per file on export, so keep
+  Dolphin's names (`01-GM8E-MetroidPrime A.gci`). Logic in
+  `platform/port_gci.cpp`, covered by `port_gci_tests`. Console:
+  `gci list | import <path> | export <dir or .raw> | dolphin import|export`.
 - Unlocks (F1 > Extras, persisted as `unlock_hard_mode`, `unlock_fusion_suit`,
   `unlock_galleries`, all off by default): offer what finishing the game
   unlocks without finishing it. Hard mode adds Normal/Hard to a new file; the
@@ -624,7 +645,7 @@ a temporary directory instead of mounting.
   the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
   gyro rates in rad/s), `shot` (prints the bmp path),
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

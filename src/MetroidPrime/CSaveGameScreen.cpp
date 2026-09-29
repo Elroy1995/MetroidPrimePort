@@ -14,6 +14,7 @@
 #ifdef TARGET_PC
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "port_apclient.h"
+#include "port_gci.h"
 #endif
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
@@ -342,9 +343,11 @@ CIOWin::EMessageReturn CSaveGameScreen::Update(float dt) {
   // Port: each Archipelago game has a card of its own. The front end moves to
   // the one the client wants, or back to the default card, whenever the card is
   // idle. In game the card never changes: the game would take it for another.
+  // Saves imported from Dolphin (port_gci.h) are picked up the same way.
   if (x0_saveCtx == kSC_FrontEnd && !x90_needsDriverReset && x80_iowRet == CIOWin::kMR_Normal &&
       !CMemoryCardDriver::IsCardBusy(x6c_cardDriver->GetState()) &&
-      CMemoryCardSys::PortSwitchCard(PortAp::SaveCardDirectory().c_str())) {
+      (CMemoryCardSys::PortSwitchCard(PortAp::SaveCardDirectory().c_str()) ||
+       PortGci::RemountIfChanged())) {
     ResetCardDriver();
     return CIOWin::kMR_Normal;
   }

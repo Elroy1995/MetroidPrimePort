@@ -104,6 +104,7 @@ set(MP_PORT_SOURCES
     platform/port_apclient.cpp
     platform/port_json.cpp
     platform/port_livesplit.cpp
+    platform/port_gci.cpp
     platform/port_ws.cpp
     platform/touch_pad.cpp
     platform/glibc_compat.c
@@ -115,7 +116,8 @@ else()
     add_executable(metroid_prime_port ${MP_PORT_SOURCES})
 endif()
 if(WIN32)
-    target_link_libraries(metroid_prime_port PRIVATE ws2_32)
+    # shell32/ole32/advapi32: finding Dolphin's folder (port_gci.cpp).
+    target_link_libraries(metroid_prime_port PRIVATE ws2_32 shell32 ole32 advapi32)
     # UTF-8 as the ANSI code page, so the UTF-8 paths SDL returns work with the
     # narrow file APIs; see the manifest. CMake merges it into the linker's own.
     target_sources(metroid_prime_port PRIVATE packaging/metroid_prime_port.manifest)
@@ -323,6 +325,15 @@ if(MP_BUILD_TESTS)
     add_test(NAME port_card_tests COMMAND port_card_tests "${CMAKE_CURRENT_BINARY_DIR}/card-test-data")
     set_tests_properties(port_card_tests PROPERTIES TIMEOUT 15 LABELS port)
     aurora_copy_runtime_dlls(port_card_tests)
+    add_executable(port_gci_tests tests/port_gci.cpp platform/port_gci.cpp)
+    target_include_directories(port_gci_tests PRIVATE platform/include)
+    target_link_libraries(port_gci_tests PRIVATE aurora::card)
+    if(WIN32)
+        target_link_libraries(port_gci_tests PRIVATE shell32 ole32 advapi32)
+    endif()
+    add_test(NAME port_gci_tests COMMAND port_gci_tests)
+    set_tests_properties(port_gci_tests PROPERTIES TIMEOUT 15 LABELS port)
+    aurora_copy_runtime_dlls(port_gci_tests)
     foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_musyx_tests port_disc_tests port_mouse_tests port_touch_pad_tests port_json_tests port_ws_tests port_hold_toggle_tests port_livesplit_tests port_timing_tests port_audio_math_tests)
         add_test(NAME ${test} COMMAND ${test})
         set_tests_properties(${test} PROPERTIES TIMEOUT 15 LABELS port)

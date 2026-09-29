@@ -164,6 +164,16 @@ bool LiveSplit();
 void SetLiveSplit(bool enabled);
 std::string LiveSplitAddress();
 void SetLiveSplitAddress(const std::string& address);
+// Memory card transfer to and from Dolphin (port_gci.h), for the overlay and
+// the console. Each returns a message for the user. Imports are refused in
+// game; `path` may be a .gci, a raw card image, a folder of .gci files or an
+// Android content:// URI, and an export to a path ending in .raw writes a card
+// image instead of .gci files.
+std::string CardList();
+std::string CardImport(const std::string& path);
+std::string CardExport(const std::string& dest);
+std::string CardImportDolphin();
+std::string CardExportDolphin();
 // Fast Morph, as in Metroid Prime 4: short morph/unmorph transitions that keep
 // momentum (capped at walking speed when unmorphing on the ground).
 bool FastMorph();

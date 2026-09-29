@@ -407,6 +407,7 @@ void CmdHelp() {
   Out("helmet <0|1>, visorfx <0|1> show (1) or hide (0) the helmet and visor effects");
   Out("timer <0|1>                on-screen in-game time; igt <seconds> sets the play time");
   Out("livesplit <0|1> | addr <host:port> | send <command> | status   LiveSplit Server client");
+  Out("gci list | import <path> | export <dir or .raw> | dolphin import|export   memory card transfer");
   Out("ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]   Archipelago, as the F1 Session tab does");
   Out("quit                       exit the game");
   Out("ids: hex editor id (002900A1), u<index> unique id, or an exact debug name");
@@ -864,6 +865,33 @@ void RunFrame() {
     const std::string error = PortLiveSplit::LastError();
     if (!error.empty()) {
       Out("last error: %s", error.c_str());
+    }
+    Finish();
+  } else if (name == "gci") {
+    const std::string action = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "list";
+    // The rest of the line is one path, spaces and all.
+    std::string path;
+    for (size_t i = 2; i < sCmd.args.size(); ++i) {
+      path += (i > 2 ? " " : "") + sCmd.args[i];
+    }
+    const std::string sub = sCmd.args.size() > 2 ? Lower(sCmd.args[2]) : "";
+    std::string text;
+    if (action == "list") {
+      text = PortDebug::CardList();
+    } else if (action == "import" && !path.empty()) {
+      text = PortDebug::CardImport(path);
+    } else if (action == "export" && !path.empty()) {
+      text = PortDebug::CardExport(path);
+    } else if (action == "dolphin" && sCmd.args.size() == 3 && (sub == "import" || sub == "export")) {
+      text = sub == "import" ? PortDebug::CardImportDolphin() : PortDebug::CardExportDolphin();
+    } else {
+      return Finish("usage: gci list | import <path> | export <dir or .raw> | dolphin import|export");
+    }
+    size_t start = 0;
+    while (start <= text.size()) {
+      const size_t end = std::min(text.find('\n', start), text.size());
+      Out("%s", text.substr(start, end - start).c_str());
+      start = end + 1;
     }
     Finish();
   } else if (name == "ap") {
