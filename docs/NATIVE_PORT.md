@@ -522,6 +522,17 @@ a temporary directory instead of mounting.
   textures, which retail asks for as GX_ANISO_4. Both apply at the start of the
   next frame without a restart; an MSAA change rebuilds the framebuffers and
   pipelines, so it hitches once. Console: `msaa <1|4>`, `aniso <1..16>`.
+- HUD scale (Render tab and pause Options > Display, persisted as `hud_scale`,
+  50-100 percent, default 100): shrinks the combat HUD, radar, beam and visor
+  menus and the minimap toward the screen centre, each frame as a whole so the
+  pieces stay on the visor frame. The helmet is not scaled. The minimap eases
+  back to full size as it opens into the map screen.
+- Hide helmet and hide visor effects (Render tab and pause Options > Visor,
+  persisted as `hide_helmet` and `hide_visor_effects`, off by default): the
+  first drops the helmet frame (the dome and the lights at the bottom); the
+  second drops the faceplate decoration, Samus's face reflection and the
+  on-visor billboard effects (rain, splashes, steam). Console:
+  `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>` (0 hides).
 - Unlocks (F1 > Extras, persisted as `unlock_hard_mode`, `unlock_fusion_suit`,
   `unlock_galleries`, all off by default): offer what finishing the game
   unlocks without finishing it. Hard mode adds Normal/Hard to a new file; the
@@ -598,7 +609,7 @@ a temporary directory instead of mounting.
   the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
   gyro rates in rad/s), `shot` (prints the bmp path),
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

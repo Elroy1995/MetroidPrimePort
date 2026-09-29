@@ -402,6 +402,8 @@ void CmdHelp() {
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
   Out("fov <45..90>               first-person vertical FOV, as the Options row does");
   Out("msaa <1|4>, aniso <1..16>  anti-aliasing and anisotropic filtering, applied next frame");
+  Out("hudscale <50..100>         HUD scale in percent, as the Options row does");
+  Out("helmet <0|1>, visorfx <0|1> show (1) or hide (0) the helmet and visor effects");
   Out("ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]   Archipelago, as the F1 Session tab does");
   Out("quit                       exit the game");
   Out("ids: hex editor id (002900A1), u<index> unique id, or an exact debug name");
@@ -804,6 +806,24 @@ void RunFrame() {
       PortDebug::SetMsaa(value);
     } else {
       PortDebug::SetAnisotropy(value);
+    }
+    Finish();
+  } else if (name == "hudscale") {
+    const int value = sCmd.args.size() > 1 ? std::atoi(sCmd.args[1].c_str()) : 0;
+    if (value < PortDebug::kHudScaleMin || value > PortDebug::kHudScaleMax) {
+      return Finish("usage: hudscale <50..100>");
+    }
+    PortDebug::SetHudScale(value);
+    Finish();
+  } else if (name == "helmet" || name == "visorfx") {
+    const std::string value = sCmd.args.size() > 1 ? sCmd.args[1] : "";
+    if (value != "0" && value != "1") {
+      return Finish("usage: helmet <0|1> | visorfx <0|1>");
+    }
+    if (name == "helmet") {
+      PortDebug::SetHideHelmet(value == "0");
+    } else {
+      PortDebug::SetHideVisorEffects(value == "0");
     }
     Finish();
   } else if (name == "ap") {

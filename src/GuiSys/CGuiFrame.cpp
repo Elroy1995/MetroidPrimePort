@@ -109,6 +109,9 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
   // Widescreen HUD: spread compact elements rigidly, but stretch screen-spanning
   // decoration about the view axis. Restore each transform after drawing.
   const float spread = x14_camera->GetAspectSpread();
+  // HUD scale shrinks the whole frame about the view centre (see CGuiCamera).
+  const float hudScale = x14_camera->GetHudScale();
+  const CTransform4f hudScaleXf = x14_camera->GetHudScaleTransform();
   // Perspective elements move in their own plane and turn in place to face the
   // eye, preserving their depth ordering. Orthographic elements only slide.
   const bool aboutEye = spread != 1.f && x14_camera->GetAspectSpreadAboutEye();
@@ -136,19 +139,19 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
     if (!widget->GetIsVisible()) {
       continue;
     }
-    if (spread == 1.f) {
+    if (spread == 1.f && hudScale == 1.f) {
       widget->Draw(parms);
       continue;
     }
     const CTransform4f world = widget->GetWorldTransform();
     CVector3f anchor = world.GetTranslation();
-    if (aboutEye) {
-      if (widget->GetWidgetTypeID() == 'MODL' && widget->GetIsFinishedLoading()) {
-        const auto& token = static_cast< const CGuiModel* >(widget)->GetModel();
-        const CModel* model = token ? token->GetObject() : nullptr;
-        if (model) {
-          // Some icons have their position baked into vertices while their widget
-          // origin is at the frame centre (notably threat and missile icons).
+    if (widget->GetWidgetTypeID() == 'MODL' && widget->GetIsFinishedLoading()) {
+      const auto& token = static_cast< const CGuiModel* >(widget)->GetModel();
+      const CModel* model = token ? token->GetObject() : nullptr;
+      if (model) {
+        // Some icons have their position baked into vertices while their widget
+        // origin is at the frame centre (notably threat and missile icons).
+        if (aboutEye) {
           anchor = world * model->GetBoundingBox().GetCenterPoint();
           // SetViewPointMatrix takes a camera-to-world transform; camera-local
           // +Y is forward (the graphics layer maps it to projection-space -Z).
@@ -164,7 +167,7 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
               bounds.GetMaxPoint().GetX() > quarterWidth) {
             // This intentionally widens vertical strokes too, but leaves view Y
             // and depth untouched; compact widgets retain the rigid path below.
-            widget->DrawWithWorldTransform(parms, stretch * world);
+            widget->DrawWithWorldTransform(parms, hudScaleXf * stretch * world);
             continue;
           }
         }
@@ -173,7 +176,7 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
     // Never round-trip through SetO2WTransform: its quick parent inverse assumes
     // an orthonormal basis. Even slightly non-unit HUD-lag rotations would then
     // compound scale errors every draw, eventually shrinking the helmet lights.
-    widget->DrawWithWorldTransform(parms, x14_camera->GetAspectSpreadTransform(anchor) * world);
+    widget->DrawWithWorldTransform(parms, x14_camera->GetHudTransform(anchor) * world);
   }
   CGraphics::SetCullMode(kCM_Front);
 #if VERSION >= VERSION_GM8P_00 && VERSION != VERSION_GM8E_02

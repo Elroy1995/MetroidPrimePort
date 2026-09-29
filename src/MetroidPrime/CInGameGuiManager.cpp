@@ -39,6 +39,8 @@
 #include "Kyoto/Math/CMatrix3f.hpp"
 #include "rstl/algorithm.hpp"
 
+#include "port_debug.h"
+
 // Profiling labels retained in the retail string pool.
 static const char* const skGuiElementNames[] = {
     "FaceplateDecoration", "     FaceReflection", "        PlayerVisor", "                Hud",
@@ -305,7 +307,8 @@ void CInGameGuiManager::Draw(const CStateManager& mgr) const {
     CGraphics::SetDepthRange(1.f / 64.f, 1.f / 32.f);
     const bool scanVisor = mgr.GetPlayerState()->GetActiveVisor(mgr) == CPlayerState::kPV_Scan;
     if (drawVisor && x1f0_enablePlayerVisor != 0) {
-      if (mgr.GetPlayer()->GetCameraState() == CPlayer::kCS_FirstPerson) {
+      if (mgr.GetPlayer()->GetCameraState() == CPlayer::kCS_FirstPerson &&
+          !PortDebug::HideVisorEffects()) {
         x20_faceplateDecor.Draw(mgr);
       }
       const bool targetingEnabled = x1e4_enableTargetingManager != 0;
@@ -313,7 +316,9 @@ void CInGameGuiManager::Draw(const CStateManager& mgr) const {
           scanVisor && targetingEnabled ? &x34_samusHud->GetTargetingManager() : nullptr;
       x30_playerVisor->Draw(mgr, targeting);
     }
-    x40_samusReflection->Draw(mgr);
+    if (!PortDebug::HideVisorEffects()) {
+      x40_samusReflection->Draw(mgr);
+    }
     if (drawVisor) {
       const bool hudVis = x1ec_hudVisMode != CTweakGui::kHud_Zero;
       const bool targeting = x1e4_enableTargetingManager != 0;
@@ -354,11 +359,18 @@ void CInGameGuiManager::Draw(const CStateManager& mgr) const {
     CGraphics::SetDepthRange(0.f, 1.f / 512.f);
     // The minimap and its depth mask are drawn outside CGuiFrame. Spread both
     // with one rigid transform so the contents stay registered with the mask.
-    // Its interpolated anchor approaches the view axis on entering the map screen.
-    const CTransform4f mapSpread =
-        x38_autoMapper->IsFullyOutOfMiniMapState()
-            ? CTransform4f::Identity()
-            : camera->GetAspectSpreadTransform(x18c_mapCamXf.GetTranslation());
+    // Its interpolated anchor approaches the view axis on entering the map screen,
+    // and the HUD scale fades out on the way.
+    CTransform4f mapSpread = CTransform4f::Identity();
+    if (!x38_autoMapper->IsFullyOutOfMiniMapState()) {
+      float mapT = 0.f;
+      if (!x38_autoMapper->IsFullyInMiniMapState()) {
+        mapT = x38_autoMapper->GetNextState() != CAutoMapper::kAMS_MiniMap
+                   ? x38_autoMapper->GetInterp()
+                   : 1.f - x38_autoMapper->GetInterp();
+      }
+      mapSpread = camera->GetHudTransform(x18c_mapCamXf.GetTranslation(), 1.f - mapT);
+    }
     x148_model_automapper->SetIsVisible(true);
     x148_model_automapper->DrawWithWorldTransform(
         CGuiWidgetDrawParms(1.f, CVector3f::Zero()),
@@ -372,7 +384,7 @@ void CInGameGuiManager::Draw(const CStateManager& mgr) const {
   if (!preDrawBlur) {
     x3c_pauseScreenBlur->Draw(mgr);
   }
-  if (x1e0_helmetVisMode != 0u && notInCine) {
+  if (x1e0_helmetVisMode != 0u && notInCine && !PortDebug::HideHelmet()) {
     const float cameraOffset = x48_pauseScreen.null() ? 0.f : x48_pauseScreen->GetHelmetCamYOff();
     x34_samusHud->DrawHelmet(mgr, cameraOffset);
   }

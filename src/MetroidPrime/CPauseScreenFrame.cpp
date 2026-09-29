@@ -192,6 +192,9 @@ enum EPortOption {
   kPO_StickyCharge,
   kPO_Fov,
   kPO_AntiAliasing,
+  kPO_HudScale,
+  kPO_HideHelmet,
+  kPO_HideVisorEffects,
 };
 #define PORT_OPTION(opt) static_cast< EGameOption >(opt)
 
@@ -213,6 +216,8 @@ static const SGameOption skPortVisorOptions[] = {
     {kGO_HUDLag, 23, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {kGO_HintSystem, 24, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_SkipCutscenes), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_HideHelmet), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_HideVisorEffects), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static const SGameOption skPortDisplayOptions[] = {
@@ -222,6 +227,7 @@ static const SGameOption skPortDisplayOptions[] = {
     {kGO_ScreenStretch, 28, -10.f, 10.f, 1.f, kOT_Float},
     {PORT_OPTION(kPO_AspectRatio), -1, 0.f, 2.f, 1.f, kOT_TripleEnum},
     {PORT_OPTION(kPO_WidescreenHUD), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_HudScale), -1, PortDebug::kHudScaleMin, PortDebug::kHudScaleMax, 5.f, kOT_Float},
     {PORT_OPTION(kPO_Fov), -1, PortDebug::kFovMin, PortDebug::kFovMax, 1.f, kOT_Float},
     {PORT_OPTION(kPO_AntiAliasing), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
@@ -238,7 +244,7 @@ static const SGameOption skPortControllerOptions[] = {
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static SOptionCategory skPauseOptions[] = {
-    {6, skPortVisorOptions},      {9, skPortDisplayOptions}, {4, skSoundOptions},
+    {8, skPortVisorOptions},      {10, skPortDisplayOptions}, {4, skSoundOptions},
     {9, skPortControllerOptions}, {0, nullptr},
 };
 
@@ -266,6 +272,12 @@ static const wchar_t* PortOptionTitle(EGameOption option) {
     return L"Field of View";
   case kPO_AntiAliasing:
     return L"Anti-Aliasing";
+  case kPO_HudScale:
+    return L"HUD Scale";
+  case kPO_HideHelmet:
+    return L"Hide Helmet";
+  case kPO_HideVisorEffects:
+    return L"Hide Visor Effects";
   default:
     return L"";
   }
@@ -293,6 +305,12 @@ static int GetPortOption(EGameOption option) {
     return static_cast< int >(PortDebug::FirstPersonFov() + 0.5f);
   case kPO_AntiAliasing:
     return PortDebug::Msaa() > 1 ? 1 : 0;
+  case kPO_HudScale:
+    return PortDebug::HudScale();
+  case kPO_HideHelmet:
+    return PortDebug::HideHelmet() ? 1 : 0;
+  case kPO_HideVisorEffects:
+    return PortDebug::HideVisorEffects() ? 1 : 0;
   default:
     return 0;
   }
@@ -331,6 +349,15 @@ static void SetPortOption(EGameOption option, int value) {
     break;
   case kPO_AntiAliasing:
     PortDebug::SetMsaa(value > 0 ? 4 : 1);
+    break;
+  case kPO_HudScale:
+    PortDebug::SetHudScale(value);
+    break;
+  case kPO_HideHelmet:
+    PortDebug::SetHideHelmet(value > 0);
+    break;
+  case kPO_HideVisorEffects:
+    PortDebug::SetHideVisorEffects(value > 0);
     break;
   default:
     break;
@@ -489,12 +516,15 @@ void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, in
       switch (category) {
       case 0:
         PortDebug::SetSkipCutscenes(false);
+        PortDebug::SetHideHelmet(false);
+        PortDebug::SetHideVisorEffects(false);
         break;
       case 1:
         PortDebug::SetAspectMode(PortDebug::kAspect_4_3);
         PortDebug::SetHudWide(false);
         PortDebug::SetFirstPersonFov(PortDebug::kFovRetail);
         PortDebug::SetMsaa(1);
+        PortDebug::SetHudScale(PortDebug::kHudScaleMax);
         break;
       case 3:
         PortDebug::SetTwinStick(false);

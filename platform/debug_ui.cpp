@@ -99,6 +99,9 @@ bool sOverlayWindowed = false; // desktop: the old floating tabbed window
 float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
 bool sHudWide = false;
+int sHudScale = PortDebug::kHudScaleMax;
+bool sHideHelmet = false;
+bool sHideVisorEffects = false;
 bool sMouseAim = false;
 bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
@@ -254,6 +257,15 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "hud_wide") {
     sHudWide = ParseBool(value);
+  } else if (key == "hud_scale") {
+    const int s = std::atoi(value.c_str());
+    if (s >= PortDebug::kHudScaleMin && s <= PortDebug::kHudScaleMax) {
+      sHudScale = s;
+    }
+  } else if (key == "hide_helmet") {
+    sHideHelmet = ParseBool(value);
+  } else if (key == "hide_visor_effects") {
+    sHideVisorEffects = ParseBool(value);
   } else if (key == "unlock_hard_mode") {
     sUnlockHardMode = ParseBool(value);
   } else if (key == "unlock_fusion_suit") {
@@ -402,6 +414,9 @@ void SaveSettings() {
   file << "# Environment variables (MP_*) override these for a single run.\n";
   file << "aspect=" << aspect << '\n';
   file << "hud_wide=" << (sHudWide ? 1 : 0) << '\n';
+  file << "hud_scale=" << sHudScale << '\n';
+  file << "hide_helmet=" << (sHideHelmet ? 1 : 0) << '\n';
+  file << "hide_visor_effects=" << (sHideVisorEffects ? 1 : 0) << '\n';
   file << "fov=" << sFirstPersonFov << '\n';
   file << "msaa=" << sMsaa << '\n';
   file << "anisotropy=" << sAnisotropy << '\n';
@@ -760,6 +775,39 @@ bool HudWide() {
 void SetHudWide(bool enabled) {
   EnsureInitialized();
   sHudWide = enabled;
+  MarkDirty();
+}
+
+int HudScale() {
+  EnsureInitialized();
+  return sHudScale;
+}
+
+void SetHudScale(int percent) {
+  EnsureInitialized();
+  sHudScale = std::clamp(percent, kHudScaleMin, kHudScaleMax);
+  MarkDirty();
+}
+
+bool HideHelmet() {
+  EnsureInitialized();
+  return sHideHelmet;
+}
+
+void SetHideHelmet(bool enabled) {
+  EnsureInitialized();
+  sHideHelmet = enabled;
+  MarkDirty();
+}
+
+bool HideVisorEffects() {
+  EnsureInitialized();
+  return sHideVisorEffects;
+}
+
+void SetHideVisorEffects(bool enabled) {
+  EnsureInitialized();
+  sHideVisorEffects = enabled;
   MarkDirty();
 }
 
@@ -1913,6 +1961,22 @@ void DrawRenderTab() {
   ImGui::TextWrapped(
       "Keeps each HUD element's shape but spreads its position so edge elements "
       "reach the wide corners. Only affects the in-game HUD, not menus.");
+
+  int hudScale = sHudScale;
+  if (ImGui::SliderInt("HUD scale", &hudScale, kHudScaleMin, kHudScaleMax, "%d%%")) {
+    SetHudScale(hudScale);
+  }
+  bool hideHelmet = sHideHelmet;
+  if (ImGui::Checkbox("Hide helmet", &hideHelmet)) {
+    SetHideHelmet(hideHelmet);
+  }
+  ImGui::SameLine();
+  bool hideVisorFx = sHideVisorEffects;
+  if (ImGui::Checkbox("Hide visor effects", &hideVisorFx)) {
+    SetHideVisorEffects(hideVisorFx);
+  }
+  ImGui::TextWrapped(
+      "Visor effects: steam, Samus's reflection, and rain, water and goo on the visor.");
 
   float fov = sFirstPersonFov;
   if (ImGui::SliderFloat("Field of view", &fov, kFovMin, kFovMax, "%.0f deg")) {

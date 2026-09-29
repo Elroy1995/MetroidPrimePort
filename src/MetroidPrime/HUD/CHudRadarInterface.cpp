@@ -86,6 +86,8 @@ void CHudRadarInterface::Draw(const CStateManager& mgr, float alpha) const {
   CTransform4f postTranslate(CTransform4f::Identity());
   x44_camera->Draw(CGuiWidgetDrawParms(0.f, CVector3f::Zero()));
   postTranslate = x40_BaseWidget_RadarStuff->GetWorldTransform();
+  // Follow the scope widget through the widescreen spread and HUD scale.
+  postTranslate = x44_camera->GetHudTransform(postTranslate.GetTranslation()) * postTranslate;
   gpRender->SetModelMatrix(postTranslate);
   gpRender->SetBlendMode_AdditiveAlpha();
   texture->Load(GX_TEXMAP0, CTexture::kCM_Repeat);

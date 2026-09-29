@@ -77,6 +77,7 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
   mSpread = 1.f;
   mSpreadCenterX = 0.f;
   mSpreadAboutEye = false;
+  mHudScale = mHudScaled ? static_cast< float >(PortDebug::HudScale()) / 100.f : 1.f;
 
   if (xb8_projection == kProjection_Perspective) {
     const float authored = mCameraParms.perspective.aspect;
@@ -88,6 +89,8 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
       mSpread = renderAspect / authored;
       mSpreadAboutEye = true;
     }
+    mCenterX = 0.f;
+    mCenterZ = 0.f;
     CGraphics::SetPerspective(mCameraParms.perspective.fov, aspect,
                               mCameraParms.perspective.znear, mCameraParms.perspective.zfar);
   } else {
@@ -106,6 +109,8 @@ void CGuiCamera::Draw(const CGuiWidgetDrawParms& parms) const {
         mSpreadCenterX = center;
       }
     }
+    mCenterX = 0.5f * (left + right);
+    mCenterZ = 0.5f * (top + bottom);
     CGraphics::SetOrtho(left, right, top, bottom, mCameraParms.orthographic.znear,
                         mCameraParms.orthographic.zfar);
   }
@@ -135,6 +140,23 @@ CTransform4f CGuiCamera::GetAspectSpreadTransform(const CVector3f& worldAnchor) 
   const CVector3f offset((mSpread - 1.f) * eyePos.GetX(), 0.f, 0.f);
   return mSpreadView * CTransform4f::Translate(eyePos + offset) *
          CTransform4f::RotateZ(CRelAngle(-delta)) * CTransform4f::Translate(-eyePos) * invView;
+}
+
+CTransform4f CGuiCamera::GetHudScaleTransform(float scaleWeight) const {
+  const float scale = 1.f + (mHudScale - 1.f) * scaleWeight;
+  if (scale == 1.f) {
+    return CTransform4f::Identity();
+  }
+  // Scale view X and Z about the view centre, keeping depth: a screen-space
+  // scale for perspective and orthographic cameras alike. The whole frame
+  // shrinks together, so widgets stay registered with the visor frame mesh.
+  const CVector3f center(mCenterX, 0.f, mCenterZ);
+  return mSpreadView * CTransform4f::Translate(center) * CTransform4f::Scale(scale, 1.f, scale) *
+         CTransform4f::Translate(-center) * mSpreadView.GetInverse();
+}
+
+CTransform4f CGuiCamera::GetHudTransform(const CVector3f& worldAnchor, float scaleWeight) const {
+  return GetHudScaleTransform(scaleWeight) * GetAspectSpreadTransform(worldAnchor);
 }
 
 CVector3f CGuiCamera::ConvertToScreenSpace(const CVector3f& point) const {

@@ -47,6 +47,17 @@ public:
   bool GetAspectSpreadAboutEye() const { return mSpreadAboutEye; }
   const CTransform4f& GetAspectSpreadView() const { return mSpreadView; }
   CTransform4f GetAspectSpreadTransform(const CVector3f& worldAnchor) const;
+  // HUD scale: frames that opt in shrink about the view centre
+  // (see PortDebug::HudScale).
+  void SetHudScaled(bool scaled) { mHudScaled = scaled; }
+  // 1.0 when inactive; computed by the last Draw.
+  float GetHudScale() const { return mHudScale; }
+  // The HUD scale alone, as a world-space transform; scaleWeight fades it
+  // (0 = identity).
+  CTransform4f GetHudScaleTransform(float scaleWeight = 1.f) const;
+  // The widescreen spread followed by the HUD scale for a widget anchored at
+  // worldAnchor.
+  CTransform4f GetHudTransform(const CVector3f& worldAnchor, float scaleWeight = 1.f) const;
 
   FourCC GetWidgetTypeID() const override { return 'CAMR'; }
 
@@ -64,6 +75,11 @@ public:
   mutable bool mSpreadAboutEye = false;
   // Camera-to-world transform used by the last Draw.
   mutable CTransform4f mSpreadView = CTransform4f::Identity();
+  bool mHudScaled = false;
+  mutable float mHudScale = 1.f;
+  // The view centre drawn by the last Draw (orthographic cameras may be offset).
+  mutable float mCenterX = 0.f;
+  mutable float mCenterZ = 0.f;
 };
 
 #endif // _CGUICAMERA

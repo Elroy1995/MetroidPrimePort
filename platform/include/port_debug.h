@@ -99,6 +99,20 @@ inline int FourThreeWidth(int width, int height) {
 // the aspect-matched in-game HUD frames.
 bool HudWide();
 void SetHudWide(bool enabled);
+// HUD scale in percent (50-100). Compact HUD elements shrink toward the nearest
+// screen edge or corner; screen-spanning decoration keeps its size. Only the
+// combat/scan/ball HUD frames and the minimap, not the helmet or menus.
+const int kHudScaleMin = 50;
+const int kHudScaleMax = 100;
+int HudScale();
+void SetHudScale(int percent);
+// Hide the helmet frame (the visor rim and its glow and lights).
+bool HideHelmet();
+void SetHideHelmet(bool enabled);
+// Hide visor effects: steam, Samus's face reflection, and rain, water, goo and
+// hit splashes on the visor.
+bool HideVisorEffects();
+void SetHideVisorEffects(bool enabled);
 // First-person vertical field of view in degrees (retail 55). The arm cannon is
 // drawn at the retail FOV whatever this is, like a view-model FOV.
 const float kFovRetail = 55.f;

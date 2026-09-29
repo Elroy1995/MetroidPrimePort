@@ -490,6 +490,7 @@ CSamusHud::CSamusHud(const CStateManager& mgr)
   }
   if (x274_loadedFrmeBaseHud->GetFrameCamera() != nullptr) {
     x274_loadedFrmeBaseHud->GetFrameCamera()->SetAspectMatch(true);
+    x274_loadedFrmeBaseHud->GetFrameCamera()->SetHudScaled(true);
   }
   x2a0_helmetIntf = rs_new CHudHelmetInterface(*x264_loadedFrmeHelmet);
   x2a4_visorMenu = rs_new CHudVisorBeamMenu(*x274_loadedFrmeBaseHud, CHudVisorBeamMenu::kVBM_Visor,
@@ -1190,6 +1191,7 @@ void CSamusHud::UpdateStateTransition(float dt, const CStateManager& mgr) {
         x288_loadedSelectedHud = x278_selectedHud->GetObject();
         if (x288_loadedSelectedHud->GetFrameCamera() != nullptr) {
           x288_loadedSelectedHud->GetFrameCamera()->SetAspectMatch(true);
+          x288_loadedSelectedHud->GetFrameCamera()->SetHudScaled(true);
         }
         x2b8_curState = x2bc_nextState;
         x2bc_nextState = x2c0_setState;
