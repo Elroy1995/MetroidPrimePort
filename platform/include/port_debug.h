@@ -164,6 +164,12 @@ bool LiveSplit();
 void SetLiveSplit(bool enabled);
 std::string LiveSplitAddress();
 void SetLiveSplitAddress(const std::string& address);
+// Discord Rich Presence (port_discord.h), connecting while enabled and an
+// application id (digits only) is set.
+bool DiscordPresence();
+void SetDiscordPresence(bool enabled);
+std::string DiscordAppId();
+void SetDiscordAppId(const std::string& id);
 // Mods folder (port_mods.h): all mods on or off, and the folder names turned
 // off, '/'-separated. Both take effect on the next launch.
 bool ModsEnabled();

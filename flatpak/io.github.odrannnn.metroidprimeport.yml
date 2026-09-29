@@ -21,6 +21,10 @@ finish-args:
   - --socket=fallback-x11
   # The disc image lives wherever the user keeps it; it is read-only to us.
   - --filesystem=home:ro
+  # Discord Rich Presence (off by default): the native and Flatpak Discord
+  # clients' IPC sockets.
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/app/com.discordapp.Discord:create
 
 modules:
   - name: metroid-prime-port

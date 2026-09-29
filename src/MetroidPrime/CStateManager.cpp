@@ -2,6 +2,7 @@
 #include "MetroidPrime/CStateManager.hpp"
 #include "port_apclient.h"
 #include "port_debug.h"
+#include "port_discord.h"
 #include "port_hold_toggle.h"
 #include "port_livesplit.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
@@ -72,6 +73,9 @@
 #include "Kyoto/CARAMManager.hpp"
 #include "Kyoto/CARAMToken.hpp"
 #include "Kyoto/CSimplePool.hpp"
+#include "Kyoto/TToken.hpp"
+#include "Kyoto/Text/CStringTable.hpp"
+#include "MetroidPrime/CGameArea.hpp"
 #include "Kyoto/CTimeProvider.hpp"
 #include "Kyoto/Graphics/CGraphicsPalette.hpp"
 #include "Kyoto/Graphics/CLight.hpp"
@@ -139,6 +143,86 @@ static char init = 0;
 } // namespace
 
 static s64 sPreRenderStepTime;
+
+// Port: Discord Rich Presence. The world and area name tables load through the
+// resource pool only while presence is on, and go with the manager, since a
+// world change retires the PAKs they come from.
+namespace {
+struct SPortPresenceNames {
+  CAssetId worldId;
+  CAssetId areaId;
+  rstl::optional_object< TCachedToken< CStringTable > > world;
+  rstl::optional_object< TCachedToken< CStringTable > > area;
+  std::string worldName;
+  std::string areaName;
+  int wait;
+  int loading; // checks spent waiting for a name to load
+
+  SPortPresenceNames()
+  : worldId(kInvalidAssetId), areaId(kInvalidAssetId), wait(0), loading(0) {}
+};
+SPortPresenceNames* sPortPresence = nullptr;
+
+// Starts loading `id` into `token` when it changed; fills `name` once loaded.
+// Returns false while it is still loading.
+bool PortPresenceName(CAssetId id, CAssetId& loadedId,
+                      rstl::optional_object< TCachedToken< CStringTable > >& token,
+                      std::string& name) {
+  if (id != loadedId) {
+    loadedId = id;
+    name.clear();
+    token = rstl::optional_object< TCachedToken< CStringTable > >();
+    if (id != kInvalidAssetId) {
+      token = TCachedToken< CStringTable >(gpSimplePool->GetObj(SObjectTag('STRG', id)));
+      token->Lock();
+    }
+  }
+  if (!token) {
+    return true;
+  }
+  if (!token->TryCache()) {
+    return false;
+  }
+  if (name.empty() && token->GetObject()->GetStringCount() > 0) {
+    name = PortDiscord::GameTextToUtf8(token->GetObject()->GetString(0));
+  }
+  return true;
+}
+
+void PortPresenceTick(const CStateManager& mgr) {
+  if (!PortDiscord::Enabled()) {
+    return;
+  }
+  if (sPortPresence == nullptr) {
+    sPortPresence = new SPortPresenceNames;
+  }
+  SPortPresenceNames& names = *sPortPresence;
+  // Names and percentages change rarely; twice a second is plenty.
+  if (names.wait-- > 0) {
+    return;
+  }
+  names.wait = 30;
+  const CWorld* world = mgr.GetWorld();
+  if (world == nullptr) {
+    return;
+  }
+  const TAreaId areaId = world->IGetCurrentAreaId();
+  const IGameArea* area = areaId != kInvalidAreaId ? world->IGetAreaAlways(areaId) : nullptr;
+  const bool worldReady =
+      PortPresenceName(world->IGetStringTableAssetId(), names.worldId, names.world, names.worldName);
+  const bool areaReady =
+      PortPresenceName(area != nullptr ? area->IGetStringTableAssetId() : kInvalidAssetId,
+                       names.areaId, names.area, names.areaName);
+  // Keep the last line up while a new name loads, but not forever.
+  if (!(worldReady && areaReady) && names.loading++ < 10) {
+    return;
+  }
+  names.loading = 0;
+  const CPlayerState& state = *mgr.GetPlayerState();
+  PortDiscord::SetGame(names.worldName, names.areaName, state.CalculateItemCollectionPercentage(),
+                       gpGameState->GetHardMode());
+}
+} // namespace
 
 class CLightPredicate {
 public:
@@ -406,6 +490,8 @@ CStateManager::~CStateManager() {
   if (gpGameState != nullptr) {
     PortLiveSplit::GameSessionEnd(gpGameState->GetTotalPlayTime());
   }
+  delete sPortPresence;
+  sPortPresence = nullptr;
   CMemory::OffsetFakeStatics(
       -(x808_objectLists.size() * sizeof(CObjectList) + 0x11c)); // TODO what is this 11c?
   x88c_rumbleManager->HardStopAll();
@@ -1199,6 +1285,7 @@ void CStateManager::Update(float dt) {
       capacities[i] = x8b8_playerState->GetItemCapacity(static_cast< CPlayerState::EItemType >(i));
     }
     PortLiveSplit::GameTick(gpGameState->GetTotalPlayTime(), capacities);
+    PortPresenceTick(*this);
 
     CCameraFilterPass* filt = xb84_camFilterPasses.data();
     CCameraBlurPass* blur = xd14_camBlurPasses.data();

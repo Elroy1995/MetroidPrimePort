@@ -6,6 +6,7 @@
 // tick, where every object pointer is live; the rest run once per frame.
 #include "port_apclient.h"
 #include "port_debug.h"
+#include "port_discord.h"
 #include "port_livesplit.h"
 #include "port_smoke.h"
 #include "MetroidPrime/CActor.hpp"
@@ -407,6 +408,7 @@ void CmdHelp() {
   Out("helmet <0|1>, visorfx <0|1> show (1) or hide (0) the helmet and visor effects");
   Out("timer <0|1>                on-screen in-game time; igt <seconds> sets the play time");
   Out("livesplit <0|1> | addr <host:port> | send <command> | status   LiveSplit Server client");
+  Out("discord <0|1> | id <application id> | status   Discord Rich Presence");
   Out("gci list | import <path> | export <dir or .raw> | dolphin import|export   memory card transfer");
   Out("ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]   Archipelago, as the F1 Session tab does");
   Out("quit                       exit the game");
@@ -863,6 +865,24 @@ void RunFrame() {
     Out("livesplit %s %s %s", PortDebug::LiveSplit() ? "on" : "off",
         PortDebug::LiveSplitAddress().c_str(), kStatusNames[PortLiveSplit::Status()]);
     const std::string error = PortLiveSplit::LastError();
+    if (!error.empty()) {
+      Out("last error: %s", error.c_str());
+    }
+    Finish();
+  } else if (name == "discord") {
+    const std::string action = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";
+    if (action == "0" || action == "1") {
+      PortDebug::SetDiscordPresence(action == "1");
+    } else if (action == "id" && sCmd.args.size() == 3) {
+      PortDebug::SetDiscordAppId(sCmd.args[2]);
+    } else if (action != "status") {
+      return Finish("usage: discord <0|1> | id <application id> | status");
+    }
+    static const char* const kStatusNames[] = {"off", "connecting", "connected", "failed"};
+    Out("discord %s id=%s %s", PortDebug::DiscordPresence() ? "on" : "off",
+        PortDebug::DiscordAppId().c_str(), kStatusNames[PortDiscord::Status()]);
+    Out("showing: %s", PortDiscord::CurrentText().c_str());
+    const std::string error = PortDiscord::LastError();
     if (!error.empty()) {
       Out("last error: %s", error.c_str());
     }

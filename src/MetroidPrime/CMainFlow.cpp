@@ -13,6 +13,8 @@
 
 #include "MetroidPrime/CMain.hpp"
 
+#include "port_discord.h"
+
 CMainFlow::CMainFlow() : CIOWin(rstl::string_l("MainFlow")), x14_gameState(kCFS_Unspecified) {}
 
 CIOWin::EMessageReturn CMainFlow::OnMessage(const CArchitectureMessage& msg,
@@ -102,6 +104,7 @@ void CMainFlow::SetGameState(EClientFlowStates state, CArchitectureQueue& queue)
     break;
   }
   case kCFS_FrontEnd: {
+    PortDiscord::SetMenu();
     if (gpMain->GetRestartMode() == CMain::kRM_None) {
       break;
     }

@@ -577,6 +577,19 @@ a temporary directory instead of mounting.
   The logic is `PortLiveSplit::Tracker` (`platform/include/port_livesplit.h`,
   covered by `port_livesplit_tests`). Console: `timer <0|1>`, `igt <seconds>`,
   `livesplit <0|1> | addr <host:port> | send <command> | status`.
+- Discord Rich Presence (F1 > Extras > Discord; desktop only, off by default).
+  Shows the current room as the activity, with the world, the item percentage
+  and Hard mode below it, and time elapsed since the game was loaded; the menus
+  show "In the menus". It talks to the local Discord client's IPC socket
+  (`$XDG_RUNTIME_DIR/discord-ipc-N`, also the Flatpak and Snap Discord paths;
+  `\\?\pipe\discord-ipc-N` on Windows), retries every 5 s and sends at most one
+  update per 4 s. There is no built-in application id: create an application at
+  https://discord.com/developers/applications (its name is what Discord shows
+  as "Playing ..."), optionally upload a Rich Presence art asset named `logo`,
+  and paste its Application ID into the overlay (`discord_app_id`). The Flatpak
+  build is granted both socket locations. Turning it off clears the activity.
+  The wire format is in `platform/include/port_discord.h` (covered by
+  `port_discord_tests`). Console: `discord <0|1> | id <application id> | status`.
 - Memory card transfer (F1 > Extras > Memory card): moves saves between the
   port's card (a GCI folder, `USA/Card A` in the pref folder, or the current
   Archipelago game's) and Dolphin's. Import takes a Dolphin `.gci`, a whole raw
@@ -674,7 +687,7 @@ a temporary directory instead of mounting.
   the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
   gyro rates in rad/s), `shot` (prints the bmp path),
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

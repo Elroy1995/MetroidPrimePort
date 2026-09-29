@@ -7,6 +7,7 @@
 #include "port_controls.h"
 #include "port_gci.h"
 #include "port_mods.h"
+#include "port_discord.h"
 #include "port_livesplit.h"
 #include "port_prompts.h"
 #include "port_mouse.h"
@@ -129,6 +130,8 @@ bool sSpeedrunTimer = false;
 bool sLiveSplit = false;
 std::string sLiveSplitAddress = "127.0.0.1:16834";
 bool sLiveSplitSplitUpgrades = true;
+bool sDiscord = false;
+std::string sDiscordAppId;
 // Mods folder (port_mods.h): read at startup only.
 bool sModsEnabled = true;
 std::string sModsDisabled;
@@ -251,6 +254,19 @@ void ApplyLiveSplit() {
   PortLiveSplit::Configure(sLiveSplit, sLiveSplitAddress, sLiveSplitSplitUpgrades);
 }
 
+// Discord application ids are decimal snowflakes; a pasted id may carry spaces.
+std::string DigitsOnly(const std::string& text) {
+  std::string out;
+  for (const char c : text) {
+    if (c >= '0' && c <= '9') {
+      out += c;
+    }
+  }
+  return out;
+}
+
+void ApplyDiscord() { PortDiscord::Configure(sDiscord, sDiscordAppId); }
+
 void ApplySetting(const std::string& key, const std::string& value) {
   if (key == "frame_limit") {
     sFrameLimitEnabled = ParseBool(value);
@@ -351,6 +367,10 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "livesplit_split_upgrades") {
     sLiveSplitSplitUpgrades = ParseBool(value);
+  } else if (key == "discord") {
+    sDiscord = ParseBool(value);
+  } else if (key == "discord_app_id") {
+    sDiscordAppId = DigitsOnly(value);
   } else if (key == "mods") {
     sModsEnabled = ParseBool(value);
   } else if (key == "mods_disabled") {
@@ -459,6 +479,8 @@ void SaveSettings() {
   file << "livesplit=" << (sLiveSplit ? 1 : 0) << '\n';
   file << "livesplit_address=" << sLiveSplitAddress << '\n';
   file << "livesplit_split_upgrades=" << (sLiveSplitSplitUpgrades ? 1 : 0) << '\n';
+  file << "discord=" << (sDiscord ? 1 : 0) << '\n';
+  file << "discord_app_id=" << sDiscordAppId << '\n';
   file << "mods=" << (sModsEnabled ? 1 : 0) << '\n';
   file << "mods_disabled=" << sModsDisabled << '\n';
   file << "vsync=" << (sVsyncEnabled ? 1 : 0) << '\n';
@@ -643,6 +665,7 @@ void EnsureInitialized() {
 
   std::atexit(SaveSettings);
   ApplyLiveSplit();
+  ApplyDiscord();
 }
 } // namespace
 
@@ -983,6 +1006,30 @@ void SetLiveSplit(bool enabled) {
   EnsureInitialized();
   sLiveSplit = enabled;
   ApplyLiveSplit();
+  MarkDirty();
+}
+
+bool DiscordPresence() {
+  EnsureInitialized();
+  return sDiscord;
+}
+
+void SetDiscordPresence(bool enabled) {
+  EnsureInitialized();
+  sDiscord = enabled;
+  ApplyDiscord();
+  MarkDirty();
+}
+
+std::string DiscordAppId() {
+  EnsureInitialized();
+  return sDiscordAppId;
+}
+
+void SetDiscordAppId(const std::string& id) {
+  EnsureInitialized();
+  sDiscordAppId = DigitsOnly(id);
+  ApplyDiscord();
   MarkDirty();
 }
 
@@ -2429,6 +2476,49 @@ void DrawExtrasTab() {
       "16834), and compare against Game Time. A new file resets and starts the timer; "
       "the game time follows the in-game time; it splits on each new upgrade or "
       "artifact (not expansions or energy tanks) when enabled, and on the final blow.");
+
+  if (PortDiscord::Supported()) {
+    ImGui::SeparatorText("Discord");
+    bool discord = sDiscord;
+    if (ImGui::Checkbox("Rich Presence", &discord)) {
+      SetDiscordPresence(discord);
+    }
+    ImGui::SameLine();
+    switch (PortDiscord::Status()) {
+    case PortDiscord::kStatus_Off:
+      ImGui::TextDisabled("off");
+      break;
+    case PortDiscord::kStatus_Connecting:
+      ImGui::TextUnformatted("connecting...");
+      break;
+    case PortDiscord::kStatus_Connected:
+      ImGui::TextColored(ImVec4(0.4f, 1.f, 0.4f, 1.f), "connected");
+      break;
+    case PortDiscord::kStatus_Failed:
+      ImGui::TextColored(ImVec4(1.f, 0.5f, 0.3f, 1.f), "%s", PortDiscord::LastError().c_str());
+      break;
+    }
+    static char appId[64];
+    static bool editingAppId = false;
+    if (!editingAppId) {
+      std::snprintf(appId, sizeof(appId), "%s", sDiscordAppId.c_str());
+    }
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.f);
+    ImGui::InputText("Application id", appId, sizeof(appId));
+    editingAppId = ImGui::IsItemActive();
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+      SetDiscordAppId(appId);
+    }
+    if (sDiscord) {
+      ImGui::TextDisabled("Showing: %s", PortDiscord::CurrentText().c_str());
+    }
+    ImGui::TextWrapped(
+        "Shows the world, room and item percentage on your Discord profile while the "
+        "Discord app runs. It needs a Discord application: create one at "
+        "discord.com/developers/applications (its name is what Discord shows as the "
+        "game), add an art asset named \"logo\" under Rich Presence, and paste its "
+        "Application ID here.");
+  }
 
   DrawMemoryCard();
   DrawMods();
