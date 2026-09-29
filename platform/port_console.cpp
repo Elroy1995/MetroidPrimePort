@@ -9,6 +9,7 @@
 #include "port_discord.h"
 #include "port_livesplit.h"
 #include "port_smoke.h"
+#include "port_tracker.h"
 #include "MetroidPrime/CActor.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
@@ -406,6 +407,8 @@ void CmdHelp() {
   Out("msaa <1|4>, aniso <1..16>  anti-aliasing and anisotropic filtering, applied next frame");
   Out("hudscale <50..100>         HUD scale in percent, as the Options row does");
   Out("helmet <0|1>, visorfx <0|1> show (1) or hide (0) the helmet and visor effects");
+  Out("reveal <0|1>               reveal every world's map, as the Options row does");
+  Out("tracker                    items, scans and rooms visited (the F1 Tracker tab)");
   Out("timer <0|1>                on-screen in-game time; igt <seconds> sets the play time");
   Out("livesplit <0|1> | addr <host:port> | send <command> | status   LiveSplit Server client");
   Out("discord <0|1> | id <application id> | status   Discord Rich Presence");
@@ -690,7 +693,8 @@ void CmdWarp(CStateManager& mgr) {
 
 bool IsTickCommand(const std::string& name) {
   static const char* const names[] = {"status", "areas", "objs", "obj", "send", "give",
-                                      "take", "items", "heal", "tp", "face", "look", "warp"};
+                                      "take", "items", "heal", "tp", "face", "look", "warp",
+                                      "tracker"};
   for (const char* n : names) {
     if (name == n) {
       return true;
@@ -726,6 +730,9 @@ void RunTick(CStateManager& mgr) {
     CmdLook(mgr);
   } else if (name == "warp") {
     CmdWarp(mgr);
+  } else if (name == "tracker") {
+    sCmd.out += PortTracker::Text(PortTracker::Collect(mgr)) + "\n";
+    Finish();
   }
 }
 
@@ -831,6 +838,13 @@ void RunFrame() {
     } else {
       PortDebug::SetHideVisorEffects(value == "0");
     }
+    Finish();
+  } else if (name == "reveal") {
+    const std::string value = sCmd.args.size() > 1 ? sCmd.args[1] : "";
+    if (value != "0" && value != "1") {
+      return Finish("usage: reveal <0|1>   reveal every world's map");
+    }
+    PortDebug::SetRevealMap(value == "1");
     Finish();
   } else if (name == "timer") {
     const std::string value = sCmd.args.size() > 1 ? sCmd.args[1] : "";

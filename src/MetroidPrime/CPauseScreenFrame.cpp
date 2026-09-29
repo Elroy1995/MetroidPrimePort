@@ -195,6 +195,7 @@ enum EPortOption {
   kPO_HideHelmet,
   kPO_HideVisorEffects,
   kPO_SpeedrunTimer,
+  kPO_RevealMap,
 };
 #define PORT_OPTION(opt) static_cast< EGameOption >(opt)
 
@@ -217,6 +218,7 @@ static const SGameOption skPortVisorOptions[] = {
     {kGO_HintSystem, 24, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_HideHelmet), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_HideVisorEffects), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_RevealMap), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static const SGameOption skPortDisplayOptions[] = {
@@ -244,7 +246,7 @@ static const SGameOption skPortControllerOptions[] = {
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static SOptionCategory skPauseOptions[] = {
-    {7, skPortVisorOptions},      {11, skPortDisplayOptions}, {4, skSoundOptions},
+    {8, skPortVisorOptions},      {11, skPortDisplayOptions}, {4, skSoundOptions},
     {9, skPortControllerOptions}, {0, nullptr},
 };
 
@@ -278,6 +280,8 @@ static const wchar_t* PortOptionTitle(EGameOption option) {
     return L"Hide Visor Effects";
   case kPO_SpeedrunTimer:
     return L"In-Game Timer";
+  case kPO_RevealMap:
+    return L"Reveal Map";
   default:
     return L"";
   }
@@ -311,6 +315,8 @@ static int GetPortOption(EGameOption option) {
     return PortDebug::HideVisorEffects() ? 1 : 0;
   case kPO_SpeedrunTimer:
     return PortDebug::SpeedrunTimer() ? 1 : 0;
+  case kPO_RevealMap:
+    return PortDebug::RevealMap() ? 1 : 0;
   default:
     return 0;
   }
@@ -358,6 +364,9 @@ static void SetPortOption(EGameOption option, int value) {
     break;
   case kPO_HideVisorEffects:
     PortDebug::SetHideVisorEffects(value > 0);
+    break;
+  case kPO_RevealMap:
+    PortDebug::SetRevealMap(value > 0);
     break;
   default:
     break;
@@ -517,6 +526,7 @@ void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, in
       case 0:
         PortDebug::SetHideHelmet(false);
         PortDebug::SetHideVisorEffects(false);
+        PortDebug::SetRevealMap(false);
         break;
       case 1:
         PortDebug::SetAspectMode(PortDebug::kAspect_4_3);

@@ -7,6 +7,10 @@
 #include "Kyoto/Streams/COutputStream.hpp"
 #include "rstl/algorithm.hpp"
 
+#ifdef TARGET_PC
+#include "port_debug.h"
+#endif
+
 CMapWorldInfo::CMapWorldInfo() : mMapStationUsed(false) {}
 
 CMapWorldInfo::CMapWorldInfo(CInputStream& in, const CWorldSaveGameInfo& saveInfo,
@@ -105,6 +109,12 @@ bool CMapWorldInfo::IsWorldVisible(const TAreaId areaId) const {
   if (mMapStationUsed) {
     return true;
   }
+#ifdef TARGET_PC
+  // Reveal Map acts like every world's map station, without saving it.
+  if (PortDebug::RevealMap()) {
+    return true;
+  }
+#endif
   return IsMapped(areaId);
 }
 
@@ -129,6 +139,12 @@ bool CMapWorldInfo::IsAreaVisible(const TAreaId areaId) const {
 }
 
 bool CMapWorldInfo::IsAnythingSet() {
+#ifdef TARGET_PC
+  // Lists every world on the universe map too.
+  if (PortDebug::RevealMap()) {
+    return true;
+  }
+#endif
   for (int i = 0; i < mVisitedAreas.size(); ++i) {
     if (mVisitedAreas[i]) {
       return true;

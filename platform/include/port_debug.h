@@ -114,6 +114,10 @@ void SetHideHelmet(bool enabled);
 // hit splashes on the visor.
 bool HideVisorEffects();
 void SetHideVisorEffects(bool enabled);
+// Every world's map shows as if its map station had been used; the save is
+// not changed.
+bool RevealMap();
+void SetRevealMap(bool enabled);
 // First-person vertical field of view in degrees (retail 55). The arm cannon is
 // drawn at the retail FOV whatever this is, like a view-model FOV.
 const float kFovRetail = 55.f;

@@ -10,6 +10,7 @@
 #include "port_discord.h"
 #include "port_livesplit.h"
 #include "port_prompts.h"
+#include "port_tracker.h"
 #include "port_mouse.h"
 #include "port_textures.h"
 #include "port_build_info.h"
@@ -110,6 +111,7 @@ bool sHudWide = false;
 int sHudScale = PortDebug::kHudScaleMax;
 bool sHideHelmet = false;
 bool sHideVisorEffects = false;
+bool sRevealMap = false;
 bool sMouseAim = false;
 bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
@@ -300,6 +302,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sHideHelmet = ParseBool(value);
   } else if (key == "hide_visor_effects") {
     sHideVisorEffects = ParseBool(value);
+  } else if (key == "reveal_map") {
+    sRevealMap = ParseBool(value);
   } else if (key == "unlock_hard_mode") {
     sUnlockHardMode = ParseBool(value);
   } else if (key == "unlock_fusion_suit") {
@@ -462,6 +466,7 @@ void SaveSettings() {
   file << "hud_scale=" << sHudScale << '\n';
   file << "hide_helmet=" << (sHideHelmet ? 1 : 0) << '\n';
   file << "hide_visor_effects=" << (sHideVisorEffects ? 1 : 0) << '\n';
+  file << "reveal_map=" << (sRevealMap ? 1 : 0) << '\n';
   file << "fov=" << sFirstPersonFov << '\n';
   file << "msaa=" << sMsaa << '\n';
   file << "anisotropy=" << sAnisotropy << '\n';
@@ -858,6 +863,17 @@ bool HideVisorEffects() {
 void SetHideVisorEffects(bool enabled) {
   EnsureInitialized();
   sHideVisorEffects = enabled;
+  MarkDirty();
+}
+
+bool RevealMap() {
+  EnsureInitialized();
+  return sRevealMap;
+}
+
+void SetRevealMap(bool enabled) {
+  EnsureInitialized();
+  sRevealMap = enabled;
   MarkDirty();
 }
 
@@ -1484,7 +1500,13 @@ bool ConsumeResetRequest() {
   return requested;
 }
 
-void SetStateManager(CStateManager* mgr) { sStateManager = mgr; }
+void SetStateManager(CStateManager* mgr) {
+  if (mgr != sStateManager) {
+    // The tracker's room names come from the old world's PAKs.
+    PortTracker::Reset();
+  }
+  sStateManager = mgr;
+}
 CStateManager* StateManager() { return sStateManager; }
 void RequestTeleport(int areaId) { sPendingTeleport = areaId; }
 bool ConsumeTeleportRequest(int& areaId) {
@@ -3275,6 +3297,92 @@ void DrawDebugTab() {
   }
 }
 
+void DrawTrackerCount(const char* label, const PortTracker::Count& count) {
+  const bool done = count.total > 0 && count.have >= count.total;
+  if (done) {
+    ImGui::TextColored(ImVec4(0.4f, 1.f, 0.4f, 1.f), "%s %d/%d", label, count.have, count.total);
+  } else {
+    ImGui::Text("%s %d/%d", label, count.have, count.total);
+  }
+}
+
+void DrawTrackerTab() {
+  bool reveal = sRevealMap;
+  if (ImGui::Checkbox("Reveal map", &reveal)) {
+    SetRevealMap(reveal);
+  }
+  ImGui::TextWrapped(
+      "Shows every world's map as if its map station had been used, and lists every "
+      "world on the star map. Rooms a map station leaves hidden stay hidden, and rooms "
+      "you haven't entered keep the unexplored colour. The save is not changed.");
+
+  CStateManager* mgr = sStateManager;
+  if (mgr == nullptr || mgr->GetPlayerState() == nullptr) {
+    ImGui::TextDisabled("Progress shows once a game is running.");
+    return;
+  }
+  const PortTracker::Summary summary = PortTracker::Collect(*mgr);
+
+  ImGui::SeparatorText("Items");
+  ImGui::Text("Item collection %d%%", summary.itemPercent);
+  DrawTrackerCount("Energy Tanks", summary.energyTanks);
+  ImGui::SameLine(ImGui::GetFontSize() * 12.f);
+  DrawTrackerCount("Missile expansions", summary.missileExpansions);
+  DrawTrackerCount("Power Bombs", summary.powerBombExpansions);
+  ImGui::SameLine(ImGui::GetFontSize() * 12.f);
+  DrawTrackerCount("Artifacts", summary.artifacts);
+  const PortTracker::Count upgrades = {
+      static_cast< int >(summary.upgradesHeld.size()),
+      static_cast< int >(summary.upgradesHeld.size() + summary.upgradesMissing.size())};
+  DrawTrackerCount("Upgrades", upgrades);
+  if (!summary.upgradesMissing.empty()) {
+    std::string missing;
+    for (const std::string& name : summary.upgradesMissing) {
+      missing += (missing.empty() ? "" : ", ") + name;
+    }
+    ImGui::TextWrapped("Missing: %s", missing.c_str());
+  }
+
+  ImGui::SeparatorText("Scans");
+  for (int i = 0; i < PortTracker::kScan_Count; ++i) {
+    DrawTrackerCount(PortTracker::ScanGroupName(i), summary.scans[i]);
+    if (i % 2 == 0) {
+      ImGui::SameLine(ImGui::GetFontSize() * 12.f);
+    }
+  }
+  DrawTrackerCount("All scans", summary.scanTotal);
+
+  ImGui::SeparatorText("Rooms visited");
+  for (const PortTracker::World& world : summary.worlds) {
+    const PortTracker::Count rooms = {world.visited, world.total};
+    DrawTrackerCount(world.name.c_str(), rooms);
+    if (world.mapStation || world.current) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("%s%s%s", world.mapStation ? "map station" : "",
+                          world.mapStation && world.current ? ", " : "",
+                          world.current ? "you are here" : "");
+    }
+  }
+
+  int unvisited = 0;
+  for (const PortTracker::Room& room : summary.rooms) {
+    unvisited += room.visited ? 0 : 1;
+  }
+  char header[160];
+  std::snprintf(header, sizeof(header), "Rooms not yet visited in %s (%d)###trackerrooms",
+                summary.currentWorld.c_str(), unvisited);
+  if (ImGui::CollapsingHeader(header)) {
+    if (summary.roomNamesLoading > 0) {
+      ImGui::TextDisabled("Loading room names...");
+    }
+    for (const PortTracker::Room& room : summary.rooms) {
+      if (!room.visited) {
+        ImGui::BulletText("%s", room.name.c_str());
+      }
+    }
+  }
+}
+
 struct DebugPage {
   const char* name;
   void (*draw)();
@@ -3286,7 +3394,7 @@ const DebugPage kDebugPages[] = {
     {"Render", DrawRenderTab},           {"Audio", DrawAudioTab},
     {"Voices", DrawVoicesTab},           {"Debug", DrawDebugTab},
     {"Session", DrawSessionTab},         {"Chat", DrawChatTab},
-    {"Extras", DrawExtrasTab},
+    {"Extras", DrawExtrasTab},           {"Tracker", DrawTrackerTab},
 };
 
 // The innermost window under the finger that can actually scroll vertically,

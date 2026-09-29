@@ -590,6 +590,15 @@ a temporary directory instead of mounting.
   build is granted both socket locations. Turning it off clears the activity.
   The wire format is in `platform/include/port_discord.h` (covered by
   `port_discord_tests`). Console: `discord <0|1> | id <application id> | status`.
+- Map and progress tracker (F1 > Tracker). Reveal map (`reveal_map`, also
+  pause Options > Visor, off by default) shows every world's map as if its map
+  station had been used and lists every world on the star map. It only changes
+  what the map screen asks, never the save; rooms a map station leaves hidden
+  stay hidden. The Tracker tab shows item percentage, energy tanks, missile
+  capacity (in packs of 5, launcher included), power bombs, artifacts, missing
+  upgrades, logbook scans per category (artifacts count at the game's 50%),
+  rooms visited per world and the current world's unvisited rooms (their names
+  load on first view). Console: `reveal <0|1>`, `tracker`.
 - Memory card transfer (F1 > Extras > Memory card): moves saves between the
   port's card (a GCI folder, `USA/Card A` in the pref folder, or the current
   Archipelago game's) and Dolphin's. Import takes a Dolphin `.gci`, a whole raw
@@ -689,7 +698,7 @@ a temporary directory instead of mounting.
   the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
   gyro rates in rad/s), `shot` (prints the bmp path),
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `reveal <0|1>`, `tracker`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

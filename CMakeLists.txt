@@ -105,6 +105,7 @@ set(MP_PORT_SOURCES
     platform/port_json.cpp
     platform/port_discord.cpp
     platform/port_livesplit.cpp
+    platform/port_tracker.cpp
     platform/port_gci.cpp
     platform/port_mods.cpp
     platform/port_mods_pak.cpp
