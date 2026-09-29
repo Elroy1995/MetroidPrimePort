@@ -196,6 +196,7 @@ enum EPortOption {
   kPO_HideVisorEffects,
   kPO_SpeedrunTimer,
   kPO_RevealMap,
+  kPO_CrosshairSize,
 };
 #define PORT_OPTION(opt) static_cast< EGameOption >(opt)
 
@@ -240,6 +241,8 @@ static const SGameOption skPortControllerOptions[] = {
     {kGO_SwapBeamControls, 34, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_TwinStick), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_AimSpeed), -1, 0.f, 16.f, 1.f, kOT_Float},
+    {PORT_OPTION(kPO_CrosshairSize), -1, PortDebug::kCrosshairSizeMin,
+     PortDebug::kCrosshairSizeMax, 5.f, kOT_Float},
     {PORT_OPTION(kPO_FastMorph), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_LockOnToggle), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_StickyCharge), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
@@ -247,7 +250,7 @@ static const SGameOption skPortControllerOptions[] = {
 };
 static SOptionCategory skPauseOptions[] = {
     {8, skPortVisorOptions},      {11, skPortDisplayOptions}, {4, skSoundOptions},
-    {9, skPortControllerOptions}, {0, nullptr},
+    {10, skPortControllerOptions}, {0, nullptr},
 };
 
 static bool IsPortOption(EGameOption option) { return option > kGO_RestoreDefaults; }
@@ -282,6 +285,8 @@ static const wchar_t* PortOptionTitle(EGameOption option) {
     return L"In-Game Timer";
   case kPO_RevealMap:
     return L"Reveal Map";
+  case kPO_CrosshairSize:
+    return L"Crosshair Size";
   default:
     return L"";
   }
@@ -317,6 +322,8 @@ static int GetPortOption(EGameOption option) {
     return PortDebug::SpeedrunTimer() ? 1 : 0;
   case kPO_RevealMap:
     return PortDebug::RevealMap() ? 1 : 0;
+  case kPO_CrosshairSize:
+    return PortDebug::CrosshairSize();
   default:
     return 0;
   }
@@ -367,6 +374,9 @@ static void SetPortOption(EGameOption option, int value) {
     break;
   case kPO_RevealMap:
     PortDebug::SetRevealMap(value > 0);
+    break;
+  case kPO_CrosshairSize:
+    PortDebug::SetCrosshairSize(value);
     break;
   default:
     break;
@@ -539,6 +549,7 @@ void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, in
       case 3:
         PortDebug::SetTwinStick(false);
         PortDebug::SetStickAimRate(kAimSpeedDefault);
+        PortDebug::SetCrosshairSize(PortDebug::kCrosshairSizeDefault);
         PortDebug::SetFastMorph(false);
         PortDebug::SetLockOnToggle(false);
         PortDebug::SetStickyCharge(false);

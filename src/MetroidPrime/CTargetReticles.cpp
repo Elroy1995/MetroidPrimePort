@@ -33,6 +33,10 @@
 
 #include "MetroidPrime/SFX/UI.h"
 
+#ifdef TARGET_PC
+#include "port_debug.h"
+#endif
+
 #include <float.h>
 #include <math.h>
 #include <stdio.h>
@@ -1187,8 +1191,13 @@ void CCompoundTargetReticle::DrawOrbitZoneGroup(const CMatrix3f& rot,
 
     tweak = gpTweakTargeting;
 
-    gpRender->SetModelMatrix(CTransform4f(rot, xf4_targetPos) *
-                             CTransform4f::Scale(x1e8_crosshairsScale));
+    float scale = x1e8_crosshairsScale;
+#ifdef TARGET_PC
+    if (PortDebug::MouseAim() || PortDebug::TwinStick()) {
+      scale *= static_cast< float >(PortDebug::CrosshairSize()) / 100.f;
+    }
+#endif
+    gpRender->SetModelMatrix(CTransform4f(rot, xf4_targetPos) * CTransform4f::Scale(scale));
 
     model->Draw(CModelFlags::Additive(
                     tweak->x1c0_crosshairsColor.WithAlphaModulatedBy(x1e8_crosshairsScale))

@@ -150,6 +150,7 @@ bool sMouseInvertX = false;
 bool sMouseInvertY = false;
 bool sMouseButtons = true;
 bool sMouseCrosshair = true;
+int sCrosshairSize = PortDebug::kCrosshairSizeDefault;
 PortMouse::AimState sMouseAimState;
 PortMouse::ButtonGate sMouseButtonGate;
 PortMouse::ButtonGate sMouseMenuGate;
@@ -360,6 +361,11 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sMouseButtons = ParseBool(value);
   } else if (key == "mouse_crosshair") {
     sMouseCrosshair = ParseBool(value);
+  } else if (key == "crosshair_size") {
+    const int s = std::atoi(value.c_str());
+    if (s >= PortDebug::kCrosshairSizeMin && s <= PortDebug::kCrosshairSizeMax) {
+      sCrosshairSize = s;
+    }
   } else if (key == "mouse_sensitivity") {
     const float f = static_cast< float >(std::atof(value.c_str()));
     if (std::isfinite(f) && f > 0.f && f <= 1.f) {
@@ -510,6 +516,7 @@ void SaveSettings() {
   file << "mouse_invert_y=" << (sMouseInvertY ? 1 : 0) << '\n';
   file << "mouse_buttons=" << (sMouseButtons ? 1 : 0) << '\n';
   file << "mouse_crosshair=" << (sMouseCrosshair ? 1 : 0) << '\n';
+  file << "crosshair_size=" << sCrosshairSize << '\n';
   file << "mouse_sensitivity=" << sMouseSensitivity << '\n';
   if (!sDiscPath.empty()) {
     file << "disc_path=" << sDiscPath << '\n';
@@ -1415,6 +1422,12 @@ bool MouseInvertX() { EnsureInitialized(); return sMouseInvertX; }
 bool MouseInvertY() { EnsureInitialized(); return sMouseInvertY; }
 bool MouseButtons() { EnsureInitialized(); return sMouseButtons; }
 bool MouseCrosshair() { EnsureInitialized(); return sMouseCrosshair; }
+int CrosshairSize() { EnsureInitialized(); return sCrosshairSize; }
+void SetCrosshairSize(int percent) {
+  EnsureInitialized();
+  sCrosshairSize = std::clamp(percent, kCrosshairSizeMin, kCrosshairSizeMax);
+  MarkDirty();
+}
 unsigned MouseWeaponButtons(unsigned held) {
   return sMouseButtonGate.Poll(MouseAim() && MouseButtons() && MouseGameplayActive() &&
                                MouseCaptured() && !Visible(), held);
@@ -2847,6 +2860,12 @@ void DrawInputTab() {
   if (ImGui::Checkbox("Mouse-aim crosshair", &sMouseCrosshair)) {
     MarkDirty();
   }
+  int crosshairSize = sCrosshairSize;
+  if (ImGui::SliderInt("Crosshair size", &crosshairSize, kCrosshairSizeMin, kCrosshairSizeMax,
+                       "%d%%")) {
+    SetCrosshairSize(crosshairSize);
+  }
+  ImGui::TextUnformatted("Crosshair size applies under mouse aim and twin stick.");
   ImGui::TextUnformatted("Left: fire/charge   Right: lock-on   Middle: missile");
   ImGui::TextUnformatted("Existing keyboard/controller weapon bindings also work.");
   if (ImGui::SliderFloat("Sensitivity", &sMouseSensitivity, 0.0005f, 0.02f, "%.4f rad/px",

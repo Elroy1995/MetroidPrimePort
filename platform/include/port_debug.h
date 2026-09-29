@@ -242,6 +242,14 @@ bool MouseInvertX();
 bool MouseInvertY();
 bool MouseButtons();
 bool MouseCrosshair();
+// Crosshair size in percent while mouse aim or twin stick is on (the retail
+// free-aim crosshair is sized for a held R, and it stays up the whole time
+// under those modes). Retail R free-aim keeps 100.
+const int kCrosshairSizeMin = 25;
+const int kCrosshairSizeMax = 100;
+const int kCrosshairSizeDefault = 50;
+int CrosshairSize();
+void SetCrosshairSize(int percent);
 unsigned MouseWeaponButtons(unsigned held);
 // Outside mouse gameplay (morph ball, text boxes, menus) the left button is a
 // plain A press; returns SDL_BUTTON_LMASK while it should be held.

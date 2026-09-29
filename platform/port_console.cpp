@@ -407,6 +407,7 @@ void CmdHelp() {
   Out("fov <45..90>               first-person vertical FOV, as the Options row does");
   Out("msaa <1|4>, aniso <1..16>  anti-aliasing and anisotropic filtering, applied next frame");
   Out("hudscale <50..100>         HUD scale in percent, as the Options row does");
+  Out("crosshair <25..100>        mouse/twin-stick crosshair size in percent");
   Out("helmet <0|1>, visorfx <0|1> show (1) or hide (0) the helmet and visor effects");
   Out("reveal <0|1>               reveal every world's map, as the Options row does");
   Out("tracker                    items, scans and rooms visited (the F1 Tracker tab)");
@@ -829,6 +830,13 @@ void RunFrame() {
       return Finish("usage: hudscale <50..100>");
     }
     PortDebug::SetHudScale(value);
+    Finish();
+  } else if (name == "crosshair") {
+    const int value = sCmd.args.size() > 1 ? std::atoi(sCmd.args[1].c_str()) : 0;
+    if (value < PortDebug::kCrosshairSizeMin || value > PortDebug::kCrosshairSizeMax) {
+      return Finish("usage: crosshair <25..100>");
+    }
+    PortDebug::SetCrosshairSize(value);
     Finish();
   } else if (name == "helmet" || name == "visorfx") {
     const std::string value = sCmd.args.size() > 1 ? sCmd.args[1] : "";
