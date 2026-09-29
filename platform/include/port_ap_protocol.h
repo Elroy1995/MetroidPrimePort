@@ -151,6 +151,9 @@ struct SlotData {
   // spring_ball: 0 none, 1 with the Morph Ball Bombs, 2 its own item (Spring
   // Ball), 3 the first Progressive Bomb.
   int springBall = 0;
+  // pre_scan_elevators: elevator holograms start scanned, so every elevator
+  // works on arrival (randomprime's autoEnabledElevators).
+  bool preScanElevators = false;
   // Options the port does not implement, one line each, for the log and HUD.
   std::vector< std::string > warnings;
 };

@@ -17,6 +17,8 @@
 #include "MetroidPrime/CWorld.hpp"
 #include "port_log.h"
 #include "port_randomizer.h"
+
+#include <string>
 #include "MetroidPrime/Enemies/CAmbientAI.hpp"
 #include "MetroidPrime/Enemies/CAtomicAlpha.hpp"
 #include "MetroidPrime/Enemies/CAtomicBeta.hpp"
@@ -1405,13 +1407,30 @@ CEntity* ScriptLoader::LoadRelay(CStateManager& mgr, CInputStream& in, int propC
   if (!valid)
     return nullptr;
 
+#ifdef TARGET_PC
+  // HashInstanceName drops the name; the elevator hologram's relay is only
+  // recognisable by it (randomprime matches the same string).
+  std::string portName;
+  for (char c = in.ReadChar(); c != '\0'; c = in.ReadChar())
+    portName += c;
+  rstl::string name = rstl::string_l("");
+#else
   rstl::string name = mgr.HashInstanceName(in);
+#endif
   bool b1 = in.Get< bool >();
   bool b2 = in.Get< bool >();
   bool b3 = false;
   if (propCount > 3)
     b3 = in.Get< bool >();
+#ifdef TARGET_PC
+  CScriptMemoryRelay* relay =
+      rs_new CScriptMemoryRelay(mgr.AllocateUniqueId(), name, info, b1, b2, b3);
+  if (portName == "Memory Relay - dim scan holo")
+    PortQueueElevatorHolo(relay->GetUniqueId(), relay->GetEditorId());
+  return relay;
+#else
   return rs_new CScriptMemoryRelay(mgr.AllocateUniqueId(), name, info, b1, b2, b3);
+#endif
 }
 
 CEntity* ScriptLoader::LoadRandomRelay(CStateManager& mgr, CInputStream& in, int propCount,

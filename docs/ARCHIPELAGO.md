@@ -59,6 +59,12 @@ With the built-in tables, the client does what the AP ISO patch would:
   the Morph Ball Bombs (the default), as its own item (Spring Ball), as the
   first Progressive Bomb, or off. The port's own Spring Ball setting is ignored
   while such a seed is connected.
+- `pre_scan_elevators` starts every elevator hologram scanned: the elevator
+  works as soon as you reach its room, as with randomprime's patch. The
+  activation waits for slot data, so it may happen a moment after connecting.
+- The retail hint system is off in randomized games (AP or a seed file), since
+  hints point at the retail item locations. The saved Hint System choice is
+  kept for normal games.
 
 ### Items
 

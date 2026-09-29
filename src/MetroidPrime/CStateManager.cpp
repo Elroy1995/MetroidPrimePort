@@ -5,6 +5,7 @@
 #include "port_discord.h"
 #include "port_hold_toggle.h"
 #include "port_livesplit.h"
+#include "port_log.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 #endif
@@ -143,6 +144,50 @@ static char init = 0;
 } // namespace
 
 static s64 sPreRenderStepTime;
+
+// Port: Archipelago pre_scan_elevators, randomprime's autoEnabledElevators.
+// The relays wait here until the seed's slot_data says whether to activate
+// them; the editor id guards against a unique id reused after an unload.
+namespace {
+struct SPortElevatorHolo {
+  TUniqueId uid;
+  TEditorId editorId;
+};
+std::vector< SPortElevatorHolo > sPortElevatorHolos;
+
+void PortPreScanElevators(CStateManager& mgr) {
+  if (sPortElevatorHolos.empty())
+    return;
+  const int rule = PortAp::PreScanElevators();
+  if (rule < 0)
+    return;
+  std::vector< SPortElevatorHolo > holos;
+  holos.swap(sPortElevatorHolos);
+  if (rule == 0)
+    return;
+  for (const SPortElevatorHolo& holo : holos) {
+    CEntity* ent = mgr.ObjectById(holo.uid);
+    if (ent == nullptr || !(ent->GetEditorId() == holo.editorId))
+      continue;
+    if (ent->IsScriptingBlocked()) {
+      sPortElevatorHolos.push_back(holo); // its area is not live yet
+      continue;
+    }
+    PortLog::Write("archipelago: pre-scanned elevator relay %08X\n", holo.editorId.Value());
+    mgr.DeliverScriptMsg(ent, kInvalidUniqueId, kSM_Activate);
+  }
+}
+} // namespace
+
+void PortQueueElevatorHolo(TUniqueId uid, TEditorId editorId) {
+  // Rooms keep loading while the slot_data is late; one hologram per elevator
+  // room bounds this in practice, the cap only against a server that never
+  // answers.
+  if (sPortElevatorHolos.size() >= 64)
+    sPortElevatorHolos.erase(sPortElevatorHolos.begin());
+  SPortElevatorHolo holo = {uid, editorId};
+  sPortElevatorHolos.push_back(holo);
+}
 
 // Port: Discord Rich Presence. The world and area name tables load through the
 // resource pool only while presence is on, and go with the manager, since a
@@ -1221,6 +1266,7 @@ void CStateManager::Update(float dt) {
   // Grants any items the Archipelago server has queued and sends collected
   // checks; a no-op when no Archipelago configuration is loaded.
   PortAp::Poll(*this);
+  PortPreScanElevators(*this);
   int debugTeleportArea = -1;
   if (PortDebug::ConsumeTeleportRequest(debugTeleportArea)) {
     const TAreaId aid(debugTeleportArea);

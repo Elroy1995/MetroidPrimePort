@@ -351,6 +351,7 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
   slot.requireMainPowerBomb = number("main_power_bomb", 0) > 0;
   slot.requiredArtifacts = static_cast<int>(std::clamp<int64_t>(number("required_artifacts", 12), 0, 12));
   slot.variaOnlyHeat = number("non_varia_heat_damage", 0) > 0;
+  slot.preScanElevators = number("pre_scan_elevators", 0) > 0;
 
   struct Unsupported {
     const char* key;

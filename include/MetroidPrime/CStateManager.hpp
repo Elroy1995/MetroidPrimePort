@@ -504,4 +504,11 @@ private:
 };
 CHECK_SIZEOF(CStateManager, 0xf98)
 
+#ifdef TARGET_PC
+// Port: an elevator room's "Memory Relay - dim scan holo" was loaded. With the
+// Archipelago seed's pre_scan_elevators on, the next update activates it, as a
+// scan of the hologram would.
+void PortQueueElevatorHolo(TUniqueId uid, TEditorId editorId);
+#endif
+
 #endif // _CSTATEMANAGER

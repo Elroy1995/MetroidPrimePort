@@ -1566,6 +1566,28 @@ bool VariaOnlyHeatProtection() {
   }
 }
 
+int PreScanElevators() {
+  try {
+    Runtime& runtime = GetRuntime();
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (!runtime.enabled)
+      return 0;
+    if (runtime.session == nullptr || !runtime.session->GetSlotData().received)
+      return -1;
+    return runtime.session->GetSlotData().preScanElevators ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+bool RandomizedGame() {
+  try {
+    return BuiltinRules();
+  } catch (...) {
+    return false;
+  }
+}
+
 int SpringBallRule() {
   namespace Prime = MetroidPrime;
   try {

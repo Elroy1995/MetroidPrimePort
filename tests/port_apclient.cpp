@@ -823,13 +823,14 @@ int main() {
         "checked_locations":[],"slot_data":{"missile_launcher":1,"main_power_bomb":0,
         "death_link":1,"elevator_randomization":true,"starting_room_name":"Landing Site",
         "spring_ball":1,"non_varia_heat_damage":1,"required_artifacts":12,
-        "etank_capacity":100,"shuffle_unlimited_missiles":0}})"),
+        "etank_capacity":100,"shuffle_unlimited_missiles":0,"pre_scan_elevators":1}})"),
                          outgoing, grants);
     const SlotData& slot = session.GetSlotData();
     Check(slot.received && slot.requireMissileLauncher && !slot.requireMainPowerBomb,
           "slot_data main-item requirements parse");
     Check(slot.variaOnlyHeat, "non_varia_heat_damage parses");
     Check(slot.springBall == 1, "spring_ball parses");
+    Check(slot.preScanElevators, "pre_scan_elevators parses");
     Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "elevator"),
           "only the unsupported option is warned about");
     Check(session.GetConfig().deathLink && outgoing.size() == 2 &&
@@ -878,6 +879,7 @@ int main() {
           "no DeathLink update when the seed has it off");
     Check(session.GetSlotData().warnings.empty() && session.GetSlotData().springBall == 0,
           "a seed without spring_ball has none and gets no warning");
+    Check(!session.GetSlotData().preScanElevators, "a seed without pre_scan_elevators scans nothing");
   }
   {
     Session session(builtin, State());

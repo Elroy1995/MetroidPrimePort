@@ -140,6 +140,15 @@ bool VariaOnlyHeatProtection();
 // no such seed is connected, so the port's own setting applies.
 int SpringBallRule();
 
+// The connected seed's pre_scan_elevators: 1 on, 0 off (or AP off), -1 while
+// the client is on but its slot_data has not arrived yet.
+int PreScanElevators();
+
+// The running game is an Archipelago game on the built-in tables (connected,
+// or an AP save with the client off), so retail hints would point at items
+// that are no longer there.
+bool RandomizedGame();
+
 // Called once per simulation tick by CStateManager::Update. Sends queued checks
 // and grants queued items to the player state.
 void Poll(CStateManager& mgr);
