@@ -15,6 +15,10 @@
 
 #include "rstl/math.hpp"
 
+#ifdef TARGET_PC
+#include "port_skip_cutscenes.h"
+#endif
+
 #include "float.h"
 
 static const char* const kBiteLctrName = "LCTR_GARMOUTH";
@@ -55,7 +59,8 @@ CBeetle::CBeetle(TUniqueId uid, const rstl::string& name, const CEntityInfo& inf
 , x834_retreatTime(retreatTime)
 , x838_24_hitSomething(false)
 , x838_25_burrowing(false)
-, x838_26_canSkid(false) {
+, x838_26_canSkid(false)
+, x838_27_reset(false) {
   CPASAnimParmData headbuttParms(pas::kAS_MeleeAttack, CPASAnimParm::FromEnum(0),
                                  CPASAnimParm::FromEnum(1));
   x5a0_headbuttDist = GetAnimationDistance(headbuttParms);
@@ -116,6 +121,14 @@ void CBeetle::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CStateMan
     x5fc_pathFindSearch.SetArea(area.GetPostConstructed()->x10bc_pathArea);
     break;
   }
+#ifdef TARGET_PC
+  case kSM_Reset:
+    // randomprime: skipped cutscenes reset beetles still burrowing out.
+    if (PortSkipCutscenes::Active()) {
+      x838_27_reset = true;
+    }
+    break;
+#endif
   default:
     break;
   }
@@ -170,6 +183,14 @@ void CBeetle::Generate(CStateManager& mgr, EStateMsg msg, float dt) {
     case 2:
       if (bodyCtrl->GetCurrentStateId() != pas::kAS_Generate) {
         x568_stateProg = 4;
+#ifdef TARGET_PC
+      } else if (x838_27_reset) {
+        // End the emergence now: stop rising, reset the attack timer.
+        x328_25_verticalMovement = false;
+        x814_attackDelayTimer = GetAverageAttackTime();
+        x568_stateProg = 4;
+        bodyCtrl->CommandMgr().DeliverCmd(CBodyStateCmd(kBSC_NextState));
+#endif
       } else if (GetMaterialList().HasMaterial(kMT_Solid) && x5a8_animTimeRem > 0.f) {
         TEntityList nearList;
 

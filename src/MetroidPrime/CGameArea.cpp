@@ -21,6 +21,13 @@
 #include "WorldFormat/CAreaOctTree.hpp"
 #include "WorldFormat/CPVSAreaSet.hpp"
 
+#ifdef TARGET_PC
+#include "port_skip_cutscenes.h"
+
+#include <string.h>
+#include <vector>
+#endif
+
 #define ROUND_UP_32(val) (((val) + 31) & ~31)
 
 struct SMREAHeader {
@@ -332,6 +339,21 @@ void CGameArea::PostConstructArea() {
   x12c_postConstructed->x10c8_sclyBuf = section->first.get();
   x12c_postConstructed->x10c8_sclyBuf.release();
   x12c_postConstructed->x10d0_sclySize = section->second;
+#ifdef TARGET_PC
+  {
+    // Skippable cutscenes: swap in a patched copy of the room script, owned
+    // by the post-construct data (the section buffer stays with the MREA).
+    std::vector< uint8_t > patched;
+    if (PortSkipCutscenes::PatchArea(GetAreaAssetId(),
+                                     reinterpret_cast< const uint8_t* >(section->first.get()),
+                                     section->second, patched)) {
+      char* copy = new char[patched.size()];
+      memcpy(copy, patched.data(), patched.size());
+      x12c_postConstructed->x10c8_sclyBuf = rstl::auto_ptr< char[] >(copy);
+      x12c_postConstructed->x10d0_sclySize = patched.size();
+    }
+  }
+#endif
   ++section;
 
   char* collisionData = section->first.get();

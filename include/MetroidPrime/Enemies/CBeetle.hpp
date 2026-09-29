@@ -128,6 +128,7 @@ private:
   bool x838_24_hitSomething : 1;
   bool x838_25_burrowing : 1;
   bool x838_26_canSkid : 1;
+  bool x838_27_reset : 1; // port: randomprime's beetle reset flag
   uchar x839_pad[7];
 };
 CHECK_SIZEOF(CBeetle, (VERSION >= VERSION_GM8P_00 ? 0x850 : 0x840))

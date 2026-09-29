@@ -599,6 +599,15 @@ a temporary directory instead of mounting.
   upgrades, logbook scans per category (artifacts count at the game's 50%),
   rooms visited per world and the current world's unvisited rooms (their names
   load on first view). Console: `reveal <0|1>`, `tracker`.
+- Skippable cutscenes (F1 > Extras > Cutscenes, pause Options > Visor,
+  `skippable_cutscenes`, off by default; always on in randomizer and
+  Archipelago games) lets Start skip every cutscene, including the ones retail
+  never lets you skip and ones not yet watched. It applies randomprime's
+  "skippable" room-script patches (`tools/gen_skippable_cutscenes.py`
+  generates them from two randomprime ISOs) plus its engine tweaks (rotations
+  finish at once, a Reset ends a beetle's emergence, no skip without a
+  cutscene camera). Rooms a mod replaced are left unpatched. Archipelago
+  games also skip the Landing Site intro: Samus starts on top of her ship.
 - Save states (F1 > States): eight slots in `savestates/` under the pref
   folder (`slot<N>.mpss`). F5 saves to the selected slot and F9 loads it
   (`savestate_hotkeys`, on by default). A state holds the whole game save

@@ -7,6 +7,7 @@
 #include "port_livesplit.h"
 #include "port_log.h"
 #include "port_savestate.h"
+#include "port_skip_cutscenes.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 #endif
@@ -3061,6 +3062,12 @@ bool CStateManager::SpecialSkipCinematic() {
   if (special == nullptr || !special->ShouldSkipCinematic(*this)) {
     return false;
   }
+#ifdef TARGET_PC
+  // randomprime: with no cinematic camera alive the skip crashes.
+  if (PortSkipCutscenes::Active() && !x870_cameraManager->IsInCinematicCamera()) {
+    return false;
+  }
+#endif
 
   hadRandom = x900_random != nullptr;
   x900_random = &x8fc_random;

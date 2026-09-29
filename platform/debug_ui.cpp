@@ -12,6 +12,7 @@
 #include "port_prompts.h"
 #include "port_tracker.h"
 #include "port_savestate.h"
+#include "port_skip_cutscenes.h"
 #include "port_mouse.h"
 #include "port_textures.h"
 #include "port_build_info.h"
@@ -113,6 +114,7 @@ int sHudScale = PortDebug::kHudScaleMax;
 bool sHideHelmet = false;
 bool sHideVisorEffects = false;
 bool sRevealMap = false;
+bool sSkippableCutscenes = false;
 bool sSaveStateHotkeys = true;
 bool sMouseAim = false;
 bool sTwinStick = false;
@@ -309,6 +311,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sHideVisorEffects = ParseBool(value);
   } else if (key == "reveal_map") {
     sRevealMap = ParseBool(value);
+  } else if (key == "skippable_cutscenes") {
+    sSkippableCutscenes = ParseBool(value);
   } else if (key == "savestate_hotkeys") {
     sSaveStateHotkeys = ParseBool(value);
   } else if (key == "unlock_hard_mode") {
@@ -479,6 +483,7 @@ void SaveSettings() {
   file << "hide_helmet=" << (sHideHelmet ? 1 : 0) << '\n';
   file << "hide_visor_effects=" << (sHideVisorEffects ? 1 : 0) << '\n';
   file << "reveal_map=" << (sRevealMap ? 1 : 0) << '\n';
+  file << "skippable_cutscenes=" << (sSkippableCutscenes ? 1 : 0) << '\n';
   file << "savestate_hotkeys=" << (sSaveStateHotkeys ? 1 : 0) << '\n';
   file << "fov=" << sFirstPersonFov << '\n';
   file << "msaa=" << sMsaa << '\n';
@@ -893,6 +898,17 @@ bool RevealMap() {
 void SetRevealMap(bool enabled) {
   EnsureInitialized();
   sRevealMap = enabled;
+  MarkDirty();
+}
+
+bool SkippableCutscenes() {
+  EnsureInitialized();
+  return sSkippableCutscenes;
+}
+
+void SetSkippableCutscenes(bool enabled) {
+  EnsureInitialized();
+  sSkippableCutscenes = enabled;
   MarkDirty();
 }
 
@@ -2430,6 +2446,20 @@ void DrawMods() {
 } // namespace
 
 void DrawExtrasTab() {
+  ImGui::SeparatorText("Cutscenes");
+  bool skippable = sSkippableCutscenes;
+  if (ImGui::Checkbox("Skippable cutscenes", &skippable)) {
+    SetSkippableCutscenes(skippable);
+  }
+  if (PortSkipCutscenes::Forced()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(on in randomized games)");
+  }
+  ImGui::TextWrapped(
+      "Every cutscene can be skipped with the usual button, including the ones the "
+      "game never lets you skip (randomprime's room patches). Applies to rooms "
+      "loaded after the change.");
+
   ImGui::SeparatorText("Unlocks");
   bool hardMode = sUnlockHardMode;
   if (ImGui::Checkbox("Hard mode", &hardMode)) {

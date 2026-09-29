@@ -10,6 +10,10 @@
 
 #include "rstl/algorithm.hpp"
 
+#ifdef TARGET_PC
+#include "port_skip_cutscenes.h"
+#endif
+
 CScriptActorRotate::CScriptActorRotate(TUniqueId uid, const rstl::string& name,
                                        const CEntityInfo& info, const CVector3f& rotation,
                                        float maxTime, const bool updateActors,
@@ -118,6 +122,13 @@ void CScriptActorRotate::Think(float dt, CStateManager& mgr) {
 
 void CScriptActorRotate::UpdateActors(bool next, CStateManager& mgr) {
   if (x58_24_updateRotation) {
+#ifdef TARGET_PC
+    // randomprime: Next finishes a running rotation, so skipped cutscenes
+    // don't leave it mid-turn.
+    if (next && PortSkipCutscenes::Active()) {
+      x44_currentTime = x40_maxTime;
+    }
+#endif
     return;
   }
   x48_actors.clear();

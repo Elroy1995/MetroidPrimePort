@@ -38,6 +38,7 @@ travels with any build that contains it.
 | fmt | MIT | fetched, `fmt-src/` |
 | zstd | BSD | fetched, `zstd-src/` |
 | Button prompt icons | Kenney CC0 | `tools/prompt_icons/README.md` |
+| Skippable cutscene room patches (`platform/port_skip_cutscenes_data.inc`), generated from randomprime's output | MIT, © randomprime contributors | https://github.com/randovania/randomprime/blob/master/LICENSE |
 
 The notices are also collected into what is actually shipped: `dist/licenses/` on
 Windows, `usr/share/licenses/metroid-prime-port/` in the AppImage, and `assets/`

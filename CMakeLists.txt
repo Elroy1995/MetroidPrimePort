@@ -108,6 +108,8 @@ set(MP_PORT_SOURCES
     platform/port_tracker.cpp
     platform/port_savestate.cpp
     platform/port_savestate_format.cpp
+    platform/port_skip_cutscenes.cpp
+    platform/port_skip_cutscenes_ops.cpp
     platform/port_gci.cpp
     platform/port_mods.cpp
     platform/port_mods_pak.cpp

@@ -28,6 +28,7 @@
 #ifdef TARGET_PC
 #include "GuiSys/CGuiModel.hpp"
 #include "port_debug.h"
+#include "port_skip_cutscenes.h"
 #include <math.h>
 #endif
 
@@ -197,6 +198,7 @@ enum EPortOption {
   kPO_SpeedrunTimer,
   kPO_RevealMap,
   kPO_CrosshairSize,
+  kPO_SkippableCutscenes,
 };
 #define PORT_OPTION(opt) static_cast< EGameOption >(opt)
 
@@ -220,6 +222,7 @@ static const SGameOption skPortVisorOptions[] = {
     {PORT_OPTION(kPO_HideHelmet), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_HideVisorEffects), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_RevealMap), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
+    {PORT_OPTION(kPO_SkippableCutscenes), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static const SGameOption skPortDisplayOptions[] = {
@@ -249,7 +252,7 @@ static const SGameOption skPortControllerOptions[] = {
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static SOptionCategory skPauseOptions[] = {
-    {8, skPortVisorOptions},      {11, skPortDisplayOptions}, {4, skSoundOptions},
+    {9, skPortVisorOptions},      {11, skPortDisplayOptions}, {4, skSoundOptions},
     {10, skPortControllerOptions}, {0, nullptr},
 };
 
@@ -287,6 +290,8 @@ static const wchar_t* PortOptionTitle(EGameOption option) {
     return L"Reveal Map";
   case kPO_CrosshairSize:
     return L"Crosshair Size";
+  case kPO_SkippableCutscenes:
+    return L"Skippable Cutscenes";
   default:
     return L"";
   }
@@ -322,6 +327,9 @@ static int GetPortOption(EGameOption option) {
     return PortDebug::SpeedrunTimer() ? 1 : 0;
   case kPO_RevealMap:
     return PortDebug::RevealMap() ? 1 : 0;
+  case kPO_SkippableCutscenes:
+    // Randomized games force it on; show what is in effect.
+    return PortSkipCutscenes::Active() ? 1 : 0;
   case kPO_CrosshairSize:
     return PortDebug::CrosshairSize();
   default:
@@ -374,6 +382,9 @@ static void SetPortOption(EGameOption option, int value) {
     break;
   case kPO_RevealMap:
     PortDebug::SetRevealMap(value > 0);
+    break;
+  case kPO_SkippableCutscenes:
+    PortDebug::SetSkippableCutscenes(value > 0);
     break;
   case kPO_CrosshairSize:
     PortDebug::SetCrosshairSize(value);
@@ -537,6 +548,7 @@ void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, in
         PortDebug::SetHideHelmet(false);
         PortDebug::SetHideVisorEffects(false);
         PortDebug::SetRevealMap(false);
+        PortDebug::SetSkippableCutscenes(false);
         break;
       case 1:
         PortDebug::SetAspectMode(PortDebug::kAspect_4_3);

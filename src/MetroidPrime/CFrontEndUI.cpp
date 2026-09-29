@@ -34,6 +34,7 @@
 #include "MetroidPrime/CNESEmulator.hpp"
 #include "MetroidPrime/CQuitGameScreen.hpp"
 
+#include "port_apclient.h"
 #include "port_debug.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
@@ -1761,6 +1762,9 @@ CIOWin::EMessageReturn CFrontEndUI::Update(float dt, CArchitectureQueue& queue) 
           if (saveUI != nullptr && saveUI->GetUIType() == CSaveGameScreen::kUIT_SaveReady) {
             gpGameState->SetCardSerial(saveUI->GetCardSerial());
           }
+          // Like StartGame, an Archipelago seed starts at the Landing Site.
+          if (const uint32_t world = PortAp::NewGameWorld())
+            gpGameState->SetCurrentWorldId(CAssetId(world));
           TransitionToFive();
         }
         break;

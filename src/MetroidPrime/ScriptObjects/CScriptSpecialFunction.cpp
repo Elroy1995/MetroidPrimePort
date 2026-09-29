@@ -35,6 +35,7 @@
 
 #include "port_apclient.h"
 #include "port_livesplit.h"
+#include "port_skip_cutscenes.h"
 #include "rstl/algorithm.hpp"
 #include "rstl/iterator.hpp"
 #include "rstl/math.hpp"
@@ -600,6 +601,11 @@ void CScriptSpecialFunction::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId
 }
 
 bool CScriptSpecialFunction::ShouldSkipCinematic(CStateManager& mgr) const {
+#ifdef TARGET_PC
+  // Skippable cutscenes (randomprime): skip even if never watched.
+  if (PortSkipCutscenes::Active())
+    return true;
+#endif
   CAssetId mlvlId = mgr.GetWorld()->GetWorldAssetId();
   TEditorId cineId = GetEditorId();
   return gpGameState->SystemState().GetCinematicState(

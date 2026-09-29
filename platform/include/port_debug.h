@@ -118,6 +118,12 @@ void SetHideVisorEffects(bool enabled);
 // not changed.
 bool RevealMap();
 void SetRevealMap(bool enabled);
+// randomprime's skippable cutscenes: every cinematic can be skipped with the
+// usual button. Rooms load patched, so a change applies to rooms loaded
+// afterwards. Randomizer and Archipelago games force it on
+// (PortSkipCutscenes::Active).
+bool SkippableCutscenes();
+void SetSkippableCutscenes(bool enabled);
 // First-person vertical field of view in degrees (retail 55). The arm cannon is
 // drawn at the retail FOV whatever this is, like a view-model FOV.
 const float kFovRetail = 55.f;
