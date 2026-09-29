@@ -55,6 +55,11 @@ public:
   void ResetGameState();
   void StreamNewGameState(CInputStream& in, int saveIdx);
   void RefreshGameState();
+#ifdef TARGET_PC
+  // Save states: replaces the game state with one read from `in`, keeping
+  // what isn't part of a save (system state, options, card slot).
+  void PortLoadGameState(CInputStream& in);
+#endif
   void AddWorldPaks();
   void AsyncIdle(uint time);
   int RsMain(int argc, const char* const* argv);

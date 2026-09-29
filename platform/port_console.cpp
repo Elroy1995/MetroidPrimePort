@@ -9,6 +9,7 @@
 #include "port_discord.h"
 #include "port_livesplit.h"
 #include "port_smoke.h"
+#include "port_savestate.h"
 #include "port_tracker.h"
 #include "MetroidPrime/CActor.hpp"
 #include "MetroidPrime/CGameArea.hpp"
@@ -409,6 +410,7 @@ void CmdHelp() {
   Out("helmet <0|1>, visorfx <0|1> show (1) or hide (0) the helmet and visor effects");
   Out("reveal <0|1>               reveal every world's map, as the Options row does");
   Out("tracker                    items, scans and rooms visited (the F1 Tracker tab)");
+  Out("state list | last | save [n] | load [n] | undo | slot <n>   save states (F1 States tab)");
   Out("timer <0|1>                on-screen in-game time; igt <seconds> sets the play time");
   Out("livesplit <0|1> | addr <host:port> | send <command> | status   LiveSplit Server client");
   Out("discord <0|1> | id <application id> | status   Discord Rich Presence");
@@ -846,6 +848,39 @@ void RunFrame() {
     }
     PortDebug::SetRevealMap(value == "1");
     Finish();
+  } else if (name == "state") {
+    const std::string action = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "list";
+    const int slot = sCmd.args.size() > 2 ? std::atoi(sCmd.args[2].c_str())
+                                          : PortSaveState::SelectedSlot();
+    if (action == "save" || action == "load" || action == "undo") {
+      const bool queued = action == "save" ? PortSaveState::RequestSave(slot)
+                          : action == "load"
+                              ? PortSaveState::RequestLoad(slot)
+                              : PortSaveState::RequestLoad(PortSaveState::kUndoSlot);
+      if (!queued) {
+        return Finish(PortSaveState::LastMessage().c_str());
+      }
+      Out("queued; see 'state last'");
+      return Finish();
+    } else if (action == "slot") {
+      PortSaveState::SetSelectedSlot(slot);
+      Out("selected slot %d", PortSaveState::SelectedSlot());
+      return Finish();
+    } else if (action == "last") {
+      Out("%s", PortSaveState::LastMessage().c_str());
+      return Finish();
+    } else if (action == "list") {
+      for (int i = PortSaveState::kUndoSlot; i <= PortSaveState::kSlotCount; ++i) {
+        const PortSaveState::Info info = PortSaveState::SlotInfo(i);
+        if (info.exists) {
+          Out("%s%d %s - %s igt=%.1f%s", i == PortSaveState::SelectedSlot() ? "*" : " ", i,
+              info.world.c_str(), info.room.c_str(), info.playTime, info.morphed ? " ball" : "");
+        }
+      }
+      Out("folder %s", PortSaveState::Folder().c_str());
+      return Finish();
+    }
+    return Finish("usage: state list|last|save [n]|load [n]|undo|slot <n>");
   } else if (name == "timer") {
     const std::string value = sCmd.args.size() > 1 ? sCmd.args[1] : "";
     if (value != "0" && value != "1") {

@@ -11,6 +11,7 @@
 #include "port_livesplit.h"
 #include "port_prompts.h"
 #include "port_tracker.h"
+#include "port_savestate.h"
 #include "port_mouse.h"
 #include "port_textures.h"
 #include "port_build_info.h"
@@ -112,6 +113,7 @@ int sHudScale = PortDebug::kHudScaleMax;
 bool sHideHelmet = false;
 bool sHideVisorEffects = false;
 bool sRevealMap = false;
+bool sSaveStateHotkeys = true;
 bool sMouseAim = false;
 bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
@@ -161,6 +163,8 @@ bool sAiAudioEnabled = true;
 bool sMusyxAudioEnabled = true;
 bool sResetRequested = false;
 std::atomic< bool > sToggleRequested{false};
+// F5 = 1 (save), F9 = 2 (load), from the event watch; handled on the game thread.
+std::atomic< int > sSaveStateHotkey{0};
 // Mirrors sVisible for readers on other threads, so they never touch the lazy
 // initialization or the ImGui state owned by the game thread.
 std::atomic< bool > sOverlayVisible{false};
@@ -304,6 +308,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sHideVisorEffects = ParseBool(value);
   } else if (key == "reveal_map") {
     sRevealMap = ParseBool(value);
+  } else if (key == "savestate_hotkeys") {
+    sSaveStateHotkeys = ParseBool(value);
   } else if (key == "unlock_hard_mode") {
     sUnlockHardMode = ParseBool(value);
   } else if (key == "unlock_fusion_suit") {
@@ -467,6 +473,7 @@ void SaveSettings() {
   file << "hide_helmet=" << (sHideHelmet ? 1 : 0) << '\n';
   file << "hide_visor_effects=" << (sHideVisorEffects ? 1 : 0) << '\n';
   file << "reveal_map=" << (sRevealMap ? 1 : 0) << '\n';
+  file << "savestate_hotkeys=" << (sSaveStateHotkeys ? 1 : 0) << '\n';
   file << "fov=" << sFirstPersonFov << '\n';
   file << "msaa=" << sMsaa << '\n';
   file << "anisotropy=" << sAnisotropy << '\n';
@@ -568,6 +575,11 @@ bool SDLCALL debug_event_watch(void*, SDL_Event* event) {
   if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat &&
       event->key.scancode == SDL_SCANCODE_F1) {
     PortDebug::RequestToggle();
+  }
+  if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat &&
+      (event->key.scancode == SDL_SCANCODE_F5 || event->key.scancode == SDL_SCANCODE_F9)) {
+    sSaveStateHotkey.store(event->key.scancode == SDL_SCANCODE_F5 ? 1 : 2,
+                           std::memory_order_release);
   }
   if (IsPhysicalInput(*event)) {
     sPhysicalInput.store(true, std::memory_order_release);
@@ -1905,6 +1917,14 @@ void UpdateControllerNav() {
   UpdateUiScale();
   if (sToggleRequested.exchange(false, std::memory_order_acq_rel)) {
     Toggle();
+  }
+  if (const int hotkey = sSaveStateHotkey.exchange(0, std::memory_order_acq_rel);
+      hotkey != 0 && sSaveStateHotkeys) {
+    if (hotkey == 1) {
+      PortSaveState::RequestSave(PortSaveState::SelectedSlot());
+    } else {
+      PortSaveState::RequestLoad(PortSaveState::SelectedSlot());
+    }
   }
   sOverlayVisible.store(sVisible, std::memory_order_release);
   sTwinStickFlag.store(sTwinStick, std::memory_order_release);
@@ -3383,6 +3403,89 @@ void DrawTrackerTab() {
   }
 }
 
+void DrawSaveStatesTab() {
+  ImGui::TextWrapped(
+      "Save anywhere and load back to the same spot. A state holds what a memory card save "
+      "holds (items, health, ammo, map, scans, doors and puzzles already solved, in-game time) "
+      "plus where Samus stands and whether she is in morph ball. Loading rebuilds the room as "
+      "a memory card load does, so enemies and moving parts start over. While the game is "
+      "paused, a save or load waits until you unpause.");
+  bool hotkeys = sSaveStateHotkeys;
+  if (ImGui::Checkbox("F5 saves, F9 loads the selected slot", &hotkeys)) {
+    sSaveStateHotkeys = hotkeys;
+    MarkDirty();
+  }
+  const bool running = sStateManager != nullptr;
+  if (!running) {
+    ImGui::TextDisabled("Saving and loading need a running game.");
+  }
+
+  const int selected = PortSaveState::SelectedSlot();
+  if (ImGui::BeginTable("##savestates", 4,
+                        ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+    ImGui::TableSetupColumn("Slot", ImGuiTableColumnFlags_WidthFixed);
+    ImGui::TableSetupColumn("Where");
+    ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed);
+    ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthFixed);
+    ImGui::TableHeadersRow();
+    for (int slot = 1; slot <= PortSaveState::kSlotCount; ++slot) {
+      const PortSaveState::Info info = PortSaveState::SlotInfo(slot);
+      ImGui::PushID(slot);
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      char label[16];
+      std::snprintf(label, sizeof(label), "%d", slot);
+      if (ImGui::RadioButton(label, selected == slot)) {
+        PortSaveState::SetSelectedSlot(slot);
+      }
+      ImGui::TableNextColumn();
+      if (info.exists) {
+        ImGui::Text("%s - %s%s", info.world.c_str(), info.room.c_str(),
+                    info.morphed ? " (ball)" : "");
+      } else {
+        ImGui::TextDisabled("empty");
+      }
+      ImGui::TableNextColumn();
+      if (info.exists) {
+        const int total = static_cast< int >(info.playTime);
+        ImGui::Text("%d:%02d:%02d", total / 3600, total / 60 % 60, total % 60);
+      }
+      ImGui::TableNextColumn();
+      ImGui::BeginDisabled(!running);
+      if (ImGui::SmallButton("Save")) {
+        PortSaveState::SetSelectedSlot(slot);
+        PortSaveState::RequestSave(slot);
+      }
+      ImGui::SameLine();
+      ImGui::BeginDisabled(!info.exists);
+      if (ImGui::SmallButton("Load")) {
+        PortSaveState::SetSelectedSlot(slot);
+        PortSaveState::RequestLoad(slot);
+      }
+      ImGui::EndDisabled();
+      ImGui::EndDisabled();
+      ImGui::PopID();
+    }
+    ImGui::EndTable();
+  }
+
+  const PortSaveState::Info undo = PortSaveState::SlotInfo(PortSaveState::kUndoSlot);
+  ImGui::BeginDisabled(!running || !undo.exists);
+  if (ImGui::Button("Undo last load")) {
+    PortSaveState::RequestLoad(PortSaveState::kUndoSlot);
+  }
+  ImGui::EndDisabled();
+  if (undo.exists) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("back to %s - %s", undo.world.c_str(), undo.room.c_str());
+  }
+  const std::string message = PortSaveState::LastMessage();
+  if (!message.empty()) {
+    ImGui::TextWrapped("%s", message.c_str());
+  }
+  ImGui::TextDisabled("Folder: %s", PortSaveState::Folder().c_str());
+}
+
 struct DebugPage {
   const char* name;
   void (*draw)();
@@ -3395,6 +3498,7 @@ const DebugPage kDebugPages[] = {
     {"Voices", DrawVoicesTab},           {"Debug", DrawDebugTab},
     {"Session", DrawSessionTab},         {"Chat", DrawChatTab},
     {"Extras", DrawExtrasTab},           {"Tracker", DrawTrackerTab},
+    {"States", DrawSaveStatesTab},
 };
 
 // The innermost window under the finger that can actually scroll vertically,

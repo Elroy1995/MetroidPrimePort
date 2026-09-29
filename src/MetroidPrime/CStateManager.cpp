@@ -6,6 +6,7 @@
 #include "port_hold_toggle.h"
 #include "port_livesplit.h"
 #include "port_log.h"
+#include "port_savestate.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 #endif
@@ -1313,6 +1314,9 @@ void CStateManager::Update(float dt) {
       // its scripts/loads, or overwrite the destination's area with our old id.
       return;
     }
+  }
+  if (PortSaveState::Tick(*this)) {
+    return;
   }
 
   const float deathTime = x84c_player->GetDeathTime();

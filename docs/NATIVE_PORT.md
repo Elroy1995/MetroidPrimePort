@@ -599,6 +599,17 @@ a temporary directory instead of mounting.
   upgrades, logbook scans per category (artifacts count at the game's 50%),
   rooms visited per world and the current world's unvisited rooms (their names
   load on first view). Console: `reveal <0|1>`, `tracker`.
+- Save states (F1 > States): eight slots in `savestates/` under the pref
+  folder (`slot<N>.mpss`). F5 saves to the selected slot and F9 loads it
+  (`savestate_hotkeys`, on by default). A state holds the whole game save
+  (items, ammo, doors, pickups, map, scans, world layers) plus Samus's room,
+  position, facing and morph ball state; loading reloads that world and puts
+  her back. It does not keep enemies, projectiles, cutscene or boss-fight
+  progress, or velocity: the room comes back as if just entered. Every load
+  first writes slot 0, so "Undo last load" goes back to where you were.
+  Saving is refused while Samus is dead. A state saved on an elevator pad
+  rides the elevator after loading, like stepping onto it. Console:
+  `state list | last | save [n] | load [n] | undo | slot <n>`.
 - Memory card transfer (F1 > Extras > Memory card): moves saves between the
   port's card (a GCI folder, `USA/Card A` in the pref folder, or the current
   Archipelago game's) and Dolphin's. Import takes a Dolphin `.gci`, a whole raw
@@ -698,7 +709,7 @@ a temporary directory instead of mounting.
   the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
   gyro rates in rad/s), `shot` (prints the bmp path),
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `reveal <0|1>`, `tracker`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `reveal <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

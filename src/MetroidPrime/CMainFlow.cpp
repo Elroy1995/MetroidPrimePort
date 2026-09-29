@@ -14,6 +14,7 @@
 #include "MetroidPrime/CMain.hpp"
 
 #include "port_discord.h"
+#include "port_savestate.h"
 
 CMainFlow::CMainFlow() : CIOWin(rstl::string_l("MainFlow")), x14_gameState(kCFS_Unspecified) {}
 
@@ -119,6 +120,7 @@ void CMainFlow::SetGameState(EClientFlowStates state, CArchitectureQueue& queue)
     break;
   }
   case kCFS_Game: {
+    PortSaveState::InstallPending();
     gpGameState->GameOptions().EnsureOptions();
     CIOWin* const gameFlow = rs_new CMFGameLoader();
     gpMain->SetRestartMode(CMain::kRM_Default);

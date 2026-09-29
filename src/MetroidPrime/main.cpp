@@ -1214,6 +1214,24 @@ void CMain::RefreshGameState() {
   gpGameState->PlayerState()->SetIsFusionEnabled(gpGameState->SystemState().GetHasFusion());
 }
 
+#ifdef TARGET_PC
+void CMain::PortLoadGameState(CInputStream& in) {
+  CSystemState systemState = gpGameState->SystemState();
+  uint saveIdx = gpGameState->SaveIdx();
+  u64 cardSerial = gpGameState->CardSerial();
+  CGameOptions gameOptions = gpGameState->GameOptions();
+  x128_gameGlobalObjects->GameState() = nullptr;
+  gpGameState = nullptr;
+  x128_gameGlobalObjects->GameState() = rs_new CGameState(in, saveIdx);
+  gpGameState = x128_gameGlobalObjects->GameState().get();
+  gpGameState->SystemState() = systemState;
+  gpGameState->GameOptions() = gameOptions;
+  gpGameState->GameOptions().EnsureOptions();
+  gpGameState->CardSerial() = cardSerial;
+  gpGameState->PlayerState()->SetIsFusionEnabled(gpGameState->SystemState().GetHasFusion());
+}
+#endif
+
 void CMain::StreamNewGameState(CInputStream& in, int saveIdx) {
   bool hasFusion = gpGameState->SystemState().GetHasFusion();
   x128_gameGlobalObjects->GameState() = nullptr;
