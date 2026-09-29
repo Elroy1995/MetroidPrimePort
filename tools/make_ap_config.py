@@ -24,9 +24,9 @@ check to run before playing a seed. ``--extra FILE.json`` supplies the ones the
 join could not place, as ``{"<AP location name>": "<WORLD:AREA:ENTITY key>"}``,
 and the report names the candidates.
 
-The AP world's progressive beam items (IDs 43-46) are written as progressive
-entries: the client grants the Nth copy's step and keeps the count in its state
-file. The charge-beam tracker items (IDs 47-50) map to the Charge Beam.
+The written config lists no items: the port then applies the AP world's own item
+table (ids, progressive items, ammo rules), the same one a config without a
+location table gets. Only the locations come from the join.
 """
 
 import argparse
@@ -60,85 +60,62 @@ WORLD_ASSET_IDS = {
     "Space Pirate Frigate": 0x158EFE17,
 }
 
-AP_ITEM_ID_BASE = 5031000
-
-# Mirrors the AP world's Items.py item ids and the port's EItemType numbering:
-# ids 0-28 correspond 1:1, and ids 29-40 are the artifacts.
-# Each row is (AP id, port item name, amount, capacity, AP display name).
+# Spoiler item names the native randomizer seed can hold, with the port item,
+# amount and capacity each grants. Names follow the AP world's Enum.py; the
+# progressive and unlimited-ammo items have no single port item and become
+# UnknownItem1 there.
+# Each row is (port item name, amount, capacity, AP display name).
 ITEM_DEFINITIONS = (
-    (0, "PowerBeam", 1, 1, "Power Beam"),
-    (1, "IceBeam", 1, 1, "Ice Beam"),
-    (2, "WaveBeam", 1, 1, "Wave Beam"),
-    (3, "PlasmaBeam", 1, 1, "Plasma Beam"),
-    (4, "Missiles", 5, 5, "Missile Expansion"),
-    (5, "ScanVisor", 1, 1, "Scan Visor"),
-    (6, "MorphBallBombs", 1, 1, "Morph Ball Bomb"),
-    (7, "PowerBombs", 1, 1, "Power Bomb Expansion"),
-    (8, "Flamethrower", 1, 1, "Flamethrower"),
-    (9, "ThermalVisor", 1, 1, "Thermal Visor"),
-    (10, "ChargeBeam", 1, 1, "Charge Beam"),
-    (11, "SuperMissile", 1, 1, "Super Missile"),
-    (12, "GrappleBeam", 1, 1, "Grapple Beam"),
-    (13, "XRayVisor", 1, 1, "X-Ray Visor"),
-    (14, "IceSpreader", 1, 1, "Ice Spreader"),
-    (15, "SpaceJumpBoots", 1, 1, "Space Jump Boots"),
-    (16, "MorphBall", 1, 1, "Morph Ball"),
-    (17, "CombatVisor", 1, 1, "Combat Visor"),
-    (18, "BoostBall", 1, 1, "Boost Ball"),
-    (19, "SpiderBall", 1, 1, "Spider Ball"),
-    (20, "PowerSuit", 1, 1, "Power Suit"),
-    (21, "GravitySuit", 1, 1, "Gravity Suit"),
-    (22, "VariaSuit", 1, 1, "Varia Suit"),
-    (23, "PhazonSuit", 1, 1, "Phazon Suit"),
-    (24, "EnergyTanks", 1, 1, "Energy Tank"),
-    (25, "UnknownItem1", 1, 1, "UnknownItem1"),
-    (26, "HealthRefill", 10, 0, "HealthRefill"),
-    (27, "UnknownItem2", 1, 1, "UnknownItem2"),
-    (28, "Wavebuster", 1, 1, "Wavebuster"),
-    (29, "Truth", 1, 1, "Artifact of Truth"),
-    (30, "Strength", 1, 1, "Artifact of Strength"),
-    (31, "Elder", 1, 1, "Artifact of Elder"),
-    (32, "Wild", 1, 1, "Artifact of Wild"),
-    (33, "Lifegiver", 1, 1, "Artifact of Lifegiver"),
-    (34, "Warrior", 1, 1, "Artifact of Warrior"),
-    (35, "Chozo", 1, 1, "Artifact of Chozo"),
-    (36, "Nature", 1, 1, "Artifact of Nature"),
-    (37, "Sun", 1, 1, "Artifact of Sun"),
-    (38, "World", 1, 1, "Artifact of World"),
-    (39, "Spirit", 1, 1, "Artifact of Spirit"),
-    (40, "Newborn", 1, 1, "Artifact of Newborn"),
-    (41, "Missiles", 5, 5, "Missile Launcher"),
-    (42, "PowerBombs", 1, 1, "Power Bomb (Main)"),
+    ("PowerBeam", 1, 1, "Power Beam"),
+    ("IceBeam", 1, 1, "Ice Beam"),
+    ("WaveBeam", 1, 1, "Wave Beam"),
+    ("PlasmaBeam", 1, 1, "Plasma Beam"),
+    ("Missiles", 5, 5, "Missile Expansion"),
+    ("ScanVisor", 1, 1, "Scan Visor"),
+    ("MorphBallBombs", 1, 1, "Morph Ball Bomb"),
+    ("PowerBombs", 1, 1, "Power Bomb Expansion"),
+    ("Flamethrower", 1, 1, "Flamethrower"),
+    ("ThermalVisor", 1, 1, "Thermal Visor"),
+    ("ChargeBeam", 1, 1, "Charge Beam"),
+    ("SuperMissile", 1, 1, "Super Missile"),
+    ("GrappleBeam", 1, 1, "Grapple Beam"),
+    ("XRayVisor", 1, 1, "X-Ray Visor"),
+    ("IceSpreader", 1, 1, "Ice Spreader"),
+    ("SpaceJumpBoots", 1, 1, "Space Jump Boots"),
+    ("MorphBall", 1, 1, "Morph Ball"),
+    ("CombatVisor", 1, 1, "Combat Visor"),
+    ("BoostBall", 1, 1, "Boost Ball"),
+    ("SpiderBall", 1, 1, "Spider Ball"),
+    ("PowerSuit", 1, 1, "Power Suit"),
+    ("GravitySuit", 1, 1, "Gravity Suit"),
+    ("VariaSuit", 1, 1, "Varia Suit"),
+    ("PhazonSuit", 1, 1, "Phazon Suit"),
+    ("EnergyTanks", 1, 1, "Energy Tank"),
+    ("UnknownItem1", 1, 1, "UnknownItem1"),
+    ("HealthRefill", 10, 0, "HealthRefill"),
+    ("UnknownItem2", 1, 1, "UnknownItem2"),
+    ("Wavebuster", 1, 1, "Wavebuster"),
+    ("Truth", 1, 1, "Artifact of Truth"),
+    ("Strength", 1, 1, "Artifact of Strength"),
+    ("Elder", 1, 1, "Artifact of Elder"),
+    ("Wild", 1, 1, "Artifact of Wild"),
+    ("Lifegiver", 1, 1, "Artifact of Lifegiver"),
+    ("Warrior", 1, 1, "Artifact of Warrior"),
+    ("Chozo", 1, 1, "Artifact of Chozo"),
+    ("Nature", 1, 1, "Artifact of Nature"),
+    ("Sun", 1, 1, "Artifact of Sun"),
+    ("World", 1, 1, "Artifact of World"),
+    ("Spirit", 1, 1, "Artifact of Spirit"),
+    ("Newborn", 1, 1, "Artifact of Newborn"),
+    ("Missiles", 5, 5, "Missile Launcher"),
+    ("PowerBombs", 1, 1, "Power Bomb (Main)"),
+    ("ChargeBeam", 1, 1, "Charge Beam (Power)"),
+    ("ChargeBeam", 1, 1, "Charge Beam (Wave)"),
+    ("ChargeBeam", 1, 1, "Charge Beam (Ice)"),
+    ("ChargeBeam", 1, 1, "Charge Beam (Plasma)"),
 )
 
-# Mirrors the AP world's PROGRESSIVE_ITEM_MAPPING: the Nth copy of a
-# progressive item grants the Nth step, and later copies repeat the last one.
-# Each row is (AP id, AP display name, steps as (port item name, display name)).
-PROGRESSIVE_ITEMS = (
-    (43, "Progressive Power Beam",
-     (("PowerBeam", "Power Beam"), ("ChargeBeam", "Charge Beam"),
-      ("SuperMissile", "Super Missile"))),
-    (44, "Progressive Ice Beam",
-     (("IceBeam", "Ice Beam"), ("ChargeBeam", "Charge Beam"),
-      ("IceSpreader", "Ice Spreader"))),
-    (45, "Progressive Wave Beam",
-     (("WaveBeam", "Wave Beam"), ("ChargeBeam", "Charge Beam"),
-      ("Wavebuster", "Wavebuster"))),
-    (46, "Progressive Plasma Beam",
-     (("PlasmaBeam", "Plasma Beam"), ("ChargeBeam", "Charge Beam"),
-      ("Flamethrower", "Flamethrower"))),
-)
-
-# Tracker-only items the server does not normally send; granting the Charge Beam
-# keeps an unexpected one harmless.
-CHARGE_BEAM_ITEMS = (
-    (47, "ChargeBeam", 1, 1, "Charge Beam (Power)"),
-    (48, "ChargeBeam", 1, 1, "Charge Beam (Wave)"),
-    (49, "ChargeBeam", 1, 1, "Charge Beam (Ice)"),
-    (50, "ChargeBeam", 1, 1, "Charge Beam (Plasma)"),
-)
-
-ITEMS_BY_NAME = {row[4]: row[1:4] for row in ITEM_DEFINITIONS}
+ITEMS_BY_NAME = {row[3]: row[:3] for row in ITEM_DEFINITIONS}
 
 
 class MakeAPConfigError(ValueError):
@@ -627,23 +604,7 @@ def make_archipelago_config(join, server=None, slot=None):
             key: join["ap_ids_by_port_key"][key]
             for key in sorted(join["ap_ids_by_port_key"])
         },
-        "items": {
-            str(AP_ITEM_ID_BASE + ap_id): {
-                "item": item,
-                "amount": amount,
-                "capacity": capacity,
-                "display": display,
-            }
-            for ap_id, item, amount, capacity, display in ITEM_DEFINITIONS + CHARGE_BEAM_ITEMS
-        },
     }
-    for ap_id, _name, steps in PROGRESSIVE_ITEMS:
-        config["items"][str(AP_ITEM_ID_BASE + ap_id)] = {
-            "progressive": [
-                {"item": item, "amount": 1, "capacity": 1, "display": display}
-                for item, display in steps
-            ]
-        }
     if server is not None:
         config["server"] = server
     if slot is not None:
@@ -894,31 +855,15 @@ LOC 39F2DE28:33333333:00040020 PowerSuit amount=1 capacity=1 model=FEDCBA98 acs=
             expected["Chozo Ruins: C"]: 103,
             expected["Phendrana Drifts: E"]: 201,
         }
-        assert arch["items"]["5031000"]["item"] == "PowerBeam"
-        assert arch["items"]["5031041"]["display"] == "Missile Launcher"
-        assert arch["items"]["5031042"]["item"] == "PowerBombs"
-        power = arch["items"]["5031043"]
-        assert "item" not in power
-        assert [step["item"] for step in power["progressive"]] == [
-            "PowerBeam", "ChargeBeam", "SuperMissile"
-        ]
-        assert power["progressive"][2] == {
-            "item": "SuperMissile", "amount": 1, "capacity": 1, "display": "Super Missile"
-        }
-        assert [step["item"] for step in arch["items"]["5031046"]["progressive"]] == [
-            "PlasmaBeam", "ChargeBeam", "Flamethrower"
-        ]
-        assert arch["items"]["5031047"] == {
-            "item": "ChargeBeam", "amount": 1, "capacity": 1, "display": "Charge Beam (Power)"
-        }
-        assert arch["items"]["5031050"]["display"] == "Charge Beam (Plasma)"
-        assert len(arch["items"]) == 51
+        # The port supplies the world's item table itself.
+        assert "items" not in arch
+        assert arch["server"] == "ws://localhost:38281" and arch["slot"] == "Player1"
 
         spoiler = {
             "locations": {
                 "Chozo Ruins: A": {"item": "Power Beam", "player": 1},
                 "Chozo Ruins: B": {"item": "Missile Expansion", "player": 2},
-                "Chozo Ruins: C": "not an AP item",
+                "Chozo Ruins: C": "Progressive Power Beam",
                 "not in AP table": "Power Beam",
                 "Phendrana Drifts: E": "Energy Tank",
             }
@@ -933,6 +878,7 @@ LOC 39F2DE28:33333333:00040020 PowerSuit amount=1 capacity=1 model=FEDCBA98 acs=
         }
         assert seed["locations"][expected["Chozo Ruins: C"]]["item"] == "UnknownItem1"
         assert seed["locations"][expected["Phendrana Drifts: E"]]["item"] == "EnergyTanks"
+        assert ITEMS_BY_NAME["Charge Beam (Ice)"] == ("ChargeBeam", 1, 1)
         assert seed["models"]["Missiles"]["model"] == "2D7E6590"
 
         # Exercise the JSON writer with temp paths while keeping self-test output
@@ -943,7 +889,7 @@ LOC 39F2DE28:33333333:00040020 PowerSuit amount=1 capacity=1 model=FEDCBA98 acs=
             write_json(arch_path, arch)
             write_json(seed_path, seed)
         with open(arch_path, "r", encoding="utf-8") as source_file:
-            assert json.load(source_file)["items"]["5031000"]["item"] == "PowerBeam"
+            assert json.load(source_file)["locations"] == arch["locations"]
         with open(seed_path, "r", encoding="utf-8") as source_file:
             assert "models" in json.load(source_file)
     print("[make-ap-config-tests] passed")

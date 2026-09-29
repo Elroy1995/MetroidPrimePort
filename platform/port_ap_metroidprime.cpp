@@ -179,14 +179,19 @@ const char* ItemName(int64_t itemId) {
 }
 
 bool ApplyDefaults(Protocol::Config& config) {
-  if (config.game != "Metroid Prime" || !config.locations.empty() || !config.items.empty())
+  // A config can bring its own location table (tools/make_ap_config.py joins
+  // one from a pickup dump) and still take the world's item rules. Items it
+  // lists itself are its own rules, so the session treats it as hand-written.
+  if (config.game != "Metroid Prime" || !config.items.empty())
     return false;
-  for (const Location& location : kLocations) {
-    char key[32];
-    std::snprintf(key, sizeof(key), "%08X:%08X:%08X", static_cast<unsigned int>(location.world),
-                  static_cast<unsigned int>(location.area),
-                  static_cast<unsigned int>(location.pickup));
-    config.locations[key] = location.id;
+  if (config.locations.empty()) {
+    for (const Location& location : kLocations) {
+      char key[32];
+      std::snprintf(key, sizeof(key), "%08X:%08X:%08X", static_cast<unsigned int>(location.world),
+                    static_cast<unsigned int>(location.area),
+                    static_cast<unsigned int>(location.pickup));
+      config.locations[key] = location.id;
+    }
   }
   for (const ItemInfo& item : kItems) {
     Protocol::ItemEntry entry;

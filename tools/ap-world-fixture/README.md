@@ -5,15 +5,15 @@ file, not a copy of it. It exists so CI and offline use have something for
 `tools/make_ap_config.py` to join against.
 
 **Prefer the real file.** The world is at
-`https://github.com/UltiNaruto/MetroidAPrime` — one "P" in `Prime`.
-`MetroidAPPrime` is a different repo, and asking for that spelling gets a GitHub
-404 that reads like a private repository rather than a typo. Clone it and use
-`src/Locations.py` directly; the join does not care which table it is given.
+`https://github.com/UltiNaruto/MetroidAPrime` (`MetroidAPPrime`, with two
+"P"s, gets a GitHub 404 that reads like a private repository rather than a
+typo). Clone it and use `src/Locations.py` directly; the join does not care
+which table it is given.
 
 ```sh
-git clone --depth 1 https://github.com/UltiNaruto/MetroidAPPrime
+git clone --depth 1 https://github.com/UltiNaruto/MetroidAPrime
 python3 tools/make_ap_config.py \
-    --locations MetroidAPPrime/src/Locations.py \
+    --locations MetroidAPrime/src/Locations.py \
     --dump randomizer_locations.log \
     --server wss://host:38281 --slot Player1 \
     --out archipelago.json --strict

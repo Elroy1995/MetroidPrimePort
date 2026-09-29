@@ -352,8 +352,6 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
   slot.requiredArtifacts = static_cast<int>(std::clamp<int64_t>(number("required_artifacts", 12), 0, 12));
   slot.variaOnlyHeat = number("non_varia_heat_damage", 0) > 0;
 
-  // Spring Ball (on by default) is not listed: it only eases bomb jumps, and
-  // the seed's logic never requires it.
   struct Unsupported {
     const char* key;
     int64_t vanilla;
@@ -372,12 +370,18 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
       {"shuffle_scan_visor", 0, "a shuffled Scan Visor"},
       {"remove_xray_requirements", 0, "removed X-Ray requirements"},
       {"remove_thermal_requirements", 0, "removed Thermal requirements"},
+      {"etank_capacity", 100, "a changed energy tank capacity"},
       {"required_artifacts", 12, "fewer than 12 artifacts"},
   };
   for (const Unsupported& option : kUnsupported) {
     if (number(option.key, option.vanilla) != option.vanilla)
       slot.warnings.push_back(std::string("not supported: ") + option.text);
   }
+  // The port has no Spring Ball. The default (1, with the bombs) is fine: the
+  // logic then never counts on a ball jump. As its own item (2, or 3 as the
+  // first Progressive Bomb), it can stand in for bombs in the logic.
+  if (number("spring_ball", 0) >= 2)
+    slot.warnings.push_back("not supported: Spring Ball as its own item");
   const PortJson::Value* room = Member(data, "starting_room_name");
   if (room != nullptr && room->IsString() && room->AsString() != "Landing Site")
     slot.warnings.push_back("not supported: starting in " + room->AsString());
@@ -548,7 +552,7 @@ Config ParseConfig(const std::string& text) {
         config.items[itemId] = std::move(item);
       }
     }
-    // Neither table given: a Metroid Prime slot uses the world's own.
+    // No items given: a Metroid Prime slot uses the world's own.
     config.builtin = MetroidPrime::ApplyDefaults(config);
     config.valid = true;
     config.error.clear();

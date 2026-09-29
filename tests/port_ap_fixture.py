@@ -125,10 +125,8 @@ def main(argv):
             check(len(config.get("locations", {})) == len(listed),
                   "the generated config carries every location")
             check(config.get("server") == "wss://example:38281", "the server is passed through")
-            check(len(config.get("items", {})) > 0, "the generated config carries items")
-            progressive = [key for key, value in config.get("items", {}).items()
-                           if isinstance(value, dict) and value.get("progressive")]
-            check(len(progressive) == 4, "the four progressive beams are emitted")
+            check("items" not in config,
+                  "the generated config leaves the items to the port's built-in table")
 
     if failures:
         print("[ap-fixture-tests] %d failure(s)" % len(failures), file=sys.stderr)

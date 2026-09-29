@@ -61,8 +61,9 @@ const Location* FindLocation(int64_t id);
 // The AP name of an item id (with the base), or null when the world has none.
 const char* ItemName(int64_t itemId);
 
-// Fills in the built-in location and item tables where the configuration left
-// them out. True when it did, which is what `Config::builtin` records.
+// Fills in the built-in item table, and the location table too when the
+// configuration left it out. A configuration with its own items keeps them and
+// gets neither. True when it filled the items, which `Config::builtin` records.
 bool ApplyDefaults(Protocol::Config& config);
 
 // Ammo capacity the received items add up to, following the AP world's

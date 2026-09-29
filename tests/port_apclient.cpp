@@ -759,6 +759,12 @@ int main() {
   Check(!ParseConfig(R"({"server":"ws://localhost","slot":"P","game":"Other"})").builtin &&
             !config.builtin,
         "other games and hand-written tables do not get the built-in tables");
+  const Config ownLocations = ParseConfig(
+      R"({"server":"ws://localhost","slot":"P","locations":{"39F2DE28:B2701146:0000007E":5031101}})");
+  Check(ownLocations.valid && ownLocations.builtin && ownLocations.locations.size() == 1 &&
+            ownLocations.locations.at("39F2DE28:B2701146:0000007E") == 5031101 &&
+            builtin.items.size() == ownLocations.items.size(),
+        "a config with only locations keeps them and takes the built-in items");
   {
     Session session(builtin, State());
     Check(Contains(session.BuildConnect(), "\"slot_data\":true"),
@@ -771,7 +777,8 @@ int main() {
     session.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,"players":[],
         "checked_locations":[],"slot_data":{"missile_launcher":1,"main_power_bomb":0,
         "death_link":1,"elevator_randomization":true,"starting_room_name":"Landing Site",
-        "spring_ball":1,"non_varia_heat_damage":1,"required_artifacts":12}})"),
+        "spring_ball":1,"non_varia_heat_damage":1,"required_artifacts":12,
+        "etank_capacity":100,"shuffle_unlimited_missiles":0}})"),
                          outgoing, grants);
     const SlotData& slot = session.GetSlotData();
     Check(slot.received && slot.requireMissileLauncher && !slot.requireMainPowerBomb,
@@ -823,6 +830,18 @@ int main() {
           "without the main requirement the first expansion carries the main amount");
     Check(outgoing.size() == 1 && !Contains(outgoing[0], "ConnectUpdate"),
           "no DeathLink update when the seed has it off");
+    Check(session.GetSlotData().warnings.empty(), "a seed without spring_ball gets no warning");
+  }
+  {
+    Session session(builtin, State());
+    std::vector<std::string> outgoing;
+    std::vector<ItemGrant> grants;
+    session.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,"players":[],
+        "checked_locations":[],"slot_data":{"spring_ball":3}})"),
+                         outgoing, grants);
+    const SlotData& slot = session.GetSlotData();
+    Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "Spring Ball"),
+          "Spring Ball as its own item is warned about");
   }
   {
     const Config optedOut =

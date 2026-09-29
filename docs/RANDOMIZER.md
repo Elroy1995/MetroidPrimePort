@@ -143,6 +143,7 @@ M item models`, `randomizer: dump mode (MP_RANDO_DUMP)`) and is otherwise silent
   session; they are not persisted into the save game yet.
 - **Archipelago.** Implemented; see `docs/ARCHIPELAGO.md`. Checks are reported
   from `CScriptPickup::Touch` and items are granted by `PortAp::Poll` each
-  simulation tick, over a native WebSocket client; `tools/make_ap_config.py`
-  generates the configuration and a spoiler seed. Still missing: `wss://`
-  (no TLS), DeathLink/hints/chat, and the progressive-item ids.
+  simulation tick, over a native WebSocket client. The Metroid Prime world's
+  item and location tables are built in, so a server address and slot name are
+  enough; `tools/make_ap_config.py` remains for checking the location table
+  against a pickup dump.
