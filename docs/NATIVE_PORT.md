@@ -515,6 +515,13 @@ a temporary directory instead of mounting.
   drawn at the retail FOV whatever the setting (a view-model FOV), so it keeps
   its size and place. Morph ball, cutscene and other scripted cameras keep
   their own FOVs; cutscenes that end in Samus's eyes ease to the setting.
+- Anti-aliasing and anisotropic filtering (Render tab, persisted as `msaa`,
+  1 or 4, default 1, and `anisotropy`, 1-16, default 16; pause Options >
+  Display has an Anti-Aliasing on/off row): 4x MSAA on the scene framebuffer
+  (WebGPU only guarantees 1x and 4x) and the anisotropy cap for mipmapped
+  textures, which retail asks for as GX_ANISO_4. Both apply at the start of the
+  next frame without a restart; an MSAA change rebuilds the framebuffers and
+  pipelines, so it hitches once. Console: `msaa <1|4>`, `aniso <1..16>`.
 - Unlocks (F1 > Extras, persisted as `unlock_hard_mode`, `unlock_fusion_suit`,
   `unlock_galleries`, all off by default): offer what finishing the game
   unlocks without finishing it. Hard mode adds Normal/Hard to a new file; the
@@ -591,7 +598,7 @@ a temporary directory instead of mounting.
   the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
   gyro rates in rad/s), `shot` (prints the bmp path),
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

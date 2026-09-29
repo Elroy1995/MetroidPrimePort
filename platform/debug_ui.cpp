@@ -25,6 +25,7 @@
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "Kyoto/CResFactory.hpp"
 
+#include <aurora/aurora.h>
 #include <aurora/gfx.h>
 #include <dolphin/pad.h>
 #include <dolphin/vi.h>
@@ -109,6 +110,8 @@ bool sSpringFlick = false;
 float sSpringFlickRate = 6.f;
 float sStickAimRate = 900.f;
 float sFirstPersonFov = PortDebug::kFovRetail;
+int sMsaa = 1;
+int sAnisotropy = 16;
 bool sUnlockHardMode = false;
 bool sUnlockFusionSuit = false;
 bool sUnlockGalleries = false;
@@ -257,6 +260,13 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sUnlockFusionSuit = ParseBool(value);
   } else if (key == "unlock_galleries") {
     sUnlockGalleries = ParseBool(value);
+  } else if (key == "msaa") {
+    sMsaa = std::atoi(value.c_str()) >= 4 ? 4 : 1;
+  } else if (key == "anisotropy") {
+    const int a = std::atoi(value.c_str());
+    if (a >= 1 && a <= 16) {
+      sAnisotropy = a;
+    }
   } else if (key == "fov") {
     const float f = static_cast< float >(std::atof(value.c_str()));
     if (std::isfinite(f) && f >= PortDebug::kFovMin && f <= PortDebug::kFovMax) {
@@ -393,6 +403,8 @@ void SaveSettings() {
   file << "aspect=" << aspect << '\n';
   file << "hud_wide=" << (sHudWide ? 1 : 0) << '\n';
   file << "fov=" << sFirstPersonFov << '\n';
+  file << "msaa=" << sMsaa << '\n';
+  file << "anisotropy=" << sAnisotropy << '\n';
   file << "unlock_hard_mode=" << (sUnlockHardMode ? 1 : 0) << '\n';
   file << "unlock_fusion_suit=" << (sUnlockFusionSuit ? 1 : 0) << '\n';
   file << "unlock_galleries=" << (sUnlockGalleries ? 1 : 0) << '\n';
@@ -760,6 +772,36 @@ void SetFirstPersonFov(float degrees) {
   EnsureInitialized();
   if (std::isfinite(degrees)) {
     sFirstPersonFov = std::clamp(degrees, kFovMin, kFovMax);
+    MarkDirty();
+  }
+}
+
+int Msaa() {
+  EnsureInitialized();
+  return sMsaa;
+}
+
+void SetMsaa(int samples) {
+  EnsureInitialized();
+  samples = samples >= 4 ? 4 : 1;
+  if (sMsaa != samples) {
+    sMsaa = samples;
+    aurora_set_graphics_quality(static_cast< uint32_t >(sMsaa), static_cast< uint16_t >(sAnisotropy));
+    MarkDirty();
+  }
+}
+
+int Anisotropy() {
+  EnsureInitialized();
+  return sAnisotropy;
+}
+
+void SetAnisotropy(int level) {
+  EnsureInitialized();
+  level = std::clamp(level, 1, 16);
+  if (sAnisotropy != level) {
+    sAnisotropy = level;
+    aurora_set_graphics_quality(static_cast< uint32_t >(sMsaa), static_cast< uint16_t >(sAnisotropy));
     MarkDirty();
   }
 }
@@ -1891,6 +1933,23 @@ void DrawRenderTab() {
         "The arm cannon stays at the retail FOV. Morph ball and cutscene cameras are unchanged.",
         hfov);
   }
+
+  int msaa = sMsaa >= 4 ? 1 : 0;
+  if (ImGui::Combo("Anti-aliasing", &msaa, "Off\0" "4x MSAA\0")) {
+    SetMsaa(msaa == 1 ? 4 : 1);
+  }
+  {
+    int aniso = 0;
+    while ((2 << aniso) <= sAnisotropy && aniso < 4) {
+      ++aniso;
+    }
+    if (ImGui::Combo("Anisotropic filtering", &aniso, "1x\0" "2x\0" "4x\0" "8x\0" "16x\0")) {
+      SetAnisotropy(1 << aniso);
+    }
+  }
+  ImGui::TextWrapped(
+      "MSAA smooths polygon edges at about 4x the framebuffer memory; anisotropic "
+      "filtering keeps textures sharp at grazing angles (default 16x).");
 
   bool autoScale = sRenderScale <= 0.f;
   if (ImGui::Checkbox("Auto render scale (native)", &autoScale)) {

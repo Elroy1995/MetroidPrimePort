@@ -106,6 +106,12 @@ const float kFovMin = 45.f;
 const float kFovMax = 90.f;
 float FirstPersonFov();
 void SetFirstPersonFov(float degrees);
+// Multisample anti-aliasing (1 = off, or 4) and the max texture anisotropy
+// (1-16, retail-style mipmapped textures ask for the max). Applied next frame.
+int Msaa();
+void SetMsaa(int samples);
+int Anisotropy();
+void SetAnisotropy(int level);
 // Extras normally earned by finishing the game (or, for the Fusion Suit, by a
 // GBA link to Metroid Fusion). They only change what the title screen offers;
 // nothing is written into the save's persistent flags.

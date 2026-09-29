@@ -30,6 +30,7 @@
 #include <SDL3/SDL_surface.h>
 #include <magic_enum.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -39,6 +40,8 @@
 
 namespace aurora {
 AuroraConfig g_config;
+// aurora_set_graphics_quality request: msaa << 16 | anisotropy, 0 = none.
+std::atomic<uint32_t> g_pendingQuality{0};
 uint32_t g_sdlCustomEventsStart;
 char g_gameName[4];
 
@@ -343,6 +346,9 @@ bool begin_frame() noexcept {
         return false;
       }
     }
+    if (const uint32_t quality = g_pendingQuality.exchange(0, std::memory_order_acq_rel); quality != 0) {
+      webgpu::set_quality(quality >> 16, static_cast<uint16_t>(quality & 0xFFFF));
+    }
   }
 
   if (!gfx::begin_frame()) {
@@ -583,6 +589,9 @@ void aurora_set_resampler(AuroraSampler sampler) {
 #else
   (void)sampler;
 #endif
+}
+void aurora_set_graphics_quality(uint32_t msaa, uint16_t maxTextureAnisotropy) {
+  aurora::g_pendingQuality.store(std::min(msaa, 4u) << 16 | maxTextureAnisotropy, std::memory_order_release);
 }
 void aurora_set_timescale(float scale) { aurora::time::set_scale(scale); }
 float aurora_get_timescale() { return aurora::time::scale(); }

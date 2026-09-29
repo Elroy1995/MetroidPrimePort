@@ -445,6 +445,8 @@ int main(int argc, char** argv) {
         .mem1Size = MEM1_DEFAULT_SIZE,
         .mem2Size = ARAM_DEFAULT_SIZE,
     };
+    config.msaa = static_cast<uint32_t>(PortDebug::Msaa());
+    config.maxTextureAnisotropy = static_cast<uint16_t>(PortDebug::Anisotropy());
 
 #if defined(__ANDROID__)
     // SDL3 drops touch-derived mouse events by default, and ImGui's SDL3

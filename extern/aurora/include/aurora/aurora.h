@@ -136,6 +136,8 @@ void aurora_set_log_level(AuroraLogLevel level);
 void aurora_set_pause_on_focus_lost(bool value);
 void aurora_set_background_input(bool value);
 void aurora_set_resampler(AuroraSampler sampler);
+/** Sets MSAA samples (1 or 4) and max texture anisotropy (1-16); applied at the next frame start. */
+void aurora_set_graphics_quality(uint32_t msaa, uint16_t maxTextureAnisotropy);
 /** Sets the clock timescale. Default 1.0f. 0.0f is paused. Range 0.0f-16.0f. */
 void aurora_set_timescale(float scale);
 

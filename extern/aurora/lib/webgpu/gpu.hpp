@@ -65,6 +65,8 @@ bool refresh_surface(bool recreate = true);
 // the SDL window, so it has to be rebuilt instead of reconfigured.
 bool surface_window_changed();
 void resize_swapchain(uint32_t width, uint32_t height, uint32_t nativeWidth, uint32_t nativeHeight, bool force = false);
+// Changes MSAA (1 or 4) and the anisotropy that GX_ANISO_4 maps to. Call between frames with a live surface.
+void set_quality(uint32_t msaaSamples, uint16_t anisotropy);
 TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled);
 const TextureWithSampler& present_source() noexcept;
 wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source);

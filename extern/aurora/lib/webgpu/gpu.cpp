@@ -1166,6 +1166,31 @@ void resize_swapchain(uint32_t width, uint32_t height, uint32_t nativeWidth, uin
   gfx::gpu_synchronize();
   resize_swapchain_internal(width, height, nativeWidth, nativeHeight, force);
 }
+
+void set_quality(uint32_t msaaSamples, uint16_t anisotropy) {
+  msaaSamples = msaaSamples >= 4 ? 4 : 1; // WebGPU only guarantees 1x and 4x
+  anisotropy = std::clamp<uint16_t>(anisotropy, 1, 16);
+  const bool msaaChanged = msaaSamples != g_graphicsConfig.msaaSamples;
+  if (!msaaChanged && anisotropy == g_graphicsConfig.textureAnisotropy) {
+    return;
+  }
+  gfx::gpu_synchronize();
+  g_config.msaa = msaaSamples;
+  g_config.maxTextureAnisotropy = anisotropy;
+  g_graphicsConfig.textureAnisotropy = anisotropy;
+  // Cached bind groups hold samplers built for the old anisotropy and views of
+  // the old framebuffers.
+  gfx::clear_caches();
+  if (msaaChanged) {
+    g_graphicsConfig.msaaSamples = msaaSamples;
+    if (g_frameBuffer.size.width != 0) {
+      resize_swapchain_internal(g_frameBuffer.size.width, g_frameBuffer.size.height,
+                                g_graphicsConfig.surfaceConfiguration.width,
+                                g_graphicsConfig.surfaceConfiguration.height, true);
+    }
+  }
+  Log.info("Graphics quality: {}x MSAA, {}x anisotropy", msaaSamples, anisotropy);
+}
 } // namespace aurora::webgpu
 
 void aurora_enable_vsync(const bool enabled) {
