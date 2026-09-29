@@ -608,6 +608,9 @@ a temporary directory instead of mounting.
   finish at once, a Reset ends a beetle's emergence, no skip without a
   cutscene camera). Rooms a mod replaced are left unpatched. Archipelago
   games also skip the Landing Site intro: Samus starts on top of her ship.
+- F1 > Debug holds the audio switches, the MusyX voice list (collapsed) and the
+  cheats: health, items, ammo, area and world teleport. The cheats stay hidden
+  until Show cheats is ticked (`cheats`, off by default).
 - Save states (F1 > States): eight slots in `savestates/` under the pref
   folder (`slot<N>.mpss`). F5 saves to the selected slot and F9 loads it
   (`savestate_hotkeys`, on by default). A state holds the whole game save
@@ -835,8 +838,8 @@ mouse scenario and reports `[area-smoke] passed`.
 other than the current one, jumps to another world through the same restart path
 the in-game world teleporters use. It waits for gameplay, requests the jump, and
 reports `[world-smoke] passed: world <id> area <n>` once a freshly constructed
-world is running. The F1 debug overlay's Debug tab lists every world by its
-front-end name and jumps to it on click.
+world is running. The F1 debug overlay's Debug tab (with Show cheats ticked)
+lists every world by its front-end name and jumps to it on click.
 
 `MP_SMOKE_ELEVATOR=<ticks>` rides the elevator most recently loaded in the current world
 once gameplay has run for `<ticks>` ticks. It sends the elevator's `Play` and

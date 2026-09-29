@@ -114,6 +114,7 @@ int sHudScale = PortDebug::kHudScaleMax;
 bool sHideHelmet = false;
 bool sHideVisorEffects = false;
 bool sRevealMap = false;
+bool sCheats = false;
 bool sSkippableCutscenes = false;
 bool sSaveStateHotkeys = true;
 bool sMouseAim = false;
@@ -311,6 +312,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sHideVisorEffects = ParseBool(value);
   } else if (key == "reveal_map") {
     sRevealMap = ParseBool(value);
+  } else if (key == "cheats") {
+    sCheats = ParseBool(value);
   } else if (key == "skippable_cutscenes") {
     sSkippableCutscenes = ParseBool(value);
   } else if (key == "savestate_hotkeys") {
@@ -483,6 +486,7 @@ void SaveSettings() {
   file << "hide_helmet=" << (sHideHelmet ? 1 : 0) << '\n';
   file << "hide_visor_effects=" << (sHideVisorEffects ? 1 : 0) << '\n';
   file << "reveal_map=" << (sRevealMap ? 1 : 0) << '\n';
+  file << "cheats=" << (sCheats ? 1 : 0) << '\n';
   file << "skippable_cutscenes=" << (sSkippableCutscenes ? 1 : 0) << '\n';
   file << "savestate_hotkeys=" << (sSaveStateHotkeys ? 1 : 0) << '\n';
   file << "fov=" << sFirstPersonFov << '\n';
@@ -2904,7 +2908,7 @@ void DrawInputTab() {
   }
 }
 
-void DrawAudioTab() {
+void DrawAudio() {
   bool ai = AiAudioEnabled();
   if (ImGui::Checkbox("Streamed audio (music/movies)", &ai)) {
     SetAiAudioEnabled(ai);
@@ -2917,7 +2921,8 @@ void DrawAudioTab() {
   }
 }
 
-void DrawVoicesTab() {  PortMusyxVoice voices[64];
+void DrawVoices() {
+  PortMusyxVoice voices[64];
   const int count = MusyxPortCopyVoices(voices, 64);
   if (count == 0) {
     ImGui::TextUnformatted("No active MusyX voices.");
@@ -3215,7 +3220,7 @@ void GrantItem(CPlayerState& ps, CPlayerState::EItemType type, int amount, int c
   ps.SetPickup(type, amount);
 }
 
-void DrawDebugTab() {
+void DrawCheats() {
   CStateManager* mgr = sStateManager;
   if (mgr == nullptr) {
     ImGui::TextUnformatted("Waiting for gameplay...");
@@ -3363,6 +3368,24 @@ void DrawDebugTab() {
     ImGui::SameLine();
     ImGui::TextUnformatted(entry.second.c_str());
     ImGui::PopID();
+  }
+}
+
+void DrawDebugTab() {
+  ImGui::SeparatorText("Audio");
+  DrawAudio();
+  if (ImGui::CollapsingHeader("Voices")) {
+    DrawVoices();
+  }
+
+  ImGui::SeparatorText("Cheats");
+  bool cheats = sCheats;
+  if (ImGui::Checkbox("Show cheats (items, health, teleport)", &cheats)) {
+    sCheats = cheats;
+    MarkDirty();
+  }
+  if (sCheats) {
+    DrawCheats();
   }
 }
 
@@ -3541,13 +3564,11 @@ struct DebugPage {
 };
 
 const DebugPage kDebugPages[] = {
-    {"Performance", DrawPerformanceTab},
-    {"Input", DrawInputTab},             {"Controls", PortControls::DrawTab},
-    {"Render", DrawRenderTab},           {"Audio", DrawAudioTab},
-    {"Voices", DrawVoicesTab},           {"Debug", DrawDebugTab},
-    {"Session", DrawSessionTab},         {"Chat", DrawChatTab},
-    {"Extras", DrawExtrasTab},           {"Tracker", DrawTrackerTab},
-    {"States", DrawSaveStatesTab},
+    {"Input", DrawInputTab},     {"Controls", PortControls::DrawTab},
+    {"Render", DrawRenderTab},   {"Performance", DrawPerformanceTab},
+    {"Extras", DrawExtrasTab},   {"Tracker", DrawTrackerTab},
+    {"States", DrawSaveStatesTab}, {"Session", DrawSessionTab},
+    {"Chat", DrawChatTab},       {"Debug", DrawDebugTab},
 };
 
 // The innermost window under the finger that can actually scroll vertically,
