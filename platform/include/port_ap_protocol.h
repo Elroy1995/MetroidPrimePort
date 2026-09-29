@@ -128,6 +128,8 @@ struct SlotData {
   bool requireMissileLauncher = false;
   bool requireMainPowerBomb = false;
   int requiredArtifacts = 12;
+  // Only the Varia Suit keeps out heat (retail: any suit past the Power Suit).
+  bool variaOnlyHeat = false;
   // Options the port does not implement, one line each, for the log and HUD.
   std::vector< std::string > warnings;
 };

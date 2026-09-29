@@ -179,7 +179,7 @@ def handle_client(sock, address, args, item_ids, bounce_sources=()):
                     "players": [],
                     "checked_locations": [],
                     "missing_locations": [],
-                    "slot_data": {},
+                    "slot_data": args.slot_data,
                 })
                 send_json(sock, {
                     "cmd": "ReceivedItems",
@@ -219,6 +219,8 @@ def main():
                              "(repeat for several)")
     parser.add_argument("--item", type=parse_item_ids, default=parse_item_ids("1234:5678"),
                         metavar="ID[:ID...]", help="item IDs sent in ReceivedItems (default: 1234:5678)")
+    parser.add_argument("--slot-data", type=json.loads, default={}, metavar="JSON",
+                        help="slot_data object sent in Connected (default: {})")
     parser.add_argument("--tls", action="store_true", help="serve wss:// (requires --cert and --key)")
     parser.add_argument("--cert", metavar="FILE", help="PEM server certificate chain for --tls")
     parser.add_argument("--key", metavar="FILE", help="PEM private key for --tls")

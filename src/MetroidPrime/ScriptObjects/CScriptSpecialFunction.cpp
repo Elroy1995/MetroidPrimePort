@@ -33,6 +33,7 @@
 #include "Kyoto/Math/CVector2i.hpp"
 #include "Kyoto/Math/CloseEnough.hpp"
 
+#include "port_apclient.h"
 #include "rstl/algorithm.hpp"
 #include "rstl/iterator.hpp"
 #include "rstl/math.hpp"
@@ -1021,6 +1022,10 @@ void CScriptSpecialFunction::ThinkAreaDamage(float dt, CStateManager& mgr) {
   const CPlayer* player = mgr.GetPlayer();
   bool inArea = player->GetCurrentAreaId() == GetCurrentAreaId();
   bool immune = mgr.GetPlayerState()->GetCurrentSuitRaw() > CPlayerState::kPS_Power;
+#ifdef TARGET_PC
+  if (PortAp::VariaOnlyHeatProtection())
+    immune = mgr.GetPlayerState()->HasPowerUp(CPlayerState::kIT_VariaSuit);
+#endif
   if (x1e4_31_inAreaDamage) {
     if (!inArea || immune) {
       x1e4_31_inAreaDamage = false;

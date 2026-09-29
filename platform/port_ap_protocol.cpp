@@ -350,7 +350,10 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
   slot.requireMissileLauncher = number("missile_launcher", 0) > 0;
   slot.requireMainPowerBomb = number("main_power_bomb", 0) > 0;
   slot.requiredArtifacts = static_cast<int>(std::clamp<int64_t>(number("required_artifacts", 12), 0, 12));
+  slot.variaOnlyHeat = number("non_varia_heat_damage", 0) > 0;
 
+  // Spring Ball (on by default) is not listed: it only eases bomb jumps, and
+  // the seed's logic never requires it.
   struct Unsupported {
     const char* key;
     int64_t vanilla;
@@ -362,7 +365,6 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
       {"blast_shield_randomization", 0, "blast shield randomization"},
       {"locked_door_count", 0, "locked doors"},
       {"randomize_starting_beam", 0, "a random starting beam"},
-      {"spring_ball", 0, "Spring Ball"},
       {"final_bosses", 0, "a final boss choice"},
       {"remove_hive_mecha", 0, "Hive Mecha removal"},
       {"backwards_lower_mines", 0, "backwards Lower Mines"},
@@ -370,7 +372,6 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
       {"shuffle_scan_visor", 0, "a shuffled Scan Visor"},
       {"remove_xray_requirements", 0, "removed X-Ray requirements"},
       {"remove_thermal_requirements", 0, "removed Thermal requirements"},
-      {"etank_capacity", 100, "a changed energy tank capacity"},
       {"required_artifacts", 12, "fewer than 12 artifacts"},
   };
   for (const Unsupported& option : kUnsupported) {

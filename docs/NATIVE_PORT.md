@@ -541,7 +541,7 @@ a temporary directory instead of mounting.
   new world runs), `tp x y z`, `face <yaw>`, `look <id>`, `objs [filter]`,
   `obj <id>` (AI state, health, body state and animation, connections, whether
   it is frustum-culled),
-  `send <id> <msg>`, `give <item> [n]`, `items`, `heal`, `press <a+b> [frames]`,
+  `send <id> <msg>`, `give <item> [n]`, `take <item> [n]`, `items`, `heal`, `press <a+b> [frames]`,
   `stick`/`cstick <x> <y> [frames]`, `shot` (prints the bmp path),
   `aspect <4:3|16:9|window>`, `ap [connect <server> <slot> [password] | disconnect]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or

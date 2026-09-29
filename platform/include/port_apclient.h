@@ -100,6 +100,10 @@ void OnInventoryReset();
 // seeds the port supports skip the frigate.
 uint32_t NewGameWorld();
 
+// The connected seed wants heat to hurt through every suit but the Varia Suit
+// (the AP world's non_varia_heat_damage, on by default). False when AP is off.
+bool VariaOnlyHeatProtection();
+
 // Called once per simulation tick by CStateManager::Update. Sends queued checks
 // and grants queued items to the player state.
 void Poll(CStateManager& mgr);

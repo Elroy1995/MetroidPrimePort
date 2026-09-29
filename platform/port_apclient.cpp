@@ -1163,6 +1163,17 @@ uint32_t NewGameWorld() {
   }
 }
 
+bool VariaOnlyHeatProtection() {
+  try {
+    Runtime& runtime = GetRuntime();
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    return runtime.enabled && runtime.session != nullptr &&
+           runtime.session->GetSlotData().variaOnlyHeat;
+  } catch (...) {
+    return false;
+  }
+}
+
 void OnInventoryReset() {
   try {
     if (!Enabled() || gpGameState == nullptr)

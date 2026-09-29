@@ -389,6 +389,7 @@ void CmdHelp() {
   Out("obj <id>                   one object: state, health, animation, connections");
   Out("send <id> <msg>            deliver a script message (name or number; relays fire on SetToZero)");
   Out("give <item> [n]            add an item (name or number, see `items`)");
+  Out("take <item> [n]            remove item capacity (drops a suit)");
   Out("items                      the player's inventory");
   Out("heal                       refill health");
   Out("press <a+b+...> [frames]   hold pad buttons (a b x y z l r start up down left right)");
@@ -545,9 +546,11 @@ void CmdSend(CStateManager& mgr) {
   Finish();
 }
 
-void CmdGive(CStateManager& mgr) {
+// give adds capacity and fills it; take removes capacity (and any amount above
+// it), which also drops a suit.
+void CmdGive(CStateManager& mgr, bool take) {
   if (sCmd.args.size() < 2) {
-    return Finish("usage: give <item> [n]");
+    return Finish(take ? "usage: take <item> [n]" : "usage: give <item> [n]");
   }
   const int item = LookupName(sCmd.args[1], kItemNames, kItemCount);
   unsigned amount = 1;
@@ -556,8 +559,12 @@ void CmdGive(CStateManager& mgr) {
   }
   CPlayerState& ps = *mgr.PlayerState();
   const CPlayerState::EItemType type = static_cast< CPlayerState::EItemType >(item);
-  ps.InitializePowerUp(type, static_cast< int >(amount));
-  ps.IncrPickUp(type, static_cast< int >(amount));
+  if (take) {
+    ps.InitializePowerUp(type, -static_cast< int >(amount));
+  } else {
+    ps.InitializePowerUp(type, static_cast< int >(amount));
+    ps.IncrPickUp(type, static_cast< int >(amount));
+  }
   if (type == CPlayerState::kIT_EnergyTanks) {
     ps.HealthInfo()->SetHP(ps.CalculateHealth());
   }
@@ -666,7 +673,7 @@ void CmdWarp(CStateManager& mgr) {
 
 bool IsTickCommand(const std::string& name) {
   static const char* const names[] = {"status", "areas", "objs", "obj", "send", "give",
-                                      "items", "heal", "tp", "face", "look", "warp"};
+                                      "take", "items", "heal", "tp", "face", "look", "warp"};
   for (const char* n : names) {
     if (name == n) {
       return true;
@@ -688,8 +695,8 @@ void RunTick(CStateManager& mgr) {
     CmdObj(mgr);
   } else if (name == "send") {
     CmdSend(mgr);
-  } else if (name == "give") {
-    CmdGive(mgr);
+  } else if (name == "give" || name == "take") {
+    CmdGive(mgr, name == "take");
   } else if (name == "items") {
     CmdItems(mgr);
   } else if (name == "heal") {
