@@ -2019,6 +2019,17 @@ void CPlayer::ProcessInput(const CFinalInput& input, CStateManager& mgr) {
   CalculateLeaveMorphBallDirection(input);
 }
 
+#ifdef TARGET_PC
+// Fast Morph's transition time (retail takes 1 s). CPlayerDynamics treats any
+// duration under 1 s as a Fast Morph transition.
+static const float kFastMorphDuration = .2f;
+static float MorphTransitionDuration() {
+  return PortDebug::FastMorph() ? kFastMorphDuration : 1.f;
+}
+#else
+static float MorphTransitionDuration() { return 1.f; }
+#endif
+
 void CPlayer::UpdateMorphBallState(float dt, const CFinalInput& input, CStateManager& mgr) {
   if (!ControlMapper::GetPressInput(ControlMapper::kC_Morph, input)) {
     return;
@@ -2029,7 +2040,7 @@ void CPlayer::UpdateMorphBallState(float dt, const CFinalInput& input, CStateMan
     if (mgr.GetPlayerState()->HasPowerUp(CPlayerState::kIT_MorphBall) == true &&
         CanEnterMorphBallState(mgr, 0.f)) {
       x574_morphTime = 0.f;
-      x578_morphDuration = 1.f;
+      x578_morphDuration = MorphTransitionDuration();
       TransitionToMorphBallState(dt, mgr);
     } else {
       DoSfxEffects(CSfxManager::SfxStart(SFXsam_b_malfxn_00, 127, 64, true));
@@ -2042,7 +2053,7 @@ void CPlayer::UpdateMorphBallState(float dt, const CFinalInput& input, CStateMan
     if (CanLeaveMorphBallState(mgr, posDelta)) {
       SetTranslation(GetTranslation() + posDelta);
       x574_morphTime = 0.f;
-      x578_morphDuration = 1.f;
+      x578_morphDuration = MorphTransitionDuration();
       TransitionFromMorphBallState(dt, mgr);
     } else {
       DoSfxEffects(CSfxManager::SfxStart(SFXsam_b_malfxn_00, 127, 64, true));

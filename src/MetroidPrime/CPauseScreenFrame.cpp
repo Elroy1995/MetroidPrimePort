@@ -187,6 +187,7 @@ enum EPortOption {
   kPO_WidescreenHUD,
   kPO_TwinStick,
   kPO_AimSpeed,
+  kPO_FastMorph,
 };
 #define PORT_OPTION(opt) static_cast< EGameOption >(opt)
 
@@ -225,11 +226,12 @@ static const SGameOption skPortControllerOptions[] = {
     {kGO_SwapBeamControls, 34, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_TwinStick), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {PORT_OPTION(kPO_AimSpeed), -1, 0.f, 16.f, 1.f, kOT_Float},
+    {PORT_OPTION(kPO_FastMorph), -1, 0.f, 1.f, 1.f, kOT_DoubleEnum},
     {kGO_RestoreDefaults, 35, 0.f, 1.f, 1.f, kOT_RestoreDefaults},
 };
 static SOptionCategory skPauseOptions[] = {
     {6, skPortVisorOptions},      {7, skPortDisplayOptions}, {4, skSoundOptions},
-    {6, skPortControllerOptions}, {0, nullptr},
+    {7, skPortControllerOptions}, {0, nullptr},
 };
 
 static bool IsPortOption(EGameOption option) { return option > kGO_RestoreDefaults; }
@@ -246,6 +248,8 @@ static const wchar_t* PortOptionTitle(EGameOption option) {
     return L"Twin Stick Aim";
   case kPO_AimSpeed:
     return L"Stick Aim Speed";
+  case kPO_FastMorph:
+    return L"Fast Morph";
   default:
     return L"";
   }
@@ -263,6 +267,8 @@ static int GetPortOption(EGameOption option) {
     return PortDebug::TwinStick() ? 1 : 0;
   case kPO_AimSpeed:
     return AimSpeedToStep(PortDebug::StickAimRate());
+  case kPO_FastMorph:
+    return PortDebug::FastMorph() ? 1 : 0;
   default:
     return 0;
   }
@@ -286,6 +292,9 @@ static void SetPortOption(EGameOption option, int value) {
     break;
   case kPO_AimSpeed:
     PortDebug::SetStickAimRate(AimSpeedFromStep(value));
+    break;
+  case kPO_FastMorph:
+    PortDebug::SetFastMorph(value > 0);
     break;
   default:
     break;
@@ -452,6 +461,7 @@ void CGameOptions::TryRestoreDefaults(const CFinalInput& input, int category, in
       case 3:
         PortDebug::SetTwinStick(false);
         PortDebug::SetStickAimRate(kAimSpeedDefault);
+        PortDebug::SetFastMorph(false);
         break;
       default:
         break;

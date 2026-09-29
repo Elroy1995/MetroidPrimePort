@@ -100,6 +100,7 @@ bool sMouseAim = false;
 bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
 bool sSpringBall = false;
+bool sFastMorph = false;
 bool sSpringFlick = false;
 float sSpringFlickRate = 6.f;
 float sStickAimRate = 900.f;
@@ -279,6 +280,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "spring_ball") {
     sSpringBall = ParseBool(value);
+  } else if (key == "fast_morph") {
+    sFastMorph = ParseBool(value);
   } else if (key == "spring_ball_flick") {
     sSpringFlick = ParseBool(value);
   } else if (key == "spring_ball_flick_rate") {
@@ -374,6 +377,7 @@ void SaveSettings() {
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
+  file << "fast_morph=" << (sFastMorph ? 1 : 0) << '\n';
   file << "spring_ball_flick=" << (sSpringFlick ? 1 : 0) << '\n';
   file << "spring_ball_flick_rate=" << sSpringFlickRate << '\n';
   file << "stick_aim_rate=" << sStickAimRate << '\n';
@@ -749,6 +753,17 @@ bool SpringBall() {
 void SetSpringBall(bool enabled) {
   EnsureInitialized();
   sSpringBall = enabled;
+  MarkDirty();
+}
+
+bool FastMorph() {
+  EnsureInitialized();
+  return sFastMorph;
+}
+
+void SetFastMorph(bool enabled) {
+  EnsureInitialized();
+  sFastMorph = enabled;
   MarkDirty();
 }
 
@@ -1813,6 +1828,14 @@ void DrawInputTab() {
       "the mouse) and consumes it, so it no longer free-looks. Fire stays on "
       "whatever is bound to A; remap it in the Controls tab.");
   ImGui::SeparatorText("Morph ball");
+  bool fastMorph = sFastMorph;
+  if (ImGui::Checkbox("Fast Morph", &fastMorph)) {
+    SetFastMorph(fastMorph);
+  }
+  ImGui::TextWrapped(
+      "Morphing and unmorphing take a fraction of a second and keep your "
+      "momentum, as in Metroid Prime 4. Unmorphing on the ground caps speed at "
+      "walking speed; in the air the whole jump arc carries over.");
   const int springRule = PortAp::SpringBallRule();
   ImGui::BeginDisabled(springRule >= 0);
   bool springBall = sSpringBall;

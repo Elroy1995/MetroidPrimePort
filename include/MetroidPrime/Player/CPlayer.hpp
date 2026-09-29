@@ -321,6 +321,9 @@ public:
   float ForwardInput(const CFinalInput& input, float turnInput) const;
   float GetActualFirstPersonMaxVelocity(float dt) const;
   float GetActualBallMaxVelocity(float dt) const;
+#ifdef TARGET_PC
+  void ClampFastMorphGroundVelocity(float dt);
+#endif
   const CScriptWater* GetVisorRunoffEffect(const CStateManager& mgr) const;
   void SetMorphBallState(EPlayerMorphBallState state, CStateManager& mgr);
   bool CanEnterMorphBallState(CStateManager& mgr, float dt) const;

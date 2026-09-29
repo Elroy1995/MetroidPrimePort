@@ -37,6 +37,16 @@
 
 static const float skTransitionFilterTime = .95f;
 
+#ifdef TARGET_PC
+// Fast Morph (PortDebug::FastMorph): UpdateMorphBallState gives the transition
+// a duration under the retail 1 s. Such transitions keep the player's velocity
+// (capped at walking speed when unmorphing on the ground) instead of stopping.
+static bool IsFastMorphDuration(float duration) { return duration > 0.f && duration < 1.f; }
+// Set by an unmorph in the air: the jump's horizontal speed is not clamped to
+// walking speed until the player lands or morphs again.
+static bool sFastMorphAirCarry = false;
+#endif
+
 static const CMaterialList BallTransitionInclude = CMaterialList(kMT_Solid);
 static const CMaterialList BallTransitionExclude =
     CMaterialList(kMT_ProjectilePassthrough, kMT_Player, kMT_Character, kMT_CameraPassthrough);
@@ -47,7 +57,28 @@ static const float skStrafeDistances[] = {11.8f, 11.8f, 11.8f, 5.f, 6.f, 5.f, 5.
 static const float skDashStrafeDistances[] = {11.8f, 30.f, 22.6f, 10.f, 10.f, 10.f, 10.f, 10.f};
 static const float skOrbitForwardDistances[] = {11.8f, 11.8f, 11.8f, 5.f, 6.f, 5.f, 5.f, 6.f};
 
+#ifdef TARGET_PC
+// Keeps the velocity's direction but holds it level and at most walking speed.
+void CPlayer::ClampFastMorphGroundVelocity(float dt) {
+  CVector3f velocity = GetVelocityWR();
+  velocity.SetZ(0.f);
+  const float maxSpeed = GetActualFirstPersonMaxVelocity(dt);
+  if (velocity.Magnitude() > maxSpeed) {
+    velocity = velocity * (maxSpeed / velocity.Magnitude());
+  }
+  SetVelocityWR(velocity);
+}
+#endif
+
 CVector3f CPlayer::GetDampedClampedVelocityWR() const {
+#ifdef TARGET_PC
+  if (sFastMorphAirCarry) {
+    if (x258_movementState != NPlayer::kMS_OnGround) {
+      return GetVelocityWR();
+    }
+    sFastMorphAirCarry = false;
+  }
+#endif
   CVector3f localVelocity = GetTransform().TransposeRotate(GetVelocityWR());
   if ((x258_movementState != NPlayer::kMS_ApplyJump ||
        (x258_movementState == NPlayer::kMS_ApplyJump && GetSurfaceRestraint() != kSR_Air)) &&
@@ -300,6 +331,16 @@ void CPlayer::ComputeMovement(const CFinalInput& input, CStateManager& mgr, floa
     forwardInput = inputAxes.forward;
     SetAngularVelocityOR(CAxisAngle::Identity());
   }
+#ifdef TARGET_PC
+  // A Fast Morph transition carries its velocity through without friction
+  // (gravity still applies through JumpInput). Standing up on the ground is
+  // held at walking speed, or held input would push past it until it ends.
+  if (IsMorphBallTransitioning() && IsFastMorphDuration(x578_morphDuration)) {
+    if (x2f8_morphBallState == kMS_Unmorphing && x258_movementState == NPlayer::kMS_OnGround) {
+      ClampFastMorphGroundVelocity(dt);
+    }
+  } else
+#endif
   SetVelocityWR(GetDampedClampedVelocityWR());
   float turnSpeedMultiplier = gpTweakPlayer->GetTurnSpeedMultiplier();
   if (gpTweakPlayer->GetFreeLookTurnsPlayer()) {
@@ -1395,6 +1436,13 @@ void CPlayer::TransitionToMorphBallState(float dt, CStateManager& mgr) {
   ModelData()->EnableLooping(false);
   ModelData()->Touch(mgr, 0);
   SetMomentumWR(CVector3f::Zero());
+#ifdef TARGET_PC
+  sFastMorphAirCarry = false;
+  if (IsFastMorphDuration(x578_morphDuration)) {
+    ClearForcesAndTorques();
+    SetAngularVelocityWR(CAxisAngle::Identity());
+  } else
+#endif
   Stop();
   SetMorphBallState(kMS_Morphing, mgr);
   SetCameraState(kCS_Transitioning, mgr);
@@ -1525,6 +1573,21 @@ void CPlayer::TransitionFromMorphBallState(float dt, CStateManager& mgr) {
   SetAngularVelocityWR(CAxisAngle::Identity());
   AddMaterial(kMT_GroundCollider, mgr);
   SetMomentumWR(CVector3f::Zero());
+#ifdef TARGET_PC
+  if (IsFastMorphDuration(x578_morphDuration)) {
+    if (x258_movementState == NPlayer::kMS_OnGround) {
+      // As in Metroid Prime 4: standing up on the ground drops to walking speed.
+      ClampFastMorphGroundVelocity(dt);
+    } else {
+      // In the air the whole arc carries over. A falling ball is FallingMorphed,
+      // which has ground friction; the standing player falls in ApplyJump.
+      if (x258_movementState == NPlayer::kMS_FallingMorphed) {
+        SetMoveState(NPlayer::kMS_ApplyJump, mgr);
+      }
+      sFastMorphAirCarry = true;
+    }
+  }
+#endif
   SetCameraState(kCS_Transitioning, mgr);
   x824_transitionFilterTimer = .01f;
   x57c_ = 0;
@@ -1554,6 +1617,11 @@ void CPlayer::EnterMorphBallState(CStateManager& mgr) {
 }
 
 void CPlayer::LeaveMorphBallState(CStateManager& mgr) {
+#ifdef TARGET_PC
+  // Only the end of a Fast Morph unmorph keeps velocity, not a scripted one.
+  const bool keepVelocity =
+      x2f8_morphBallState == kMS_Unmorphing && IsFastMorphDuration(x578_morphDuration);
+#endif
   x730_transitionModels.clear();
   AddMaterial(kMT_GroundCollider, mgr);
   SetMomentumWR(CVector3f::Zero());
@@ -1561,6 +1629,12 @@ void CPlayer::LeaveMorphBallState(CStateManager& mgr) {
   SetHudDisable(FLT_EPSILON, 0.f, 2.f);
   SetHudDisable(FLT_EPSILON, 0.f, 2.f);
   SetIntoBallReadyAnimation(mgr);
+#ifdef TARGET_PC
+  if (keepVelocity) {
+    ClearForcesAndTorques();
+    SetAngularVelocityWR(CAxisAngle::Identity());
+  } else
+#endif
   Stop();
   x3e4_freeLookYawAngle = 0.f;
   x3e8_horizFreeLookAngleVel = 0.f;
@@ -1664,8 +1738,19 @@ void CPlayer::UpdateMorphBallTransition(float dt, CStateManager& mgr) {
   default:
     break;
   }
+#ifdef TARGET_PC
+  // Fast Morph plays the animation at the transition's pace and lets the kept
+  // velocity move the player rather than the animation's root motion.
+  const bool fastMorph = IsFastMorphDuration(x578_morphDuration);
+  const CAdvancementDeltas deltas =
+      UpdateAnimation(fastMorph ? dt / x578_morphDuration : dt, mgr, true);
+  if (!fastMorph) {
+    MoveInOneFrameOR(deltas.GetOffsetDelta(), dt);
+  }
+#else
   const CAdvancementDeltas deltas = UpdateAnimation(dt, mgr, true);
   MoveInOneFrameOR(deltas.GetOffsetDelta(), dt);
+#endif
   RotateInOneFrameOR(deltas.GetOrientationDelta(), dt);
   x574_morphTime = rstl::min_val(x578_morphDuration, x574_morphTime + dt);
   const float morphT = x574_morphTime / x578_morphDuration;

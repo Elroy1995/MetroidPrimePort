@@ -118,6 +118,10 @@ void SetTwinStickRightY(float y);
 // Morph Ball Bombs are held. A connected Archipelago seed overrides it.
 bool SpringBall();
 void SetSpringBall(bool enabled);
+// Fast Morph, as in Metroid Prime 4: short morph/unmorph transitions that keep
+// momentum (capped at walking speed when unmorphing on the ground).
+bool FastMorph();
+void SetFastMorph(bool enabled);
 // Spring Ball on a gyro flick (pad or phone tilted up sharply, like Trilogy's
 // nunchuk flick), on top of C-stick up. Rate is the pitch speed in rad/s a flick
 // must pass. The gyro source is the aim's.

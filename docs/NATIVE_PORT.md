@@ -479,6 +479,13 @@ a temporary directory instead of mounting.
   to 0.2 s before landing still counts. It reads the gyro aim's source but works
   with gyro aim off. The phone's gyro is turned to the screen's orientation, so
   pitch and yaw stay right in landscape.
+- Fast Morph (Input tab and pause Options > Controller, persisted as
+  `fast_morph`, off by default): morph ball transitions in the style of Metroid
+  Prime 4. Morphing and unmorphing take 0.2 s instead of 1 s and keep the
+  player's velocity instead of stopping them. Unmorphing on the ground holds
+  the speed at walking speed; unmorphing in the air keeps the whole arc until
+  landing. Retail's animation root motion is not applied during a fast
+  transition.
 - The overlay's **Controls** tab rebinds pad 1: click Bind, then press the input.
   "Keyboard & mouse" assigns a key or mouse button to each pad button and stick
   axis; "Controller" assigns a physical controller button or axis. Bindings are
@@ -554,7 +561,9 @@ a temporary directory instead of mounting.
   new world runs), `tp x y z`, `face <yaw>`, `look <id>`, `objs [filter]`,
   `obj <id>` (AI state, health, body state and animation, connections, whether
   it is frustum-culled),
-  `send <id> <msg>`, `give <item> [n]`, `take <item> [n]`, `items`, `heal`, `press <a+b> [frames]`,
+  `send <id> <msg>`, `give <item> [n]`, `take <item> [n]`, `items`, `heal`, `press <a+b> [frames]`
+  (`sx:<n>`, `sy:<n>`, `cx:<n>`, `cy:<n>` tokens hold stick axes along with
+  the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
   gyro rates in rad/s), `shot` (prints the bmp path),
   `aspect <4:3|16:9|window>`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
