@@ -106,6 +106,15 @@ const float kFovMin = 45.f;
 const float kFovMax = 90.f;
 float FirstPersonFov();
 void SetFirstPersonFov(float degrees);
+// Extras normally earned by finishing the game (or, for the Fusion Suit, by a
+// GBA link to Metroid Fusion). They only change what the title screen offers;
+// nothing is written into the save's persistent flags.
+bool UnlockHardMode();
+void SetUnlockHardMode(bool enabled);
+bool UnlockFusionSuit();
+void SetUnlockFusionSuit(bool enabled);
+bool UnlockGalleries();
+void SetUnlockGalleries(bool enabled);
 
 // Mouse FPS mode owns aim only in playable first person; target locks retain
 // their native camera and synchronize the mouse angles for a clean handoff.

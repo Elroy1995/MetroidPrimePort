@@ -515,6 +515,15 @@ a temporary directory instead of mounting.
   drawn at the retail FOV whatever the setting (a view-model FOV), so it keeps
   its size and place. Morph ball, cutscene and other scripted cameras keep
   their own FOVs; cutscenes that end in Samus's eyes ease to the setting.
+- Unlocks (F1 > Extras, persisted as `unlock_hard_mode`, `unlock_fusion_suit`,
+  `unlock_galleries`, all off by default): offer what finishing the game
+  unlocks without finishing it. Hard mode adds Normal/Hard to a new file; the
+  Fusion Suit adds its Disabled/Enabled row under Metroid Fusion Connection
+  Bonuses (retail needs a GBA link) and implies normal mode beaten; galleries
+  opens all four image galleries. The save's own flags are never written, so
+  switching an unlock off locks the extra again (switching the Fusion Suit off
+  also takes the suit off unless the save really has it). Metroid (NES) stays
+  locked, since its emulator is a PowerPC REL the port can't run.
 - The in-game pause and map screens (`FRME_PauseScreen`, `FRME_PauseScreenInstructions`,
   `FRME_MapScreen`) are aspect-matched like the HUD, so they keep their
   proportions and spread across a wide viewport instead of stretching.

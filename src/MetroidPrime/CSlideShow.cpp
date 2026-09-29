@@ -10,6 +10,8 @@
 #include "rstl/algorithm.hpp"
 #include "rstl/math.hpp"
 
+#include "port_debug.h"
+
 #include "GuiSys/CGuiTextSupport.hpp"
 #include "Kyoto/Audio/CSfxManager.hpp"
 #include "Kyoto/Audio/CStaticAudioPlayer.hpp"
@@ -188,6 +190,11 @@ CSlideShow::~CSlideShow() {
 
 uint CSlideShow::SlideShowGalleryFlags() {
   uint flags = 0;
+#ifdef TARGET_PC
+  if (PortDebug::UnlockGalleries()) {
+    return 0xf;
+  }
+#endif
   if (gpGameState != nullptr) {
     const int percent = gpGameState->SystemState().GetLogScanCount();
     if (percent >= 50) {

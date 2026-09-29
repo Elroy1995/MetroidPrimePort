@@ -59,6 +59,29 @@
 #include "rstl/StringExtras.hpp"
 #include "rstl/math.hpp"
 
+namespace {
+// Port unlocks (F1 > Extras) stand in for the save's flags here without
+// touching them, so switching an unlock off locks the extra again. The Fusion
+// Suit also needs normal mode beaten, so its unlock implies that too.
+bool NormalModeBeat() {
+#ifdef TARGET_PC
+  if (PortDebug::UnlockHardMode() || PortDebug::UnlockFusionSuit()) {
+    return true;
+  }
+#endif
+  return gpGameState->SystemState().GetNormalModeBeat();
+}
+
+bool FusionLinked() {
+#ifdef TARGET_PC
+  if (PortDebug::UnlockFusionSuit()) {
+    return true;
+  }
+#endif
+  return gpGameState->SystemState().GetFusionLinked();
+}
+} // namespace
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1183,7 +1206,7 @@ void CFrontEndUI::SNewFileSelectFrame::ActivateNewGamePopup() {
 
   PlayAdvanceSfx();
 
-  if (gpGameState->SystemState().GetNormalModeBeat()) {
+  if (NormalModeBeat()) {
     x48_textpane_popupadvance.SetPairText(rstl::wstring_l(gpStringTable->GetString(0x66)));
     x50_textpane_popupcancel.SetPairText(rstl::wstring_l(gpStringTable->GetString(0x5e)));
     x58_textpane_popupextra.SetPairText(rstl::wstring_l(gpStringTable->GetString(0x65)));
@@ -1296,7 +1319,7 @@ void CFrontEndUI::SNewFileSelectFrame::DoPopupAdvance(CGuiTableGroup* caller) {
     }
     x10d_needsEraseToggle = true;
   } else {
-    if (gpGameState->SystemState().GetNormalModeBeat()) {
+    if (NormalModeBeat()) {
       if (x40_tablegroup_popup->GetUserSelection() == 1) {
         PlayAdvanceSfx();
         xc_action = kA_GameOptions;
@@ -1376,8 +1399,7 @@ void CFrontEndUI::SFusionBonusFrame::Update(float dt, CSaveGameScreen* saveUI) {
   }
 
   const int sel = x28_tablegroup_options->GetUserSelection();
-  const bool showFusionSuit = gpGameState->SystemState().GetFusionLinked() &&
-                              gpGameState->SystemState().GetNormalModeBeat();
+  const bool showFusionSuit = FusionLinked() && NormalModeBeat();
 
   const bool fusionBeat = gpGameState->SystemState().GetFusionBeat();
   bool showProceed = sel == 1 && showFusionSuit;
@@ -1511,8 +1533,8 @@ void CFrontEndUI::SFusionBonusFrame::SetTableColors(CGuiTableGroup* tbgp) {
 void CFrontEndUI::SFusionBonusFrame::DoOptionsAdvance(CGuiTableGroup* caller) {
   int sel = x28_tablegroup_options->GetUserSelection();
   const CSystemState& systemState = gpGameState->SystemState();
-  bool normalModeBeat = systemState.GetNormalModeBeat();
-  bool fusionLinked = systemState.GetFusionLinked();
+  bool normalModeBeat = NormalModeBeat();
+  bool fusionLinked = FusionLinked();
   bool fusionBeat = systemState.GetFusionBeat();
 
   switch (sel) {

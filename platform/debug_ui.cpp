@@ -109,6 +109,9 @@ bool sSpringFlick = false;
 float sSpringFlickRate = 6.f;
 float sStickAimRate = 900.f;
 float sFirstPersonFov = PortDebug::kFovRetail;
+bool sUnlockHardMode = false;
+bool sUnlockFusionSuit = false;
+bool sUnlockGalleries = false;
 // Gyro aiming: off / hold / always, auto / controller / phone, and how fast a
 // rotation turns into aim travel.
 int sGyroMode = 0;
@@ -248,6 +251,12 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "hud_wide") {
     sHudWide = ParseBool(value);
+  } else if (key == "unlock_hard_mode") {
+    sUnlockHardMode = ParseBool(value);
+  } else if (key == "unlock_fusion_suit") {
+    sUnlockFusionSuit = ParseBool(value);
+  } else if (key == "unlock_galleries") {
+    sUnlockGalleries = ParseBool(value);
   } else if (key == "fov") {
     const float f = static_cast< float >(std::atof(value.c_str()));
     if (std::isfinite(f) && f >= PortDebug::kFovMin && f <= PortDebug::kFovMax) {
@@ -384,6 +393,9 @@ void SaveSettings() {
   file << "aspect=" << aspect << '\n';
   file << "hud_wide=" << (sHudWide ? 1 : 0) << '\n';
   file << "fov=" << sFirstPersonFov << '\n';
+  file << "unlock_hard_mode=" << (sUnlockHardMode ? 1 : 0) << '\n';
+  file << "unlock_fusion_suit=" << (sUnlockFusionSuit ? 1 : 0) << '\n';
+  file << "unlock_galleries=" << (sUnlockGalleries ? 1 : 0) << '\n';
   file << "vsync=" << (sVsyncEnabled ? 1 : 0) << '\n';
   file << "overlay_windowed=" << (sOverlayWindowed ? 1 : 0) << '\n';
   file << "render_scale=" << sRenderScale << '\n';
@@ -750,6 +762,39 @@ void SetFirstPersonFov(float degrees) {
     sFirstPersonFov = std::clamp(degrees, kFovMin, kFovMax);
     MarkDirty();
   }
+}
+
+bool UnlockHardMode() {
+  EnsureInitialized();
+  return sUnlockHardMode;
+}
+
+void SetUnlockHardMode(bool enabled) {
+  EnsureInitialized();
+  sUnlockHardMode = enabled;
+  MarkDirty();
+}
+
+bool UnlockFusionSuit() {
+  EnsureInitialized();
+  return sUnlockFusionSuit;
+}
+
+void SetUnlockFusionSuit(bool enabled) {
+  EnsureInitialized();
+  sUnlockFusionSuit = enabled;
+  MarkDirty();
+}
+
+bool UnlockGalleries() {
+  EnsureInitialized();
+  return sUnlockGalleries;
+}
+
+void SetUnlockGalleries(bool enabled) {
+  EnsureInitialized();
+  sUnlockGalleries = enabled;
+  MarkDirty();
 }
 
 bool MouseAim() {
@@ -1729,6 +1774,36 @@ void DrawCutscenesTab() {
   }
 }
 
+void DrawExtrasTab() {
+  ImGui::SeparatorText("Unlocks");
+  bool hardMode = sUnlockHardMode;
+  if (ImGui::Checkbox("Hard mode", &hardMode)) {
+    SetUnlockHardMode(hardMode);
+  }
+  bool fusionSuit = sUnlockFusionSuit;
+  if (ImGui::Checkbox("Fusion Suit", &fusionSuit)) {
+    SetUnlockFusionSuit(fusionSuit);
+    // The suit choice itself is saved; without the unlock (or a real link)
+    // there is no menu left to switch it back off, so drop it here.
+    if (!fusionSuit && gpGameState != nullptr &&
+        !(gpGameState->SystemState().GetFusionLinked() &&
+          gpGameState->SystemState().GetNormalModeBeat())) {
+      gpGameState->SystemState().SetHasFusion(false);
+      gpGameState->PlayerState()->SetIsFusionEnabled(false);
+    }
+  }
+  bool galleries = sUnlockGalleries;
+  if (ImGui::Checkbox("Image galleries", &galleries)) {
+    SetUnlockGalleries(galleries);
+  }
+  ImGui::TextWrapped(
+      "Offers what finishing the game normally unlocks: hard mode when starting a "
+      "file, the Fusion Suit under Fusion Bonus (retail needs a GBA link to "
+      "Metroid Fusion), and all four image galleries. Nothing is written into the "
+      "save, so turning an option off locks it again. Metroid (NES) stays locked: "
+      "its emulator can't run in the port.");
+}
+
 #if defined(__ANDROID__)
 // The folder picker's progress, set from the Java copy thread.
 std::mutex sTexturePackStatusMutex;
@@ -2483,6 +2558,7 @@ const DebugPage kDebugPages[] = {
     {"Render", DrawRenderTab},           {"Audio", DrawAudioTab},
     {"Voices", DrawVoicesTab},           {"Debug", DrawDebugTab},
     {"Session", DrawSessionTab},         {"Chat", DrawChatTab},
+    {"Extras", DrawExtrasTab},
 };
 
 // The innermost window under the finger that can actually scroll vertically,
