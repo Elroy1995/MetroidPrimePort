@@ -105,6 +105,13 @@ void CCubeModel::SetArraysCurrent() const {
 }
 
 void CCubeModel::SetSkinningArraysCurrent(const float* positions, const float* normals) const {
+  // Port: CSkinnedModel's callback draws hand a single-bone (or unskinned) model
+  // its own file arrays, which are big-endian (and may hold short normals).
+  // Uploading them as native floats exploded the vertices (thermal pickups).
+  if (positions == x0_instance.GetVertexPointer()) {
+    SetArraysCurrent();
+    return;
+  }
   // The skinned workspaces reuse the same pointer each frame, so force the
   // backend to drop its cached copy or the new vertex data is never uploaded.
   CGX::ClearArray(GX_VA_POS);
