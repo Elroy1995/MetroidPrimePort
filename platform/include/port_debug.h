@@ -122,6 +122,14 @@ void SetSpringBall(bool enabled);
 // momentum (capped at walking speed when unmorphing on the ground).
 bool FastMorph();
 void SetFastMorph(bool enabled);
+// Toggle Lock-On: L latches until pressed again (lock-on, scan, strafe,
+// grapple), and a lock that ends lets go by itself. Sticky Charge: letting go
+// of a long A hold keeps the beam charging until the next press fires it. Both
+// apply only unmorphed, in gameplay (port_hold_toggle.h).
+bool LockOnToggle();
+void SetLockOnToggle(bool enabled);
+bool StickyCharge();
+void SetStickyCharge(bool enabled);
 // Spring Ball on a gyro flick (pad or phone tilted up sharply, like Trilogy's
 // nunchuk flick), on top of C-stick up. Rate is the pitch speed in rad/s a flick
 // must pass. The gyro source is the aim's.

@@ -20,6 +20,7 @@
 #include "MetroidPrime/Enemies/CPatterned.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
+#include "MetroidPrime/Player/CPlayerGun.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/TCastTo.hpp"
 #include <dolphin/pad.h>
@@ -444,6 +445,10 @@ void CmdStatus(CStateManager& mgr) {
   const CGameCamera& cam = mgr.GetCameraManager()->GetCurrentCamera(mgr);
   Out("camera u%u fov %.1f aspect %.3f (viewport %.3f)", cam.GetUniqueId().Value(), cam.GetFov(),
       cam.GetAspectRatio(), CCameraManager::GetDefaultAspectRatio());
+  const CFinalInput& in = mgr.GetFinalInput();
+  Out("orbit state %d, game input L=%d A=%d, charging %d (%.2f)",
+      static_cast< int >(player.GetOrbitState()), in.DL() ? 1 : 0, in.DA() ? 1 : 0,
+      player.GetPlayerGun()->IsCharging() ? 1 : 0, player.GetPlayerGun()->GetChargePercentage());
   if (const CEntity* target = mgr.GetObjectById(player.GetOrbitTargetId())) {
     Out("orbit target u%u %08X %s", target->GetUniqueId().Value(), target->GetEditorId().Value(),
         target->GetDebugName().data());

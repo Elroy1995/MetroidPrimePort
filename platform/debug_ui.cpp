@@ -102,6 +102,8 @@ bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
 bool sSpringBall = false;
 bool sFastMorph = false;
+bool sLockOnToggle = false;
+bool sStickyCharge = false;
 bool sSpringFlick = false;
 float sSpringFlickRate = 6.f;
 float sStickAimRate = 900.f;
@@ -285,6 +287,10 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sSpringBall = ParseBool(value);
   } else if (key == "fast_morph") {
     sFastMorph = ParseBool(value);
+  } else if (key == "lock_on_toggle") {
+    sLockOnToggle = ParseBool(value);
+  } else if (key == "sticky_charge") {
+    sStickyCharge = ParseBool(value);
   } else if (key == "spring_ball_flick") {
     sSpringFlick = ParseBool(value);
   } else if (key == "spring_ball_flick_rate") {
@@ -382,6 +388,8 @@ void SaveSettings() {
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
   file << "fast_morph=" << (sFastMorph ? 1 : 0) << '\n';
+  file << "lock_on_toggle=" << (sLockOnToggle ? 1 : 0) << '\n';
+  file << "sticky_charge=" << (sStickyCharge ? 1 : 0) << '\n';
   file << "spring_ball_flick=" << (sSpringFlick ? 1 : 0) << '\n';
   file << "spring_ball_flick_rate=" << sSpringFlickRate << '\n';
   file << "stick_aim_rate=" << sStickAimRate << '\n';
@@ -768,6 +776,28 @@ bool FastMorph() {
 void SetFastMorph(bool enabled) {
   EnsureInitialized();
   sFastMorph = enabled;
+  MarkDirty();
+}
+
+bool LockOnToggle() {
+  EnsureInitialized();
+  return sLockOnToggle;
+}
+
+void SetLockOnToggle(bool enabled) {
+  EnsureInitialized();
+  sLockOnToggle = enabled;
+  MarkDirty();
+}
+
+bool StickyCharge() {
+  EnsureInitialized();
+  return sStickyCharge;
+}
+
+void SetStickyCharge(bool enabled) {
+  EnsureInitialized();
+  sStickyCharge = enabled;
   MarkDirty();
 }
 
@@ -1836,6 +1866,21 @@ void DrawInputTab() {
       "Twin stick uses the right stick as a direct camera aim (the same path as "
       "the mouse) and consumes it, so it no longer free-looks. Fire stays on "
       "whatever is bound to A; remap it in the Controls tab.");
+  ImGui::SeparatorText("Hold or toggle");
+  bool lockOnToggle = sLockOnToggle;
+  if (ImGui::Checkbox("Toggle Lock-On", &lockOnToggle)) {
+    SetLockOnToggle(lockOnToggle);
+  }
+  ImGui::TextWrapped(
+      "Press L once to lock on, scan, strafe or grapple, and again to let go. "
+      "The lock also lets go by itself when its target is gone.");
+  bool stickyCharge = sStickyCharge;
+  if (ImGui::Checkbox("Sticky Charge", &stickyCharge)) {
+    SetStickyCharge(stickyCharge);
+  }
+  ImGui::TextWrapped(
+      "Taps fire as usual. Hold fire for a moment and let go, and the beam keeps "
+      "charging; press fire again to shoot. Needs the Charge Beam.");
   ImGui::SeparatorText("Morph ball");
   bool fastMorph = sFastMorph;
   if (ImGui::Checkbox("Fast Morph", &fastMorph)) {

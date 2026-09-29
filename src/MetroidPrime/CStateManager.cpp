@@ -2,6 +2,7 @@
 #include "MetroidPrime/CStateManager.hpp"
 #include "port_apclient.h"
 #include "port_debug.h"
+#include "port_hold_toggle.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 #endif
@@ -1300,6 +1301,40 @@ void CStateManager::Update(float dt) {
   x8d8_updateFrameIdx += PortDebug::TickPeriod() * 60.f;
 }
 
+#ifdef TARGET_PC
+// Toggle lock-on and sticky charge (F1 Input, pause Options > Controller). Edges
+// come from the combined digital/analog state, since a GameCube L passes the
+// analog threshold and clicks on different ticks and would toggle twice.
+static void ApplyHoldToggle(CFinalInput& input, const CPlayer* player,
+                            const CPlayerState* playerState, bool enabled) {
+  static PortHoldToggle::Toggle sLockOn;
+  static PortHoldToggle::Sticky sCharge;
+  static bool sPrevL = false;
+
+  const bool unmorphed =
+      enabled && player != nullptr && player->GetMorphballTransitionState() == CPlayer::kMS_Unmorphed;
+
+  const bool heldL = input.DL() || input.DLTrigger();
+  const bool pressL = heldL && !sPrevL;
+  sPrevL = heldL;
+  const bool locked = player != nullptr && player->GetOrbitState() != CPlayer::kOS_NoOrbit;
+  const PortHoldToggle::Output outL =
+      sLockOn.Update(unmorphed && PortDebug::LockOnToggle(), heldL, pressL, locked);
+  if (sLockOn.Latched() || outL.held != heldL) {
+    input.PortSetL(outL.held, outL.pressed);
+  }
+
+  const bool heldA = input.DA();
+  const bool pressA = input.PA();
+  const bool charge = unmorphed && PortDebug::StickyCharge() && playerState != nullptr &&
+                      playerState->HasPowerUp(CPlayerState::kIT_ChargeBeam);
+  const PortHoldToggle::Output outA = sCharge.Update(charge, heldA, pressA, input.Time());
+  if (outA.held != heldA || outA.pressed != pressA) {
+    input.PortSetA(outA.held, outA.pressed);
+  }
+}
+#endif
+
 void CStateManager::ProcessInput(const CFinalInput& input) {
   static CFinalInput skDefaultInput;
 
@@ -1317,9 +1352,13 @@ void CStateManager::ProcessInput(const CFinalInput& input) {
 #ifdef TARGET_PC
       // Twin stick's raw right stick (Spring Ball) is input too.
       PortDebug::SetTwinStickRightY(0.f);
+      ApplyHoldToggle(xb54_finalInput, x84c_player, GetPlayerState(), false);
 #endif
     } else {
       xb54_finalInput = input;
+#ifdef TARGET_PC
+      ApplyHoldToggle(xb54_finalInput, x84c_player, GetPlayerState(), true);
+#endif
     }
   }
 

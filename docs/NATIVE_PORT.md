@@ -487,6 +487,14 @@ a temporary directory instead of mounting.
   until landing. Samus's curl-up animation is not shown: the ball forms inside
   the transition flash while the camera eases out, and an unmorph cuts to first
   person behind the transition filter.
+- Toggle Lock-On (Input tab and pause Options > Controller, persisted as
+  `lock_on_toggle`, off by default): a press of L latches it held (lock-on,
+  scan, strafe, grapple) and the next press lets go. The latch also lets go by
+  itself when a lock the player had ends (target dead or out of range). Sticky
+  Charge (`sticky_charge`, off by default, needs the Charge Beam): holding fire
+  for 0.35 s or more keeps the charge held after letting go, and the next press
+  fires it; shorter taps shoot as usual. Both are off in morph ball and while
+  input is disabled. The console's `status` prints the game's L/A and the charge.
 - The overlay's **Controls** tab rebinds pad 1: click Bind, then press the input.
   "Keyboard & mouse" assigns a key or mouse button to each pad button and stick
   axis; "Controller" assigns a physical controller button or axis. Bindings are

@@ -187,6 +187,22 @@ public:
 
   bool PStart() const { return x2e_b31_PStart; }
 
+#ifdef TARGET_PC
+  // Hold/toggle options (port_hold_toggle.h) override a button after the fact.
+  // L covers both the digital click and the analog trigger, since the game's
+  // lock-on and scan commands read either.
+  void PortSetL(bool held, bool pressed) {
+    x2c_b29_L = held;
+    x2e_b25_PL = pressed;
+    x18_anaLeftTrigger = held ? 1.f : 0.f;
+    x24_anaLeftTriggerP = pressed ? 1.f : 0.f;
+  }
+  void PortSetA(bool held, bool pressed) {
+    x2c_b24_A = held;
+    x2d_b28_PA = pressed;
+  }
+#endif
+
 private:
   float x0_dt;
   int x4_controllerIdx;
