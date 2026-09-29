@@ -83,7 +83,12 @@ public:
   const bool GetInvertYAxis() const { return x68_25_invertY; }
   void SetIsRumbleEnabled(const bool rumble);
   const bool GetIsRumbleEnabled() const { return x68_26_rumble; }
+#ifdef TARGET_PC
+  // Off in randomized games, whose items are not where the hints point.
+  bool GetIsHintSystemEnabled() const;
+#else
   bool GetIsHintSystemEnabled() const { return x68_28_hintSystem; }
+#endif
   bool GetSwapBeamControls() const { return x68_27_swapBeamsControls; }
 
 private:

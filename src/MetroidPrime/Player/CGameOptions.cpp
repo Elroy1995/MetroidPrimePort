@@ -13,6 +13,11 @@
 
 #include "dolphin/os.h"
 
+#ifdef TARGET_PC
+#include "port_apclient.h"
+#include "port_randomizer.h"
+#endif
+
 const bool CGameOptions::skDefaultHudLag = true;
 const bool CGameOptions::skDefaultInvertY = false;
 const bool CGameOptions::skDefaultRumble = true;
@@ -226,6 +231,16 @@ void CGameOptions::SetHelmetAlpha(const int alpha) { x64_helmetAlpha = alpha; }
 void CGameOptions::SetHUDLag(const bool flag) { x68_24_hudLag = flag; }
 
 void CGameOptions::SetIsHintSystemEnabled(bool flag) { x68_28_hintSystem = flag; }
+
+#ifdef TARGET_PC
+// The retail hints lead to retail item locations; randomprime drops the Hint
+// System row for the same reason. The saved choice is kept for normal games.
+bool CGameOptions::GetIsHintSystemEnabled() const {
+  if (PortRandomizer::Enabled() || PortAp::RandomizedGame())
+    return false;
+  return x68_28_hintSystem;
+}
+#endif
 
 void CGameOptions::SetInvertYAxis(const bool flag) { x68_25_invertY = flag; }
 
