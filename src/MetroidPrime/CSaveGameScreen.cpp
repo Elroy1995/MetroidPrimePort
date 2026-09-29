@@ -11,6 +11,10 @@
 #include "MetroidPrime/CMain.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "rstl/StringExtras.hpp"
+#ifdef TARGET_PC
+#include "MetroidPrime/Player/CGameState.hpp"
+#include "port_apclient.h"
+#endif
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 #endif
@@ -432,6 +436,11 @@ void CSaveGameScreen::StartGame(int idx) {
   x6c_cardDriver->ExportPersistentOptions();
   x6c_cardDriver->BuildNewFileSlot(idx);
   if (newGame) {
+#ifdef TARGET_PC
+    // Port: an Archipelago seed starts at the Landing Site, not the frigate.
+    if (const uint32_t world = PortAp::NewGameWorld())
+      gpGameState->SetCurrentWorldId(CAssetId(world));
+#endif
     x6c_cardDriver->StartFileCreateTransactional();
   } else {
     x80_iowRet = CIOWin::kMR_Exit;

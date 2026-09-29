@@ -958,6 +958,14 @@ void AnnouncePickup(uint32_t world, uint32_t area, uint32_t entity) {
   }
 }
 
+uint32_t NewGameWorld() {
+  try {
+    return BuiltinEnabled() ? MetroidPrime::kTallonWorld : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
 void OnInventoryReset() {
   try {
     if (!Enabled() || gpGameState == nullptr)

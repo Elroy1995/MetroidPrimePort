@@ -78,6 +78,11 @@ void AnnouncePickup(uint32_t world, uint32_t area, uint32_t entity);
 // replays them. No-op when AP is off.
 void OnInventoryReset();
 
+// The world a new game starts in, or 0 for the retail start. With the built-in
+// tables this is Tallon Overworld (its first area is the Landing Site): the
+// seeds the port supports skip the frigate.
+uint32_t NewGameWorld();
+
 // Called once per simulation tick by CStateManager::Update. Sends queued checks
 // and grants queued items to the player state.
 void Poll(CStateManager& mgr);
