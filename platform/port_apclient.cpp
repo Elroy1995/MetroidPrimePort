@@ -1094,10 +1094,39 @@ ConnectionDetails SavedConnection() {
     details.slot = saved.slot;
     details.password = saved.password;
     details.enabled = saved.enabled;
+    details.seed = saved.seed;
     return details;
   } catch (...) {
     return ConnectionDetails();
   }
+}
+
+std::vector<ConnectionDetails> RecentGames() {
+  std::vector<ConnectionDetails> games;
+  try {
+    std::error_code error;
+    for (std::filesystem::directory_iterator it(ConfigDirectory() / "archipelago_games", error), end;
+         !error && it != end; it.increment(error)) {
+      const std::filesystem::path file = it->path() / "game.json";
+      if (!std::filesystem::is_regular_file(file, error))
+        continue;
+      const Protocol::Connection game = Protocol::LoadConnectionFile(file.string());
+      if (game.server.empty() || game.slot.empty() || game.seed.empty())
+        continue;
+      ConnectionDetails details;
+      details.server = game.server;
+      details.slot = game.slot;
+      details.password = game.password;
+      details.seed = game.seed;
+      details.lastPlayed = game.lastPlayed;
+      games.push_back(std::move(details));
+    }
+  } catch (...) {
+  }
+  std::sort(games.begin(), games.end(), [](const ConnectionDetails& a, const ConnectionDetails& b) {
+    return a.lastPlayed > b.lastPlayed;
+  });
+  return games;
 }
 
 bool Connect(const ConnectionDetails& details, std::string& error) {
@@ -1140,8 +1169,11 @@ bool Connect(const ConnectionDetails& details, std::string& error) {
       std::lock_guard<std::mutex> lock(ConnectionFileMutex());
       // The same slot on the same server is most likely the same game, so its
       // seed (and save card) stays until the server says otherwise.
+      // A game resumed from the recent list brings its own seed.
       const Protocol::Connection saved = Protocol::LoadConnectionFile(ConfigPath());
-      if (saved.server == connection.server && saved.slot == connection.slot)
+      if (!details.seed.empty())
+        connection.seed = details.seed;
+      else if (saved.server == connection.server && saved.slot == connection.slot)
         connection.seed = saved.seed;
       if (!Protocol::SaveConnectionFile(ConfigPath(), connection, error))
         return false;

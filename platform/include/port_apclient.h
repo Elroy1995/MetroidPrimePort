@@ -38,8 +38,14 @@ struct ConnectionDetails {
   std::string slot;
   std::string password;
   bool enabled = true; // false after Disconnect: kept, but not connected at launch
+  // The game's seed, when known. Connect uses it to pick that game's save card
+  // before the server answers; empty keeps the saved one for the same slot.
+  std::string seed;
+  int64_t lastPlayed = 0; // Unix time, RecentGames only
 };
 ConnectionDetails SavedConnection();
+// Every game played before (archipelago_games/*/game.json), most recent first.
+std::vector<ConnectionDetails> RecentGames();
 // Saves the details and restarts the client with them, on a background thread
 // (the status line shows the progress). False, with `error`, when the details
 // are incomplete or the file cannot be written; nothing changes then.

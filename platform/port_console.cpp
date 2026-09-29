@@ -398,7 +398,7 @@ void CmdHelp() {
   Out("shot                       take a screenshot and print its path");
   Out("wait <frames>              let frames pass");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
-  Out("ap [connect <server> <slot> [password] | disconnect]   Archipelago, as the F1 Connect screen does");
+  Out("ap [connect <server> <slot> [password] | disconnect | recent | resume <n>]   Archipelago, as the F1 Connect screen does");
   Out("quit                       exit the game");
   Out("ids: hex editor id (002900A1), u<index> unique id, or an exact debug name");
 }
@@ -779,8 +779,20 @@ void RunFrame() {
     } else if (action == "disconnect") {
       if (!PortAp::Disconnect(error))
         return Finish(error.c_str());
+    } else if (action == "recent" && sCmd.args.size() == 2) {
+      const std::vector<PortAp::ConnectionDetails> games = PortAp::RecentGames();
+      for (size_t i = 0; i < games.size(); ++i)
+        Out("%zu: %s @ %s, seed %s, played %lld", i, games[i].slot.c_str(), games[i].server.c_str(),
+            games[i].seed.c_str(), static_cast<long long>(games[i].lastPlayed));
+    } else if (action == "resume" && sCmd.args.size() == 3) {
+      unsigned index = 0;
+      const std::vector<PortAp::ConnectionDetails> games = PortAp::RecentGames();
+      if (!ParseUnsigned(sCmd.args[2], index) || index >= games.size())
+        return Finish("no such recent game (see ap recent)");
+      if (!PortAp::Connect(games[index], error))
+        return Finish(error.c_str());
     } else if (!action.empty()) {
-      return Finish("usage: ap [connect <server> <slot> [password] | disconnect]");
+      return Finish("usage: ap [connect <server> <slot> [password] | disconnect | recent | resume <n>]");
     }
     Out("%s (%s)", PortAp::StatusText(), PortAp::ConfigFilePath().c_str());
     Finish();

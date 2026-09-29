@@ -55,6 +55,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -1998,6 +1999,56 @@ void DrawArchipelagoConnect() {
   if (!sResult.empty())
     ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", sResult.c_str());
   ImGui::TextDisabled("Start a new game after connecting to a new seed.");
+
+  // Games played before, each with its own save card. The list is re-read now
+  // and then: a game is recorded when its server answers, after Connect.
+  static std::vector<PortAp::ConnectionDetails> sRecent;
+  static uint64_t sRecentReadAt = 0;
+  if (!ImGui::CollapsingHeader("Recent Archipelago games", ImGuiTreeNodeFlags_DefaultOpen)) {
+    sRecentReadAt = 0;
+    return;
+  }
+  const uint64_t now = SDL_GetTicks();
+  if (sRecentReadAt == 0 || now - sRecentReadAt > 2000) {
+    sRecent = PortAp::RecentGames();
+    sRecentReadAt = now == 0 ? 1 : now;
+  }
+  if (sRecent.empty()) {
+    ImGui::TextDisabled("None yet. A game is listed once its server has answered.");
+    return;
+  }
+  // The save card only changes on the title screen, so a game in progress
+  // would keep saving to the card it was loaded from.
+  const bool inGame = StateManager() != nullptr;
+  if (inGame)
+    ImGui::TextDisabled("Quit to the title screen to resume another game.");
+  const PortAp::ConnectionDetails current = PortAp::SavedConnection();
+  for (size_t i = 0; i < sRecent.size(); ++i) {
+    const PortAp::ConnectionDetails& game = sRecent[i];
+    const bool isCurrent = PortAp::Enabled() && current.server == game.server &&
+                           current.slot == game.slot && current.seed == game.seed;
+    ImGui::PushID(static_cast<int>(i));
+    ImGui::BeginDisabled(inGame || isCurrent);
+    if (ImGui::Button(isCurrent ? "Current" : "Resume")) {
+      std::string error;
+      sResult = PortAp::Connect(game, error) ? std::string() : error;
+      if (sResult.empty()) {
+        sLoaded = false;
+        sRecentReadAt = 0;
+      }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    char played[32] = "";
+    const time_t when = static_cast<time_t>(game.lastPlayed);
+    if (const std::tm* local = game.lastPlayed > 0 ? std::localtime(&when) : nullptr)
+      std::strftime(played, sizeof(played), "%Y-%m-%d %H:%M", local);
+    ImGui::Text("%s @ %s", game.slot.c_str(), game.server.c_str());
+    ImGui::Indent();
+    ImGui::TextDisabled("%s%s%s", game.seed.c_str(), played[0] != '\0' ? "  -  " : "", played);
+    ImGui::Unindent();
+    ImGui::PopID();
+  }
 }
 
 void DrawSessionTab() {
