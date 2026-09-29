@@ -1,11 +1,15 @@
 #include "port_apclient.h"
 #include "port_log.h"
 
+#include "port_ap_metroidprime.h"
 #include "port_ap_protocol.h"
 #include "port_ws.h"
 
 #include "MetroidPrime/CHealthInfo.hpp"
+#include "MetroidPrime/CScriptLayerManager.hpp"
 #include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/CWorld.hpp"
+#include "MetroidPrime/Player/CWorldState.hpp"
 #include "MetroidPrime/HUD/CSamusHud.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
@@ -236,6 +240,10 @@ struct Runtime {
   // DeathLink: whether this client's death has already been announced, so a
   // death is sent once rather than on every tick the flag stays clear for.
   bool deathAnnounced = false;
+  // The game reached the end-of-game world: the goal is owed to the server
+  // (`goalWanted`) until the socket thread has sent it once (`goalSent`).
+  bool goalWanted = false;
+  bool goalSent = false;
 };
 
 Runtime& GetRuntime() {
@@ -313,6 +321,57 @@ void ReconcileLocked(Runtime& runtime, CGameState::ApProgress& progress) {
   runtime.grants.clear();
   runtime.itemCount = static_cast<int>(std::min<int64_t>(held, std::numeric_limits<int>::max()));
   runtime.syncWanted = true;
+}
+
+// With the built-in tables the game is a plain disc, so what the AP ISO patches
+// in is done here each tick instead: unlimited ammo, the Artifact Temple totems
+// following the artifacts held (the retail pickup scripts light the totem of the
+// artifact that used to be at a location, not the one received), and the goal.
+void ApplyBuiltinWorld(Runtime& runtime, CStateManager& mgr, CPlayerState& player) {
+  namespace Prime = MetroidPrime;
+  bool unlimitedMissiles = false;
+  bool unlimitedPowerBombs = false;
+  {
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (!runtime.config.builtin || runtime.session == nullptr)
+      return;
+    unlimitedMissiles =
+        runtime.session->ReceivedCount(Prime::kItemBase + Prime::kUnlimitedMissiles) > 0;
+    unlimitedPowerBombs =
+        runtime.session->ReceivedCount(Prime::kItemBase + Prime::kUnlimitedPowerBombs) > 0;
+    if (!runtime.goalWanted && gpGameState->CurrentWorldAssetId() == Prime::kEndOfGameWorld) {
+      runtime.goalWanted = true;
+      runtime.wake.notify_all();
+    }
+  }
+  const auto topOff = [&player](CPlayerState::EItemType type) {
+    const int missing = player.GetItemCapacity(type) - player.GetItemAmount(type);
+    if (missing > 0)
+      player.IncrPickUp(type, missing);
+  };
+  if (unlimitedMissiles)
+    topOff(CPlayerState::kIT_Missiles);
+  if (unlimitedPowerBombs)
+    topOff(CPlayerState::kIT_PowerBombs);
+
+  // Tallon's layer state is shared with the running world while in Tallon, so
+  // writing it through the game state covers both cases.
+  CScriptLayerManager* layers =
+      gpGameState->StateForWorld(Prime::kTallonWorld).GetLayerState().GetPtr();
+  TAreaId temple = Prime::kArtifactTempleIndex;
+  const CWorld* world = mgr.GetWorld();
+  if (world != nullptr && world->IGetWorldAssetId() == Prime::kTallonWorld)
+    temple = world->IGetAreaId(Prime::kArtifactTempleArea);
+  if (layers == nullptr || temple.Value() < 0 ||
+      static_cast<size_t>(temple.Value()) >= layers->GetAreaLayers().size())
+    return;
+  for (int id = CPlayerState::kIT_Truth; id <= CPlayerState::kIT_Newborn; ++id) {
+    const bool held = player.GetItemAmount(static_cast<CPlayerState::EItemType>(id)) > 0;
+    // Truth's totem is the first thing in the room, so it has its own layer.
+    const TLayerId layer(id == CPlayerState::kIT_Truth ? 23 : id - 28);
+    if (layers->IsLayerActive(temple, layer) != held)
+      layers->SetLayerActive(temple, layer, held);
+  }
 }
 
 void CountChecks(Runtime& runtime, size_t count) {
@@ -469,6 +528,10 @@ void WorkerLoop(Runtime& runtime) {
                 }
                 if (EnvEnabled("MP_AP_SEND_ALL"))
                   sendAllChecks = runtime.session->AllLocationIds();
+                for (const std::string& warning : runtime.session->GetSlotData().warnings)
+                  PortLog::Write("archipelago: seed option %s; the game will not match the "
+                                 "seed's logic\n",
+                                 warning.c_str());
               } else if (cmd == "ConnectionRefused") {
                 refused = true;
                 runtime.connected = false;
@@ -525,8 +588,11 @@ void WorkerLoop(Runtime& runtime) {
         std::vector<int64_t> pendingChecks;
         std::string pendingBounce;
         bool syncWanted = false;
+        bool goalWanted = false;
         if (apConnected) {
           std::lock_guard<std::mutex> lock(runtime.mutex);
+          goalWanted = runtime.goalWanted && !runtime.goalSent;
+          runtime.goalSent = runtime.goalSent || goalWanted;
           while (!runtime.queuedChecks.empty()) {
             pendingChecks.push_back(runtime.queuedChecks.front());
             runtime.queuedChecks.pop_front();
@@ -563,6 +629,15 @@ void WorkerLoop(Runtime& runtime) {
             break;
           }
           PortLog::Write("archipelago: announced a death to the multiworld\n");
+        }
+        if (goalWanted) {
+          if (!SendPacket(client, Session::BuildGoal(), connectionError)) {
+            std::lock_guard<std::mutex> lock(runtime.mutex);
+            runtime.goalSent = false; // owed again on the next connection
+            connectionFailed = true;
+            break;
+          }
+          PortLog::Write("archipelago: goal complete\n");
         }
         runtime.FlushState();
 
@@ -835,6 +910,17 @@ void QueueCheck(const char* locationKey) {
   }
 }
 
+void OnInventoryReset() {
+  try {
+    if (!Enabled() || gpGameState == nullptr)
+      return;
+    CGameState::ApProgress& progress = gpGameState->PortApProgress();
+    progress.appliedIndex = 0;
+    progress.reconciled = false; // reconcile again, now holding nothing
+  } catch (...) {
+  }
+}
+
 void Poll(CStateManager& mgr) {
   try {
     EnsureLoaded();
@@ -868,6 +954,7 @@ void Poll(CStateManager& mgr) {
       if (type == CPlayerState::kIT_EnergyTanks)
         player->HealthInfo()->SetHP(player->CalculateHealth());
     }
+    ApplyBuiltinWorld(runtime, mgr, *player);
 
     // DeathLink, inbound. A bounce the server sent is applied by clearing the
     // alive flag, which is what the world's own client does and what drives

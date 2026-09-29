@@ -1,5 +1,6 @@
 #include "port_ap_protocol.h"
 
+#include "port_ap_metroidprime.h"
 #include "port_randomizer.h"
 
 #include <algorithm>
@@ -247,6 +248,56 @@ std::string ItemDisplay(const ItemEntry& entry, int64_t count) {
   return "item";
 }
 
+// Reads a Metroid Prime slot_data object. The options it names as unsupported
+// are ones the AP ISO patches into the game and the port does not; a seed
+// generated with them can expect a door, an elevator or a start the port does
+// not have, so the player is told up front rather than stuck later.
+void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
+  slot = SlotData();
+  slot.received = true;
+  const auto number = [&data](const char* name, int64_t fallback) {
+    int64_t value = fallback;
+    const PortJson::Value* member = Member(data, name);
+    if (member != nullptr && member->IsBool())
+      value = member->AsBool() ? 1 : 0;
+    else
+      IntegerMember(data, name, value);
+    return value;
+  };
+  slot.requireMissileLauncher = number("missile_launcher", 0) > 0;
+  slot.requireMainPowerBomb = number("main_power_bomb", 0) > 0;
+  slot.requiredArtifacts = static_cast<int>(std::clamp<int64_t>(number("required_artifacts", 12), 0, 12));
+
+  struct Unsupported {
+    const char* key;
+    int64_t vanilla;
+    const char* text;
+  };
+  static const Unsupported kUnsupported[] = {
+      {"elevator_randomization", 0, "elevator randomization"},
+      {"door_color_randomization", 0, "door color randomization"},
+      {"blast_shield_randomization", 0, "blast shield randomization"},
+      {"locked_door_count", 0, "locked doors"},
+      {"randomize_starting_beam", 0, "a random starting beam"},
+      {"spring_ball", 0, "Spring Ball"},
+      {"final_bosses", 0, "a final boss choice"},
+      {"remove_hive_mecha", 0, "Hive Mecha removal"},
+      {"backwards_lower_mines", 0, "backwards Lower Mines"},
+      {"flaahgra_power_bombs", 0, "Flaahgra power bombs"},
+      {"shuffle_scan_visor", 0, "a shuffled Scan Visor"},
+      {"remove_xray_requirements", 0, "removed X-Ray requirements"},
+      {"remove_thermal_requirements", 0, "removed Thermal requirements"},
+      {"etank_capacity", 100, "a changed energy tank capacity"},
+      {"required_artifacts", 12, "fewer than 12 artifacts"},
+  };
+  for (const Unsupported& option : kUnsupported) {
+    if (number(option.key, option.vanilla) != option.vanilla)
+      slot.warnings.push_back(std::string("not supported: ") + option.text);
+  }
+  const PortJson::Value* room = Member(data, "starting_room_name");
+  if (room != nullptr && room->IsString() && room->AsString() != "Landing Site")
+    slot.warnings.push_back("not supported: starting in " + room->AsString());
+}
 
 } // namespace
 
@@ -332,6 +383,7 @@ Config ParseConfig(const std::string& text) {
         return config;
       }
       config.deathLink = value->AsBool();
+      config.deathLinkSet = true;
     }
     value = Member(root, "version");
     if (value != nullptr) {
@@ -407,6 +459,8 @@ Config ParseConfig(const std::string& text) {
         config.items[itemId] = std::move(item);
       }
     }
+    // Neither table given: a Metroid Prime slot uses the world's own.
+    config.builtin = MetroidPrime::ApplyDefaults(config);
     config.valid = true;
     config.error.clear();
   } catch (const std::exception& error) {
@@ -639,6 +693,33 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
           mState.checkedLocations.push_back(id);
       }
     }
+    // Only the built-in tables know what Metroid Prime's options mean; a
+    // hand-written config says everything itself.
+    const PortJson::Value* slotData = Member(packet, "slot_data");
+    if (mConfig.builtin && slotData != nullptr && slotData->IsObject()) {
+      ParseSlotData(*slotData, mSlotData);
+      for (const std::string& warning : mSlotData.warnings)
+        AppendNotification(mNotifications, "Seed option " + warning);
+      // The seed's DeathLink option decides unless archipelago.json said
+      // otherwise. The Connect already went out without the tag, so add it.
+      const PortJson::Value* deathLink = Member(*slotData, "death_link");
+      int64_t deathLinkValue = 0;
+      const bool seedDeathLink = deathLink != nullptr &&
+                                 ((deathLink->IsBool() && deathLink->AsBool()) ||
+                                  (Integer(deathLink, deathLinkValue) && deathLinkValue != 0));
+      if (seedDeathLink && !mConfig.deathLinkSet && !mConfig.deathLink) {
+        mConfig.deathLink = true;
+        std::string update = "{\"cmd\":\"ConnectUpdate\",\"tags\":[";
+        for (const std::string& tag : mConfig.tags) {
+          if (tag == "DeathLink")
+            continue;
+          update += Quote(tag);
+          update.push_back(',');
+        }
+        update += "\"DeathLink\"]}";
+        outgoing.push_back(std::move(update));
+      }
+    }
   } else if (command == "ReceivedItems") {
     int64_t index = 0;
     if (!IntegerMember(packet, "index", index) || index < 0)
@@ -693,13 +774,26 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       if (found != mConfig.items.end()) {
         const ItemEntry& entry = found->second;
         int64_t count = 0;
-        if (entry.IsProgressive()) {
+        // The built-in tables count every item: ammo capacity depends on how
+        // many expansions and main items arrived, not on this one alone.
+        if (entry.IsProgressive() || mConfig.builtin) {
           int64_t& stored = mState.progressive[itemId];
           count = stored;
           if (stored < std::numeric_limits<int64_t>::max())
             ++stored;
         }
         ItemGrant grant = entry.Step(count);
+        bool missiles = false;
+        if (mConfig.builtin && MetroidPrime::IsAmmoItem(itemId, missiles)) {
+          const bool requiresMain =
+              missiles ? mSlotData.requireMissileLauncher : mSlotData.requireMainPowerBomb;
+          const int after = MetroidPrime::AmmoCapacity(mState.progressive, missiles, requiresMain);
+          int64_t& stored = mState.progressive[itemId];
+          --stored;
+          const int before = MetroidPrime::AmmoCapacity(mState.progressive, missiles, requiresMain);
+          ++stored;
+          grant.capacity = grant.amount = std::max(0, after - before);
+        }
         grant.itemId = itemId;
         grant.index = receivedIndex;
         seenBefore = count;
@@ -896,7 +990,9 @@ std::string Session::BuildConnect() const {
       result.push_back(',');
     result += "\"DeathLink\"";
   }
-  result += "],\"slot_data\":false}";
+  // The built-in tables read the seed's options; a hand-written config has no
+  // use for them.
+  result += mConfig.builtin ? "],\"slot_data\":true}" : "],\"slot_data\":false}";
   return result;
 }
 
@@ -912,6 +1008,13 @@ std::string Session::BuildLocationChecks(const std::vector<int64_t>& ids) {
 }
 
 std::string Session::BuildSync() { return "{\"cmd\":\"Sync\"}"; }
+
+std::string Session::BuildGoal() { return "{\"cmd\":\"StatusUpdate\",\"status\":30}"; }
+
+int64_t Session::ReceivedCount(int64_t itemId) const {
+  const auto found = mState.progressive.find(itemId);
+  return found != mState.progressive.end() ? found->second : 0;
+}
 
 bool Session::DeathLinkEnabled(const Config& config) {
   return config.deathLink;

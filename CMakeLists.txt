@@ -99,6 +99,7 @@ set(MP_PORT_SOURCES
     platform/port_prompts.cpp
     platform/port_controls.cpp
     platform/port_randomizer.cpp
+    platform/port_ap_metroidprime.cpp
     platform/port_ap_protocol.cpp
     platform/port_apclient.cpp
     platform/port_json.cpp
@@ -272,6 +273,7 @@ if(MP_BUILD_TESTS)
     target_link_libraries(port_randomizer_tests PRIVATE ${AURORA_SDL3_TARGET})
     add_executable(port_apclient_tests
         tests/port_apclient.cpp
+        platform/port_ap_metroidprime.cpp
         platform/port_ap_protocol.cpp
         platform/port_json.cpp
         platform/port_randomizer.cpp)

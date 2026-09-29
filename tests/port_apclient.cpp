@@ -681,6 +681,91 @@ int main() {
   Check(!both.valid && Contains(both.error, "5031046"),
         "entry with both item and progressive is rejected");
 
+  // Built-in Metroid Prime tables: a config with only the connection details.
+  const Config builtin = ParseConfig(R"({"server":"ws://localhost","slot":"P"})");
+  Check(builtin.valid && builtin.builtin, "a bare Metroid Prime config uses the built-in tables");
+  Check(builtin.locations.size() == 100 &&
+            builtin.locations.count("39F2DE28:B2701146:0000007E") == 1 &&
+            builtin.locations.at("39F2DE28:B2701146:0000007E") == 5031158,
+        "built-in locations are keyed world:area:pickup");
+  Check(builtin.items.count(5031004) == 1 && builtin.items.count(5031049) == 1 &&
+            builtin.items.at(5031049).IsProgressive(),
+        "built-in items include expansions and progressive beams");
+  Check(!ParseConfig(R"({"server":"ws://localhost","slot":"P","game":"Other"})").builtin &&
+            !config.builtin,
+        "other games and hand-written tables do not get the built-in tables");
+  {
+    Session session(builtin, State());
+    Check(Contains(session.BuildConnect(), "\"slot_data\":true"),
+          "the built-in tables ask for slot_data");
+    Check(Contains(Session(config, State()).BuildConnect(), "\"slot_data\":false"),
+          "a hand-written config does not ask for slot_data");
+    Check(Contains(Session::BuildGoal(), "\"status\":30"), "goal is StatusUpdate 30");
+    std::vector<std::string> outgoing;
+    std::vector<ItemGrant> grants;
+    session.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,"players":[],
+        "checked_locations":[],"slot_data":{"missile_launcher":1,"main_power_bomb":0,
+        "death_link":1,"elevator_randomization":true,"starting_room_name":"Landing Site",
+        "etank_capacity":100,"required_artifacts":12}})"),
+                         outgoing, grants);
+    const SlotData& slot = session.GetSlotData();
+    Check(slot.received && slot.requireMissileLauncher && !slot.requireMainPowerBomb,
+          "slot_data main-item requirements parse");
+    Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "elevator"),
+          "only the unsupported option is warned about");
+    Check(session.GetConfig().deathLink && outgoing.size() == 1 &&
+              Contains(outgoing[0], "ConnectUpdate") && Contains(outgoing[0], "DeathLink"),
+          "the seed's DeathLink option adds the tag");
+    outgoing.clear();
+    session.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":0,"items":[
+        {"item":5031004,"location":1,"player":1,"flags":0},
+        {"item":5031043,"location":2,"player":1,"flags":0},
+        {"item":5031004,"location":3,"player":1,"flags":0},
+        {"item":5031049,"location":4,"player":1,"flags":0},
+        {"item":5031049,"location":5,"player":1,"flags":0},
+        {"item":5031041,"location":6,"player":1,"flags":0}]})"),
+                         outgoing, grants);
+    const int missiles = PortRandomizer::ItemFromName("Missiles");
+    Check(grants.size() == 6 && grants[0].itemType == missiles && grants[0].capacity == 0 &&
+              grants[1].itemType == missiles && grants[1].capacity == 10 &&
+              grants[1].amount == 10 && grants[2].capacity == 5,
+          "missile capacity waits for the launcher when the seed requires it");
+    Check(grants.size() == 6 && grants[3].itemType == PortRandomizer::ItemFromName("PowerBeam") &&
+              grants[4].itemType == PortRandomizer::ItemFromName("ChargeBeam"),
+          "progressive power beam steps to the charge beam");
+    Check(grants.size() == 6 && grants[5].itemType < 0 && session.ReceivedCount(5031041) == 1,
+          "unlimited missiles is counted, not granted");
+  }
+  {
+    Session session(builtin, State());
+    std::vector<std::string> outgoing;
+    std::vector<ItemGrant> grants;
+    session.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,"players":[],
+        "checked_locations":[],"slot_data":{"missile_launcher":0,"main_power_bomb":0}})"),
+                         outgoing, grants);
+    session.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":0,"items":[
+        {"item":5031007,"location":1,"player":1,"flags":0},
+        {"item":5031007,"location":2,"player":1,"flags":0},
+        {"item":5031044,"location":3,"player":1,"flags":0}]})"),
+                         outgoing, grants);
+    Check(grants.size() == 3 && grants[0].capacity == 4 && grants[1].capacity == 1 &&
+              grants[2].capacity == 1,
+          "without the main requirement the first expansion carries the main amount");
+    Check(outgoing.empty(), "no DeathLink update when the seed has it off");
+  }
+  {
+    const Config optedOut =
+        ParseConfig(R"({"server":"ws://localhost","slot":"P","death_link":false})");
+    Session session(optedOut, State());
+    std::vector<std::string> outgoing;
+    std::vector<ItemGrant> grants;
+    session.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,"players":[],
+        "checked_locations":[],"slot_data":{"death_link":true}})"),
+                         outgoing, grants);
+    Check(outgoing.empty() && !session.GetConfig().deathLink,
+          "archipelago.json's death_link overrides the seed's");
+  }
+
   std::filesystem::remove_all(testDir);
   if (!sPassed)
     return 1;

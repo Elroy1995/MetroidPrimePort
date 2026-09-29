@@ -60,12 +60,18 @@ struct Config {
   // DeathLink: when another player dies, this one dies too. Off unless the
   // configuration asks for it, so a session that never opted in is unaffected.
   bool deathLink = false;
+  // The file said either way, which wins over the slot's own death_link option.
+  bool deathLinkSet = false;
   std::vector< std::string > tags;
   int versionMajor = 0;
   int versionMinor = 6;
   int versionBuild = 0;
   std::map< std::string, int64_t > locations; // randomizer key -> AP location id
   std::map< int64_t, ItemEntry > items;       // AP item id -> grant
+  // The tables are the built-in Metroid Prime ones (port_ap_metroidprime.h),
+  // so the session applies that world's rules: every item is counted, ammo is
+  // granted as capacity deltas, and slot_data is read.
+  bool builtin = false;
   bool valid = false;
   std::string error; // why the configuration was rejected, for the log
 };
@@ -87,7 +93,8 @@ struct State {
   std::string seed;
   int64_t nextItemIndex = 0;
   std::vector< int64_t > checkedLocations;
-  // Progressive item id -> copies processed so far. Persisted because items
+  // Item id -> copies processed so far: progressive ids, or every id with the
+  // built-in tables (ammo capacity follows the counts). Persisted because items
   // below nextItemIndex are skipped on reconnect, so the counts cannot be
   // rebuilt from what the server resends. Absent in older files: all zero.
   std::map< int64_t, int64_t > progressive;
@@ -95,6 +102,17 @@ struct State {
 State LoadStateFile(const std::string& path);
 // Writes the state through a temporary file and renames it into place.
 bool SaveStateFile(const std::string& path, const State& state);
+
+// What the port reads from the slot_data of a Metroid Prime slot.
+struct SlotData {
+  bool received = false;
+  // The seed makes missiles or power bombs unusable until their main item.
+  bool requireMissileLauncher = false;
+  bool requireMainPowerBomb = false;
+  int requiredArtifacts = 12;
+  // Options the port does not implement, one line each, for the log and HUD.
+  std::vector< std::string > warnings;
+};
 
 // One connection's protocol state.
 class Session {
@@ -119,6 +137,14 @@ public:
   std::string BuildConnect() const;
   static std::string BuildLocationChecks(const std::vector< int64_t >& ids);
   static std::string BuildSync();
+  // StatusUpdate 30: this slot has reached its goal.
+  static std::string BuildGoal();
+
+  // slot_data from Connected, for built-in tables; defaults before it arrives.
+  const SlotData& GetSlotData() const { return mSlotData; }
+  // Copies of an item id processed so far. Built-in tables count every id;
+  // otherwise only progressive ids are counted.
+  int64_t ReceivedCount(int64_t itemId) const;
 
   // Everything received this session, oldest first, for the item tracker. The
   // notification queue is the same information but capped and drained by
@@ -199,6 +225,7 @@ private:
   std::map< int64_t, std::string > mPlayers;
   std::vector< std::string > mNotifications;
   std::vector< TrackedItem > mTracked;
+  SlotData mSlotData;
   // DeathLink bookkeeping: bounces owed to the game, and who to blame.
   int mDeathsReceived = 0;
   std::string mLastDeathSource;

@@ -64,6 +64,11 @@ const char* SeedName();
 // "world:area:entity" key). No-op when unconfigured, unmapped, or already sent.
 void QueueCheck(const char* locationKey);
 
+// A spawn point's Reset message replaced the whole inventory. Any received items
+// the game held are gone, so the next Poll rewinds the session and the server
+// replays them. No-op when AP is off.
+void OnInventoryReset();
+
 // Called once per simulation tick by CStateManager::Update. Sends queued checks
 // and grants queued items to the player state.
 void Poll(CStateManager& mgr);
