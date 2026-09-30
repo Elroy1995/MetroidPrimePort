@@ -33,6 +33,7 @@
 #include <android/log.h>
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <cstdio>
@@ -431,6 +432,18 @@ int main(int argc, char** argv) {
         SDL_free(pref);
     }
 #endif
+    // MP_MEM1_MB raises the MEM1 arena above its 24 MB default, which grows the
+    // CGameAllocator heap, so a very heavy mod model stops running it out of room.
+    // Unset, 0 or anything below the default keeps 24 MB; capped at 1 GB so the
+    // byte count stays in AuroraConfig's u32. It costs host memory, not GPU memory.
+    uint32_t mem1Size = MEM1_DEFAULT_SIZE;
+    if (const char* e = std::getenv("MP_MEM1_MB")) {
+        const unsigned long mb = std::strtoul(e, nullptr, 10);
+        if (mb > MEM1_DEFAULT_SIZE / (1024 * 1024)) {
+            mem1Size = static_cast<uint32_t>(std::min(mb, 1024UL) * 1024 * 1024);
+            PortLog::Write("port: MEM1 arena raised to %u MB (MP_MEM1_MB)\n", mem1Size / (1024 * 1024));
+        }
+    }
     AuroraConfig config = {
         .appName = "Metroid Prime",
         .userPath = std::getenv("MP_USER_PATH"),
@@ -443,7 +456,7 @@ int main(int argc, char** argv) {
         // framebuffer allocations fit in MEM1; Aurora upscales to the window.
         .windowWidth = static_cast<uint32_t>(widescreen ? 854 : 640),
         .windowHeight = 480,
-        .mem1Size = MEM1_DEFAULT_SIZE,
+        .mem1Size = mem1Size,
         .mem2Size = ARAM_DEFAULT_SIZE,
     };
     config.msaa = static_cast<uint32_t>(PortDebug::Msaa());

@@ -393,7 +393,10 @@ skipped. Inside a mod:
   moves down to keep its 32-byte alignment. An id another PAK holds under a
   different type is reported and ignored. A resource can be any size (the port
   keeps PAK sizes whole; retail stops at 4 MB), though the game heap still
-  bounds what fits: a 16 MB texture runs it out of memory.
+  bounds what fits: a 16 MB texture runs it out of memory. `MP_MEM1_MB=<n>`
+  raises the emulated MEM1 arena (default 24 MB, capped at 1024) and the game
+  heap with it, for mods heavier than the retail heap allows; the log says
+  `port: MEM1 arena raised to <n> MB`.
 - text and image files (`.txt`, `.md`, `.json`, `.png`, ...) are ignored
   silently, so a mod can carry its readme.
 
