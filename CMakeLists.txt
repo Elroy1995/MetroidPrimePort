@@ -106,6 +106,7 @@ set(MP_PORT_SOURCES
     platform/port_discord.cpp
     platform/port_livesplit.cpp
     platform/port_tracker.cpp
+    platform/port_viewmodel.cpp
     platform/port_savestate.cpp
     platform/port_savestate_format.cpp
     platform/port_skip_cutscenes.cpp

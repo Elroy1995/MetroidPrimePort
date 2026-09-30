@@ -2735,6 +2735,9 @@ void CStateManager::DrawWorld() const {
                                gunCam.GetNearClipDistance(), gunCam.GetFarClipDistance());
     }
 #endif
+#ifdef TARGET_PC
+    if (!PortViewModel::Active())
+#endif
     x84c_player->RenderGun(*this, x870_cameraManager->GetGlobalCameraTranslation(*this));
 #ifdef TARGET_PC
     if (gunFov) {

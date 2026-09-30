@@ -1,0 +1,101 @@
+#include "port_viewmodel.h"
+
+#include "Kyoto/CResFactory.hpp"
+#include "Kyoto/Graphics/CModelFlags.hpp"
+#include "Kyoto/Math/CRelAngle.hpp"
+#include "MetroidPrime/CModelData.hpp"
+#include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/Cameras/CCameraManager.hpp"
+
+#include <cmath>
+#include <cstdio>
+#include <memory>
+
+namespace PortViewModel {
+namespace {
+
+struct SView {
+  uint32_t id = 0;
+  float dist = 0.f;
+  float yaw = 0.f;
+  float pitch = 0.f;
+  bool loaded = false;
+  CVector3f centre = CVector3f(0.f, 0.f, 0.f);
+  float fitDist = 1.f;
+  std::unique_ptr< CModelData > model;
+};
+
+SView sView;
+
+} // namespace
+
+bool Show(uint32_t id, float dist, float yaw, float pitch, std::string& err) {
+  if (gpResourceFactory == nullptr ||
+      gpResourceFactory->GetResourceTypeById(static_cast< CAssetId >(id)) != 'CMDL') {
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%08X is not a CMDL", id);
+    err = buf;
+    return false;
+  }
+  if (sView.model == nullptr || sView.id != id) {
+    sView.model.reset();
+    sView.model.reset(new CModelData(CStaticRes(static_cast< CAssetId >(id), CVector3f(1.f, 1.f, 1.f))));
+    sView.loaded = false;
+  }
+  sView.id = id;
+  sView.dist = dist;
+  sView.yaw = yaw;
+  sView.pitch = pitch;
+  return true;
+}
+
+void Hide() {
+  sView.model.reset();
+  sView.id = 0;
+  sView.loaded = false;
+}
+
+bool Active() { return sView.model != nullptr; }
+
+std::string Status() {
+  if (sView.model == nullptr) {
+    return "viewmodel off";
+  }
+  char buf[160];
+  std::snprintf(buf, sizeof(buf),
+                "viewmodel %08X %s dist %.3f yaw %.1f pitch %.1f centre %.3f %.3f %.3f", sView.id,
+                sView.loaded ? "loaded" : "loading",
+                sView.dist > 0.f ? sView.dist : sView.fitDist, sView.yaw, sView.pitch,
+                sView.centre.GetX(), sView.centre.GetY(), sView.centre.GetZ());
+  return buf;
+}
+
+void Draw(const CStateManager& mgr) {
+  if (sView.model == nullptr) {
+    return;
+  }
+  if (!sView.loaded) {
+    if (!sView.model->IsLoaded(0)) {
+      sView.model->Touch(CModelData::kWM_Normal, 0);
+      return;
+    }
+    const CAABox box = sView.model->GetBounds();
+    const CVector3f lo = box.GetMinPoint();
+    const CVector3f hi = box.GetMaxPoint();
+    sView.centre = (lo + hi) * 0.5f;
+    const CVector3f ext = hi - lo;
+    const float radius = 0.5f * std::sqrt(ext.MagSquared());
+    // Fits the bounding sphere in the retail 55 degree vertical FOV with some margin.
+    sView.fitDist = radius / std::sin(0.5f * 55.f * (M_PIF / 180.f)) * 1.1f + 0.05f;
+    sView.loaded = true;
+  }
+  const float dist = sView.dist > 0.f ? sView.dist : sView.fitDist;
+  const CTransform4f cam = mgr.GetCameraManager()->GetCurrentCameraTransform(mgr);
+  const CTransform4f xf = cam * CTransform4f::Translate(0.f, dist, 0.f) *
+                          CTransform4f::RotateX(CRelAngle::FromDegrees(sView.pitch)) *
+                          CTransform4f::RotateZ(CRelAngle::FromDegrees(sView.yaw)) *
+                          CTransform4f::Translate(-sView.centre.GetX(), -sView.centre.GetY(), -sView.centre.GetZ());
+  sView.model->Render(CModelData::kWM_Normal, xf, nullptr, CModelFlags::Normal());
+}
+
+} // namespace PortViewModel
