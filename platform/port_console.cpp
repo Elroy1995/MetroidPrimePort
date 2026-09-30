@@ -419,7 +419,7 @@ void CmdHelp() {
   Out("reveal <0|1>               reveal every world's map, as the Options row does");
   Out("pickups <0|1>              white dots on the map for uncollected pickups");
   Out("tracker                    items, scans and rooms visited (the F1 Tracker tab)");
-  Out("viewmodel <cmdl> [dist] [yaw] [pitch] | off | status   draw a model in front of the camera");
+  Out("viewmodel <cmdl> [dist] [yaw] [pitch] | off | status | light <0|1>   draw a model in front of the camera");
   Out("state list | last | save [n] | load [n] | undo | slot <n>   save states (F1 States tab)");
   Out("timer <0|1>                on-screen in-game time; igt <seconds> sets the play time");
   Out("livesplit <0|1> | addr <host:port> | send <command> | status   LiveSplit Server client");
@@ -896,6 +896,8 @@ void RunFrame() {
     const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";
     if (arg == "off") {
       PortViewModel::Hide();
+    } else if (arg == "light") {
+      PortViewModel::SetLight(sCmd.args.size() > 2 && sCmd.args[2] == "1");
     } else if (arg != "status") {
       const auto num = [](size_t i) {
         return sCmd.args.size() > i ? static_cast< float >(std::atof(sCmd.args[i].c_str())) : 0.f;

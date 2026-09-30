@@ -1,8 +1,10 @@
 #include "port_viewmodel.h"
 
 #include "Kyoto/CResFactory.hpp"
+#include "Kyoto/Graphics/CLight.hpp"
 #include "Kyoto/Graphics/CModelFlags.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
+#include "MetroidPrime/CActorLights.hpp"
 #include "MetroidPrime/CModelData.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
@@ -20,6 +22,7 @@ struct SView {
   float yaw = 0.f;
   float pitch = 0.f;
   bool loaded = false;
+  bool light = false;
   CVector3f centre = CVector3f(0.f, 0.f, 0.f);
   float fitDist = 1.f;
   std::unique_ptr< CModelData > model;
@@ -95,7 +98,21 @@ void Draw(const CStateManager& mgr) {
                           CTransform4f::RotateX(CRelAngle::FromDegrees(sView.pitch)) *
                           CTransform4f::RotateZ(CRelAngle::FromDegrees(sView.yaw)) *
                           CTransform4f::Translate(-sView.centre.GetX(), -sView.centre.GetY(), -sView.centre.GetZ());
-  sView.model->Render(CModelData::kWM_Normal, xf, nullptr, CModelFlags::Normal());
+  if (!sView.light) {
+    sView.model->Render(CModelData::kWM_Normal, xf, nullptr, CModelFlags::Normal());
+    return;
+  }
+  // A key light from over the camera's left shoulder plus a dim ambient, so lit
+  // material paths (per-vertex lighting, the PBR shading) can be compared.
+  CActorLights lights(0, CVector3f(0.f, 0.f, 0.f), 1, 0);
+  rstl::vector< CLight > key;
+  CVector3f dir = cam.GetForward() + cam.GetRight() * 0.5f - cam.GetUp() * 0.7f;
+  dir.Normalize();
+  key.push_back(CLight::BuildDirectional(dir, CColor(0.9f, 0.9f, 0.9f)));
+  lights.BuildFakeLightList(key, CColor(0.3f, 0.3f, 0.3f));
+  sView.model->Render(CModelData::kWM_Normal, xf, &lights, CModelFlags::Normal());
 }
+
+void SetLight(bool on) { sView.light = on; }
 
 } // namespace PortViewModel
