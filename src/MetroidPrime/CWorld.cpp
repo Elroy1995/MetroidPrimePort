@@ -32,6 +32,7 @@
 #include "rstl/vector.hpp"
 
 #ifdef TARGET_PC
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #endif
@@ -650,21 +651,32 @@ void CWorld::Update(float dt) {
     x70_27_skyboxVisible = skyVisible;
     xb4_skyboxOverride =
         TLockedToken< CModel >(gpSimplePool->GetObj(SObjectTag('CMDL', overrideSkyId)));
+#ifdef TARGET_PC
+    PortKeepWorldSky();
+#else
     xa4_skyboxWorldLoaded = rstl::optional_object_null();
     if (x94_skyboxWorld) {
       x94_skyboxWorld->Unlock();
     }
+#endif
   } else {
     xb4_skyboxOverride = rstl::optional_object_null();
     if (!x94_skyboxWorld) {
       x70_26_skyboxActive = false;
       x70_27_skyboxVisible = false;
     } else if (!needsSky) {
+#ifdef TARGET_PC
+      PortKeepWorldSky();
+#else
       xa4_skyboxWorldLoaded = rstl::optional_object_null();
       x94_skyboxWorld->Unlock();
+#endif
       x70_26_skyboxActive = false;
       x70_27_skyboxVisible = false;
     } else {
+#ifdef TARGET_PC
+      PortKeepWorldSky();
+#else
       if (!xa4_skyboxWorldLoaded) {
         x94_skyboxWorld->Lock();
         if (x94_skyboxWorld->TryCache()) {
@@ -675,11 +687,61 @@ void CWorld::Update(float dt) {
           }
         }
       }
+#endif
       x70_26_skyboxActive = true;
       x70_27_skyboxVisible = skyVisible;
     }
   }
 }
+
+#ifdef TARGET_PC
+// Retail freed the world sky whenever no loaded area needed it, and asked for it again only
+// once a sky area had loaded. The request then queued behind that area's own loads, so a door
+// into the sky area waited (AreSkyNeedsMet) first for the model and then for its textures,
+// sometimes for many seconds. On PC the cost of keeping one model and its textures resident is
+// trivial, so the world sky stays locked and touched (its textures locked) at all times.
+void CWorld::PortKeepWorldSky() {
+  if (!x94_skyboxWorld) {
+    return;
+  }
+  if (xa4_skyboxWorldLoaded) {
+    (*xa4_skyboxWorldLoaded)->Touch(0);
+    return;
+  }
+  // MP_LOG_DOORS: how long the world sky took to load after it was (re)requested.
+  static const bool logSky = std::getenv("MP_LOG_DOORS") != nullptr;
+  static std::chrono::steady_clock::time_point skyRequested;
+  static bool modelBuilt = false;
+  if (logSky && !x94_skyboxWorld->IsLocked()) {
+    skyRequested = std::chrono::steady_clock::now();
+    modelBuilt = false;
+    std::fprintf(stderr, "MP sky %08X requested (loaded=%d)\n", x94_skyboxWorld->GetTag().GetId(),
+                 x94_skyboxWorld->IsLoaded() ? 1 : 0);
+  }
+  x94_skyboxWorld->Lock();
+  if (!x94_skyboxWorld->TryCache()) {
+    return;
+  }
+  CModel* skybox = x94_skyboxWorld->GetObject();
+  if (logSky && !modelBuilt) {
+    modelBuilt = true;
+    std::fprintf(stderr, "MP sky model built after %lld ms\n",
+                 static_cast< long long >(std::chrono::duration_cast< std::chrono::milliseconds >(
+                                              std::chrono::steady_clock::now() - skyRequested)
+                                              .count()));
+  }
+  skybox->Touch(0);
+  if (skybox->IsLoaded(0)) {
+    xa4_skyboxWorldLoaded = TLockedToken< CModel >(*x94_skyboxWorld);
+    if (logSky) {
+      std::fprintf(stderr, "MP sky textures loaded after %lld ms\n",
+                   static_cast< long long >(std::chrono::duration_cast< std::chrono::milliseconds >(
+                                                std::chrono::steady_clock::now() - skyRequested)
+                                                .count()));
+    }
+  }
+}
+#endif
 
 void CWorld::PreRender() {
   for (CGameArea::CChainIterator it = ChainHead(kC_Alive); it != skGlobalNonConstEnd; ++it) {
@@ -714,21 +776,36 @@ bool CWorld::AreSkyNeedsMet() const {
 
 #ifdef TARGET_PC
 void CWorld::PortDescribeSky(char* out, int size) const {
-  const TLockedToken< CModel >* token = nullptr;
+  const CModel* model = nullptr;
   if (xb4_skyboxOverride) {
-    token = &*xb4_skyboxOverride;
+    model = **xb4_skyboxOverride;
   } else if (xa4_skyboxWorldLoaded) {
-    token = &*xa4_skyboxWorldLoaded;
+    model = **xa4_skyboxWorldLoaded;
+  } else if (x94_skyboxWorld) {
+    // Cached once the model is built; its textures may still be loading.
+    model = x94_skyboxWorld->GetObject();
   }
   int len = std::snprintf(out, size, "active=%d visible=%d world=%s override=%s",
                           x70_26_skyboxActive ? 1 : 0, x70_27_skyboxVisible ? 1 : 0,
                           !x94_skyboxWorld ? "none" : xa4_skyboxWorldLoaded ? "loaded" : "pending",
                           xb4_skyboxOverride ? "yes" : "no");
-  if (token == nullptr || **token == nullptr) {
+  // A pending world sky: is the model itself still loading?
+  if (x94_skyboxWorld && !xa4_skyboxWorldLoaded && !xb4_skyboxOverride && len < size) {
+    const CObjectReference* ref = x94_skyboxWorld->GetRef();
+    len += std::snprintf(out + len, size - len, " model %08X locked=%d/%d built=%d loading=%d queue=%d",
+                         x94_skyboxWorld->GetTag().GetId(), x94_skyboxWorld->IsLocked() ? 1 : 0,
+                         ref->GetLockCount(), ref->IsLoaded() ? 1 : 0, ref->IsLoading() ? 1 : 0,
+                         gpResourceFactory->PortLoadState(x94_skyboxWorld->GetTag()));
+  }
+  if (!xa4_skyboxWorldLoaded && !xb4_skyboxOverride && len < size) {
+    int total, pending;
+    gpResourceFactory->PortLoadListCounts(total, pending);
+    len += std::snprintf(out + len, size - len, " loadlist=%d pending=%d", total, pending);
+  }
+  if (model == nullptr || len >= size) {
     return;
   }
-  const CModel& model = ***token;
-  const rstl::vector< TCachedToken< CTexture > >& textures = model.GetCubeModel()->GetTextures();
+  const rstl::vector< TCachedToken< CTexture > >& textures = model->GetCubeModel()->GetTextures();
   int missing = 0;
   for (AUTO(it, textures.begin()); it != textures.end(); ++it) {
     if (it->IsLoaded()) {

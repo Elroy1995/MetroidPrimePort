@@ -154,6 +154,7 @@ public:
 #ifdef TARGET_PC
   // MP_LOG_DOORS: why AreSkyNeedsMet is false.
   void PortDescribeSky(char* out, int size) const;
+  void PortKeepWorldSky();
 #endif
 
   void SetAreaAttributes(const TAreaId aid, CScriptAreaAttributes* attr) {

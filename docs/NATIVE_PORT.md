@@ -975,8 +975,12 @@ ms` with the ticks spent on each condition that held it (`anim`, `thisArea`,
 `sky`, `areaLoad`, `actors`, `otherDoor`, `occluding`, `aram`, `map`), `still
 waiting` every 3 s while a wait lasts (followed by `now on otherDoor <id>` or
 `now on occluding <area>` when the condition names an object, or `sky: …` with
-the skybox state and, per unloaded sky texture, whether it is locked, loading
-and in the loader's queue: 0 absent, 1 read pending, 2 read done), and
+the skybox state, the sky model's lock/build/queue state and the loader list size
+while the world sky is pending, and, per unloaded sky texture, whether it is
+locked, loading and in the loader's queue: 0 absent, 1 read pending, 2 read
+done), `MP sky <id> requested` / `model built after N ms` / `textures loaded
+after N ms` whenever the world sky has to be (re)loaded (the port keeps it
+resident, so after world load this should not appear), and
 `opened at once`, `ignored Open
 (inactive)`, `refused Open (area missing)` or `wait cancelled by Close` for the
 other outcomes (a trigger's Open usually ends a wait, since newer objects think

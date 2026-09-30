@@ -134,6 +134,17 @@ int CResFactory::PortLoadState(const SObjectTag& tag) {
   }
   return it->x8_dvdReq->IsComplete() ? 2 : 1;
 }
+
+void CResFactory::PortLoadListCounts(int& total, int& pending) {
+  total = 0;
+  pending = 0;
+  for (AUTO(it, x84_loadList.begin()); it != x84_loadList.end(); ++it) {
+    ++total;
+    if (!it->x8_dvdReq->IsComplete()) {
+      ++pending;
+    }
+  }
+}
 #endif
 
 bool CResFactory::PumpResource(const LoadList::iterator& it, uint time) {

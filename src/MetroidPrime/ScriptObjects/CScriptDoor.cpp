@@ -96,7 +96,7 @@ void PortLogDoorWait(TUniqueId door, CScriptDoor::EDoorOpenCondition cond, const
                      sPortDoorDetail);
       }
       if (world != nullptr && std::strcmp(sPortDoorReason, "sky") == 0) {
-        char sky[256];
+        char sky[512];
         world->PortDescribeSky(sky, sizeof(sky));
         std::fprintf(stderr, "MP door %04X sky: %s\n", door.Value(), sky);
       }

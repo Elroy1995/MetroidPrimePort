@@ -65,6 +65,8 @@ public:
 #ifdef TARGET_PC
   // 0: not in the load list, 1: its read is pending, 2: read, waiting to be built.
   int PortLoadState(const SObjectTag& tag);
+  // Entries in the load list: all of them, and those whose read is pending.
+  void PortLoadListCounts(int& total, int& pending);
 #endif
   CFactoryMgr& GetFactoryMgr() { return x5c_factoryMgr; }
 
