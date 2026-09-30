@@ -162,7 +162,7 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
   }
 
   material.SetCurrent(modelFlags, surface, *this);
-  CGX::CallDisplayList(surface.GetDisplayList(), surface.GetDisplayListSize());
+  surface.CallDisplayList();
 }
 
 static inline const ushort ReadWireframeIndex(const uchar* data) {
@@ -358,7 +358,7 @@ void CCubeModel::DrawFlat(const float* positions, const float* normals,
          surface = surface.GetNextSurface()) {
       CCubeMaterial material = GetMaterialByIndex(surface.GetMaterialIndex());
       CGX::SetVtxDescv_Compressed(material.GetVertexDescLwzx());
-      CGX::CallDisplayList(surface.GetDisplayList(), surface.GetDisplayListSize());
+      surface.CallDisplayList();
     }
   }
 
@@ -367,7 +367,7 @@ void CCubeModel::DrawFlat(const float* positions, const float* normals,
          surface = surface.GetNextSurface()) {
       CCubeMaterial material = GetMaterialByIndex(surface.GetMaterialIndex());
       CGX::SetVtxDescv_Compressed(material.GetVertexDescLwzx());
-      CGX::CallDisplayList(surface.GetDisplayList(), surface.GetDisplayListSize());
+      surface.CallDisplayList();
     }
   }
 }

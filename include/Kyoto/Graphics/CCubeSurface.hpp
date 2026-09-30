@@ -43,6 +43,18 @@ public:
 
   bool IsValid() const { return x0_rawdata != nullptr; }
 
+  // Port: calls the display list; on PC also applies the surface's vertex
+  // array base indices (see PortBaseIndices), so models with more than 65536
+  // vertices can keep 16-bit display-list indices.
+  void CallDisplayList() const;
+#ifdef TARGET_PC
+  enum EPortBase { kPB_Pos, kPB_Nrm, kPB_Clr, kPB_UV, kPB_PackedUV, kPB_Count };
+  // Surface extra data after the bounds: 'PBIX' then kPB_Count big-endian u32
+  // base indices, in an extra block of at least 0x40 bytes. Returns false for
+  // retail surfaces.
+  bool PortBaseIndices(uint* out) const;
+#endif
+
 private:
 };
 #endif // _CCUBESURFACE

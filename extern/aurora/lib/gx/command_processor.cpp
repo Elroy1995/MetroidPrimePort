@@ -392,7 +392,7 @@ static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Rang
     if (array.cachedRange.size == 0) {
       array.cachedRange = gfx::push_storage(static_cast<const uint8_t*>(array.data), array.size);
     }
-    immediates.arrayStart[i - GX_VA_POS] = array.cachedRange.offset;
+    immediates.arrayStart[i - GX_VA_POS] = array.cachedRange.offset + array.baseIndex * array.stride;
   }
 
   const u8 lineMode = line_mode_for_prim(prim);
@@ -755,6 +755,13 @@ void handle_aurora(ByteReader& reader) noexcept {
     gfx::insert_debug_marker(std::move(label));
   } else if (subCmd == GX_AURORA_SET_DRAW_SYNC) {
     aurora::gx::set_draw_sync_token(reader.read<u16>());
+  } else if (subCmd == GX_AURORA_LOAD_ARRAY_BASE_INDEX) {
+    const u32 attrIdx = (reader.read<u8>() & 0x0f) + GX_VA_POS;
+    const u32 base = reader.read<u32>();
+    if (attrIdx < g_gxState.arrays.size() && g_gxState.arrays[attrIdx].baseIndex != base) {
+      g_gxState.arrays[attrIdx].baseIndex = base;
+      g_gxState.dirty |= DirtyImmediates;
+    }
   }
 
   else {

@@ -104,6 +104,13 @@ extern "C" {
  */
 #define GX_AURORA_DRAW_INDEXED 0x0041
 
+/**
+ * Sets a base index added to every indexed fetch from one vertex array, so 16-bit
+ * indices can address arrays of more than 65536 elements a window at a time.
+ * Must be followed by a u8 attribute index (attr - GX_VA_POS) and a u32 base index.
+ */
+#define GX_AURORA_LOAD_ARRAY_BASE_INDEX 0x0042
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

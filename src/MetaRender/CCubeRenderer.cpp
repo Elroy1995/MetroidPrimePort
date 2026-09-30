@@ -2476,7 +2476,7 @@ void CCubeRenderer::DrawOverlappingWorldModelShadows(int alphaVal, rstl::vector<
           if (surf.GetBounds().DoBoundsOverlap(aabb)) {
             const CCubeMaterial mat = model->GetMaterialByIndex(surf.GetMaterialIndex());
             CGX::SetVtxDescv_Compressed(mat.GetVertexDescLwzx());
-            CGX::CallDisplayList(surf.GetDisplayList(), surf.GetDisplayListSize());
+            surf.CallDisplayList();
           }
         }
 
@@ -2959,7 +2959,7 @@ void CCubeRenderer::DrawXRayOutline(const CAABox& bounds, const float*, const fl
           if (surf.GetBounds().DoBoundsOverlap(bounds)) {
             const CCubeMaterial mat = modelInst->GetMaterialByIndex(surf.GetMaterialIndex());
             CGX::SetVtxDescv_Compressed(mat.GetVertexDescLwzx());
-            CGX::CallDisplayList(surf.GetDisplayList(), surf.GetDisplayListSize());
+            surf.CallDisplayList();
           }
         }
       }

@@ -27,4 +27,15 @@ void GXDestroyCopyTex(void* dest) {
     GX_WRITE_U64(reinterpret_cast<u64>(dest));
   }
 }
+
+void GXSetArrayBaseIndex(GXAttr attr, u32 base) {
+  if (attr == GX_VA_NBT) {
+    attr = GX_VA_NRM;
+  }
+  const u32 cpIdx = attr - GX_VA_POS;
+  assert((cpIdx & ~0xF) == 0);
+  GX_WRITE_AURORA(GX_AURORA_LOAD_ARRAY_BASE_INDEX);
+  GX_WRITE_U8(static_cast<u8>(cpIdx));
+  GX_WRITE_U32(base);
+}
 }
