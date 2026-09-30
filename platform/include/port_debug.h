@@ -68,6 +68,25 @@ void SetPoseInterpolation(bool enabled);
 // draw between their previous and current tick frames. Off by default.
 bool ParticleInterpolation();
 void SetParticleInterpolation(bool enabled);
+// Frame interpolation tests (phase 5). MP_PRESENT_T=<0..1> or "cycle" (console
+// `present`) forces the presentation factor, even under MP_TURBO or with the
+// frame limiter on; cycle steps through 0, 0.25, 0.5 and 0.75 per drawn frame;
+// "tick" draws the plain tick state (-1) as the frame limiter does.
+// Replaces t and returns true when forced. Not saved.
+bool PresentOverride(float& t);
+// value in [0,1] = fixed, kPresentCycle = cycle, kPresentTick = tick state,
+// anything negative = off.
+constexpr float kPresentCycle = 2.f;
+constexpr float kPresentTick = 3.f;
+void SetPresentOverride(float value);
+float PresentOverrideValue();
+// Console `hold`/`step`: while held, main loops run no ticks except the ones
+// queued by StepTicks, so one tick state can be drawn at several factors.
+bool TickHold();
+void SetTickHold(bool held);
+void StepTicks(unsigned count);
+unsigned PendingHeldTicks();
+unsigned TakeHeldTicks();
 // MP_TURBO[=<ticks>]: lockstep for tests. Every loop runs exactly <ticks> fixed
 // ticks (default 1, at most 16) and nothing waits for the wall clock, so a run
 // goes as fast as the machine can render it; more ticks per frame skip

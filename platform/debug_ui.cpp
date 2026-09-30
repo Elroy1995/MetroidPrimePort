@@ -177,6 +177,10 @@ bool sFrameInterpolation = true;
 bool sActorInterpolation = false;
 bool sPoseInterpolation = false;
 bool sParticleInterpolation = false;
+float sPresentOverride = -1.f;
+unsigned sPresentCycleFrame = 0;
+bool sTickHold = false;
+unsigned sHeldTicks = 0;
 // The last tick applied look input. A paused game or a cinematic skips the
 // player update, and would then drop what the frames between ticks showed.
 bool sAimAppliedLastTick = false;
@@ -651,6 +655,16 @@ void EnsureInitialized() {
     const long ticks = std::strtol(turbo, nullptr, 10);
     if (ticks >= 1 && ticks <= 16) {
       sTurboTicks = static_cast< unsigned >(ticks);
+    }
+  }
+  if (const char* present = std::getenv("MP_PRESENT_T")) {
+    if (std::strcmp(present, "cycle") == 0) {
+      sPresentOverride = PortDebug::kPresentCycle;
+    } else if (std::strcmp(present, "tick") == 0) {
+      sPresentOverride = PortDebug::kPresentTick;
+    } else {
+      const float t = static_cast< float >(std::atof(present));
+      sPresentOverride = t < 0.f ? 0.f : t > 1.f ? 1.f : t;
     }
   }
   // Cutscene skipping is a test aid only: skipping on the first frame of each
@@ -1605,6 +1619,55 @@ void SetParticleInterpolation(bool enabled) {
   EnsureInitialized();
   sParticleInterpolation = enabled;
   MarkDirty();
+}
+
+bool PresentOverride(float& t) {
+  EnsureInitialized();
+  if (sPresentOverride < 0.f) {
+    return false;
+  }
+  if (sPresentOverride == kPresentTick) {
+    t = -1.f;
+  } else if (sPresentOverride > 1.f) {
+    t = 0.25f * static_cast< float >(sPresentCycleFrame++ & 3);
+  } else {
+    t = sPresentOverride;
+  }
+  return true;
+}
+
+void SetPresentOverride(float value) {
+  EnsureInitialized();
+  sPresentOverride = value < 0.f             ? -1.f
+                     : value == kPresentTick ? kPresentTick
+                     : value > 1.f           ? kPresentCycle
+                                             : value;
+  sPresentCycleFrame = 0;
+}
+
+float PresentOverrideValue() {
+  EnsureInitialized();
+  return sPresentOverride;
+}
+
+bool TickHold() { return sTickHold; }
+
+void SetTickHold(bool held) {
+  sTickHold = held;
+  sHeldTicks = 0;
+}
+
+void StepTicks(unsigned count) { sHeldTicks += count; }
+
+unsigned PendingHeldTicks() { return sHeldTicks; }
+
+unsigned TakeHeldTicks() {
+  // One tick per loop, like MP_TURBO=1, so each step is one drawn frame.
+  if (sHeldTicks == 0) {
+    return 0;
+  }
+  --sHeldTicks;
+  return 1;
 }
 
 void GetFrameMouseDelta(float& dx, float& dy) {

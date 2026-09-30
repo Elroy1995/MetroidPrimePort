@@ -717,6 +717,12 @@ a temporary directory instead of mounting.
   `MP_TURBO=1`, 7 s at `4` and 3.3 s at `8`. Audio and streamed music do not
   keep up. Not saved to the settings file. On exit the port prints
   `MP run: <frames> frames in <s> s`.
+- `MP_PRESENT_T=<0..1|cycle|tick>`: force the frame-interpolation factor, even
+  under `MP_TURBO` or with the frame limiter on (testing only, not saved).
+  `cycle` steps through 0, 0.25, 0.5 and 0.75 per drawn frame; `tick` draws the
+  plain tick state, as the frame limiter does. The console's `present` sets it
+  live; see `docs/FRAME_INTERPOLATION.md` (section 7) for the comparison
+  recipe.
 - `MP_CONSOLE=<port>` (smoke builds only, `1` = 4777, POSIX only): a debug
   command console on 127.0.0.1. Its `press`/`stick` input is read even when
   the window has no keyboard focus. `tools/mpcon.py` is the client: one-shot
@@ -729,8 +735,11 @@ a temporary directory instead of mounting.
   `send <id> <msg>`, `give <item> [n]`, `take <item> [n]`, `items`, `heal`, `press <a+b> [frames]`
   (`sx:<n>`, `sy:<n>`, `cx:<n>`, `cy:<n>` tokens hold stick axes along with
   the buttons, e.g. `press x+sy:127 30`),
-  `stick`/`cstick <x> <y> [frames]`, `gyro <pitch> [yaw] [frames]` (stand-in
-  gyro rates in rad/s), `shot` (prints the bmp path),
+  `stick`/`cstick <x> <y> [frames]` (frames `0` on `press`/`stick`/`cstick`
+  keeps holding until the next one), `gyro <pitch> [yaw] [frames]` (stand-in
+  gyro rates in rad/s), `shot` (prints the bmp path), `present
+  <0..1|cycle|tick|off>`, `hold <0|1>` (stop ticking), `step [ticks]` (run
+  that many ticks while held), `interp [actor|pose|particle|all <0|1>]`,
   `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `crosshair <25..100>`, `reveal <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
@@ -782,8 +791,8 @@ look is not previewed.
 Smooth actor motion (`actor_interpolation`, F1 Performance, off by default,
 experimental) draws each moving actor, Samus and the morph ball included,
 between its last two tick transforms when the frame limiter is off. Moves of
-more than 4 units or 45° in a tick snap. Queued particles and shadows still step
-at 60 Hz. `docs/FRAME_INTERPOLATION.md` has the design and scopes the rest
+more than 4 units or 45° in a tick snap. The arm cannon's bob and sway blend
+too. Queued particles, shadows and the HUD sway still step at 60 Hz. `docs/FRAME_INTERPOLATION.md` has the design and scopes the rest
 (particles, projectiles).
 
 Smooth animation (`pose_interpolation`, F1 Performance, off by default,

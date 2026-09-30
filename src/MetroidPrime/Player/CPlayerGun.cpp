@@ -531,6 +531,26 @@ inline void CPlayerGun::DrawArm(const CStateManager& mgr, const CVector3f& pos,
   }
 }
 
+#ifdef TARGET_PC
+namespace {
+// The gun's camera-relative pose before the current tick (rigid, gun scale
+// dropped) and the tick generation it belongs to.
+CTransform4f sPortGunPrevRel = CTransform4f::Identity();
+uint sPortGunPrevGeneration = 0;
+
+CTransform4f PortGunRelativePose(const CStateManager& mgr, const CTransform4f& gunWorldXf) {
+  const CCameraManager* cameraManager = mgr.GetCameraManager();
+  return cameraManager->GetSimulationCameraTransform(mgr).GetQuickInverse() *
+         CTransform4f::Translate(cameraManager->GetGlobalCameraTranslation(mgr)) * gunWorldXf;
+}
+} // namespace
+
+void CPlayerGun::PortSnapshotPresentedPose(const CStateManager& mgr) const {
+  sPortGunPrevRel = PortGunRelativePose(mgr, GetGunMotionTransform());
+  sPortGunPrevGeneration = CActor::PortTickGeneration();
+}
+#endif
+
 void CPlayerGun::Render(const CStateManager& mgr, const CVector3f& pos,
                         const CModelFlags& flags) const {
   const CTransform4f worldView = CGraphics::GetViewMatrix();
@@ -540,7 +560,23 @@ void CPlayerGun::Render(const CStateManager& mgr, const CVector3f& pos,
     // The held weapon and its muzzle effects are cached at simulation time.
     // Render their relative pose against that same camera, not an interpolated
     // world camera from a different tick. Projectile simulation is unchanged.
-    CGraphics::SetViewPointMatrix(mgr.GetCameraManager()->GetSimulationCameraTransform(mgr));
+    const CTransform4f simView = mgr.GetCameraManager()->GetSimulationCameraTransform(mgr);
+    CGraphics::SetViewPointMatrix(simView);
+#ifdef TARGET_PC
+    // Port: between ticks, blend the gun's pose relative to the camera (bob,
+    // sway, recoil) from the last tick's. The view moves instead of the gun,
+    // so the arm, beam and muzzle effects all follow.
+    const float t = CCameraManager::GetPresentationInterpolation();
+    if (t >= 0.f && t < 1.f && PortDebug::ActorInterpolation() &&
+        sPortGunPrevGeneration == CActor::PortTickGeneration()) {
+      CTransform4f blend = CTransform4f::Identity();
+      CTransform4f cur = CTransform4f::Identity();
+      if (CActor::PortBlendRigid(sPortGunPrevRel, PortGunRelativePose(mgr, GetGunMotionTransform()),
+                                 t, blend, cur)) {
+        CGraphics::SetViewPointMatrix(simView * cur * blend.GetQuickInverse());
+      }
+    }
+#endif
   }
   const CGraphics::CProjectionState projState = CGraphics::GetProjectionState();
 #ifdef MP_ENABLE_SMOKE_DRIVER

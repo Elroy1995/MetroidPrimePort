@@ -11,6 +11,7 @@
 #include "port_smoke.h"
 #include "port_savestate.h"
 #include "port_tracker.h"
+#include "port_viewmodel.h"
 #include "MetroidPrime/CActor.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
@@ -398,7 +399,8 @@ void CmdHelp() {
   Out("items                      the player's inventory");
   Out("heal                       refill health");
   Out("press <a+b+...> [frames]   hold pad buttons (a b x y z l r start up down left right;");
-  Out("                           sx:<n> sy:<n> cx:<n> cy:<n> also hold a stick axis)");
+  Out("                           sx:<n> sy:<n> cx:<n> cy:<n> also hold a stick axis;");
+  Out("                           frames 0 = keep holding until the next press/stick)");
   Out("stick <x> <y> [frames]     hold the main stick (-127..127); cstick for the C stick");
   Out("gyro <pitch> [yaw] [frames] fake gyro rates in rad/s (pitch > 0 tilts up; a flick is ~6)");
   Out("shot                       take a screenshot and print its path");
@@ -409,8 +411,13 @@ void CmdHelp() {
   Out("hudscale <50..100>         HUD scale in percent, as the Options row does");
   Out("crosshair <25..100>        mouse/twin-stick crosshair size in percent");
   Out("helmet <0|1>, visorfx <0|1> show (1) or hide (0) the helmet and visor effects");
+  Out("interp [actor|pose|particle|all <0|1>]   frame interpolation settings (F1 Performance)");
+  Out("present <0..1|cycle|tick|off> force the presentation factor (also MP_PRESENT_T);");
+  Out("                           tick draws the plain tick state");
+  Out("hold <0|1>, step [ticks]   stop the simulation; step runs ticks one per frame");
   Out("reveal <0|1>               reveal every world's map, as the Options row does");
   Out("tracker                    items, scans and rooms visited (the F1 Tracker tab)");
+  Out("viewmodel <cmdl> [dist] [yaw] [pitch] | off | status   draw a model in front of the camera");
   Out("state list | last | save [n] | load [n] | undo | slot <n>   save states (F1 States tab)");
   Out("timer <0|1>                on-screen in-game time; igt <seconds> sets the play time");
   Out("livesplit <0|1> | addr <host:port> | send <command> | status   LiveSplit Server client");
@@ -856,6 +863,22 @@ void RunFrame() {
     }
     PortDebug::SetRevealMap(value == "1");
     Finish();
+  } else if (name == "viewmodel") {
+    const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";
+    if (arg == "off") {
+      PortViewModel::Hide();
+    } else if (arg != "status") {
+      const auto num = [](size_t i) {
+        return sCmd.args.size() > i ? static_cast< float >(std::atof(sCmd.args[i].c_str())) : 0.f;
+      };
+      std::string err;
+      if (!PortViewModel::Show(static_cast< uint32_t >(std::strtoul(arg.c_str(), nullptr, 16)),
+                               num(2), num(3), num(4), err)) {
+        return Finish(err.c_str());
+      }
+    }
+    Out("%s", PortViewModel::Status().c_str());
+    Finish();
   } else if (name == "state") {
     const std::string action = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "list";
     const int slot = sCmd.args.size() > 2 ? std::atoi(sCmd.args[2].c_str())
@@ -1049,6 +1072,11 @@ void RunFrame() {
       if (sCmd.args.size() > framesArg && !ParseUnsigned(sCmd.args[framesArg], frames)) {
         return Finish("bad frame count");
       }
+      if (frames == 0) {
+        // Stays held until the next press/stick (used with hold/step).
+        PADSetVirtualStatus(0, &sCmd.pad);
+        return Finish();
+      }
       sCmd.phase = 1;
       sCmd.untilFrame = sFrame + std::max(frames, 1u);
     }
@@ -1079,6 +1107,82 @@ void RunFrame() {
       PortDebug::SetGyroOverride(false, 0.f, 0.f);
       Finish();
     }
+  } else if (name == "present") {
+    const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "";
+    float t = 0.f;
+    if (arg == "off") {
+      PortDebug::SetPresentOverride(-1.f);
+    } else if (arg == "cycle") {
+      PortDebug::SetPresentOverride(PortDebug::kPresentCycle);
+    } else if (arg == "tick") {
+      PortDebug::SetPresentOverride(PortDebug::kPresentTick);
+    } else if (!arg.empty() && ParseFloat(arg, t) && t >= 0.f && t <= 1.f) {
+      PortDebug::SetPresentOverride(t);
+    } else if (arg.empty()) {
+      const float value = PortDebug::PresentOverrideValue();
+      if (value < 0.f) {
+        Out("present off");
+      } else if (value == PortDebug::kPresentTick) {
+        Out("present tick");
+      } else if (value > 1.f) {
+        Out("present cycle");
+      } else {
+        Out("present %.3f", value);
+      }
+    } else {
+      return Finish("usage: present <0..1|cycle|tick|off>");
+    }
+    Finish();
+  } else if (name == "hold") {
+    const std::string arg = sCmd.args.size() > 1 ? sCmd.args[1] : "";
+    if (arg != "0" && arg != "1") {
+      return Finish("usage: hold <0|1>");
+    }
+    PortDebug::SetTickHold(arg == "1");
+    Finish();
+  } else if (name == "step") {
+    if (sCmd.phase == 0) {
+      unsigned count = 1;
+      if (!PortDebug::TickHold()) {
+        return Finish("not held (hold 1 first)");
+      }
+      if (sCmd.args.size() > 1 && !ParseUnsigned(sCmd.args[1], count)) {
+        return Finish("usage: step [ticks]");
+      }
+      PortDebug::StepTicks(count);
+      sCmd.phase = 1;
+      sCmd.untilFrame = sFrame + count + 120;
+      return;
+    }
+    if (PortDebug::PendingHeldTicks() == 0) {
+      Finish();
+    } else if (sFrame >= sCmd.untilFrame) {
+      Finish("ticks still pending");
+    }
+  } else if (name == "interp") {
+    const std::string which = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "";
+    const std::string arg = sCmd.args.size() > 2 ? sCmd.args[2] : "";
+    if (which.empty()) {
+      Out("actor %d pose %d particle %d frame_limit %d", PortDebug::ActorInterpolation(),
+          PortDebug::PoseInterpolation(), PortDebug::ParticleInterpolation(),
+          PortDebug::FrameLimitEnabled());
+      return Finish();
+    }
+    if ((arg != "0" && arg != "1") ||
+        (which != "actor" && which != "pose" && which != "particle" && which != "all")) {
+      return Finish("usage: interp [actor|pose|particle|all <0|1>]");
+    }
+    const bool on = arg == "1";
+    if (which == "actor" || which == "all") {
+      PortDebug::SetActorInterpolation(on);
+    }
+    if (which == "pose" || which == "all") {
+      PortDebug::SetPoseInterpolation(on);
+    }
+    if (which == "particle" || which == "all") {
+      PortDebug::SetParticleInterpolation(on);
+    }
+    Finish();
   } else if (name == "shot") {
     namespace fs = std::filesystem;
     std::error_code ec;

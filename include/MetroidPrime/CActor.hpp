@@ -260,6 +260,10 @@ public:
   // instead of x34_transform. False when no blend applies (the view is left
   // alone): smoothing off, capped frames, snapped moves, new actors.
   bool PortPresentedView(const CTransform4f& view, CTransform4f& out) const;
+  // Rigid blend of two transforms at t, with the snap rule above (over 4
+  // units or 45 degrees apart = false). `cur` gets the rigid form of `to`.
+  static bool PortBlendRigid(const CTransform4f& from, const CTransform4f& to, float t,
+                             CTransform4f& blend, CTransform4f& cur);
 #endif
 
 protected:

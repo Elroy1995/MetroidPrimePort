@@ -3,7 +3,8 @@
 Status: phase 1 (look input per frame) is done; phase 2 (actor transforms),
 phase 3 (skinned poses) and phase 4 (`CElementGen` particles) are done behind
 `actor_interpolation`, `pose_interpolation` and `particle_interpolation` (off
-by default); swooshes, electric and beams, and phase 5 are scope only.
+by default); phase 5 (the sweep, section 7) found and fixed the arm cannon's
+bob. Swooshes, electric, beams and the HUD sway are scope only.
 
 Goal: smooth motion above 60 FPS while the game logic stays at its console rate
 (60 Hz fixed step). Rendered frames between two ticks draw the world at a blend
@@ -142,7 +143,8 @@ across the jump for one tick.
 - It is only active when the last tick applied free aim
   (`sAimAppliedLastTick`), so menus, morph ball and cinematics are untouched.
 - The arm cannon stays on the simulation camera, so it is fixed on screen while
-  the world turns, like a view model. The free-aim crosshair
+  the world turns, like a view model. Its camera-relative pose (bob, sway,
+  recoil) is blended with `actor_interpolation` (section 7). The free-aim crosshair
   (`CCompoundTargetReticle::DrawOrbitZoneGroup`) is drawn at a world point, so
   it is rotated by the same look rotation to stay centred.
 - The game's own stick look stays per-tick (it is integrated with acceleration
@@ -155,7 +157,11 @@ across the jump for one tick.
 The combat HUD, scan visor and map mostly follow the camera or are static; the
 lock-on reticle and damage indicators track world positions and must project
 through the blended transforms. GUI frames (`CGuiFrame`) animate by tick and
-can stay at 60 Hz for a first pass.
+can stay at 60 Hz for a first pass. The helmet and HUD lag/bob
+(`CSamusHud::UpdateHudLag`) is pushed into the helmet and deco interfaces and
+the base frame camera once per tick; blending it would mean keeping the last
+tick's lag rotation and offset and re-applying a blend around `Draw`. Its
+motion is a few pixels per tick, so it is left at 60 Hz.
 
 ### 6. Resets and edge cases
 
@@ -164,6 +170,30 @@ cinematic start/end, camera cut, player respawn, pause and unpause, the
 `MP_TURBO` lockstep, and any tick where more than one step ran after a stall
 (blend only the last one). Scan visor and X-ray/thermal passes copy the frame,
 so they work unchanged.
+
+### 7. Sweep (phase 5)
+
+Tools: `MP_PRESENT_T` / console `present <t|cycle|tick|off>` forces the
+presentation factor even under `MP_TURBO` or the frame limiter; `hold 1` stops
+ticks and `step <n>` runs exactly n, so one tick pair can be drawn at any t
+(`NATIVE_PORT.md`). Comparison: hold, `present tick` (shot N), `step 1`, then
+shots at t = 0, t = 1, tick (N+1) and 0.5. A correct blend gives t = 0 = N and
+t = 1 = N+1.
+
+- Walking in Chozo MREA 492CBF4A with all three settings on: t = 1 vs N+1
+  differs by 0 px. t = 0 vs N differed by 627 px (N vs N+1: ~11 000): the arm
+  cannon drew with the new tick's bob. Fixed: `CPlayerGun::PortSnapshotPresentedPose`
+  keeps the gun's pose relative to the simulation camera before each tick and
+  `CPlayerGun::Render` blends it (`CActor::PortBlendRigid`, same snap rule)
+  by shifting the view, so the arm, beam and muzzle effects follow. Now 257 px:
+  HUD sway lines (section 5), an icon in the top-right HUD (probably the
+  minimap, which follows the player per tick) and faint gun shading.
+- Rolling in morph ball: the ball's spin and position blend; the remaining
+  difference is lighting (the ball's light and reflections are placed at tick
+  positions by PreRender), acceptable.
+- ASan tour (`MP_RANDO_SWEEP=1`, `MP_PRESENT_T=cycle`, `MP_TURBO=2`, all
+  interpolation on, `frame_limit=0`): all 8 worlds and 276 areas, clean (no ASan reports) in
+  about 30 minutes.
 
 ## Phased plan
 
@@ -176,7 +206,7 @@ so they work unchanged.
    `particle_interpolation`, off by default; swooshes, electric and beams remain.
 5. **Sweep:** ASan tour (`MP_RANDO_SWEEP`) with interpolation forced on (a
    fake fractional `t` under `MP_TURBO`), captures at t = 0/0.5/1 compared
-   against tick frames to find paths that were missed.
+   against tick frames to find paths that were missed (section 7). Done.
 
 Each phase is useful on its own and behind one setting (`frame_interpolation`,
 F1 Performance). Phase 1 is on by default; phases 2 to 4 are off by default

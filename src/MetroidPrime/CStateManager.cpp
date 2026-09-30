@@ -8,6 +8,7 @@
 #include "port_log.h"
 #include "port_savestate.h"
 #include "port_skip_cutscenes.h"
+#include "port_viewmodel.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 #endif
@@ -44,6 +45,7 @@
 #include "MetroidPrime/HUD/CSamusHud.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
+#include "MetroidPrime/Player/CPlayerGun.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/Player/CMorphBall.hpp"
 #include "MetroidPrime/CScriptLayerManager.hpp"
@@ -1241,6 +1243,9 @@ void CStateManager::Update(float dt) {
     for (int idx = actors->GetFirstObjectIndex(); idx != -1;
          idx = actors->GetNextObjectIndex(idx)) {
       static_cast< CActor* >((*actors)[idx])->PortSnapshotRenderTransform();
+    }
+    if (x84c_player != nullptr && x84c_player->GetPlayerGun() != nullptr) {
+      x84c_player->GetPlayerGun()->PortSnapshotPresentedPose(*this);
     }
   }
 #endif
@@ -2737,6 +2742,9 @@ void CStateManager::DrawWorld() const {
     }
 #endif
   }
+#ifdef TARGET_PC
+  PortViewModel::Draw(*this);
+#endif
   if (!renderLast.empty()) {
     CGraphics::SetDepthRange(0.015625f, 0.03125f);
     for (const TUniqueId* it = renderLast.begin(); it != renderLast.end(); ++it) {

@@ -492,6 +492,9 @@ bool CGameArchitectureSupport::UpdateTicks() {
   if (PortDebug::Turbo() && !gpMain->GetScreenFading()) {
     ticks = PortDebug::TurboTicks();
   }
+  if (PortDebug::TickHold()) {
+    ticks = PortDebug::TakeHeldTicks();
+  }
 
   const float tickPeriod = static_cast< float >(period);
   PortDebug::SetTickPeriod(tickPeriod);
@@ -1000,8 +1003,10 @@ int CMain::RsMain(int argc, const char* const* argv) {
           interpolation = 0.f;
         else if (interpolation > 1.f)
           interpolation = 1.f;
-        CCameraManager::SetPresentationInterpolation(PortDebug::FrameLimitEnabled() ? -1.f
-                                                                                   : interpolation);
+        if (PortDebug::FrameLimitEnabled())
+          interpolation = -1.f;
+        PortDebug::PresentOverride(interpolation);
+        CCameraManager::SetPresentationInterpolation(interpolation);
         archSupport->GetIOWinManager().Draw();
         CCameraManager::SetPresentationInterpolation(-1.f);
         DrawDebugMetrics(t1, archSupport->GetStopwatch2());

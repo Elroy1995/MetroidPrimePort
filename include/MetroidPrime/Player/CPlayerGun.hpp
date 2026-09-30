@@ -108,6 +108,11 @@ public:
   CVector3f ConvertToScreenSpace(const CVector3f& pos, const CGameCamera&) const;
   void DrawArm(const CStateManager&, const CVector3f&, const CModelFlags&) const;
   void Render(const CStateManager&, const CVector3f&, const CModelFlags&) const;
+#ifdef TARGET_PC
+  // Port: records the gun's camera-relative pose before a tick, so frames
+  // drawn between ticks can blend the bob and sway (FRAME_INTERPOLATION.md).
+  void PortSnapshotPresentedPose(const CStateManager&) const;
+#endif
   void GetLctrWithShake(CTransform4f& xfOut, const CModelData&, const rstl::string&, bool, bool);
   void PlayAnim(NWeaponTypes::EGunAnimType type, bool);
   void Update(float, float, float, CStateManager&);
