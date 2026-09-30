@@ -20,6 +20,21 @@ and reports checks back. Nothing here changes behaviour when no seed is present.
   It reads `MP_USER_PATH` (else `SDL_GetPrefPath`) for its files, matching the
   settings file.
 
+### Scans and the Artifact Temple
+
+In a randomized game (a seed file or Archipelago), every pickup is scannable and
+its scan names the item it now holds; under Archipelago, it also says whose
+world the item is for (`Hookshot` / `for Link (A Link to the Past)`, or
+`for you`). The scans are made-up SCAN/STRG pairs (`PortCustomRes::TextScan`,
+ids from 0xDEAF8000, one pair per location). `PortHints` (`platform/port_hints.cpp`)
+keeps them, and the Artifact Temple totems' STRGs, "watched": `CStringTable`
+asks for the text again whenever the game reads it, so a scout reply or hint
+that arrives after the room loaded still shows. An Archipelago location not yet
+scouted reads `Archipelago item`.
+
+Each totem names where its artifact is: the seed file's placement offline, or
+the server's hints under Archipelago.
+
 Items are named after `CPlayerState::EItemType` without the `kIT_` prefix:
 `Missiles`, `EnergyTanks`, `MorphBall`, `PowerBombs`, `Newborn` (artifacts), and
 so on. `ItemFromName` is case-insensitive; `tests/port_randomizer.cpp`

@@ -35,6 +35,9 @@ bool ApplyPickup(uint32_t worldAssetId, uint32_t areaAssetId, uint32_t entityId,
 // Looks up the model the seed associates with an item type. False when the seed
 // carries no model for it, in which case the original model is kept.
 bool ModelForItem(int itemType, PickupModel& out);
+// Where the seed put an item (the first location holding it, by key order).
+// False when the randomizer is off or no location holds it.
+bool FindItem(int itemType, uint32_t& worldAssetId, uint32_t& areaAssetId, uint32_t& entityId);
 // Records a collected pickup check when randomizer or dump mode is active.
 void RecordCheck(uint32_t worldAssetId, uint32_t areaAssetId, uint32_t entityId, int itemType);
 // Returns the retail item name, or "Unknown" for an out-of-range item type.

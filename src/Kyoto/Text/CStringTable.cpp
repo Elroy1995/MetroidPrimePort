@@ -7,6 +7,10 @@
 #include <string.h>
 #endif
 
+#ifdef TARGET_PC
+#include "port_hints.h"
+#endif
+
 #include <rstl/pair.hpp>
 #include <rstl/vector.hpp>
 
@@ -91,6 +95,12 @@ const wchar_t* CStringTable::GetString(int idx) const {
   if (idx < 0 || idx >= x0_stringCount) {
     return skInvalidString;
   }
+#ifdef TARGET_PC
+  if (mPortWatchedId != 0 && idx == x0_stringCount - 1) {
+    // Tables are heap objects from the factory, never const-defined.
+    const_cast< CStringTable* >(this)->PortRefreshWatched();
+  }
+#endif
 #if TARGET_LITTLE_ENDIAN || WCHAR_MAX > 0xffff
   return mNativeStrings[idx].data();
 #else
@@ -99,7 +109,55 @@ const wchar_t* CStringTable::GetString(int idx) const {
 #endif
 }
 
+#ifdef TARGET_PC
+void CStringTable::PortSetString(int idx, const unsigned short* text, int length) {
+  if (idx < 0 || idx >= x0_stringCount) {
+    return;
+  }
+  rstl::vector< wchar_t > native;
+  for (int i = 0; i < length; ++i) {
+    uint codepoint = text[i];
+    // Same as the loader: whole code points where wchar_t holds them.
+    if (sizeof(wchar_t) > sizeof(ushort) && codepoint >= 0xd800 && codepoint <= 0xdbff &&
+        i + 1 < length && text[i + 1] >= 0xdc00 && text[i + 1] <= 0xdfff) {
+      codepoint = 0x10000 + ((codepoint - 0xd800) << 10) + text[i + 1] - 0xdc00;
+      ++i;
+    }
+    native.push_back(static_cast< wchar_t >(codepoint));
+  }
+  native.push_back(0);
+  mNativeStrings[idx] = native;
+}
+
+void CStringTable::PortWatch(uint strgId) {
+  mPortWatchedId = strgId;
+  PortRefreshWatched();
+}
+
+void CStringTable::PortRefreshWatched() {
+  std::u16string text;
+  // No text (yet, or after a disconnect) keeps whatever the string last said.
+  if (x0_stringCount <= 0 || !PortHints::WatchedText(mPortWatchedId, text) ||
+      text == mPortWatchedText) {
+    return;
+  }
+  mPortWatchedText = text;
+  PortSetString(x0_stringCount - 1, reinterpret_cast< const unsigned short* >(text.data()),
+                static_cast< int >(text.size()));
+}
+#endif
+
 const CFactoryFnReturn FStringTableFactory(const SObjectTag& tag, CInputStream& in,
                                      const CVParamTransfer& xfer) {
+#ifdef TARGET_PC
+  CStringTable* table = rs_new CStringTable(in);
+  // The Artifact Temple totems say where a randomized seed put each artifact,
+  // and a randomized pickup's scan what it holds.
+  if (PortHints::IsWatched(tag.GetId())) {
+    table->PortWatch(tag.GetId());
+  }
+  return table;
+#else
   return rs_new CStringTable(in);
+#endif
 }

@@ -2,6 +2,7 @@
 
 #include "port_log.h"
 
+#include <cstring>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -39,7 +40,44 @@ std::vector<uint8_t> Embedded(const unsigned char (&bytes)[N]) {
   return std::vector<uint8_t>(bytes, bytes + N);
 }
 
+constexpr uint32_t kSCAN = 0x5343414E;
+constexpr uint32_t kSTRG = 0x53545247;
+
+// Scan text: pair n is SCAN kTextBase + 2n and its STRG right after.
+struct TextRegistry {
+  std::mutex mutex;
+  std::map<uint64_t, uint32_t> ids;
+  std::vector<std::u16string> texts;
+};
+
+TextRegistry& Texts() {
+  static TextRegistry registry;
+  return registry;
+}
+
+bool BuildText(uint32_t id, Resource& out) {
+  const uint32_t index = (id - kTextBase) / 2;
+  std::u16string text;
+  {
+    TextRegistry& registry = Texts();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    if (index >= registry.texts.size())
+      return false;
+    text = registry.texts[index];
+  }
+  if ((id - kTextBase) % 2 == 0) {
+    out.type = kSCAN;
+    out.data = MakeScan(id + 1);
+  } else {
+    out.type = kSTRG;
+    out.data = MakeStrg(text);
+  }
+  return true;
+}
+
 bool Build(uint32_t id, const DiscReader& read, Resource& out) {
+  if (id >= kTextBase)
+    return BuildText(id, out);
   // Each model's texture patches (material set 0 index -> texture).
   struct TexturePatch {
     uint32_t index, texture;
@@ -167,6 +205,98 @@ const Resource* Find(uint32_t id, const DiscReader& read) {
     resource.reset();
   }
   return (sBuilt[id] = std::move(resource)).get();
+}
+
+uint32_t TextScan(uint64_t key, const std::string& text) {
+  TextRegistry& registry = Texts();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  const auto found = registry.ids.find(key);
+  if (found != registry.ids.end()) {
+    registry.texts[(found->second - kTextBase) / 2] = Utf16(text);
+    return found->second;
+  }
+  const uint32_t index = uint32_t(registry.texts.size());
+  if (!IsCustomId(kTextBase + index * 2 + 1))
+    return 0;
+  registry.texts.push_back(Utf16(text));
+  return registry.ids[key] = kTextBase + index * 2;
+}
+
+std::vector<uint8_t> MakeStrg(const std::u16string& text) {
+  // One language (ENGL, which the game falls back to for any other) holding
+  // one string: its offset table, then the UTF-16BE text and a terminator.
+  std::vector<uint8_t> strg(28);
+  Put32(strg, 0, 0x87654321);
+  Put32(strg, 4, 0);
+  Put32(strg, 8, 1);
+  Put32(strg, 12, 1);
+  Put32(strg, 16, 0x454E474C);
+  Put32(strg, 20, 0);
+  Put32(strg, 24, uint32_t(4 + (text.size() + 1) * 2));
+  strg.resize(strg.size() + 4);
+  Put32(strg, 28, 4);
+  for (char16_t unit : text) {
+    strg.push_back(uint8_t(unit >> 8));
+    strg.push_back(uint8_t(unit));
+  }
+  strg.push_back(0);
+  strg.push_back(0);
+  return strg;
+}
+
+std::vector<uint8_t> MakeScan(uint32_t strg) {
+  // randomprime's pickup scans: version 5, the retail scan frame, normal
+  // speed, no logbook category, not important, and four empty image slots.
+  std::vector<uint8_t> scan(25);
+  Put32(scan, 0, 5);
+  Put32(scan, 4, 0x0BADBEEF);
+  Put32(scan, 8, 0xDCEC3E77);
+  Put32(scan, 12, strg);
+  Put32(scan, 16, 0);
+  Put32(scan, 20, 0);
+  scan[24] = 0;
+  const float appearance[] = {0.25f, 0.5f, 0.75f, 1.f};
+  for (float range : appearance) {
+    const size_t at = scan.size();
+    scan.resize(at + 28, 0);
+    Put32(scan, at, 0xFFFFFFFF);
+    uint32_t bits;
+    std::memcpy(&bits, &range, sizeof(bits));
+    Put32(scan, at + 4, bits);
+    Put32(scan, at + 8, 0xFFFFFFFF);
+  }
+  scan.resize(scan.size() + 23, 0xFF);
+  return scan;
+}
+
+std::u16string Utf16(const std::string& text) {
+  std::u16string out;
+  for (size_t i = 0; i < text.size();) {
+    const uint8_t lead = uint8_t(text[i]);
+    const int extra = lead < 0x80 ? 0 : (lead >> 5) == 6 ? 1 : (lead >> 4) == 14 ? 2 : (lead >> 3) == 30 ? 3 : -1;
+    uint32_t code = extra == 0 ? lead : extra == 1 ? lead & 0x1F : extra == 2 ? lead & 0x0F : lead & 0x07;
+    bool ok = extra >= 0 && i + size_t(extra) < text.size();
+    for (int k = 1; ok && k <= extra; ++k) {
+      const uint8_t next = uint8_t(text[i + k]);
+      ok = (next & 0xC0) == 0x80;
+      code = (code << 6) | (next & 0x3F);
+    }
+    const uint32_t least = extra == 1 ? 0x80 : extra == 2 ? 0x800 : extra == 3 ? 0x10000 : 0;
+    if (!ok || code < least || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+      out.push_back(u'�');
+      ++i;
+      continue;
+    }
+    i += size_t(extra) + 1;
+    if (code >= 0x10000) {
+      code -= 0x10000;
+      out.push_back(char16_t(0xD800 + (code >> 10)));
+      out.push_back(char16_t(0xDC00 + (code & 0x3FF)));
+    } else {
+      out.push_back(char16_t(code));
+    }
+  }
+  return out;
 }
 
 } // namespace PortCustomRes

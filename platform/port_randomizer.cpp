@@ -697,6 +697,27 @@ int ItemFromName(const char* name) {
   return -1;
 }
 
+bool FindItem(int itemType, uint32_t& worldAssetId, uint32_t& areaAssetId, uint32_t& entityId) {
+  EnsureLoaded();
+  try {
+    const State& state = GetState();
+    if (!state.enabled)
+      return false;
+    for (const auto& [key, placement] : state.placements) {
+      unsigned int world = 0, area = 0, entity = 0;
+      if (placement.itemType == itemType &&
+          std::sscanf(key.c_str(), "%8X:%8X:%8X", &world, &area, &entity) == 3) {
+        worldAssetId = world;
+        areaAssetId = area;
+        entityId = entity;
+        return true;
+      }
+    }
+  } catch (...) {
+  }
+  return false;
+}
+
 void FormatLocationKey(uint32_t worldAssetId, uint32_t areaAssetId, uint32_t entityId, char* out,
                        int outSize) {
   if (out == nullptr || outSize <= 0)

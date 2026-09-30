@@ -128,6 +128,13 @@ void AnnouncePickup(uint32_t world, uint32_t area, uint32_t entity);
 // retail model) when AP is off, the location isn't scouted yet, or the item
 // has no pickup on the disc.
 bool PickupModel(uint32_t world, uint32_t area, uint32_t entity, PortRandomizer::PickupModel& out);
+// The scan text for that item ("Hookshot\nfor Bob (A Link to the Past)"),
+// empty before the location is scouted. False when the location isn't one of
+// the multiworld's (AP off, or not an AP location).
+bool PickupScanText(uint32_t world, uint32_t area, uint32_t entity, std::string& out);
+// The Artifact Temple totem text for an artifact item type (29-40): where the
+// multiworld put it. False when AP is off or not connected.
+bool ArtifactHint(int itemType, std::string& out);
 
 // A spawn point's Reset message replaced the whole inventory. Any received items
 // the game held are gone, so the next Poll rewinds the session and the server

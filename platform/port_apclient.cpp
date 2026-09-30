@@ -1573,6 +1573,41 @@ bool PickupModel(uint32_t world, uint32_t area, uint32_t entity, PortRandomizer:
   }
 }
 
+bool PickupScanText(uint32_t world, uint32_t area, uint32_t entity, std::string& out) {
+  try {
+    const MetroidPrime::Location* location = MetroidPrime::FindPickup(world, area, entity);
+    if (location == nullptr || !BuiltinRules())
+      return false;
+    {
+      Runtime& runtime = GetRuntime();
+      std::lock_guard<std::mutex> lock(runtime.mutex);
+      if (runtime.enabled && runtime.session != nullptr)
+        out = runtime.session->ScanText(location->id);
+    }
+    // Empty when not scouted yet (or playing offline): the pickup is still a
+    // check, not the retail item.
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool ArtifactHint(int itemType, std::string& out) {
+  try {
+    if (itemType < MetroidPrime::kArtifactTruth || itemType > MetroidPrime::kArtifactNewborn ||
+        !BuiltinRules())
+      return false;
+    Runtime& runtime = GetRuntime();
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (!runtime.enabled || runtime.session == nullptr || !runtime.session->HandshakeComplete())
+      return false;
+    out = runtime.session->ArtifactHint(MetroidPrime::kItemBase + itemType);
+    return !out.empty();
+  } catch (...) {
+    return false;
+  }
+}
+
 uint32_t NewGameWorld() {
   try {
     return BuiltinEnabled() ? MetroidPrime::kTallonWorld : 0;

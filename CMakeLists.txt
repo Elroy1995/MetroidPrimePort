@@ -115,6 +115,7 @@ set(MP_PORT_SOURCES
     platform/port_mods.cpp
     platform/port_mods_pak.cpp
     platform/port_custom_res.cpp
+    platform/port_hints.cpp
     platform/port_ws.cpp
     platform/touch_pad.cpp
     platform/glibc_compat.c

@@ -15,6 +15,14 @@
 
 #include <float.h>
 #include <math.h>
+#ifdef TARGET_PC
+#include <map>
+
+// Scans the save does not track (a randomized pickup's made-up SCAN): kept
+// until the next new game or load, like an unsaved retail scan, but never
+// saved. The constructors clear them.
+static std::map< CAssetId, float > sPortExtraScanTimes;
+#endif
 
 static const int kPowerUpMax[] = {
     1, 1, 1, 1,  250, 1, 1, 8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -70,7 +78,11 @@ CPlayerState::CPlayerState()
 , x170_scanTimes()
 , x180_scanCompletionRateFirst(0)
 , x184_scanCompletionRateSecond(0)
-, x188_staticIntf(5) {}
+, x188_staticIntf(5) {
+#ifdef TARGET_PC
+  sPortExtraScanTimes.clear();
+#endif
+}
 
 CPlayerState::CPlayerState(CInputStream& stream)
 : x0_24_alive(true)
@@ -88,6 +100,9 @@ CPlayerState::CPlayerState(CInputStream& stream)
 , x180_scanCompletionRateFirst(0)
 , x184_scanCompletionRateSecond(0)
 , x188_staticIntf(5) {
+#ifdef TARGET_PC
+  sPortExtraScanTimes.clear();
+#endif
   x4_enabledItems = uint(stream.ReadBits(32));
 
   const uint integralHP = uint(stream.ReadBits(32));
@@ -377,12 +392,24 @@ void CPlayerState::InitializeScanTimes() {
 const float CPlayerState::GetScanTime(const CAssetId res) const {
   rstl::vector< rstl::pair< CAssetId, float > >::const_iterator it =
       rstl::find_by_key(x170_scanTimes, res);
+#ifdef TARGET_PC
+  if (it == x170_scanTimes.end()) {
+    std::map< CAssetId, float >::const_iterator extra = sPortExtraScanTimes.find(res);
+    return extra != sPortExtraScanTimes.end() ? extra->second : 0.f;
+  }
+#endif
   return it->second;
 }
 
 void CPlayerState::SetScanTime(const CAssetId res, float time) {
   rstl::vector< rstl::pair< CAssetId, float > >::iterator it =
       rstl::find_by_key_nc(x170_scanTimes, res);
+#ifdef TARGET_PC
+  if (it == x170_scanTimes.end()) {
+    sPortExtraScanTimes[res] = time;
+    return;
+  }
+#endif
   it->second = time;
 }
 

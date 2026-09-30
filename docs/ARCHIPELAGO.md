@@ -444,9 +444,16 @@ still works; anything marked as a gap still limits a session.
   `!collect`, `!help`); hint requests and their answers are plain chat.
   The log outlives reconnects and marks them. A message goes out after the
   socket thread's receive wait, so it takes up to a second.
-- **Hints — through chat.** `!hint <name>` in the Chat tab asks the server, and
-  its answer (and any hint for this slot) lands in the log. There is no hint
-  list or tracker marking beyond that.
+- **Hints — through chat and the Artifact Temple.** `!hint <name>` in the Chat
+  tab asks the server, and its answer (and any hint for this slot) lands in the
+  log. The Artifact Temple totems name each artifact's location, from
+  `artifact_locations` in slot data, else this slot's hints in data storage
+  (`_read_hints_<team>_<slot>`, read with `Get` and followed with `SetNotify`),
+  else the scouts for an artifact in this world. Pickup scans name the scouted
+  item and its owner (`docs/RANDOMIZER.md`, "Scans and the Artifact Temple").
+  Both update when late data arrives. `ap_fake_server.py --hints
+  ITEM=LOC[@PLAYER]` serves test hints. There is no hint list or tracker
+  marking beyond that.
 - **DeathLink — done, opt-in.** Set `"death_link": true` in `archipelago.json`
   and a DeathLink bounce from another player kills this one, naming them; this
   client's own deaths are announced once. The client connects with the

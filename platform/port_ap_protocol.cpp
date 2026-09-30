@@ -847,6 +847,8 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
     IntegerMember(packet, "team", team);
     mSlotDescription = "slot " + std::to_string(slot) + ", team " + std::to_string(team);
     mOwnSlot = slot;
+    mTeam = team;
+    mArtifactHints.clear();
     mPlayers.clear();
     const PortJson::Value* players = Member(packet, "players");
     if (players != nullptr && players->IsArray()) {
@@ -940,6 +942,43 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       const std::vector< int64_t > ids = AllLocationIds();
       if (!ids.empty())
         outgoing.push_back(BuildLocationScouts(ids));
+      // The totems name where each artifact is. A newer AP world puts that in
+      // slot_data; the released one hints every artifact at the start, and
+      // the server keeps this slot's hints in data storage.
+      const PortJson::Value* artifacts =
+          slotData != nullptr && slotData->IsObject() ? Member(*slotData, "artifact_locations") : nullptr;
+      if (artifacts != nullptr && artifacts->IsObject()) {
+        for (const auto& [name, where] : artifacts->AsObject()) {
+          int64_t location = 0;
+          int64_t player = 0;
+          if (!where.IsArray() || where.Size() != 2 || !Integer(&where.AsArray()[0], location) ||
+              !Integer(&where.AsArray()[1], player))
+            continue;
+          for (int64_t item = MetroidPrime::kArtifactTruth; item <= MetroidPrime::kArtifactNewborn; ++item) {
+            const char* itemName = MetroidPrime::ItemName(MetroidPrime::kItemBase + item);
+            if (itemName != nullptr && name == itemName)
+              mArtifactHints[MetroidPrime::kItemBase + item] = HintedLocation{location, player};
+          }
+        }
+      }
+      const std::string hintsKey =
+          Quote("_read_hints_" + std::to_string(mTeam) + "_" + std::to_string(mOwnSlot));
+      outgoing.push_back("{\"cmd\":\"Get\",\"keys\":[" + hintsKey + "]}");
+      outgoing.push_back("{\"cmd\":\"SetNotify\",\"keys\":[" + hintsKey + "]}");
+    }
+  } else if (command == "Retrieved" || command == "SetReply") {
+    const std::string hintsKey = "_read_hints_" + std::to_string(mTeam) + "_" + std::to_string(mOwnSlot);
+    if (command == "SetReply") {
+      const PortJson::Value* key = Member(packet, "key");
+      const PortJson::Value* value = Member(packet, "value");
+      if (key != nullptr && key->IsString() && key->AsString() == hintsKey && value != nullptr)
+        ReadHints(*value);
+    } else {
+      const PortJson::Value* keys = Member(packet, "keys");
+      const PortJson::Value* value =
+          keys != nullptr && keys->IsObject() ? Member(*keys, hintsKey.c_str()) : nullptr;
+      if (value != nullptr)
+        ReadHints(*value);
     }
   } else if (command == "DataPackage") {
     const PortJson::Value* data = Member(packet, "data");
@@ -1428,6 +1467,85 @@ bool Session::ScoutedAt(int64_t locationId, int64_t& item, bool& sameGame,
     sameGame = game != mSlotGames.end() && game->second == mConfig.game;
   }
   return true;
+}
+
+namespace {
+// '&' starts the game's text markup; CTextParser reads "&&" as a plain '&'.
+std::string GameText(std::string text) {
+  for (size_t at = text.find('&'); at != std::string::npos; at = text.find('&', at + 2))
+    text.insert(at, 1, '&');
+  return text;
+}
+} // namespace
+
+std::string Session::ScanText(int64_t locationId) const {
+  try {
+    const auto scout = mScouts.find(locationId);
+    if (scout == mScouts.end())
+      return std::string();
+    const int64_t player = scout->second.player;
+    std::string text = ItemName(scout->second.item, player) + "\nfor ";
+    if (mOwnSlot == 0 || player == mOwnSlot) {
+      text += "you";
+    } else {
+      text += PlayerName(player);
+      const auto game = mSlotGames.find(player);
+      if (game != mSlotGames.end() && !game->second.empty())
+        text += " (" + game->second + ")";
+    }
+    return GameText(text);
+  } catch (...) {
+    return std::string();
+  }
+}
+
+void Session::ReadHints(const PortJson::Value& hints) {
+  if (!hints.IsArray())
+    return;
+  for (const PortJson::Value& hint : hints.AsArray()) {
+    int64_t receiver = 0;
+    int64_t finder = 0;
+    int64_t location = 0;
+    int64_t item = 0;
+    if (!hint.IsObject() || !IntegerMember(hint, "receiving_player", receiver) ||
+        !IntegerMember(hint, "finding_player", finder) || !IntegerMember(hint, "location", location) ||
+        !IntegerMember(hint, "item", item))
+      continue;
+    if (receiver == mOwnSlot && item >= MetroidPrime::kItemBase + MetroidPrime::kArtifactTruth &&
+        item <= MetroidPrime::kItemBase + MetroidPrime::kArtifactNewborn)
+      mArtifactHints[item] = HintedLocation{location, finder};
+  }
+}
+
+std::string Session::ArtifactHint(int64_t itemId) const {
+  try {
+    const char* name = MetroidPrime::ItemName(itemId);
+    if (name == nullptr)
+      return std::string();
+    const std::string artifact = std::string("&push;&main-color=#c300ff;") + name + "&pop;";
+    HintedLocation where;
+    const auto hinted = mArtifactHints.find(itemId);
+    if (hinted != mArtifactHints.end()) {
+      where = hinted->second;
+    } else {
+      // This slot's own locations were all scouted, so an artifact in its own
+      // world is known without a hint.
+      for (const auto& [location, scout] : mScouts) {
+        if (scout.item == itemId && scout.player == mOwnSlot && mOwnSlot != 0) {
+          where = HintedLocation{location, mOwnSlot};
+          break;
+        }
+      }
+    }
+    if (where.player == 0)
+      return "The " + artifact + " has not been collected.";
+    const std::string owner = where.player == mOwnSlot ? "your" : GameText(PlayerName(where.player)) + "'s";
+    return "The " + artifact + " can be found in &push;&main-color=#d4cc33;" + owner +
+           "&pop; &push;&main-color=#89a1ff;" + GameText(LocationName(where.location, where.player)) +
+           "&pop;.";
+  } catch (...) {
+    return std::string();
+  }
 }
 
 std::string Session::AnnounceLocation(int64_t locationId) {

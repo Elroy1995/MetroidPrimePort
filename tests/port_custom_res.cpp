@@ -126,6 +126,33 @@ int main() {
           "a missing disc source fails once and stays failed");
     Check(Find(0xDEAF0100, disc) == nullptr && Find(0x12345678, disc) == nullptr,
           "unknown and non-custom ids have no resource");
+
+    // Scan text: a SCAN and STRG pair per distinct text.
+    Check(Utf16("Bob's \xC3\xA9\xF0\x9F\x98\x80") == u"Bob's é\U0001F600" && Utf16("a\xFF") == u"a�" &&
+              Utf16("\xE2\x82") == u"��" && Utf16("\xC0\xAF") == u"��",
+          "UTF-8 becomes UTF-16, bad bytes a replacement character");
+    // Keyed by location: a key keeps its id when its text changes.
+    const uint32_t scanId = TextScan(1, "Archipelago item");
+    Check(scanId == kTextBase && TextScan(2, "Energy Tank") == kTextBase + 2 &&
+              TextScan(1, "Bob's Hookshot") == scanId,
+          "each key gets one SCAN id, two apart");
+    const Resource* scan = Find(scanId, disc);
+    Check(scan != nullptr && scan->type == 0x5343414E && scan->data.size() == 0xA0 &&
+              Get32(scan->data, 0) == 5 && Get32(scan->data, 12) == scanId + 1 &&
+              Get32(scan->data, 25 + 3 * 28 + 4) == 0x3F800000,
+          "the SCAN is a retail-sized v5 scan pointing at its STRG");
+    const Resource* strg = Find(scanId + 1, disc);
+    const std::u16string text = u"Bob's Hookshot";
+    bool textMatches = strg != nullptr && strg->data.size() == 32 + (text.size() + 1) * 2;
+    for (size_t i = 0; textMatches && i <= text.size(); ++i) {
+      const char16_t unit = char16_t((strg->data[32 + 2 * i] << 8) | strg->data[33 + 2 * i]);
+      textMatches = unit == (i < text.size() ? text[i] : 0);
+    }
+    Check(textMatches && strg->type == 0x53545247 && Get32(strg->data, 0) == 0x87654321 &&
+              Get32(strg->data, 12) == 1 && Get32(strg->data, 24) == 4 + (text.size() + 1) * 2 &&
+              Get32(strg->data, 28) == 4,
+          "the STRG holds the text as string 0, UTF-16BE");
+    Check(Find(kTextBase + 100, disc) == nullptr, "an unregistered text id has no resource");
   }
 
   if (sFailures == 0)

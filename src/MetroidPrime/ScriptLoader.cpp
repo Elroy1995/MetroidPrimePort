@@ -16,6 +16,7 @@
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
 #include "port_apclient.h"
+#include "port_hints.h"
 #include "port_log.h"
 #include "port_randomizer.h"
 #include "port_skip_cutscenes.h"
@@ -926,9 +927,11 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
     originalModel.character = aParms.GetCharacter();
     originalModel.animation = aParms.GetInitialAnimation();
     int randoItem = static_cast< int >(itemType);
-    if (PortRandomizer::ApplyPickup(randoWorld, randoArea,
+    const bool randomized =
+        PortRandomizer::ApplyPickup(randoWorld, randoArea,
                                     static_cast< uint32_t >(info.GetEditorId().Value()), randoItem,
-                                    capacity, amount, originalModel)) {
+                                    capacity, amount, originalModel);
+    if (randomized) {
       itemType = static_cast< CPlayerState::EItemType >(randoItem);
       // The item changed; draw it with the model the seed associates with the
       // new item, when it has one. Otherwise the retail model stays, which
@@ -967,6 +970,13 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
                        "keeping the retail model\n",
                        apModel.model, apModel.acs);
       }
+    }
+    // The scan names what the pickup holds now, not the retail item.
+    uint32_t scanId = 0;
+    if (PortHints::PickupScan(randoWorld, randoArea,
+                              static_cast< uint32_t >(info.GetEditorId().Value()), randoItem,
+                              randomized, scanId)) {
+      actParms = actParms.Scannable(CScannableParameters(static_cast< CAssetId >(scanId)));
     }
     if (static_cast< uint32_t >(staticModel) != originalModel.model)
       PlaceReplacedPickup(originalModel.model, static_cast< uint32_t >(staticModel),

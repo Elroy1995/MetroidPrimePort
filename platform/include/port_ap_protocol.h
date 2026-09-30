@@ -210,6 +210,14 @@ public:
   // item's classification bits (1 progression, 2 useful, 4 trap).
   bool ScoutedAt(int64_t locationId, int64_t& item, bool& sameGame,
                  int64_t* flags = nullptr) const;
+  // Scan text for the pickup at one of this slot's locations: the item and
+  // whose world it is for ("Hookshot\nfor Bob (A Link to the Past)", or
+  // "Energy Tank\nfor you"). Empty before the LocationScouts reply.
+  std::string ScanText(int64_t locationId) const;
+  // Artifact Temple totem text for an artifact this slot receives (item id
+  // with the base), in the AP world's words: where it is when a hint or a
+  // scout says, else that it has not been collected.
+  std::string ArtifactHint(int64_t itemId) const;
 
   // slot_data from Connected, for built-in tables; defaults before it arrives.
   const SlotData& GetSlotData() const { return mSlotData; }
@@ -314,6 +322,16 @@ private:
     int64_t flags = 0;
   };
   std::map< int64_t, ScoutedItem > mScouts;
+  // Where this slot's artifacts are (item id -> location and the slot whose
+  // world has it), from the server's hints (the AP world hints every artifact
+  // at the start when artifact_hints is on) or slot_data artifact_locations.
+  struct HintedLocation {
+    int64_t location = 0;
+    int64_t player = 0;
+  };
+  std::map< int64_t, HintedLocation > mArtifactHints;
+  int64_t mTeam = 0;
+  void ReadHints(const PortJson::Value& hints);
   // Locations whose text the HUD showed when they were collected, so the
   // server's own announcement of those finds would repeat it.
   std::set< int64_t > mAnnounced;

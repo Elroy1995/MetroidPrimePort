@@ -221,6 +221,13 @@ def handle_session(sock, address, args, item_ids, bounce_sources):
                         if location in packet.get("locations", [])
                     ]})
                     continue
+                # Get: data storage holds only this slot's hints (--hints).
+                if packet_command(packet) == "Get":
+                    keys = packet.get("keys", [])
+                    send_json(sock, {"cmd": "Retrieved", "keys": {
+                        key: (args.hints if key == "_read_hints_0_1" else None) for key in keys
+                    }})
+                    continue
                 if packet_command(packet) != "Connect":
                     continue
                 name = packet.get("name", "") if isinstance(packet, dict) else ""
@@ -233,7 +240,9 @@ def handle_session(sock, address, args, item_ids, bounce_sources):
                     "cmd": "Connected",
                     "team": 0,
                     "slot": 1,
-                    "players": [],
+                    # Slot 2 is another game's player, for --scouts and --hints.
+                    "players": [{"team": 0, "slot": 1, "alias": args.slot, "name": args.slot},
+                                {"team": 0, "slot": 2, "alias": "Bob", "name": "Bob"}],
                     "checked_locations": [],
                     "missing_locations": [],
                     "slot_data": args.slot_data,
@@ -279,6 +288,20 @@ def parse_scouts(text):
     return scouts
 
 
+def parse_hints(text):
+    hints = []
+    try:
+        for entry in filter(None, text.split(",")):
+            item, target = entry.split("=")
+            location, _, player = target.partition("@")
+            hints.append({"receiving_player": 1, "finding_player": int(player or "1", 10),
+                          "location": int(location, 10), "item": int(item, 10), "found": False,
+                          "entrance": "", "item_flags": 1})
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("hints must look like ITEM=LOC[@PLAYER],...") from error
+    return hints
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1", help="interface to listen on (default: %(default)s)")
@@ -295,6 +318,9 @@ def main():
                         help="LocationInfo answers to LocationScouts; PLAYER defaults to 1 (this "
                              "slot), any other player is another game; FLAGS (default 0) are "
                              "the item's classification bits (1 progression, 2 useful, 4 trap)")
+    parser.add_argument("--hints", type=parse_hints, default=[], metavar="ITEM=LOC[@PLAYER],...",
+                        help="this slot's hints, returned for its _read_hints key; PLAYER (default "
+                             "1) is who finds the item, 2 is Bob")
     parser.add_argument("--no-deflate", action="store_true",
                         help="refuse permessage-deflate and send uncompressed messages")
     parser.add_argument("--tls", action="store_true", help="serve wss:// (requires --cert and --key)")

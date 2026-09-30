@@ -834,13 +834,16 @@ int main() {
     Check(slot.preScanElevators, "pre_scan_elevators parses");
     Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "elevator"),
           "only the unsupported option is warned about");
-    Check(session.GetConfig().deathLink && outgoing.size() == 2 &&
+    Check(session.GetConfig().deathLink && outgoing.size() == 4 &&
               Contains(outgoing[0], "ConnectUpdate") && Contains(outgoing[0], "DeathLink"),
           "the seed's DeathLink option adds the tag");
-    Check(outgoing.size() == 2 && Contains(outgoing[1], "\"cmd\":\"LocationScouts\"") &&
+    Check(outgoing.size() == 4 && Contains(outgoing[1], "\"cmd\":\"LocationScouts\"") &&
               Contains(outgoing[1], "5031100") && Contains(outgoing[1], "5031199") &&
               Contains(outgoing[1], "\"create_as_hint\":0"),
           "the built-in tables scout every location without hinting");
+    Check(outgoing.size() == 4 && outgoing[2] == R"({"cmd":"Get","keys":["_read_hints_0_1"]})" &&
+              outgoing[3] == R"({"cmd":"SetNotify","keys":["_read_hints_0_1"]})",
+          "and read and follow this slot's hints");
     outgoing.clear();
     session.HandlePacket(Packet(R"({"cmd":"ReceivedItems","index":0,"items":[
         {"item":5031004,"location":1,"player":1,"flags":0},
@@ -876,7 +879,7 @@ int main() {
     Check(grants.size() == 3 && grants[0].capacity == 4 && grants[1].capacity == 1 &&
               grants[2].capacity == 1,
           "without the main requirement the first expansion carries the main amount");
-    Check(outgoing.size() == 1 && !Contains(outgoing[0], "ConnectUpdate"),
+    Check(outgoing.size() == 3 && !Contains(outgoing[0], "ConnectUpdate"),
           "no DeathLink update when the seed has it off");
     Check(session.GetSlotData().warnings.empty() && session.GetSlotData().springBall == 0,
           "a seed without spring_ball has none and gets no warning");
@@ -902,7 +905,7 @@ int main() {
     session.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,"players":[],
         "checked_locations":[],"slot_data":{"death_link":true}})"),
                          outgoing, grants);
-    Check(outgoing.size() == 1 && !Contains(outgoing[0], "ConnectUpdate") &&
+    Check(outgoing.size() == 3 && !Contains(outgoing[0], "ConnectUpdate") &&
               !session.GetConfig().deathLink,
           "archipelago.json's death_link overrides the seed's");
   }
@@ -946,6 +949,45 @@ int main() {
     Check(session.ScoutedAt(5031100, scoutedItem, sameGame) && scoutedItem == 5031024 &&
               sameGame && !session.ScoutedAt(5031101, scoutedItem, sameGame),
           "an own item is scouted as this game's; an unscouted location isn't");
+    Check(session.ScanText(5031158) == "Hookshot\nfor Link (A Link to the Past)" &&
+              session.ScanText(5031100) == "Energy Tank\nfor you" &&
+              session.ScanText(5031101).empty(),
+          "a pickup scans as what it holds, and for whom when that's another player");
+    session.HandlePacket(Packet(R"({"cmd":"DataPackage","data":{"games":{
+        "A Link to the Past":{"item_name_to_id":{"Bow & Arrows":11}}}}})"),
+                         outgoing, grants);
+    session.HandlePacket(Packet(R"({"cmd":"LocationInfo","locations":[
+        {"item":11,"location":5031103,"player":2,"flags":1}]})"),
+                         outgoing, grants);
+    Check(session.ScanText(5031103) == "Bow && Arrows\nfor Link (A Link to the Past)",
+          "an '&' in a name is escaped for the game's text markup");
+    bool askedHints = false;
+    for (const std::string& packet : outgoing)
+      askedHints = askedHints || (Contains(packet, "\"cmd\":\"Get\"") && Contains(packet, "_read_hints_0_1"));
+    Check(askedHints, "Connected asks for this slot's hints");
+    {
+      using namespace PortAp::MetroidPrime;
+      const int64_t truth = kItemBase + kArtifactTruth;
+      const int64_t strength = kItemBase + kArtifactTruth + 1;
+      const int64_t elder = kItemBase + kArtifactTruth + 2;
+      session.HandlePacket(Packet(R"({"cmd":"Retrieved","keys":{"_read_hints_0_1":[
+          {"receiving_player":1,"finding_player":2,"location":20,"item":)" +
+                                  std::to_string(truth) + R"(,"found":false},
+          {"receiving_player":2,"finding_player":1,"location":5031100,"item":10,"found":false}]}})"),
+                           outgoing, grants);
+      session.HandlePacket(Packet(R"({"cmd":"LocationInfo","locations":[
+          {"item":)" + std::to_string(strength) + R"(,"location":5031102,"player":1,"flags":1}]})"),
+                           outgoing, grants);
+      const std::string truthHint = session.ArtifactHint(truth);
+      Check(Contains(truthHint, "#d4cc33;Link's&pop;") && Contains(truthHint, "#89a1ff;Link's House&pop;") &&
+                Contains(truthHint, ItemName(truth)),
+            "a hinted artifact names the player and location it's at");
+      Check(Contains(session.ArtifactHint(strength), "#d4cc33;your&pop;"),
+            "an artifact in this world is known from the scouts");
+      Check(Contains(session.ArtifactHint(elder), "has not been collected."),
+            "an unknown artifact keeps the AP world's fallback text");
+      Check(session.ArtifactHint(10).empty(), "only this game's items get a totem hint");
+    }
     {
       using namespace PortAp::MetroidPrime;
       Check(PickupModelKey(kItemBase + 16) == 16 && PickupModelKey(kItemBase + 42) == 7 &&

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 // Resources that are on no disc: randomprime's custom pickup models
@@ -32,6 +33,11 @@ enum : uint32_t {
 
 inline bool IsCustomId(uint32_t id) { return (id & 0xFFFF0000u) == 0xDEAF0000u; }
 
+// Scan text made at run time (a randomized pickup's item name) is a SCAN and
+// STRG pair from here up, far past randomprime's ids, which count up from
+// 0xDEAF0000 on a patched disc.
+constexpr uint32_t kTextBase = 0xDEAF8000;
+
 struct Resource {
   uint32_t type = 0; // FourCC
   std::vector<uint8_t> data; // uncompressed
@@ -44,6 +50,19 @@ using DiscReader = std::function<bool(uint32_t id, std::vector<uint8_t>& out)>;
 // when its disc source is missing or not the expected layout. Pointers stay
 // valid for the whole run.
 const Resource* Find(uint32_t id, const DiscReader& read);
+
+// The SCAN id of a scan showing `text` (UTF-8, in the game's text markup),
+// made on first use of `key`; the same key always gets the same id (its STRG
+// is id + 1), and a new text replaces the old one for the next build. 0 once
+// the id range is used up.
+uint32_t TextScan(uint64_t key, const std::string& text);
+
+// A one-string STRG and a text-only SCAN pointing at `strg` (exposed for the
+// unit test).
+std::vector<uint8_t> MakeStrg(const std::u16string& text);
+std::vector<uint8_t> MakeScan(uint32_t strg);
+// UTF-8 to UTF-16; a malformed byte becomes U+FFFD.
+std::u16string Utf16(const std::string& text);
 
 // In-place patches (exposed for the unit test). False, and data unchanged,
 // when the layout isn't what randomprime's recipe expects.
