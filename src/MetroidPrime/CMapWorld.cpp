@@ -20,6 +20,12 @@
 #include <math.h>
 #include <stdlib.h>
 
+#ifdef TARGET_PC
+#include "Kyoto/Graphics/CGX.hpp"
+#include "MetroidPrime/Player/CGameState.hpp"
+#include "port_map_pickups.h"
+#endif
+
 struct CMapObjectSortInfoGreaterThan {
   CMapObjectSortInfoGreaterThan() {}
   bool operator()(const CMapWorld::CMapObjectSortInfo& a,
@@ -487,7 +493,80 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
       lastArea = areaIdx;
     }
   }
+#ifdef TARGET_PC
+  if (PortMapPickups::Active()) {
+    DrawPortPickups(parms, bfsInfos);
+  }
+#endif
 }
+
+#ifdef TARGET_PC
+// Port: a white dot for each pickup not yet collected (PortMapPickups), in the
+// rooms this pass drew. Map objects sort after everything else, so drawing the
+// dots last keeps retail's order. A pickup counts as collected once its memory
+// relay is in the world's mailbox, which is what keeps it gone after a reload.
+void CMapWorld::DrawPortPickups(const CMapWorldDrawParms& parms,
+                                const rstl::vector< CMapAreaBFSInfo >& bfsInfos) const {
+  const IWorld& world = parms.GetWorld();
+  const CAssetId worldId = world.IGetWorldAssetId();
+  const CMapWorldInfo& mwInfo = parms.GetMapWorldInfo();
+  const CScriptMailbox& mailbox = *gpGameState->StateForWorld(worldId).Mailbox().GetPtr();
+  const CTransform4f& modelXf = parms.GetPlaneProjectionTransform();
+  // Faces the camera and scales with the map like the retail icons.
+  const CTransform4f billboard(parms.GetCameraTransform().BuildMatrix3f() *
+                                   CMatrix3f::Scale(parms.GetObjectScale()),
+                               CVector3f::Zero());
+  const CColor color = CColor(0xffffffff).WithAlphaOf(parms.GetAlpha());
+  static const int kSegments = 12;
+  static const float kRadius = 1.3f;
+  static const float kRimRadius = 1.7f;
+  const CColor rim = CColor(0x202020ff).WithAlphaOf(parms.GetAlpha());
+  bool setUp = false;
+  size_t count = 0;
+  const PortMapPickups::Dot* dots = PortMapPickups::Dots(count);
+  for (size_t i = 0; i < count; ++i) {
+    const PortMapPickups::Dot& dot = dots[i];
+    if (dot.world != worldId || mailbox.HasMsg(TEditorId(dot.relay))) {
+      continue;
+    }
+    const int areaIdx = world.IGetAreaId(dot.area).Value();
+    bool drawn = false;
+    for (int j = 0; j < bfsInfos.size() && !drawn; ++j) {
+      drawn = bfsInfos[j].GetAreaIndex() == areaIdx;
+    }
+    if (!drawn || !GetMapArea(areaIdx)->GetIsVisibleToAutoMapper(mwInfo.IsWorldVisible(areaIdx),
+                                                                 mwInfo.IsAreaVisible(areaIdx))) {
+      continue;
+    }
+    if (!setUp) {
+      CGX::SetChanCtrl(CGX::Channel0, false, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE,
+                       GX_AF_NONE);
+      CGraphics::SetTevOp(kTS_Stage0, CGraphics::kEnvPassthru);
+      setUp = true;
+    }
+    const CVector3f pos = CMapArea::GetAreaPostTranslate(world, areaIdx) +
+                          CVector3f(dot.pos[0], dot.pos[1], dot.pos[2]);
+    gpRender->SetModelMatrix(modelXf * CTransform4f::Translate(pos) * billboard);
+    // A dark rim first, so the dot also reads on the pale explored rooms.
+    for (int pass = 0; pass < 2; ++pass) {
+      const float radius = pass == 0 ? kRimRadius : kRadius;
+      CGraphics::StreamBegin(kP_TriangleFan);
+      CGraphics::StreamColor(pass == 0 ? rim : color);
+      CGraphics::StreamVertex(0.f, 0.f, 0.f);
+      for (int k = 0; k <= kSegments; ++k) {
+        const float angle = k * (M_2PIF / kSegments);
+        CGraphics::StreamVertex(radius * CMath::FastCosR(angle), 0.f,
+                                radius * CMath::FastSinR(angle));
+      }
+      CGraphics::StreamEnd();
+    }
+  }
+  if (setUp) {
+    // Put back the state the retail map draws expect.
+    CMapArea::CMapAreaSurface::SetupGXMaterial();
+  }
+}
+#endif
 
 void CMapWorld::RecalculateWorldSphere(const CMapWorldInfo& mwInfo, const IWorld& wld) const {
   rstl::vector< CVector2f > coords;

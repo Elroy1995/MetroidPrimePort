@@ -9,6 +9,7 @@
 #include "port_mods.h"
 #include "port_discord.h"
 #include "port_livesplit.h"
+#include "port_map_pickups.h"
 #include "port_prompts.h"
 #include "port_tracker.h"
 #include "port_savestate.h"
@@ -114,6 +115,7 @@ int sHudScale = PortDebug::kHudScaleMax;
 bool sHideHelmet = false;
 bool sHideVisorEffects = false;
 bool sRevealMap = false;
+bool sMapPickups = false;
 bool sCheats = false;
 bool sSkippableCutscenes = false;
 bool sSaveStateHotkeys = true;
@@ -333,6 +335,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sHideVisorEffects = ParseBool(value);
   } else if (key == "reveal_map") {
     sRevealMap = ParseBool(value);
+  } else if (key == "map_pickups") {
+    sMapPickups = ParseBool(value);
   } else if (key == "cheats") {
     sCheats = ParseBool(value);
   } else if (key == "skippable_cutscenes") {
@@ -515,6 +519,7 @@ void SaveSettings() {
   file << "hide_helmet=" << (sHideHelmet ? 1 : 0) << '\n';
   file << "hide_visor_effects=" << (sHideVisorEffects ? 1 : 0) << '\n';
   file << "reveal_map=" << (sRevealMap ? 1 : 0) << '\n';
+  file << "map_pickups=" << (sMapPickups ? 1 : 0) << '\n';
   file << "cheats=" << (sCheats ? 1 : 0) << '\n';
   file << "skippable_cutscenes=" << (sSkippableCutscenes ? 1 : 0) << '\n';
   file << "savestate_hotkeys=" << (sSaveStateHotkeys ? 1 : 0) << '\n';
@@ -964,6 +969,17 @@ bool RevealMap() {
 void SetRevealMap(bool enabled) {
   EnsureInitialized();
   sRevealMap = enabled;
+  MarkDirty();
+}
+
+bool MapPickups() {
+  EnsureInitialized();
+  return sMapPickups;
+}
+
+void SetMapPickups(bool enabled) {
+  EnsureInitialized();
+  sMapPickups = enabled;
   MarkDirty();
 }
 
@@ -3629,6 +3645,17 @@ void DrawTrackerTab() {
       "Shows every world's map as if its map station had been used, and lists every "
       "world on the star map. Rooms a map station leaves hidden stay hidden, and rooms "
       "you haven't entered keep the unexplored colour. The save is not changed.");
+  bool pickups = sMapPickups;
+  if (ImGui::Checkbox("Pickup dots on the map", &pickups)) {
+    SetMapPickups(pickups);
+  }
+  if (PortMapPickups::Forced()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(on in randomized games)");
+  }
+  ImGui::TextWrapped(
+      "A white dot marks each item pickup in the rooms the map shows, until you collect "
+      "it. Every item gets the same dot, so it doesn't give away what a pickup holds.");
 
   CStateManager* mgr = sStateManager;
   if (mgr == nullptr || mgr->GetPlayerState() == nullptr) {

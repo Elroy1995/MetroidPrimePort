@@ -141,6 +141,10 @@ public:
   bool IsMapAreaValid(const IWorld& wld, int areaIdx, bool checkLoad) const;
   void DrawAreas(const CMapWorldDrawParms& parms, int selArea,
                  const rstl::vector< CMapAreaBFSInfo >& bfsInfos, bool inMapScreen) const;
+#ifdef TARGET_PC
+  void DrawPortPickups(const CMapWorldDrawParms& parms,
+                       const rstl::vector< CMapAreaBFSInfo >& bfsInfos) const;
+#endif
   void RecalculateWorldSphere(const CMapWorldInfo& mwInfo, const IWorld& wld) const;
   CVector3f ConstrainToWorldVolume(const CVector3f& point, const CVector3f& lookVec) const;
   void ClearTraversedFlags() const;

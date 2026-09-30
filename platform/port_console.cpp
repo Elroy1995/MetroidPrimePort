@@ -417,6 +417,7 @@ void CmdHelp() {
   Out("                           tick draws the plain tick state");
   Out("hold <0|1>, step [ticks]   stop the simulation; step runs ticks one per frame");
   Out("reveal <0|1>               reveal every world's map, as the Options row does");
+  Out("pickups <0|1>              white dots on the map for uncollected pickups");
   Out("tracker                    items, scans and rooms visited (the F1 Tracker tab)");
   Out("viewmodel <cmdl> [dist] [yaw] [pitch] | off | status   draw a model in front of the camera");
   Out("state list | last | save [n] | load [n] | undo | slot <n>   save states (F1 States tab)");
@@ -883,6 +884,13 @@ void RunFrame() {
       return Finish("usage: reveal <0|1>   reveal every world's map");
     }
     PortDebug::SetRevealMap(value == "1");
+    Finish();
+  } else if (name == "pickups") {
+    const std::string value = sCmd.args.size() > 1 ? sCmd.args[1] : "";
+    if (value != "0" && value != "1") {
+      return Finish("usage: pickups <0|1>   pickup dots on the map (on in randomized games)");
+    }
+    PortDebug::SetMapPickups(value == "1");
     Finish();
   } else if (name == "viewmodel") {
     const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";

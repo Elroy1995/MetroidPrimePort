@@ -156,6 +156,10 @@ void SetHideVisorEffects(bool enabled);
 // not changed.
 bool RevealMap();
 void SetRevealMap(bool enabled);
+// A white dot on the map for each item pickup not yet collected. Randomizer
+// and Archipelago games force it on (PortMapPickups::Active).
+bool MapPickups();
+void SetMapPickups(bool enabled);
 // randomprime's skippable cutscenes: every cinematic can be skipped with the
 // usual button. Rooms load patched, so a change applies to rooms loaded
 // afterwards. Randomizer and Archipelago games force it on
