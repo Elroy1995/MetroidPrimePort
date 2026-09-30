@@ -997,7 +997,14 @@ int CMain::RsMain(int argc, const char* const* argv) {
         logAudioTweaks = false;
         // rs_log_print(str.data());
       }
+      // Port: BeginScene blocks until Aurora has a free frame slot, i.e. on
+      // vsync or on a GPU that is behind. That wait is not draw work; counted
+      // as such it zeroed the loader's budget below whenever presentation was
+      // the bottleneck, and a big area's first load took 20 s and more.
+      const double beginSceneStart = archSupport->GetStopwatch2().GetElapsedTime();
       if (!x160_26_screenFading && gpRender->BeginScene()) {
+        const double beginSceneWait =
+            archSupport->GetStopwatch2().GetElapsedTime() - beginSceneStart;
         // Port: Aurora frames are bracketed inside CGraphics::Begin/EndScene.
         float interpolation = archSupport->GetTickInterpolation();
         if (interpolation < 0.f)
@@ -1017,7 +1024,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
         x11c_averageDrawTime = x104_drawTimes.GetAverage().data();
 
         uint idleMicros;
-        double idleTime = (dt - (t1 + t2)) - 0.00075;
+        double idleTime = (dt - (t1 + (t2 - beginSceneWait))) - 0.00075;
         if (idleTime > 0)
           idleMicros = idleTime * 1000000;
         else
@@ -1124,6 +1131,9 @@ int CMain::RsMain(int argc, const char* const* argv) {
   return 0;
 }
 
+// Port: the least time the resource loader gets per frame, in microseconds.
+static const uint kPortMinIdleMicros = 2000;
+
 void CMain::AsyncIdle(uint time) {
   if (time < 500) {
     uint total = 0;
@@ -1136,10 +1146,16 @@ void CMain::AsyncIdle(uint time) {
       time = 0;
     }
   }
-  if (time != 0) {
-    gpResourceFactory->AsyncIdle(time);
-  }
   x130_frameTimes[x15c_frameTimeIdx] = time;
+  // Port: retail falls back to 500 us every other frame when a frame has no
+  // idle time, about 30 resources a second: a whole area's dependencies then
+  // take tens of seconds, and its doors stay shut until they are in. A fixed
+  // floor costs nothing when the load list is empty and keeps a slow frame
+  // from stalling streaming.
+  if (time < kPortMinIdleMicros) {
+    time = kPortMinIdleMicros;
+  }
+  gpResourceFactory->AsyncIdle(time);
   x15c_frameTimeIdx = x15c_frameTimeIdx + 1;
   if (x15c_frameTimeIdx >= x130_frameTimes.capacity()) {
     x15c_frameTimeIdx = 0;

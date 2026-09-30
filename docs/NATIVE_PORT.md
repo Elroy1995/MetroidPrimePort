@@ -736,7 +736,9 @@ a temporary directory instead of mounting.
   (`tools/mpcon.py 'warp chozo 492CBF4A' 'objs eyeball' shot`), a script
   (`-f file`) or an interactive prompt with no arguments. Commands: `status`,
   `worlds`, `areas`, `warp <world id or name prefix> [mrea]` (replies once the
-  new world runs), `tp x y z`, `face <yaw>`, `look <id>`, `objs [filter]`,
+  new world runs), `tp x y z`, `enter <area>` (makes an area of the current
+  world the current one, as walking into it would; `tp` alone does not),
+  `face <yaw>`, `look <id>`, `objs [filter]`,
   `obj <id>` (AI state, health, body state and animation, connections, whether
   it is frustum-culled),
   `send <id> <msg>`, `give <item> [n]`, `take <item> [n]`, `items`, `heal`, `press <a+b> [frames]`
@@ -959,6 +961,12 @@ voices report sample id 65535. `MP_LOG_3D=1` logs any 3D emitter whose Doppler
 factor is not 1. The overlay's **Voices** tab lists the live voices (loudest
 first) with a per-sample mute checkbox and an "Unmute all" button; the muted ids
 are saved to `voices_muted` in the settings file.
+
+For doors that stay shut, `MP_LOG_DOORS=1` prints `MP door <id> opened after N
+ms` with the ticks spent on each condition that held it (`anim`, `thisArea`,
+`sky`, `areaLoad`, `actors`, `otherDoor`, `occluding`, `aram`, `map`), `MP area`
+lines for each area's stream start, dependencies ready, load time and
+cancellation, and `streaming held N ticks` when the world held streaming back.
 
 For AddressSanitizer, use a separate Clang build with
 `-DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer"` and the same

@@ -20,6 +20,57 @@
 #include "MetroidPrime/TCastTo.hpp"
 #include "MetroidPrime/TGameTypes.hpp"
 
+#ifdef TARGET_PC
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
+
+namespace {
+// MP_LOG_DOORS: how long each door waited to open, and on which condition.
+struct SPortDoorWait {
+  std::chrono::steady_clock::time_point start;
+  std::map< const char*, int > ticks;
+};
+std::map< ushort, SPortDoorWait > sPortDoorWaits;
+const char* sPortDoorReason = "";
+
+void PortLogDoorWait(TUniqueId door, CScriptDoor::EDoorOpenCondition cond) {
+  static const bool enabled = std::getenv("MP_LOG_DOORS") != nullptr;
+  if (!enabled) {
+    return;
+  }
+  const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+  if (cond == CScriptDoor::kDOC_Loading) {
+    std::map< ushort, SPortDoorWait >::iterator it = sPortDoorWaits.find(door.Value());
+    if (it == sPortDoorWaits.end()) {
+      it = sPortDoorWaits.insert(std::make_pair(door.Value(), SPortDoorWait())).first;
+      it->second.start = now;
+    }
+    ++it->second.ticks[sPortDoorReason];
+    return;
+  }
+  std::map< ushort, SPortDoorWait >::iterator it = sPortDoorWaits.find(door.Value());
+  if (it == sPortDoorWaits.end()) {
+    return;
+  }
+  const long long ms =
+      std::chrono::duration_cast< std::chrono::milliseconds >(now - it->second.start).count();
+  std::fprintf(stderr, "MP door %04X %s after %lld ms:", door.Value(),
+               cond == CScriptDoor::kDOC_Ready ? "opened" : "gave up", ms);
+  for (std::map< const char*, int >::const_iterator r = it->second.ticks.begin();
+       r != it->second.ticks.end(); ++r) {
+    std::fprintf(stderr, " %s=%d", r->first, r->second);
+  }
+  std::fprintf(stderr, "\n");
+  sPortDoorWaits.erase(it);
+}
+} // namespace
+#define DOOR_WAIT(reason) (sPortDoorReason = (reason), kDOC_Loading)
+#else
+#define DOOR_WAIT(reason) kDOC_Loading
+#endif
+
 CScriptDoor::CScriptDoor(TUniqueId uid, const rstl::string& name, const CEntityInfo& info,
                          const CTransform4f& xf, const CModelData& modelData,
                          const CActorParameters& actorParameters, const CVector3f& orbitPosition,
@@ -84,7 +135,7 @@ CScriptDoor::EDoorOpenCondition CScriptDoor::GetDoorOpenCondition(CStateManager&
   }
 
   if (mAnimTime < 0.05f || mDoClose) {
-    return kDOC_Loading;
+    return DOOR_WAIT("anim");
   }
 
   const CWorld* world = mgr.GetWorld();
@@ -92,10 +143,10 @@ CScriptDoor::EDoorOpenCondition CScriptDoor::GetDoorOpenCondition(CStateManager&
     return kDOC_NotReady;
   }
   if (!world->IsAreaValid(dock->GetAreaId())) {
-    return kDOC_Loading;
+    return DOOR_WAIT("thisArea");
   }
   if (!world->AreSkyNeedsMet()) {
-    return kDOC_Loading;
+    return DOOR_WAIT("sky");
   }
 
   const IGameArea::Dock& gameDock =
@@ -108,10 +159,10 @@ CScriptDoor::EDoorOpenCondition CScriptDoor::GetDoorOpenCondition(CStateManager&
   CGameArea* area = mgr.World()->Area(connectedArea);
   if (!area->IsLoaded()) {
     mgr.DeliverScriptMsg(dock, GetUniqueId(), kSM_SetToMax);
-    return kDOC_Loading;
+    return DOOR_WAIT("areaLoad");
   }
   if (area->GetPostConstructed()->x113c_playerActorsLoading != 0) {
-    return kDOC_Loading;
+    return DOOR_WAIT("actors");
   }
 
   const CObjectList& objects = mgr.ObjectListById(kOL_PlatformAndDoor);
@@ -121,7 +172,7 @@ CScriptDoor::EDoorOpenCondition CScriptDoor::GetDoorOpenCondition(CStateManager&
           (door->GetCurrentAreaId() == GetCurrentAreaId() ||
            door->GetCurrentAreaId() == connectedArea) &&
           door->mWasOpen && door->mDockId != kInvalidUniqueId) {
-        return kDOC_Loading;
+        return DOOR_WAIT("otherDoor");
       }
     }
   }
@@ -129,15 +180,15 @@ CScriptDoor::EDoorOpenCondition CScriptDoor::GetDoorOpenCondition(CStateManager&
   for (CGameArea::CConstChainIterator it = mgr.GetWorld()->GetChainHead(CWorld::kC_Alive);
        it != CWorld::skGlobalEnd; ++it) {
     if (it->GetAreaId() != area->GetAreaId() && !it->IsFinishedOccluding()) {
-      return kDOC_Loading;
+      return DOOR_WAIT("occluding");
     }
   }
 
   if (!area->TryTakingOutOfARAM()) {
-    return kDOC_Loading;
+    return DOOR_WAIT("aram");
   }
 
-  return mgr.GetWorld()->GetMapWorld()->IsMapAreasStreaming() ? kDOC_Loading : kDOC_Ready;
+  return mgr.GetWorld()->GetMapWorld()->IsMapAreasStreaming() ? DOOR_WAIT("map") : kDOC_Ready;
 }
 
 void CScriptDoor::OpenDoor(TUniqueId uid, CStateManager& mgr) {
@@ -320,9 +371,15 @@ void CScriptDoor::Think(float dt, CStateManager& mgr) {
     mAnimTime += dt;
   }
 
-  if (mConditionsMet && GetDoorOpenCondition(mgr) == kDOC_Ready) {
-    mConditionsMet = false;
-    OpenDoor(mPrevDoor, mgr);
+  if (mConditionsMet) {
+    const EDoorOpenCondition cond = GetDoorOpenCondition(mgr);
+#ifdef TARGET_PC
+    PortLogDoorWait(GetUniqueId(), cond);
+#endif
+    if (cond == kDOC_Ready) {
+      mConditionsMet = false;
+      OpenDoor(mPrevDoor, mgr);
+    }
   }
 
   if (mClosing) {

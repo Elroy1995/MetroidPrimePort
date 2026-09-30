@@ -389,6 +389,7 @@ void CmdHelp() {
   Out("worlds                     world ids and names");
   Out("areas                      areas of the current world (index, MREA)");
   Out("warp <world> [mrea]        load a world (hex MLVL id or name prefix), optionally an area");
+  Out("enter <area>               make a loaded area current, as crossing its dock does");
   Out("tp <x> <y> <z>             move the player");
   Out("face <yaw deg> | look <id> turn the player (yaw 0 = +y, 90 = -x)");
   Out("objs [filter]              objects whose class or name contains filter");
@@ -489,6 +490,24 @@ void CmdAreas(CStateManager& mgr) {
     Out("%3d %08X%s%s", i, static_cast< uint32_t >(area.GetAreaAssetId()),
         area.IsPostConstructed() ? " loaded" : "", i == current ? "  <- current" : "");
   }
+  Finish();
+}
+
+// What CScriptDock does when the player crosses it: the next tick's
+// TravelToArea unloads the areas that are no longer adjacent.
+void CmdEnter(CStateManager& mgr) {
+  const CWorld* world = mgr.GetWorld();
+  int idx = -1;
+  if (sCmd.args.size() < 2 || std::sscanf(sCmd.args[1].c_str(), "%d", &idx) != 1) {
+    return Finish("usage: enter <area index>");
+  }
+  if (world == nullptr || idx < 0 || idx >= world->GetNumAreas()) {
+    return Finish("no such area");
+  }
+  if (!world->GetAreaAlways(TAreaId(idx)).IsPostConstructed()) {
+    return Finish("area not loaded");
+  }
+  mgr.SetCurrentAreaId(TAreaId(idx));
   Finish();
 }
 
@@ -704,7 +723,7 @@ void CmdWarp(CStateManager& mgr) {
 bool IsTickCommand(const std::string& name) {
   static const char* const names[] = {"status", "areas", "objs", "obj", "send", "give",
                                       "take", "items", "heal", "tp", "face", "look", "warp",
-                                      "tracker"};
+                                      "tracker", "enter"};
   for (const char* n : names) {
     if (name == n) {
       return true;
@@ -720,6 +739,8 @@ void RunTick(CStateManager& mgr) {
     Finish();
   } else if (name == "areas") {
     CmdAreas(mgr);
+  } else if (name == "enter") {
+    CmdEnter(mgr);
   } else if (name == "objs") {
     CmdObjs(mgr);
   } else if (name == "obj") {

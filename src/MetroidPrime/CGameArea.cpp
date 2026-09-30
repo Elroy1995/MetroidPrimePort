@@ -25,7 +25,31 @@
 #include "port_skip_cutscenes.h"
 
 #include <string.h>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
 #include <vector>
+
+namespace {
+// MP_LOG_DOORS: when each area started streaming, and how long each load stage took.
+bool PortAreaLogEnabled() {
+  static const bool enabled = std::getenv("MP_LOG_DOORS") != nullptr;
+  return enabled;
+}
+std::map< int, std::chrono::steady_clock::time_point > sPortAreaLoadStart;
+
+long long PortAreaLoadMs(int area) {
+  std::map< int, std::chrono::steady_clock::time_point >::const_iterator it =
+      sPortAreaLoadStart.find(area);
+  if (it == sPortAreaLoadStart.end()) {
+    return -1;
+  }
+  return std::chrono::duration_cast< std::chrono::milliseconds >(
+             std::chrono::steady_clock::now() - it->second)
+      .count();
+}
+} // namespace
 #endif
 
 #define ROUND_UP_32(val) (((val) + 31) & ~31)
@@ -555,6 +579,13 @@ void CGameArea::Validate(CStateManager& mgr) {
       }
     }
     xf0_28_validated = true;
+#ifdef TARGET_PC
+    if (PortAreaLogEnabled()) {
+      std::fprintf(stderr, "MP area %d loaded after %lld ms (MREA %u KB)\n", x4_selfIdx.Value(),
+                   PortAreaLoadMs(x4_selfIdx.Value()), x120_unk / 1024);
+      sPortAreaLoadStart.erase(x4_selfIdx.Value());
+    }
+#endif
     mgr.AreaLoaded(GetId());
   }
 }
@@ -577,6 +608,13 @@ void CGameArea::LoadScriptObjects(CStateManager& mgr) {
 void CGameArea::StartStreamIn(CStateManager& mgr) {
   bool fullyInitialized = mgr.IsFullyInitialized();
   if (!xf0_24_postConstructed && !xf0_27_loadPaused) {
+#ifdef TARGET_PC
+    if (PortAreaLogEnabled() && sPortAreaLoadStart.count(x4_selfIdx.Value()) == 0) {
+      sPortAreaLoadStart[x4_selfIdx.Value()] = std::chrono::steady_clock::now();
+      std::fprintf(stderr, "MP area %d (MREA %08X) stream start\n", x4_selfIdx.Value(),
+                   static_cast< uint >(x84_mrea));
+    }
+#endif
     VerifyTokenList(mgr);
     if (!xf0_26_tokensReady) {
       int notLoaded = 0;
@@ -600,6 +638,12 @@ void CGameArea::StartStreamIn(CStateManager& mgr) {
       }
       if (notLoaded == 0) {
         xf0_26_tokensReady = true;
+#ifdef TARGET_PC
+        if (PortAreaLogEnabled()) {
+          std::fprintf(stderr, "MP area %d dependencies ready after %lld ms (%d tokens)\n",
+                       x4_selfIdx.Value(), PortAreaLoadMs(x4_selfIdx.Value()), xdc_tokens.size());
+        }
+#endif
       } else {
         return;
       }
@@ -649,6 +693,11 @@ bool CGameArea::Invalidate(CStateManager* mgr) {
     x12c_postConstructed = nullptr;
     xf4_phase = kP_LoadHeader;
     KillmAreaData();
+#ifdef TARGET_PC
+    if (PortAreaLogEnabled() && sPortAreaLoadStart.erase(x4_selfIdx.Value()) != 0) {
+      std::fprintf(stderr, "MP area %d load cancelled\n", x4_selfIdx.Value());
+    }
+#endif
     return true;
   }
   if (mgr != nullptr) {

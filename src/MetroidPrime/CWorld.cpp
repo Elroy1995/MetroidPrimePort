@@ -31,6 +31,11 @@
 #include "MetroidPrime/TGameTypes.hpp"
 #include "rstl/vector.hpp"
 
+#ifdef TARGET_PC
+#include <cstdio>
+#include <cstdlib>
+#endif
+
 CGameArea::CConstChainIterator CWorld::skGlobalEnd;
 CGameArea::CChainIterator CWorld::skGlobalNonConstEnd;
 
@@ -352,6 +357,20 @@ void CWorld::TravelToArea(const TAreaId& aid, CStateManager& mgr, EAreaTravelTyp
     ++toStreamCount;
   }
 
+#ifdef TARGET_PC
+  // MP_LOG_DOORS: ticks the next area could not stream while others deallocated.
+  static const bool logAreas = std::getenv("MP_LOG_DOORS") != nullptr;
+  static int blockedTicks = 0;
+  if (logAreas && otherLoadArea != nullptr) {
+    if (toStreamCount != 0 || x70_25_loadPaused) {
+      ++blockedTicks;
+    } else if (blockedTicks != 0) {
+      std::fprintf(stderr, "MP area %d streaming held %d ticks (deallocating or paused)\n",
+                   otherLoadArea->GetAreaId().Value(), blockedTicks);
+      blockedTicks = 0;
+    }
+  }
+#endif
   if (!toStreamCount && otherLoadArea && !x70_25_loadPaused)
     otherLoadArea->StartStreamIn(mgr);
 
