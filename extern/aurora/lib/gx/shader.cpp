@@ -867,6 +867,130 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
                      alpha ? "a"sv : ""sv);
 }
 
+// GX_AURORA_SET_PBR: replaces the TEV colour result with a metal/roughness evaluation of
+// texture maps 0-3 (base colour, glTF occlusion/roughness/metal in R/G/B, two-channel
+// tangent-space normal, emissive) lit by channel 0's GX lights and ambient. TEV alpha is
+// kept. Each map is read from the TEV stage that samples it, so the material's fallback
+// TEV must reference all four; a missing map gets a neutral default. The tangent frame
+// comes from screen-space derivatives, so no tangent attribute is needed. Maths is done
+// on linearised colours and converted back, since the rest of the pipeline is gamma.
+// Channel 1's lights and a vertex-sourced ambient are not used (vertex ambient falls back
+// to a constant); without a lit channel 0 the surface keeps its TEV result.
+auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& vtxOutAttrs,
+              std::string& vtxXfrAttrs, size_t& vtxOutIdx) -> std::string {
+  const auto& cc = config.colorChannels[GX_COLOR0];
+  if (!info.lightingEnabled || !info.sampledColorChannels.test(0) || !cc.lightingEnabled) {
+    return {};
+  }
+  std::array<int, 4> mapStage{-1, -1, -1, -1};
+  for (int i = 0; i < config.tevStageCount; ++i) {
+    const auto& stage = config.tevStages[i];
+    const u32 map = underlying(stage.texMapId);
+    if (map < mapStage.size() && mapStage[map] == -1 && uses_texture_sample(stage) &&
+        stage.texCoordId != GX_TEXCOORD_NULL && stage.indTexMtxId == GX_ITM_OFF) {
+      mapStage[map] = i;
+    }
+  }
+  if (mapStage[0] == -1) {
+    return {};
+  }
+  const auto sampled = [&](int map, std::string_view fallback) {
+    return mapStage[map] == -1 ? std::string(fallback) : fmt::format("sampled{}", mapStage[map]);
+  };
+  vtxOutAttrs += fmt::format("\n    @location({}) pbr_pos: vec3f,", vtxOutIdx++);
+  vtxOutAttrs += fmt::format("\n    @location({}) pbr_nrm: vec3f,", vtxOutIdx++);
+  vtxXfrAttrs += "\n    out.pbr_pos = mv_pos;\n    out.pbr_nrm = mv_nrm;";
+
+  std::string normal;
+  if (mapStage[2] != -1) {
+    // Cotangent frame (Schüler). glTF normal maps are +Y up with V running down the image,
+    // so the bitangent is the negated dP/dV. The frame's sign follows the determinant, and
+    // WebGPU's framebuffer Y runs down, so the Y derivatives are negated to get GL's (view
+    // space Y up) orientation.
+    normal = fmt::format(R"""(
+      let pbr_ts = sampled{0}.rg * 2.0 - 1.0;
+      let pbr_tn = vec3f(pbr_ts, sqrt(max(0.0, 1.0 - dot(pbr_ts, pbr_ts))));
+      let pbr_dp1 = dpdx(in.pbr_pos);
+      let pbr_dp2 = -dpdy(in.pbr_pos);
+      let pbr_duv1 = dpdx(tex{1}_uv);
+      let pbr_duv2 = -dpdy(tex{1}_uv);
+      let pbr_dp2perp = cross(pbr_dp2, pbr_ng);
+      let pbr_dp1perp = cross(pbr_ng, pbr_dp1);
+      let pbr_t = pbr_dp2perp * pbr_duv1.x + pbr_dp1perp * pbr_duv2.x;
+      let pbr_b = pbr_dp2perp * pbr_duv1.y + pbr_dp1perp * pbr_duv2.y;
+      let pbr_tlen = max(dot(pbr_t, pbr_t), dot(pbr_b, pbr_b));
+      if (pbr_tlen > 1e-24) {{
+        let pbr_s = inverseSqrt(pbr_tlen);
+        pbr_n = normalize(pbr_t * (pbr_s * pbr_tn.x) - pbr_b * (pbr_s * pbr_tn.y) + pbr_ng * pbr_tn.z);
+      }})""",
+                         mapStage[2], underlying(config.tevStages[mapStage[2]].texCoordId));
+  }
+  std::string attn;
+  if (cc.attnFn == GX_AF_SPOT) {
+    attn = R"""(
+          let cosine = max(0.0, dot(ldir, light.dir));
+          let cos_attn = dot(light.cos_att, vec3f(1.0, cosine, cosine * cosine));
+          let dist_attn = dot(light.dist_att, vec3f(1.0, dist, dist2));
+          let attn = max(0.0, cos_attn / dist_attn);)""";
+  } else {
+    attn = "\n          let attn = 1.0;";
+  }
+  const std::string amb = cc.ambSrc == GX_SRC_REG ? "ubuf.cc0_amb.rgb"s : "vec3f(0.2)"s;
+  return fmt::format(R"""(
+    // PBR (GX_AURORA_SET_PBR)
+    {{
+      let pbr_pi = 3.14159265;
+      let pbr_base = pow(max({0}.rgb, vec3f(0.0)), vec3f(2.2));
+      let pbr_orm = {1}.rgb;
+      let pbr_ao = pbr_orm.r;
+      let pbr_rough = clamp(pbr_orm.g, 0.045, 1.0);
+      let pbr_metal = clamp(pbr_orm.b, 0.0, 1.0);
+      let pbr_emissive = pow(max({2}.rgb, vec3f(0.0)), vec3f(2.2));
+      let pbr_ng = normalize(in.pbr_nrm);
+      var pbr_n = pbr_ng;{3}
+      let pbr_v = normalize(-in.pbr_pos);
+      let pbr_nv = max(dot(pbr_n, pbr_v), 1e-4);
+      let pbr_f0 = mix(vec3f(0.04), pbr_base, pbr_metal);
+      let pbr_diff = pbr_base * (1.0 - pbr_metal);
+      let pbr_a2 = pow(pbr_rough, 4.0);
+      let pbr_k = (pbr_rough + 1.0) * (pbr_rough + 1.0) / 8.0;
+      var pbr_lo = vec3f(0.0);
+      for (var i = 0u; i < {4}u; i++) {{
+          if ((ubuf.lightState0 & (1u << i)) == 0u) {{ continue; }}
+          let light = ubuf.lights[i];
+          var ldir = light.pos - in.pbr_pos;
+          let dist2 = dot(ldir, ldir);
+          let dist = sqrt(dist2);
+          ldir = ldir / dist;{5}
+          let nl = max(dot(pbr_n, ldir), 0.0);
+          let h = normalize(ldir + pbr_v);
+          let nh = max(dot(pbr_n, h), 0.0);
+          let vh = max(dot(pbr_v, h), 0.0);
+          let dd = nh * nh * (pbr_a2 - 1.0) + 1.0;
+          let d = pbr_a2 / (pbr_pi * dd * dd);
+          let g = (pbr_nv / (pbr_nv * (1.0 - pbr_k) + pbr_k)) * (nl / (nl * (1.0 - pbr_k) + pbr_k));
+          let f = pbr_f0 + (1.0 - pbr_f0) * pow(1.0 - vh, 5.0);
+          let spec = d * g * f / max(4.0 * pbr_nv * nl, 1e-4);
+          // GX lights are unnormalised (colour * N.L is full brightness), so Lambert has no
+          // 1/pi and the specular lobe is scaled by pi to match.
+          let rad = pow(max(light.color.rgb, vec3f(0.0)), vec3f(2.2)) * attn;
+          pbr_lo += ((1.0 - f) * pbr_diff + spec * pbr_pi) * rad * nl;
+      }}
+      // Ambient: diffuse plus the split-sum environment BRDF (Karis' analytic fit) standing
+      // in for the missing reflection probe, both occluded.
+      let pbr_c0 = vec4f(-1.0, -0.0275, -0.572, 0.022);
+      let pbr_c1 = vec4f(1.0, 0.0425, 1.04, -0.04);
+      let pbr_r = pbr_rough * pbr_c0 + pbr_c1;
+      let pbr_a004 = min(pbr_r.x * pbr_r.x, exp2(-9.28 * pbr_nv)) * pbr_r.x + pbr_r.y;
+      let pbr_ab = vec2f(-1.04, 1.04) * pbr_a004 + pbr_r.zw;
+      let pbr_amb = pow(max({6}, vec3f(0.0)), vec3f(2.2));
+      pbr_lo += pbr_amb * (pbr_diff + pbr_f0 * pbr_ab.x + pbr_ab.y) * pbr_ao;
+      prev = vec4f(pow(clamp(pbr_lo + pbr_emissive, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), prev.a);
+    }})""",
+                     sampled(0, ""), sampled(1, "vec4f(1.0, 0.6, 0.0, 1.0)"), sampled(3, "vec4f(0.0)"), normal,
+                     GX::MaxLights, attn, amb);
+}
+
 absl::flat_hash_set<gfx::ShaderRef> s_seenShaders;
 } // namespace
 
@@ -1524,6 +1648,9 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     fragmentFnPre +=
         fmt::format("\n    var sampled{0} = textureSampleBias(tex{1}, tex{1}_samp, {2}, ubuf.tex{1}_size_bias.z);", i,
                     underlying(stage.texMapId), uvIn);
+  }
+  if (config.pbr) {
+    fragmentFn += pbr_func(config, info, vtxOutAttrs, vtxXfrAttrs, vtxOutIdx);
   }
   if (info.usesPTTexMtx.any()) {
     uniBufAttrs += fmt::format("\n    postmtx: array<mat3x4f, {}>,", MaxPTTexMtx);

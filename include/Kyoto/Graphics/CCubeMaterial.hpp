@@ -18,6 +18,11 @@ enum EStateFlags {
   kStateFlag_ReflectionIndirectTexture = (1 << 10),
   kStateFlag_Lightmap = (1 << 11),
   kStateFlag_LightmapUvArray = (1 << 13),
+#ifdef TARGET_PC
+  // Port: unused by retail data. Converted mod materials set it to be shaded
+  // with Aurora's PBR path (maps 0-3 = base, ORM, normal, emissive).
+  kStateFlag_PortPBR = (1 << 14),
+#endif
   kStateFlag_TextureSlotMask = static_cast< uint >(~kStateFlag_LightmapUvArray),
 };
 
@@ -37,6 +42,11 @@ public:
   void SetCurrent(const CModelFlags& flags, const CCubeSurface& surface,
                   const CCubeModel& mode) const;
   void SetCurrentBlack() const;
+#ifdef TARGET_PC
+  // Port: whether a kStateFlag_PortPBR material may use the PBR path for this
+  // draw. The black, shadow-map, thermal and blended paths keep the TEV.
+  static bool PortPBRAllowed(const CModelFlags& flags);
+#endif
   uint GetTextureCount() const {
     return CBasics::SwapBytes(*reinterpret_cast< const uint* >(GetData() + 4));
   }

@@ -8,6 +8,9 @@
 #include "Kyoto/Graphics/CGX_Impl.hpp" // IWYU pragma: keep
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "dolphin/gx/GXVert.h"
+#ifdef TARGET_PC
+#include <dolphin/gx/GXExtra.h>
+#endif
 
 static bool sDrawingOccluders = false;
 static bool sDrawingWireframe = false;
@@ -162,7 +165,21 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
   }
 
   material.SetCurrent(modelFlags, surface, *this);
+#ifdef TARGET_PC
+  // Port: PBR mod materials. The fallback TEV set above stays valid for the
+  // paths PortPBRAllowed rejects.
+  const bool pbr =
+      material.IsFlagSet(kStateFlag_PortPBR) && CCubeMaterial::PortPBRAllowed(modelFlags);
+  if (pbr) {
+    GXSetPBR(GX_TRUE);
+  }
+#endif
   surface.CallDisplayList();
+#ifdef TARGET_PC
+  if (pbr) {
+    GXSetPBR(GX_FALSE);
+  }
+#endif
 }
 
 static inline const ushort ReadWireframeIndex(const uchar* data) {

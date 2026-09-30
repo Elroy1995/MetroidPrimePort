@@ -111,6 +111,14 @@ extern "C" {
  */
 #define GX_AURORA_LOAD_ARRAY_BASE_INDEX 0x0042
 
+/**
+ * Port extension: switches the fragment shader's colour output to a PBR evaluation of
+ * texture maps 0-3 (base colour, occlusion/roughness/metal, two-channel normal, emissive)
+ * lit by the GX lights of colour channel 0. The TEV stages still run and supply alpha.
+ * Must be followed by a u8 (0 = off). Stays in effect until changed.
+ */
+#define GX_AURORA_SET_PBR 0x0043
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

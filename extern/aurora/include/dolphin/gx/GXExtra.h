@@ -22,6 +22,8 @@ void GXDestroyCopyTex(void* dest);
 // Aurora extension: offsets indexed fetches from an array by `base` elements.
 // Stays in effect until changed; GXSetArray does not reset it.
 void GXSetArrayBaseIndex(GXAttr attr, u32 base);
+// Aurora extension: PBR shading for the following draws (see GX_AURORA_SET_PBR).
+void GXSetPBR(GXBool enable);
 
 void GXColor4f32(float r, float g, float b, float a);
 

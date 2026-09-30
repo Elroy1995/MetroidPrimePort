@@ -762,6 +762,12 @@ void handle_aurora(ByteReader& reader) noexcept {
       g_gxState.arrays[attrIdx].baseIndex = base;
       g_gxState.dirty |= DirtyImmediates;
     }
+  } else if (subCmd == GX_AURORA_SET_PBR) {
+    const bool pbr = reader.read<u8>() != 0;
+    if (g_gxState.pbr != pbr) {
+      g_gxState.pbr = pbr;
+      g_gxState.dirty |= DirtyPipeline;
+    }
   }
 
   else {

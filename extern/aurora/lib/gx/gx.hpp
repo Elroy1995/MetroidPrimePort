@@ -388,6 +388,7 @@ struct GXState {
   u8 numIndStages = 0;
   u8 numTevStages = 0;
   u8 numTexGens = 0;
+  bool pbr = false; // GX_AURORA_SET_PBR
 
   // GX2 polygon offset state
   f32 frontOffset = 0.0f;
@@ -499,7 +500,7 @@ struct ShaderConfig {
   u8 lineMode : 2 = 0; // 1 = GX_LINES, 2 = GX_LINESTRIP, 3 = GX_POINTS
   u8 fogRangeEnabled : 1 = false;
   u8 pad1 : 5 = 0;
-  u8 pad2 = 0;
+  u8 pbr = 0; // GX_AURORA_SET_PBR
   std::array<AttrConfig, MaxVtxAttr> attrs;
   std::array<TevSwap, MaxTevSwap> tevSwapTable;
   std::array<TevStage, MaxTevStages> tevStages;

@@ -879,6 +879,13 @@ void CCubeModel::EnableShadowMaps(const CTexture* shadowTex, const CTransform4f&
 
 void CCubeModel::DisableShadowMaps() { sbRenderModelShadow = false; }
 
+#ifdef TARGET_PC
+bool CCubeMaterial::PortPBRAllowed(const CModelFlags& flags) {
+  return !sbRenderModelBlack && !sbRenderModelShadow && !CCubeRenderer::That()->GetThermal() &&
+         flags.GetTrans() == CModelFlags::kT_Opaque;
+}
+#endif
+
 uint CCubeMaterial::GetCompressedBlend() const {
   const uint* ptr = reinterpret_cast< const uint* >(x0_data);
   const uint flags = CBasics::SwapBytes(ptr[0]);
