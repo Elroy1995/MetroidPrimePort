@@ -2,14 +2,16 @@
 
 Goal: run the *simulation* at the display rate (120/144 Hz) instead of the fixed
 60 Hz tick, with no render interpolation. This is the audit of how far the game
-logic is from being frame-rate independent and what has to change.
+logic is from being frame-rate independent and what has to change. The other
+route, 60 Hz logic with an interpolated render, is scoped in
+`docs/FRAME_INTERPOLATION.md`.
 
 ## Current architecture
 
 - `PortTiming::FixedStepClock` (`platform/include/port_timing.h`) fixes the step
   at `kPeriod = 1/60`. `Advance()` returns the number of whole 60 Hz ticks due
-  this rendered frame; `Interpolation()` (leftover time / period) exists but is
-  unused.
+  this rendered frame; `Interpolation()` (leftover time / period) only
+  drives the uncapped camera blend (`main.cpp`, `CCameraManager`).
 - `CGameArchitectureSupport::UpdateTicks` (`src/MetroidPrime/main.cpp:459`) runs
   that many ticks, each pushing `CreateTimerTick(kAMT_Game, 1/60)`, and calls
   `CInputGenerator::Update(1/60, ...)` per tick.

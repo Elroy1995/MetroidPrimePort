@@ -764,6 +764,8 @@ interpolates. The held cannon/arm and muzzle effects render against the matching
 simulation camera, then restore the world view before world-space effects. This
 keeps the viewmodel stable instead of mixing an interpolated view with a cached
 60 Hz gun transform. Weapon animation and projectile simulation remain 60 Hz.
+`docs/FRAME_INTERPOLATION.md` scopes interpolating the rest (actors, poses,
+particles, per-frame look input).
 
 ## Ownership and threading rules
 
