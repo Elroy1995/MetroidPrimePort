@@ -16,6 +16,70 @@
 #include <rstl/list.hpp>
 #include <rstl/optional_object.hpp>
 
+#ifdef TARGET_PC
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+
+// Port: MP_SKIN_LEGACY=1 runs the retail locked-cache path, MP_SKIN_VERIFY=1
+// runs both and reports any difference, MP_SKIN_STATS=1 logs skinning time.
+namespace PortSkin {
+typedef std::chrono::steady_clock Clock;
+
+static bool Flag(const char* name) {
+  const char* value = getenv(name);
+  return value != nullptr && value[0] != '\0' && value[0] != '0';
+}
+bool Legacy() {
+  static const bool legacy = Flag("MP_SKIN_LEGACY");
+  return legacy;
+}
+bool Verify() {
+  static const bool verify = Flag("MP_SKIN_VERIFY");
+  return verify;
+}
+static bool Stats() {
+  static const bool stats = Flag("MP_SKIN_STATS");
+  return stats;
+}
+Clock::time_point Now() { return Stats() ? Clock::now() : Clock::time_point(); }
+
+void Record(int points, Clock::time_point start) {
+  if (!Stats()) {
+    return;
+  }
+  static Clock::time_point windowStart = Clock::now();
+  static double seconds = 0.0;
+  static long long calls = 0;
+  static long long totalPoints = 0;
+  static int maxPoints = 0;
+  const Clock::time_point now = Clock::now();
+  seconds += std::chrono::duration< double >(now - start).count();
+  ++calls;
+  totalPoints += points;
+  if (points > maxPoints) {
+    maxPoints = points;
+  }
+  const double window = std::chrono::duration< double >(now - windowStart).count();
+  if (window >= 5.0) {
+    std::fprintf(stderr,
+                 "[skin] %s: %.2f ms/s skinning, %lld models, %.0f points/s, largest %d, %.3f us "
+                 "per 1k points\n",
+                 Legacy() ? "legacy" : "fast", seconds * 1000.0 / window, calls,
+                 totalPoints / window, maxPoints,
+                 totalPoints ? seconds * 1e6 / (totalPoints / 1000.0) : 0.0);
+    windowStart = now;
+    seconds = 0.0;
+    calls = totalPoints = 0;
+    maxPoints = 0;
+  }
+}
+} // namespace PortSkin
+#endif
+
 CSkinnedModel::TPointGenFunc CSkinnedModel::sPointGen;
 void* CSkinnedModel::sPointGenData;
 
@@ -36,7 +100,14 @@ static ushort skCurrentToken = 0;
 static int sNumSkinnedObjects = 0;
 static bool sSkinningInitialized = false;
 #if VERSION < VERSION_GM8P_00 || VERSION == VERSION_GM8E_02
+#ifdef TARGET_PC
+// Port: every skinned draw takes its vertices from this ring until the GPU
+// command stream has consumed them. Retail's 512 KB caps a model at ~21k
+// vertices (EnsureAllocation spins forever past that), too small for mods.
+static char sStaticSkinningData[32 * 1024 * 1024] ATTRIBUTE_ALIGN(32);
+#else
 static char sStaticSkinningData[0x80000] ATTRIBUTE_ALIGN(32);
+#endif
 #endif
 static rstl::optional_object< CCircularBuffer > sSkinningBuffer;
 static rstl::list< SSkinnedAllocation > sAllocations;
@@ -216,7 +287,14 @@ void CSkinnedModel::Calculate(const CPoseAsTransforms& pose,
   BOOL interruptState = OSDisableInterrupts();
   volatile void* pipe = GXRedirectWriteGatherPipe(verts);
 
+#ifdef TARGET_PC
+  const PortSkin::Clock::time_point skinStart = PortSkin::Now();
+  if (PortSkin::Legacy()) {
+    x10_skinRules->InitLockedCacheState(**x4_model);
+  }
+#else
   x10_skinRules->InitLockedCacheState(**x4_model);
+#endif
   x10_skinRules->BuildAccumulatedTransforms(pose, **x1c_layoutInfo);
 #ifdef __MWERKS__
   x10_skinRules->BuildPoints(pipe);
@@ -229,20 +307,17 @@ void CSkinnedModel::Calculate(const CPoseAsTransforms& pose,
 
   x10_skinRules->BuildNormals(pipe);
 #else
-  // The console's write-gather pipe advances as data is written; the PC buffers
-  // are plain memory, so the write cursor has to be advanced explicitly.
-  volatile uchar* writePtr = static_cast< volatile uchar* >(pipe);
-  x10_skinRules->BuildPoints(writePtr);
-
-  const int numWords = x10_skinRules->GetNumPoints() * 3;
-  writePtr += numWords * sizeof(u32);
-  const int padWords = ((numWords + 7) & ~7) - numWords;
-  for (int i = 0; i < padWords; i++) {
-    *reinterpret_cast< volatile u32* >(writePtr) = 0;
-    writePtr += sizeof(u32);
+  if (PortSkin::Legacy()) {
+    PortBuildLegacy(pipe);
+  } else {
+    float* normals = reinterpret_cast< float* >(reinterpret_cast< uchar* >(verts) + alignedVertSize);
+    x10_skinRules->PortBuildPointsAndNormals(**x4_model, verts, normals);
+    memset(reinterpret_cast< uchar* >(verts) + vertSize, 0, alignedVertSize - vertSize);
+    if (PortSkin::Verify()) {
+      PortVerify(verts, alignedVertSize + normSize);
+    }
   }
-
-  x10_skinRules->BuildNormals(writePtr);
+  PortSkin::Record(x10_skinRules->GetNumPoints(), skinStart);
 #endif
   GXRestoreWriteGatherPipe();
   OSRestoreInterrupts(interruptState);
@@ -262,6 +337,47 @@ void CSkinnedModel::Calculate(const CPoseAsTransforms& pose,
     DCInvalidateRange(verts, totalSize);
   }
 }
+
+#ifdef TARGET_PC
+void CSkinnedModel::PortBuildLegacy(volatile void* pipe) const {
+  // The console's write-gather pipe advances as data is written; the PC buffers
+  // are plain memory, so the write cursor has to be advanced explicitly.
+  volatile uchar* writePtr = static_cast< volatile uchar* >(pipe);
+  x10_skinRules->BuildPoints(writePtr);
+
+  const int numWords = x10_skinRules->GetNumPoints() * 3;
+  writePtr += numWords * sizeof(u32);
+  const int padWords = ((numWords + 7) & ~7) - numWords;
+  for (int i = 0; i < padWords; i++) {
+    *reinterpret_cast< volatile u32* >(writePtr) = 0;
+    writePtr += sizeof(u32);
+  }
+
+  x10_skinRules->BuildNormals(writePtr);
+}
+
+void CSkinnedModel::PortVerify(const float* verts, size_t size) const {
+  static std::vector< float > scratch;
+  static int reports = 0;
+  scratch.assign(size / sizeof(float), 0.f);
+  x10_skinRules->InitLockedCacheState(**x4_model);
+  PortBuildLegacy(scratch.data());
+  if (memcmp(scratch.data(), verts, size) == 0 || reports >= 20) {
+    return;
+  }
+  size_t diffs = 0;
+  float maxDiff = 0.f;
+  for (size_t i = 0; i < scratch.size(); ++i) {
+    if (memcmp(&scratch[i], &verts[i], sizeof(float)) != 0) {
+      ++diffs;
+      maxDiff = std::fmax(maxDiff, std::fabs(scratch[i] - verts[i]));
+    }
+  }
+  ++reports;
+  std::fprintf(stderr, "[skin] verify: %zu of %zu floats differ (max %g), %d points\n", diffs,
+               scratch.size(), maxDiff, x10_skinRules->GetNumPoints());
+}
+#endif
 
 void CSkinnedModel::CalculateDefault() {
   x28_vertWorkspace = rstl::auto_ptr< float[] >();

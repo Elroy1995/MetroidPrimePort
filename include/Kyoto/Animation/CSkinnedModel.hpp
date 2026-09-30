@@ -70,6 +70,11 @@ public:
   }
 
 private:
+#ifdef TARGET_PC
+  void PortBuildLegacy(volatile void* pipe) const;
+  void PortVerify(const float* verts, size_t size) const;
+#endif
+
   TLockedToken< CModel > x4_model;
   TLockedToken< CSkinRules > x10_skinRules;
   TLockedToken< CCharLayoutInfo > x1c_layoutInfo;

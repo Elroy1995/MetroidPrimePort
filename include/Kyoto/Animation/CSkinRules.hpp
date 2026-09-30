@@ -22,6 +22,11 @@ public:
   void BuildPoints(volatile void* pipe) const;
   void BuildNormals(volatile void* pipe) const;
   void BuildNormalsFrom(const CVector3f* averageNormals, CVector3f* out) const;
+#ifdef TARGET_PC
+  // Port: skins straight from the model's big-endian arrays into plain memory,
+  // without the locked-cache emulation; same arithmetic as BuildPoints/Normals.
+  void PortBuildPointsAndNormals(const CModel& model, float* points, float* normals) const;
+#endif
   int GetNumPoints() const { return x10_vertexCount; }
   int GetNumNormals() const { return x14_normalCount; }
   int GetNumVirtualBones() const { return x0_virtualBones.size(); }

@@ -19,6 +19,7 @@ public:
   const rstl::reserved_vector< SSkinWeighting, 3 >& GetWeights() const { return x0_weights; }
   int GetNumIndices() const { return x1c_vertexCount; }
   const CTransform4f& GetTransform() const { return x20_xf; }
+  const CMatrix3f& GetRotation() const { return x50_rotation; }
 
   void BuildPoints(const ushort*, volatile void*, int) const;
   void BuildNormals(const ushort*, volatile void*, int) const;
