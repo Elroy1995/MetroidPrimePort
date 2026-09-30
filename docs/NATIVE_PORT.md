@@ -782,9 +782,16 @@ look is not previewed.
 Smooth actor motion (`actor_interpolation`, F1 Performance, off by default,
 experimental) draws each moving actor, Samus and the morph ball included,
 between its last two tick transforms when the frame limiter is off. Moves of
-more than 4 units or 45° in a tick snap. Animation poses, queued particles and
-shadows still step at 60 Hz. `docs/FRAME_INTERPOLATION.md` has the design and
-scopes the rest (poses, particles).
+more than 4 units or 45° in a tick snap. Queued particles and shadows still step
+at 60 Hz. `docs/FRAME_INTERPOLATION.md` has the design and scopes the rest
+(particles, projectiles).
+
+Smooth animation (`pose_interpolation`, F1 Performance, off by default,
+experimental) skins animated models with a per-bone blend of the poses built on
+the last two ticks when the frame limiter is off. The animation tree is not
+touched, so events, sounds and particles are unchanged; attachments on locators
+and swarms stay on the tick pose. A bone that turns more than 45° or moves more
+than 4 units in a tick snaps the whole pose.
 
 ## Ownership and threading rules
 

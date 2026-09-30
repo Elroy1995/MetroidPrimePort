@@ -252,6 +252,7 @@ public:
   // CStateManager::Update records every actor's transform before the tick;
   // frames drawn between ticks then blend the two.
   static void PortBeginTickSnapshot();
+  static uint PortTickGeneration();
   void PortSnapshotRenderTransform();
   // The camera-to-world view that draws this actor at its blended transform
   // instead of x34_transform. False when no blend applies (the view is left

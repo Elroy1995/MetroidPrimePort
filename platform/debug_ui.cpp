@@ -175,6 +175,7 @@ float sStickAimVelY = 0.f;
 // input before the tick that applies it.
 bool sFrameInterpolation = true;
 bool sActorInterpolation = false;
+bool sPoseInterpolation = false;
 // The last tick applied look input. A paused game or a cinematic skips the
 // player update, and would then drop what the frames between ticks showed.
 bool sAimAppliedLastTick = false;
@@ -437,6 +438,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sFrameInterpolation = ParseBool(value);
   } else if (key == "actor_interpolation") {
     sActorInterpolation = ParseBool(value);
+  } else if (key == "pose_interpolation") {
+    sPoseInterpolation = ParseBool(value);
   } else if (key == "ai_audio") {
     sAiAudioEnabled = ParseBool(value);
   } else if (key == "musyx_audio") {
@@ -530,6 +533,7 @@ void SaveSettings() {
   file << "sim_adaptive=" << (sSimAdaptive ? 1 : 0) << '\n';
   file << "frame_interpolation=" << (sFrameInterpolation ? 1 : 0) << '\n';
   file << "actor_interpolation=" << (sActorInterpolation ? 1 : 0) << '\n';
+  file << "pose_interpolation=" << (sPoseInterpolation ? 1 : 0) << '\n';
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
@@ -1577,6 +1581,17 @@ void SetActorInterpolation(bool enabled) {
   MarkDirty();
 }
 
+bool PoseInterpolation() {
+  EnsureInitialized();
+  return sPoseInterpolation;
+}
+
+void SetPoseInterpolation(bool enabled) {
+  EnsureInitialized();
+  sPoseInterpolation = enabled;
+  MarkDirty();
+}
+
 void GetFrameMouseDelta(float& dx, float& dy) {
   dx = sMouseFrameX;
   dy = sMouseFrameY;
@@ -2127,7 +2142,15 @@ void DrawPerformanceTab() {
   }
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip("With the FPS cap off, moving objects, enemies and Samus are drawn between "
-                      "their last two 60 Hz positions. Animation poses still step at 60 Hz.");
+                      "their last two 60 Hz positions.");
+  }
+  bool smoothPoses = sPoseInterpolation;
+  if (ImGui::Checkbox("Smooth animation (uncapped, experimental)", &smoothPoses)) {
+    PortDebug::SetPoseInterpolation(smoothPoses);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("With the FPS cap off, animated models (Samus, enemies, the arm cannon) are "
+                      "posed between their last two 60 Hz poses.");
   }
 
   ImGui::Separator();

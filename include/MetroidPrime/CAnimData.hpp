@@ -210,7 +210,21 @@ public:
   static void InitializeCache();
   static void FreeCache();
 
+#ifdef TARGET_PC
+  // Port: pose smoothing between ticks (docs/FRAME_INTERPOLATION.md, phase 3).
+  // The pose skinning should draw: a blend of the last two tick poses while a
+  // presented frame is drawn, otherwise the sim pose.
+  const CPoseAsTransforms& PortPresentedPose() const;
+  struct SPortPoseHistory;
+  // Owns xPortPoseHistory; never copied.
+  CAnimData(const CAnimData&) = delete;
+  CAnimData& operator=(const CAnimData&) = delete;
+#endif
+
 private:
+#ifdef TARGET_PC
+  void PortNotePoseBuild();
+#endif
   TLockedToken< CCharacterFactory > x0_charFactory;
   CCharacterInfo xc_charInfo;
   TLockedToken< CCharLayoutInfo > xcc_layoutData;
@@ -249,6 +263,10 @@ private:
   mutable CHierarchyPoseBuilder x2fc_poseBuilder;
   CAnimPlaybackParms x40c_playbackParms;
   rstl::reserved_vector< rstl::pair< uint, CAdditiveAnimPlayback >, 8 > x434_additiveAnims;
+#ifdef TARGET_PC
+  SPortPoseHistory* xPortPoseHistory;
+  uint xPortPoseGeneration;
+#endif
 
   static rstl::reserved_vector< CBoolPOINode, 8 > mBoolPOINodes;
   static rstl::reserved_vector< CInt32POINode, 16 > mInt32POINodes;

@@ -28,6 +28,28 @@
 #include "rstl/algorithm.hpp"
 #include "rstl/math.hpp"
 
+#ifdef TARGET_PC
+#include "MetroidPrime/CActor.hpp"
+#include "MetroidPrime/Cameras/CCameraManager.hpp"
+#include "port_debug.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+// Previous tick's pose for smoothing (see PortNotePoseBuild at the end).
+struct CAnimData::SPortPoseHistory {
+  struct Bone {
+    float rot[4];
+    float offset[3];
+    float scale;
+  };
+  uint prevGeneration;
+  CPoseAsTransforms* blend;
+  uchar present[100];
+  Bone bones[100];
+};
+#endif
+
 typedef rstl::vector< rstl::pair< rstl::string, CAABox > > TAabbList;
 typedef rstl::vector< rstl::pair< rstl::string, rstl::vector< CEffectComponent > > > TEffectList;
 
@@ -83,7 +105,12 @@ CAnimData::CAnimData(
 , x224_pose(static_cast< uchar >(layoutData->GetBodyPartSegIds().size()))
 , x2fc_poseBuilder(CLayoutDescription(layoutData))
 , x40c_playbackParms(-1, -1, 1.f, true)
-, x434_additiveAnims() {
+, x434_additiveAnims()
+#ifdef TARGET_PC
+, xPortPoseHistory(nullptr)
+, xPortPoseGeneration(0)
+#endif
+{
   if (skPOICacheReferenceCount == 0) {
     mBoolPOINodes.resize(8);
     mInt32POINodes.resize(16);
@@ -120,6 +147,12 @@ CAnimData::CAnimData(
 }
 
 CAnimData::~CAnimData() {
+#ifdef TARGET_PC
+  if (xPortPoseHistory != nullptr) {
+    delete xPortPoseHistory->blend;
+    free(xPortPoseHistory);
+  }
+#endif
   if (--skPOICacheReferenceCount == 0) {
     mBoolPOINodes.clear();
     mInt32POINodes.clear();
@@ -516,6 +549,9 @@ void CAnimData::BuildPose() {
   }
 
   if (!x220_30_poseBuilt) {
+#ifdef TARGET_PC
+    PortNotePoseBuild();
+#endif
     x2fc_poseBuilder.BuildNoScale(x224_pose);
     x220_30_poseBuilt = true;
   }
@@ -534,11 +570,18 @@ void CAnimData::SetupRender(const CSkinnedModel& model,
                             const float* avgNormals) const {
   if (!x220_30_poseBuilt) {
     CAnimData* self = const_cast< CAnimData* >(this);
+#ifdef TARGET_PC
+    self->PortNotePoseBuild();
+#endif
     self->x2fc_poseBuilder.BuildNoScale(self->x224_pose);
     self->x220_30_poseBuilt = true;
   }
 
+#ifdef TARGET_PC
+  PoseSkinnedModel(model, PortPresentedPose(), morphEffect, avgNormals);
+#else
   PoseSkinnedModel(model, x224_pose, morphEffect, avgNormals);
+#endif
 }
 
 void CAnimData::Render(const CSkinnedModel& model, const CModelFlags& flags,
@@ -1224,3 +1267,112 @@ void CAnimData::AddAdditiveSegData(const CSegIdList& list, CSegStatementSet& set
 int CAnimData::GetEventResourceIdForAnimResourceId(int id) const {
   return x0_charFactory->GetEventResourceIdForAnimResourceId(id);
 }
+
+#ifdef TARGET_PC
+// Port: pose smoothing (docs/FRAME_INTERPOLATION.md, phase 3). The pose built
+// on the previous tick is kept per bone as a quaternion, a uniform scale and an
+// offset; presented frames between ticks skin a per-bone blend of it and the
+// current pose. Only drawing reads the blend: the tree, events, particles,
+// locators and GetPose() stay on the tick, and bone tracking and IK are already
+// part of both poses. SPortPoseHistory is defined at the top of the file.
+namespace {
+void PortDecompose(const CMatrix3f& m, CQuaternion& rot, float& scale) {
+  scale = m.GetColumn(kDX).Magnitude();
+  if (scale < 1e-6f)
+    scale = 1.f;
+  const float inv = 1.f / scale;
+  rot = CQuaternion::FromMatrixRows(m.GetRow(kDX) * inv, m.GetRow(kDY) * inv, m.GetRow(kDZ) * inv)
+            .BuildNormalized();
+}
+} // namespace
+
+void CAnimData::PortNotePoseBuild() {
+  const uint gen = CActor::PortTickGeneration();
+  const uint builtGen = xPortPoseGeneration;
+  xPortPoseGeneration = gen;
+  // Rebuilt within one tick (bone tracking, IK, a sim-side BuildPose before
+  // the advance): the pose from the previous tick is still the one kept.
+  if (builtGen == gen)
+    return;
+  SPortPoseHistory* hist = xPortPoseHistory;
+  // A pose older than the last tick (off screen, paused, several ticks in one
+  // frame) is not the previous pose: the next frames snap.
+  if (!PortDebug::PoseInterpolation() || builtGen == 0 || builtGen + 1 != gen) {
+    if (hist != nullptr)
+      hist->prevGeneration = 0;
+    return;
+  }
+  if (hist == nullptr) {
+    hist = static_cast< SPortPoseHistory* >(calloc(1, sizeof(SPortPoseHistory)));
+    if (hist == nullptr)
+      return;
+    xPortPoseHistory = hist;
+  }
+  memset(hist->present, 0, sizeof(hist->present));
+  const TSegIdMapVariableSize< CPoseAsTransforms::CElementType >& map = x224_pose.GetTransforms();
+  for (CSegId id = map.GetFirstElementPresent(); id != CSegId::Null(); id = map.GetIdAfter(id)) {
+    if (id.val() >= 100)
+      continue;
+    SPortPoseHistory::Bone& bone = hist->bones[id.val()];
+    CQuaternion rot = CQuaternion::NoRotation();
+    PortDecompose(x224_pose.GetRotation(id), rot, bone.scale);
+    bone.rot[0] = rot.GetScalar();
+    bone.rot[1] = rot.GetVector().GetX();
+    bone.rot[2] = rot.GetVector().GetY();
+    bone.rot[3] = rot.GetVector().GetZ();
+    const CVector3f& offset = x224_pose.GetOffset(id);
+    bone.offset[0] = offset.GetX();
+    bone.offset[1] = offset.GetY();
+    bone.offset[2] = offset.GetZ();
+    hist->present[id.val()] = 1;
+  }
+  hist->prevGeneration = builtGen;
+}
+
+const CPoseAsTransforms& CAnimData::PortPresentedPose() const {
+  SPortPoseHistory* hist = xPortPoseHistory;
+  if (hist == nullptr || hist->prevGeneration == 0 ||
+      hist->prevGeneration + 1 != xPortPoseGeneration ||
+      xPortPoseGeneration != CActor::PortTickGeneration() || !PortDebug::PoseInterpolation())
+    return x224_pose;
+  const float t = CCameraManager::GetPresentationInterpolation();
+  if (t < 0.f || t >= 1.f)
+    return x224_pose;
+  if (hist->blend == nullptr)
+    hist->blend = new CPoseAsTransforms(static_cast< uchar >(GetCharLayoutInfo()->GetBodyPartSegIds().size()));
+  CPoseAsTransforms& blend = *hist->blend;
+  blend.Clear();
+  const TSegIdMapVariableSize< CPoseAsTransforms::CElementType >& map = x224_pose.GetTransforms();
+  for (CSegId id = map.GetFirstElementPresent(); id != CSegId::Null(); id = map.GetIdAfter(id)) {
+    if (id.val() >= 100 || !hist->present[id.val()])
+      return x224_pose;
+    const SPortPoseHistory::Bone& prev = hist->bones[id.val()];
+    CQuaternion cur = CQuaternion::NoRotation();
+    float curScale = 1.f;
+    PortDecompose(x224_pose.GetRotation(id), cur, curScale);
+    CQuaternion from(prev.rot[0], prev.rot[1], prev.rot[2], prev.rot[3]);
+    float dot = CQuaternion::Dot(from, cur);
+    if (dot < 0.f) {
+      from = CQuaternion(-from.GetScalar(), -from.GetVector());
+      dot = -dot;
+    }
+    const CVector3f prevOffset(prev.offset[0], prev.offset[1], prev.offset[2]);
+    const CVector3f& curOffset = x224_pose.GetOffset(id);
+    // Same cut rule as the actor transforms: a bone that turned more than
+    // 45 degrees or moved more than 4 units in one tick is a new animation.
+    if (dot < 0.9238795f || (curOffset - prevOffset).MagSquared() > 16.f)
+      return x224_pose;
+    // Normalised lerp: the angles here are small, so it matches a slerp.
+    const CQuaternion rot =
+        CQuaternion(from.GetScalar() + (cur.GetScalar() - from.GetScalar()) * t,
+                    from.GetVector() + (cur.GetVector() - from.GetVector()) * t)
+            .BuildNormalized();
+    const float scale = prev.scale + (curScale - prev.scale) * t;
+    CMatrix3f matrix = rot.BuildTransform();
+    if (scale != 1.f)
+      matrix = matrix * CMatrix3f::Scale(scale);
+    blend.Insert(id, matrix, prevOffset + (curOffset - prevOffset) * t);
+  }
+  return blend;
+}
+#endif

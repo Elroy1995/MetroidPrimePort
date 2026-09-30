@@ -1,7 +1,8 @@
 # Frame interpolation: scope
 
-Status: phase 1 (look input per frame) is done; phase 2 (actor transforms) is
-done behind `actor_interpolation` (off by default); phases 3-5 are scope only.
+Status: phase 1 (look input per frame) is done; phase 2 (actor transforms) and
+phase 3 (skinned poses) are done behind `actor_interpolation` and
+`pose_interpolation` (off by default); phases 4-5 are scope only.
 
 Goal: smooth motion above 60 FPS while the game logic stays at its console rate
 (60 Hz fixed step). Rendered frames between two ticks draw the world at a blend
@@ -27,6 +28,7 @@ rendered frame. The alternative, running the simulation itself faster (`sim_rate
   simulation camera (`NATIVE_PORT.md`, "In uncapped presentation").
 - **Per-frame look (phase 1).** See section 4.
 - **Actor transforms (phase 2).** See section 1.
+- **Skinned poses (phase 3).** See section 2.
 - **Render-time animation.** `CGraphics::TickRenderTimings` advances draw-time
   timers (texture scroll, UV animation) by whole ticks, not by frames.
 
@@ -68,24 +70,36 @@ sub-tick delta. Checked by logging the player's blend while rolling in the
 Chozo spawn room at `frame_limit=0`: evenly spaced positions across tick
 boundaries.
 
-### 2. Skinned poses
+### 2. Skinned poses (done, `pose_interpolation`)
 
-`CStateManager::PreRender` runs every rendered frame (`CMFGame::Draw`), and
 `CAnimData::PreRender` builds the pose from the animation time, which only
-moves on ticks. Two options:
+moves on ticks. Implemented by **blending two built poses**, not by sampling
+the tree ahead: `CAnimData::Advance` mutates the tree in place (transitions,
+event dispatch, additive fades), so sampling ahead needs a side-effect-free copy
+of the whole tree. Blending leaves the tree alone, so events, sounds and
+particles can't fire twice.
 
-- **Sample the tree ahead** by `t * dt` without firing events. `CAnimData::Advance`
-  mutates the tree in place (`DoAdvance`, transitions, event dispatch), so this
-  needs a side-effect-free sampling path or a cheap copy of the tree state;
-  `AdvanceParticles` and events stay on the tick. Closest to correct, and the
-  main unknown in this plan.
-- **Blend two built poses** (keep last tick's bone matrices, slerp per bone).
-  Doubles pose memory and is wrong for blends that change tree shape between
-  ticks.
+- `CAnimData::PortNotePoseBuild` runs before each `BuildNoScale` into
+  `x224_pose` (`BuildPose`, `SetupRender`). The first rebuild in a new tick
+  stores the pose being replaced, per bone, as a quaternion, a uniform scale and
+  an offset (`SPortPoseHistory`, allocated on first use). Rebuilds within the
+  same tick (bone tracking, IK and pirates invalidate the pose every PreRender)
+  keep that tick's history, so tracking and IK are part of both poses.
+- `CAnimData::PortPresentedPose` is what `SetupRender` skins: per bone nlerp
+  and offset lerp at the presentation factor, into a second
+  `CPoseAsTransforms`. It returns the sim pose when capped, when the kept pose
+  isn't from exactly the previous tick (paused, off screen, several ticks in one
+  frame), or when any bone turned more than 45° or moved more than 4 units in
+  one tick (animation cuts), so the whole pose snaps.
+- A pose that isn't rebuilt in a tick is static and draws as is.
 
-Bone tracking, IK chains and rag dolls (`CSpacePirate`, `CFlyingPirate`,
-`CFlaahgra`, ...) compute in `PreRender` from `GetTransform()`; they must read
-the render transform or they will pull limbs back to the tick position.
+Limits: `GetPose()` users (swarms, fish clouds, rag dolls) and locators
+(`GetLocatorTransform`: attached particles, beams, the gun's muzzle) stay on
+the sim pose, so an attachment can trail its skinned bone by up to one tick's
+motion. Checked by counting blend/snap decisions at `frame_limit=0` in the
+Chozo spawn room and Chozo area 41 (MREA 492CBF4A: Eyons, Metarees): about 95 % of
+rebuilt poses blend, the rest are first frames and cuts; the arm cannon
+(skinned, drawn every frame) looks right in captures.
 
 ### 3. Particles, projectiles, effects
 
@@ -140,17 +154,16 @@ so they work unchanged.
 1. **Look input per frame** (section 4). Done.
 2. **Actor transforms** in `CActor` plus the player, morph ball and door
    paths (section 1). Done, `actor_interpolation`, off by default.
-3. **Render-side animation time** for skinned models and the bone-tracking/IK
-   users. About 1 week; the risk is event and particle side effects of
-   sampling the tree between ticks.
+3. **Skinned poses** and the bone-tracking/IK users (section 2). Done by
+   blending built poses, `pose_interpolation`, off by default.
 4. **Particles and projectiles.** About 1 week, per-type.
 5. **Sweep:** ASan tour (`MP_RANDO_SWEEP`) with interpolation forced on (a
    fake fractional `t` under `MP_TURBO`), captures at t = 0/0.5/1 compared
    against tick frames to find paths that were missed.
 
 Each phase is useful on its own and behind one setting (`frame_interpolation`,
-F1 Performance). Phase 1 is on by default; later phases stay off by default
-until phase 3. With the frame limiter on (the default 60 FPS
+F1 Performance). Phase 1 is on by default; phases 2 and 3 are off by default
+until they have been tried at high refresh. With the frame limiter on (the default 60 FPS
 cap) nothing changes, as today.
 
 ## Why not `sim_rate`

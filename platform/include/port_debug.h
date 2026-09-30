@@ -60,6 +60,10 @@ void SetFrameInterpolation(bool enabled);
 // at a blend of their previous and current tick transforms. Off by default.
 bool ActorInterpolation();
 void SetActorInterpolation(bool enabled);
+// Pose smoothing (phase 3): with the frame limiter off, skinned models draw a
+// blend of their previous and current tick poses. Off by default.
+bool PoseInterpolation();
+void SetPoseInterpolation(bool enabled);
 // MP_TURBO[=<ticks>]: lockstep for tests. Every loop runs exactly <ticks> fixed
 // ticks (default 1, at most 16) and nothing waits for the wall clock, so a run
 // goes as fast as the machine can render it; more ticks per frame skip
