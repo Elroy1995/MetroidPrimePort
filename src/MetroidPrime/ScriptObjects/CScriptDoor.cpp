@@ -24,6 +24,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 
 namespace {
@@ -71,7 +72,7 @@ void PortLogDoorEvent(TUniqueId door, const char* what) {
   sPortDoorWaits.erase(it);
 }
 
-void PortLogDoorWait(TUniqueId door, CScriptDoor::EDoorOpenCondition cond) {
+void PortLogDoorWait(TUniqueId door, CScriptDoor::EDoorOpenCondition cond, const CWorld* world) {
   if (!PortLogDoors()) {
     return;
   }
@@ -93,6 +94,11 @@ void PortLogDoorWait(TUniqueId door, CScriptDoor::EDoorOpenCondition cond) {
       if (sPortDoorDetail >= 0) {
         std::fprintf(stderr, "MP door %04X now on %s %04X\n", door.Value(), sPortDoorReason,
                      sPortDoorDetail);
+      }
+      if (world != nullptr && std::strcmp(sPortDoorReason, "sky") == 0) {
+        char sky[256];
+        world->PortDescribeSky(sky, sizeof(sky));
+        std::fprintf(stderr, "MP door %04X sky: %s\n", door.Value(), sky);
       }
     }
     return;
@@ -427,7 +433,7 @@ void CScriptDoor::Think(float dt, CStateManager& mgr) {
   if (mConditionsMet) {
     const EDoorOpenCondition cond = GetDoorOpenCondition(mgr);
 #ifdef TARGET_PC
-    PortLogDoorWait(GetUniqueId(), cond);
+    PortLogDoorWait(GetUniqueId(), cond, mgr.GetWorld());
 #endif
     if (cond == kDOC_Ready) {
       mConditionsMet = false;

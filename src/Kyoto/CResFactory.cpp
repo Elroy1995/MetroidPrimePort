@@ -126,6 +126,16 @@ void CResFactory::AsyncIdle(uint time) {
   }
 }
 
+#ifdef TARGET_PC
+int CResFactory::PortLoadState(const SObjectTag& tag) {
+  AUTO(it, FindInLoadList(tag));
+  if (it == x84_loadList.end()) {
+    return 0;
+  }
+  return it->x8_dvdReq->IsComplete() ? 2 : 1;
+}
+#endif
+
 bool CResFactory::PumpResource(const LoadList::iterator& it, uint time) {
   if (it->x8_dvdReq->IsComplete()) {
     if (it->x30_compression == CResLoader::kCompressionType_Compressed &&

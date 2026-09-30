@@ -712,6 +712,45 @@ bool CWorld::AreSkyNeedsMet() const {
   return true;
 }
 
+#ifdef TARGET_PC
+void CWorld::PortDescribeSky(char* out, int size) const {
+  const TLockedToken< CModel >* token = nullptr;
+  if (xb4_skyboxOverride) {
+    token = &*xb4_skyboxOverride;
+  } else if (xa4_skyboxWorldLoaded) {
+    token = &*xa4_skyboxWorldLoaded;
+  }
+  int len = std::snprintf(out, size, "active=%d visible=%d world=%s override=%s",
+                          x70_26_skyboxActive ? 1 : 0, x70_27_skyboxVisible ? 1 : 0,
+                          !x94_skyboxWorld ? "none" : xa4_skyboxWorldLoaded ? "loaded" : "pending",
+                          xb4_skyboxOverride ? "yes" : "no");
+  if (token == nullptr || **token == nullptr) {
+    return;
+  }
+  const CModel& model = ***token;
+  const rstl::vector< TCachedToken< CTexture > >& textures = model.GetCubeModel()->GetTextures();
+  int missing = 0;
+  for (AUTO(it, textures.begin()); it != textures.end(); ++it) {
+    if (it->IsLoaded()) {
+      continue;
+    }
+    ++missing;
+    // The first few: whether it is locked, and where its load is.
+    if (missing <= 3 && len < size) {
+      const CObjectReference* ref = it->GetRef();
+      len += std::snprintf(out + len, size - len, " tex %08X locked=%d/%d loading=%d queue=%d",
+                           it->GetTag().GetId(), it->IsLocked() ? 1 : 0, ref->GetLockCount(),
+                           ref->IsLoading() ? 1 : 0,
+                           gpResourceFactory->PortLoadState(it->GetTag()));
+    }
+  }
+  if (len < size) {
+    std::snprintf(out + len, size - len, " missing=%d/%d", missing,
+                  static_cast< int >(textures.size()));
+  }
+}
+#endif
+
 TAreaId CWorld::GetAreaId(CAssetId assetId) const {
   TAreaId result(-1);
   if (assetId != kInvalidAssetId) {

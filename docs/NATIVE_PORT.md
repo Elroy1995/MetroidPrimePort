@@ -974,7 +974,10 @@ For doors that stay shut, `MP_LOG_DOORS=1` prints `MP door <id> opened after N
 ms` with the ticks spent on each condition that held it (`anim`, `thisArea`,
 `sky`, `areaLoad`, `actors`, `otherDoor`, `occluding`, `aram`, `map`), `still
 waiting` every 3 s while a wait lasts (followed by `now on otherDoor <id>` or
-`now on occluding <area>` when the condition names an object), and `opened at once`, `ignored Open
+`now on occluding <area>` when the condition names an object, or `sky: …` with
+the skybox state and, per unloaded sky texture, whether it is locked, loading
+and in the loader's queue: 0 absent, 1 read pending, 2 read done), and
+`opened at once`, `ignored Open
 (inactive)`, `refused Open (area missing)` or `wait cancelled by Close` for the
 other outcomes (a trigger's Open usually ends a wait, since newer objects think
 first). Console `obj u<n>` shows an actor's touch bounds. `MP area`

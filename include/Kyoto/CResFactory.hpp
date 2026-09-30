@@ -62,6 +62,10 @@ public:
   }
 
   CResLoader& GetResLoader() { return x4_resLoader; }
+#ifdef TARGET_PC
+  // 0: not in the load list, 1: its read is pending, 2: read, waiting to be built.
+  int PortLoadState(const SObjectTag& tag);
+#endif
   CFactoryMgr& GetFactoryMgr() { return x5c_factoryMgr; }
 
   const rstl::vector< CAssetId >* GetTagListForFile(const rstl::string& pak) const {

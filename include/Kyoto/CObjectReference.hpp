@@ -25,6 +25,9 @@ public:
   void CancelLoad();
   bool IsLoading() const;
   const SObjectTag& GetTag() const { return x4_objTag; }
+#ifdef TARGET_PC
+  int GetLockCount() const { return x2_lockCount; }
+#endif
 
 private:
   short x0_refCount : 16;
