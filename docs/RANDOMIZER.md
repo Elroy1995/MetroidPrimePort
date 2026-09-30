@@ -35,6 +35,13 @@ scouted reads `Archipelago item`.
 Each totem names where its artifact is: the seed file's placement offline, or
 the server's hints under Archipelago.
 
+The Artifact Temple is patched for randomized games (`TempleOps()` in
+`platform/port_skip_cutscenes.cpp`, plus `PortArtifactTemple` in
+`CStateManager.cpp`). The central pickup no longer plays the artifact theme or
+the totem cinematic. Every totem lights (found artifacts) or shows its hint each
+time the room loads, and holding all twelve arms the cinematic's trigger, whose
+end still starts the Meta Ridley fight.
+
 Items are named after `CPlayerState::EItemType` without the `kIT_` prefix:
 `Missiles`, `EnergyTanks`, `MorphBall`, `PowerBombs`, `Newborn` (artifacts), and
 so on. `ItemFromName` is case-insensitive; `tests/port_randomizer.cpp`

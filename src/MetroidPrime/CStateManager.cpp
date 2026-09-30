@@ -193,6 +193,62 @@ void PortQueueElevatorHolo(TUniqueId uid, TEditorId editorId) {
   sPortElevatorHolos.push_back(holo);
 }
 
+// Port: randomized games' Artifact Temple (with the script patch in
+// PortSkipCutscenes::PatchArea). Once per room load, fire what the totem
+// cinematic's end fired: the found artifacts' totems light up and the hint
+// timer starts. With all twelve found, the cinematic's trigger arms, since
+// the cinematic's end is what starts the final boss.
+namespace {
+CEntity* PortTempleObject(CStateManager& mgr, uint id) {
+  const CStateManager::TIdListResult found = mgr.GetIdListForScript(TEditorId(id));
+  if (found.first == found.second)
+    return nullptr;
+  CEntity* ent = mgr.ObjectById(found.first->second);
+  return ent != nullptr && !ent->IsScriptingBlocked() ? ent : nullptr;
+}
+
+// Unique ids repeat across state managers (a world restart builds the room
+// again with the same ids), so the constructor clears these too.
+TUniqueId sPortTempleLit = kInvalidUniqueId;
+TUniqueId sPortTempleArmed = kInvalidUniqueId;
+
+void PortResetArtifactTemple() {
+  sPortTempleLit = kInvalidUniqueId;
+  sPortTempleArmed = kInvalidUniqueId;
+}
+
+void PortArtifactTemple(CStateManager& mgr) {
+  CEntity* relay = nullptr;
+  if (PortSkipCutscenes::Forced() && mgr.GetWorld() != nullptr &&
+      mgr.GetWorld()->IGetWorldAssetId() == CAssetId(0x39F2DE28))
+    relay = PortTempleObject(mgr, 0x04100574); // Relay One Shot Out
+  if (relay == nullptr) {
+    // The room is gone; a later load (even one that happens to reuse these
+    // ids) starts over.
+    PortResetArtifactTemple();
+    return;
+  }
+  CPlayerState& state = *mgr.GetPlayerState();
+  if (relay->GetUniqueId() != sPortTempleLit) {
+    sPortTempleLit = relay->GetUniqueId();
+    PortLog::Write("randomizer: lighting the Artifact Temple totems\n");
+    mgr.DeliverScriptMsg(relay, kInvalidUniqueId, kSM_SetToZero);
+    CEntity* truth = PortTempleObject(mgr, 0x00100125); // Relay Show Progress 1
+    if (truth != nullptr && state.HasPowerUp(CPlayerState::kIT_Truth))
+      mgr.DeliverScriptMsg(truth, kInvalidUniqueId, kSM_SetToZero);
+  }
+  CEntity* trigger = PortTempleObject(mgr, 0x50100470); // Trigger - Progress Cinema
+  if (trigger == nullptr || trigger->GetUniqueId() == sPortTempleArmed)
+    return;
+  for (int item = CPlayerState::kIT_Truth; item <= CPlayerState::kIT_Newborn; ++item) {
+    if (!state.HasPowerUp(static_cast< CPlayerState::EItemType >(item)))
+      return;
+  }
+  sPortTempleArmed = trigger->GetUniqueId();
+  mgr.DeliverScriptMsg(trigger, kInvalidUniqueId, kSM_Activate);
+}
+} // namespace
+
 // Port: Discord Rich Presence. The world and area name tables load through the
 // resource pool only while presence is on, and go with the manager, since a
 // world change retires the PAKs they come from.
@@ -528,6 +584,7 @@ CStateManager::CStateManager(const rstl::ncrc_ptr< CScriptMailbox >& mailbox,
   CMemory::OffsetFakeStatics(x808_objectLists.size() * sizeof(CObjectList) + 0x11c);
   ControlMapper::ResetCommandFilters();
   x8f0_shadowTex.Lock();
+  PortResetArtifactTemple();
 }
 
 CStateManager::~CStateManager() {
@@ -1286,6 +1343,7 @@ void CStateManager::Update(float dt) {
   // checks; a no-op when no Archipelago configuration is loaded.
   PortAp::Poll(*this);
   PortPreScanElevators(*this);
+  PortArtifactTemple(*this);
   int debugTeleportArea = -1;
   if (PortDebug::ConsumeTeleportRequest(debugTeleportArea)) {
     const TAreaId aid(debugTeleportArea);

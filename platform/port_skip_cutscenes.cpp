@@ -59,6 +59,50 @@ void PatchPickups(uint32_t mreaId, const uint8_t* scly, size_t size, std::vector
   }
 }
 
+const uint32_t kArtifactTemple = 0x2398E906;
+
+// Randomized games' Artifact Temple (applied after the patches above): the
+// central item no longer plays the artifact theme or leads into the totem
+// cinematic, and the totems give every hint. The per-frame half, which wakes
+// the totems when the room loads, is PortArtifactTemple in CStateManager.cpp.
+std::vector< uint8_t > TempleOps() {
+  std::vector< uint8_t > ops;
+  auto u32 = [&](uint32_t v) {
+    for (int shift = 24; shift >= 0; shift -= 8)
+      ops.push_back(uint8_t(v >> shift));
+  };
+  auto conn = [&](uint8_t op, uint32_t sender, uint32_t state, uint32_t msg, uint32_t target) {
+    ops.push_back(op);
+    u32(sender);
+    u32(state);
+    u32(msg);
+    u32(target);
+  };
+  auto remove = [&](uint32_t id) {
+    ops.push_back(6);
+    u32(id);
+  };
+  // The artifact theme, and the music fade around it.
+  remove(0x0410033C);
+  remove(0x04100269);
+  conn(3, 0x041001D4, 1 /* Arrived */, 13 /* SetToZero */, 0x04100268);
+  // "Timer - Delay Enter Logbook Screen" starts the timer that arms the
+  // cinematic's trigger, and opens the logbook.
+  conn(3, 0x001003BE, 9 /* Zero */, 11 /* ResetAndStart */, 0x0010057A);
+  conn(3, 0x001003BE, 9, 19 /* Action */, 0x001003BF);
+  // Saves that already took the central item arm the trigger on load.
+  conn(3, 0x0010030C, 0 /* Active */, 1 /* Activate */, 0x50100470);
+  // Truth's totem lights up only once Truth is found (randomprime's
+  // fix_artifact_of_truth_requirements); the room hook sends it.
+  conn(3, 0x04100574, 9, 13, 0x00100125);
+  // The first-stones timer lights the other six hints too (randomprime's
+  // artifact hint behaviour "all").
+  for (uint32_t relay : {0x04100127u, 0x0410012Du, 0x04100133u, 0x04100139u, 0x0410013Fu,
+                         0x04100145u})
+    conn(4, 0x0010017C, 9, 13, relay);
+  return ops;
+}
+
 } // namespace
 
 bool Forced() { return PortRandomizer::Enabled() || PortAp::RandomizedGame(); }
@@ -101,6 +145,16 @@ bool PatchArea(uint32_t mreaId, const uint8_t* scly, size_t size, std::vector< u
       PatchPickups(mreaId, scly, size, pickups);
     if (!pickups.empty())
       out.swap(pickups);
+  }
+  if (mreaId == kArtifactTemple && Forced()) {
+    const std::vector< uint8_t > ops = TempleOps();
+    std::vector< uint8_t > temple;
+    const bool patched = !out.empty();
+    if (ApplyOps(patched ? out.data() : scly, patched ? out.size() : size, ops.data(), ops.size(),
+                 temple) == 0)
+      out.swap(temple);
+    else
+      PortLog::Write("randomizer: Artifact Temple patch doesn't match, left as is\n");
   }
   return !out.empty();
 }

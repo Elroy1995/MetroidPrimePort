@@ -22,7 +22,8 @@ bool Forced();
 // the room's script doesn't match the disc (a mod replaced it).
 // In Archipelago games it also applies randomprime's pickup patches
 // (tools/gen_ap_pickup_patches.py), so pickups don't play their retail
-// item's cutscene.
+// item's cutscene. In randomized games the Artifact Temple loses the central
+// item's artifact theme and totem cinematic, and its totems give every hint.
 bool PatchArea(uint32_t mreaId, const uint8_t* scly, size_t size, std::vector< uint8_t >& out);
 
 // The disc's pickup model for a key from PortAp::MetroidPrime::PickupModelKey.
