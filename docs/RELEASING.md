@@ -58,7 +58,9 @@ self-contained — and it is why `MP_USER_PATH` cannot be used to move saves.
 - **Windows**: `windows.yml` copies the port's grant and notice, Aurora's and
   MusyX's licences, and every `LICENSE*`/`COPYING*`/`NOTICE*` from the fetched
   packages into `dist/licenses/`, preserving the dependency path, and puts
-  `docs/NATIVE_PORT.md` in as the `README`.
+  `docs/NATIVE_PORT.md` in as the `README`. It also packages `textures/` (the
+  HD and button-prompt sets), so the artefact zips as-is with no copy from a
+  Linux build.
 - **The AppImage and the APK**: `tools/make_appimage.sh` collects them into
   `usr/share/licenses/metroid-prime-port/` and records which shared libraries it
   bundled in `BUNDLED_LIBRARIES.txt`, so a reader can tell what came from where.
