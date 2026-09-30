@@ -56,6 +56,10 @@ void SetSimAdaptive(bool enabled);
 // off, frames between ticks show the look input the next tick will apply.
 bool FrameInterpolation();
 void SetFrameInterpolation(bool enabled);
+// Actor transform smoothing (phase 2): with the frame limiter off, actors draw
+// at a blend of their previous and current tick transforms. Off by default.
+bool ActorInterpolation();
+void SetActorInterpolation(bool enabled);
 // MP_TURBO[=<ticks>]: lockstep for tests. Every loop runs exactly <ticks> fixed
 // ticks (default 1, at most 16) and nothing waits for the wall clock, so a run
 // goes as fast as the machine can render it; more ticks per frame skip

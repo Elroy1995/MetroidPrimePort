@@ -1,3 +1,4 @@
+#include "MetroidPrime/CActor.hpp"
 #include "MetroidPrime/CMain.hpp"
 
 // Port: Aurora owns the application/window/GPU loop; the game entry is renamed
@@ -498,6 +499,9 @@ bool CGameArchitectureSupport::UpdateTicks() {
   x4_archQueue.Push(MakeMsg::CreateFrameBegin(kAMT_Game, x78_gameFrameCount));
   for (unsigned tick = 0; tick < ticks; ++tick) {
     PortDebug::BeginFrameMouse();
+    // A tick that doesn't reach CStateManager::Update (paused) leaves every
+    // actor's snapshot stale, so actors don't blend between old transforms.
+    CActor::PortBeginTickSnapshot();
     if (!x30_inputGenerator.Update(tickPeriod, x4_archQueue)) {
       terminate = true;
     }

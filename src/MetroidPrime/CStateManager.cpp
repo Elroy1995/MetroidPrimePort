@@ -1233,6 +1233,18 @@ void CStateManager::PostUpdatePlayer(float dt) { x84c_player->DoPostCameraStuff(
 void CStateManager::Update(float dt) {
   if (GetWantsToQuit()) return;
 
+#ifdef TARGET_PC
+  // Port: record the pre-tick transforms that presented frames blend from
+  // (CActor::PortPresentedView).
+  if (PortDebug::ActorInterpolation()) {
+    CObjectList* actors = x808_objectLists[kOL_Actor].get();
+    for (int idx = actors->GetFirstObjectIndex(); idx != -1;
+         idx = actors->GetNextObjectIndex(idx)) {
+      static_cast< CActor* >((*actors)[idx])->PortSnapshotRenderTransform();
+    }
+  }
+#endif
+
   CElementGen::SetGlobalSeed(static_cast< ushort >(x8d8_updateFrameIdx));
   CParticleElectric::SetGlobalSeed(static_cast< ushort >(x8d8_updateFrameIdx));
   CDecal::SetGlobalSeed(static_cast< ushort >(x8d8_updateFrameIdx));
@@ -2211,6 +2223,9 @@ void CStateManager::RecursiveDrawTree(TUniqueId uid) const {
       RecursiveDrawTree(nextNode);
     }
     if (x8dc_objectDrawToken == actor->GetAddedToken()) {
+#ifdef TARGET_PC
+      CPortActorRenderScope presented(*actor);
+#endif
       actor->Render(*this);
     }
     actor->SetDrawToken(x8dc_objectDrawToken);
@@ -2229,6 +2244,9 @@ void CStateManager::RendererDrawCallback(const void* drawable, const void* conte
     if (nextNode != kInvalidUniqueId) {
       mgr.RecursiveDrawTree(nextNode);
     }
+#ifdef TARGET_PC
+    CPortActorRenderScope presented(actor);
+#endif
     actor.Render(mgr);
     actor.SetDrawToken(mgr.x8dc_objectDrawToken);
     break;
@@ -2549,6 +2567,9 @@ void CStateManager::DrawWorld() const {
   for (const TUniqueId* it = renderFirst.begin(); it != renderFirst.end(); ++it) {
     if (const CActor* actor = static_cast< const CActor* >(GetObjectById(*it))) {
       if (!thermal || (actor->GetThermalFlags() & 1) != 0) {
+#ifdef TARGET_PC
+        CPortActorRenderScope presented(*actor);
+#endif
         actor->Render(*this);
       }
     }
@@ -2586,6 +2607,9 @@ void CStateManager::DrawWorld() const {
           }
         } else {
           if (!thermal || (actor->GetThermalFlags() & 1) != 0) {
+#ifdef TARGET_PC
+            CPortActorRenderScope presented(*actor);
+#endif
             actor->AddToRenderer(frustum, *this);
           }
           if (thermal && (actor->GetThermalFlags() & 2) != 0) {
@@ -2617,6 +2641,9 @@ void CStateManager::DrawWorld() const {
 
   x880_envFxManager->Render(*this);
   if (morphingPlayerVisible) {
+#ifdef TARGET_PC
+    CPortActorRenderScope presented(*x84c_player);
+#endif
     x84c_player->Render(*this);
   }
   gpRender->PostRenderFogs();
@@ -2627,6 +2654,9 @@ void CStateManager::DrawWorld() const {
       for (const TUniqueId* it = renderLast.begin(); it != renderLast.end(); ++it) {
         if (const CActor* actor = static_cast< const CActor* >(GetObjectById(*it))) {
           if ((actor->GetThermalFlags() & 1) != 0) {
+#ifdef TARGET_PC
+            CPortActorRenderScope presented(*actor);
+#endif
             actor->Render(*this);
           }
         }
@@ -2638,6 +2668,9 @@ void CStateManager::DrawWorld() const {
     for (const TUniqueId* it = renderFirst.begin(); it != renderFirst.end(); ++it) {
       if (const CActor* actor = static_cast< const CActor* >(GetObjectById(*it))) {
         if ((actor->GetThermalFlags() & 2) != 0) {
+#ifdef TARGET_PC
+          CPortActorRenderScope presented(*actor);
+#endif
           actor->Render(*this);
         }
       }
@@ -2656,6 +2689,9 @@ void CStateManager::DrawWorld() const {
         const CActor* actor = *it;
         if (actor->GetCurrentAreaId() == id ||
             (actor->GetCurrentAreaId() == kInvalidAreaId && id == visAreaId)) {
+#ifdef TARGET_PC
+          CPortActorRenderScope presented(*actor);
+#endif
           actor->AddToRenderer(frustum, *this);
         }
       }
@@ -2706,6 +2742,9 @@ void CStateManager::DrawWorld() const {
     for (const TUniqueId* it = renderLast.begin(); it != renderLast.end(); ++it) {
       if (const CActor* actor = static_cast< const CActor* >(GetObjectById(*it))) {
         if (!thermal || (actor->GetThermalFlags() & 2) != 0) {
+#ifdef TARGET_PC
+          CPortActorRenderScope presented(*actor);
+#endif
           actor->Render(*this);
         }
       }

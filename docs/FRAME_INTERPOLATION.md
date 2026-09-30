@@ -1,6 +1,7 @@
 # Frame interpolation: scope
 
-Status: phase 1 (look input per frame) is done; phases 2-5 are scope only.
+Status: phase 1 (look input per frame) is done; phase 2 (actor transforms) is
+done behind `actor_interpolation` (off by default); phases 3-5 are scope only.
 
 Goal: smooth motion above 60 FPS while the game logic stays at its console rate
 (60 Hz fixed step). Rendered frames between two ticks draw the world at a blend
@@ -25,6 +26,7 @@ rendered frame. The alternative, running the simulation itself faster (`sim_rate
   direction. The arm cannon, arm and muzzle effects render against the matching
   simulation camera (`NATIVE_PORT.md`, "In uncapped presentation").
 - **Per-frame look (phase 1).** See section 4.
+- **Actor transforms (phase 2).** See section 1.
 - **Render-time animation.** `CGraphics::TickRenderTimings` advances draw-time
   timers (texture scroll, UV animation) by whole ticks, not by frames.
 
@@ -34,25 +36,37 @@ judder against a smooth camera.
 
 ## What is needed
 
-### 1. Actor transforms
+### 1. Actor transforms (done, `actor_interpolation`)
 
-`CActor::RenderInternal` (`CActor.cpp:358-394`) draws with `x34_transform`.
-Add a previous-tick transform per actor and a render transform:
+Implemented as a view shift rather than by swapping the transform in every
+`Render` override (about 100 files):
 
-- At the start of each tick (`CStateManager::Update`, before thinking), copy
-  `x34_transform` into a port-only `prevTransform` for every actor.
-- A port helper `RenderTransform()` returns the blend (lerp translation, slerp
-  rotation, lerp scale) when a blend factor is set, else `x34_transform`.
-- Reset (prev = current) on `SetTransform`/`SetTranslation` calls that are
-  teleports: spawn, `CScriptActorKeyframe` jumps, warps, save-state loads, room
-  loads, player respawn. Simplest rule: any per-tick move larger than a
-  threshold snaps, like the camera's 4-unit check.
-- Draw paths that read `x34_transform` or `GetTransform()` directly: about 100
-  files override `Render`/`AddToRenderer`, and 36 override `PreRender`. Each
-  needs checking; most go through `CModelData::Render(…, xf, …)` with the
-  actor's transform, so swapping the argument in `CActor` and in the main
-  overrides (player, morph ball, enemies with bone tracking) covers most of the
-  screen. Bounds and culling can stay on the simulation transform.
+- Every arch tick calls `CActor::PortBeginTickSnapshot()` (bumps a generation);
+  `CStateManager::Update` then copies each actor's `x34_transform` into
+  `xPortPrevTransform` with that generation. A tick that doesn't reach
+  `Update` (pause) and actors created mid-tick leave the generation stale, so
+  they draw at the sim transform.
+- `CActor::PortPresentedView` builds the rigid blend R (slerp of the normalised
+  bases, lerp of the translation) and the rigid current transform C, and
+  returns the view `C * R^-1 * view`. Drawing the actor under that view puts
+  the model, its attached particles and its lights-relative shading at the
+  blend, whatever the override does. Scale stays on the sim transform.
+- `CPortActorRenderScope` (RAII) sets and restores that view around each actor
+  draw in `CStateManager`: `RecursiveDrawTree`, `RendererDrawCallback`,
+  render-first/last lists, area `AddToRenderer`, the thermal passes and the
+  morphing player. Nested scopes keep the outer view. The player's
+  `AddToRenderer` is not wrapped (it also queues the gun); its body and ball
+  draw through the callback, which is.
+- Snaps like the camera: more than 4 units or more than 45° in a tick, and
+  any actor whose transform didn't change.
+
+Limits: bounds, culling, PreRender lighting and shadows stay on the sim
+transform; particles queued to the renderer (not drawn inside the actor's
+draw) and the reflected player stay on the sim transform; an override that
+draws world-space content unrelated to its own transform is shifted by the
+sub-tick delta. Checked by logging the player's blend while rolling in the
+Chozo spawn room at `frame_limit=0`: evenly spaced positions across tick
+boundaries.
 
 ### 2. Skinned poses
 
@@ -125,8 +139,7 @@ so they work unchanged.
 
 1. **Look input per frame** (section 4). Done.
 2. **Actor transforms** in `CActor` plus the player, morph ball and door
-   paths. Turns most of the judder smooth. About 3-5 days including the audit
-   of `Render` overrides and teleport resets.
+   paths (section 1). Done, `actor_interpolation`, off by default.
 3. **Render-side animation time** for skinned models and the bone-tracking/IK
    users. About 1 week; the risk is event and particle side effects of
    sampling the tree between ticks.

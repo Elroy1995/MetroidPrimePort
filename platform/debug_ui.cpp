@@ -174,6 +174,7 @@ float sStickAimVelY = 0.f;
 // Frame interpolation (docs/FRAME_INTERPOLATION.md): uncapped frames show look
 // input before the tick that applies it.
 bool sFrameInterpolation = true;
+bool sActorInterpolation = false;
 // The last tick applied look input. A paused game or a cinematic skips the
 // player update, and would then drop what the frames between ticks showed.
 bool sAimAppliedLastTick = false;
@@ -434,6 +435,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sSimAdaptive = ParseBool(value);
   } else if (key == "frame_interpolation") {
     sFrameInterpolation = ParseBool(value);
+  } else if (key == "actor_interpolation") {
+    sActorInterpolation = ParseBool(value);
   } else if (key == "ai_audio") {
     sAiAudioEnabled = ParseBool(value);
   } else if (key == "musyx_audio") {
@@ -526,6 +529,7 @@ void SaveSettings() {
   file << "sim_rate=" << sSimRate << '\n';
   file << "sim_adaptive=" << (sSimAdaptive ? 1 : 0) << '\n';
   file << "frame_interpolation=" << (sFrameInterpolation ? 1 : 0) << '\n';
+  file << "actor_interpolation=" << (sActorInterpolation ? 1 : 0) << '\n';
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
@@ -1562,6 +1566,17 @@ void SetFrameInterpolation(bool enabled) {
   MarkDirty();
 }
 
+bool ActorInterpolation() {
+  EnsureInitialized();
+  return sActorInterpolation;
+}
+
+void SetActorInterpolation(bool enabled) {
+  EnsureInitialized();
+  sActorInterpolation = enabled;
+  MarkDirty();
+}
+
 void GetFrameMouseDelta(float& dx, float& dy) {
   dx = sMouseFrameX;
   dy = sMouseFrameY;
@@ -2105,6 +2120,14 @@ void DrawPerformanceTab() {
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip("With the FPS cap off, mouse, gyro and twin-stick look turn the view "
                       "on every frame instead of every 60 Hz tick. Aim and shots are unchanged.");
+  }
+  bool smoothActors = sActorInterpolation;
+  if (ImGui::Checkbox("Smooth actor motion (uncapped, experimental)", &smoothActors)) {
+    PortDebug::SetActorInterpolation(smoothActors);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("With the FPS cap off, moving objects, enemies and Samus are drawn between "
+                      "their last two 60 Hz positions. Animation poses still step at 60 Hz.");
   }
 
   ImGui::Separator();

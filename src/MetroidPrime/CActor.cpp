@@ -25,6 +25,11 @@
 #include "MetroidPrime/TGameTypes.hpp"
 #include "rstl/math.hpp"
 
+#ifdef TARGET_PC
+#include "port_debug.h"
+#include "Kyoto/Math/CQuaternion.hpp"
+#endif
+
 static CMaterialList MakeActorMaterialList(const CMaterialList& in,
                                            const CActorParameters& params) {
   CMaterialList ret = in;
@@ -86,7 +91,12 @@ CActor::CActor(const TUniqueId uid, const bool active, const rstl::string& name,
 , xe7_28_worldLightingDirty(false)
 , xe7_29_drawEnabled(active)
 , xe7_30_doTargetDistanceTest(true)
-, xe7_31_targetable(true) {
+, xe7_31_targetable(true)
+#ifdef TARGET_PC
+, xPortPrevTransform(xf)
+, xPortPrevGeneration(0)
+#endif
+{
   if (!x64_modelData.null()) {
     if (params.GetXRay().first != 0) {
       x64_modelData->SetXRayModel(params.GetXRay());
@@ -871,3 +881,84 @@ void CActor::UpdateSfxEmitters() {
                                xd4_maxVol);
   }
 }
+
+#ifdef TARGET_PC
+namespace {
+// Bumped once per simulation tick; generation 0 is never current, so actors
+// that have not been snapshotted yet draw at their sim transform.
+uint sPortTickGeneration = 0;
+bool sPortRenderScopeActive = false;
+
+CTransform4f PortRigid(const CTransform4f& xf, CQuaternion& rot) {
+  CVector3f right = xf.GetRight();
+  CVector3f forward = xf.GetForward();
+  CVector3f up = xf.GetUp();
+  if (right.CanBeNormalized())
+    right.Normalize();
+  if (forward.CanBeNormalized())
+    forward.Normalize();
+  if (up.CanBeNormalized())
+    up.Normalize();
+  CTransform4f basis = CTransform4f::FromColumns(right, forward, up, CVector3f::Zero());
+  basis.Orthonormalize();
+  rot = CQuaternion::FromMatrix(basis);
+  return rot.BuildTransform4f(xf.GetTranslation());
+}
+} // namespace
+
+void CActor::PortBeginTickSnapshot() {
+  ++sPortTickGeneration;
+  if (sPortTickGeneration == 0)
+    sPortTickGeneration = 1;
+}
+
+void CActor::PortSnapshotRenderTransform() {
+  xPortPrevTransform = x34_transform;
+  xPortPrevGeneration = sPortTickGeneration;
+}
+
+bool CActor::PortPresentedView(const CTransform4f& view, CTransform4f& out) const {
+  const float t = CCameraManager::GetPresentationInterpolation();
+  if (t < 0.f || t >= 1.f || xPortPrevGeneration != sPortTickGeneration ||
+      !PortDebug::ActorInterpolation())
+    return false;
+  if (xPortPrevTransform == x34_transform)
+    return false;
+  const CVector3f prevPos = xPortPrevTransform.GetTranslation();
+  const CVector3f curPos = x34_transform.GetTranslation();
+  // Same snap rule as the camera snapshot: teleports and big turns cut.
+  if ((curPos - prevPos).MagSquared() > 16.f)
+    return false;
+  CQuaternion prevRot = CQuaternion::NoRotation();
+  CQuaternion curRot = CQuaternion::NoRotation();
+  PortRigid(xPortPrevTransform, prevRot);
+  const CTransform4f cur = PortRigid(x34_transform, curRot);
+  if (fabsf(CQuaternion::Dot(prevRot, curRot)) < 0.9238795f)
+    return false;
+  const CTransform4f blend =
+      CQuaternion::SlerpLocal(prevRot, curRot, t).BuildTransform4f(prevPos + (curPos - prevPos) * t);
+  // Drawn eye position = view^-1 * blend * cur^-1 * world, so the model lands
+  // at the blend while everything else about the draw stays the same.
+  out = cur * blend.GetQuickInverse() * view;
+  return true;
+}
+
+CPortActorRenderScope::CPortActorRenderScope(const CActor& actor)
+: xSavedView(CGraphics::GetViewMatrix()), xActive(false) {
+  if (sPortRenderScopeActive)
+    return;
+  CTransform4f view = CTransform4f::Identity();
+  if (!actor.PortPresentedView(xSavedView, view))
+    return;
+  xActive = true;
+  sPortRenderScopeActive = true;
+  CGraphics::SetViewPointMatrix(view);
+}
+
+CPortActorRenderScope::~CPortActorRenderScope() {
+  if (!xActive)
+    return;
+  sPortRenderScopeActive = false;
+  CGraphics::SetViewPointMatrix(xSavedView);
+}
+#endif

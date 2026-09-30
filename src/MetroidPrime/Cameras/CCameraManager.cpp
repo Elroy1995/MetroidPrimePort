@@ -536,6 +536,7 @@ CTransform4f CCameraManager::GetSimulationCameraTransform(const CStateManager& m
 }
 
 void CCameraManager::SetPresentationInterpolation(float t) { sPresentationInterpolation = t; }
+float CCameraManager::GetPresentationInterpolation() { return sPresentationInterpolation; }
 
 CVector3f CCameraManager::GetGlobalCameraTranslation(const CStateManager& mgr) const {
   return GetCurrentCamera(mgr).GetTransform().Rotate(x30_shakeOffset);

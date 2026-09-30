@@ -777,8 +777,14 @@ twin-stick velocity times the time since the tick. The tick still applies the
 whole amount, so aim and shots are unchanged; the free-aim crosshair is rotated
 with the view so it stays centred. It only applies with the frame limiter off,
 under free mouse look (mouse aim, gyro aim or twin stick). The game's own stick
-look is not previewed. `docs/FRAME_INTERPOLATION.md` scopes interpolating the
-rest (actors, poses, particles).
+look is not previewed.
+
+Smooth actor motion (`actor_interpolation`, F1 Performance, off by default,
+experimental) draws each moving actor, Samus and the morph ball included,
+between its last two tick transforms when the frame limiter is off. Moves of
+more than 4 units or 45° in a tick snap. Animation poses, queued particles and
+shadows still step at 60 Hz. `docs/FRAME_INTERPOLATION.md` has the design and
+scopes the rest (poses, particles).
 
 ## Ownership and threading rules
 

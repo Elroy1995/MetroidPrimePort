@@ -247,6 +247,18 @@ public:
   bool CanDrawStatic() const;
   void SetEnableRender(bool v) { xe7_27_enableRender = v; }
 
+#ifdef TARGET_PC
+  // Port: actor transform smoothing (docs/FRAME_INTERPOLATION.md, phase 2).
+  // CStateManager::Update records every actor's transform before the tick;
+  // frames drawn between ticks then blend the two.
+  static void PortBeginTickSnapshot();
+  void PortSnapshotRenderTransform();
+  // The camera-to-world view that draws this actor at its blended transform
+  // instead of x34_transform. False when no blend applies (the view is left
+  // alone): smoothing off, capped frames, snapped moves, new actors.
+  bool PortPresentedView(const CTransform4f& view, CTransform4f& out) const;
+#endif
+
 protected:
   void SetDrawEnabled(bool v) { xe7_29_drawEnabled = v; }
 
@@ -298,7 +310,27 @@ private:
   uint xe7_29_drawEnabled : 1;
   uint xe7_30_doTargetDistanceTest : 1;
   uint xe7_31_targetable : 1;
+#ifdef TARGET_PC
+  CTransform4f xPortPrevTransform;
+  uint xPortPrevGeneration;
+#endif
 };
+
+#ifdef TARGET_PC
+// Port: while alive, draws go through the actor's presented view (see
+// CActor::PortPresentedView). Nested scopes leave the outer one's view.
+class CPortActorRenderScope {
+public:
+  explicit CPortActorRenderScope(const CActor& actor);
+  ~CPortActorRenderScope();
+
+private:
+  CPortActorRenderScope(const CPortActorRenderScope&);
+  CPortActorRenderScope& operator=(const CPortActorRenderScope&);
+  CTransform4f xSavedView;
+  bool xActive;
+};
+#endif
 CHECK_SIZEOF(CActor, (VERSION >= VERSION_GM8P_00 ? 0xf8 : 0xe8))
 
 #endif // _CACTOR
