@@ -9,7 +9,8 @@
 //  - a file named <8 hex digits>.<4 letters> (1A2B3C4D.TXTR), anywhere in the
 //    mod, replaces that resource in every PAK that holds it. The PAK is served
 //    as a virtual file: its table patched to point past the original data, where
-//    the loose file is appended.
+//    the loose file is appended. An id no PAK holds is added to NoARAM.pak,
+//    which stays loaded from boot, so mods can bring new resources.
 // Mods are read at startup only: the game caches PAK tables when it boots.
 
 #include <cstddef>
@@ -81,9 +82,11 @@ struct LooseResource {
 // the original, which is originalSize long. Every table entry matching a loose
 // resource's type and id points at that resource's appended copy. The original
 // data comes from the base disc (kSource), or from sourceHost when that is set
-// (a PAK a mod replaced whole).
+// (a PAK a mod replaced whole). Each `added` resource gets a new table entry;
+// the data after the table moves down to make room, 32-byte aligned.
 VirtualFile PatchPak(const std::vector<uint8_t>& header, const PakTable& table, uint64_t originalSize,
-                     const std::vector<const LooseResource*>& loose, const std::string& sourceHost = {});
+                     const std::vector<const LooseResource*>& loose, const std::string& sourceHost = {},
+                     const std::vector<const LooseResource*>& added = {});
 
 // How a Reader reaches the file being patched. Tests supply their own.
 struct SourceIo {

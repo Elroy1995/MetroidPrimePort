@@ -327,46 +327,79 @@ void Initialize() {
     }
   }
 
-  // Which loose resources each PAK takes.
+  // Which loose resources each PAK takes. Ids no PAK holds are added to
+  // NoARAM.pak, which the game keeps loaded from boot.
   std::set<std::pair<uint32_t, uint32_t>> used;
   std::map<int32_t, std::shared_ptr<VirtualFile>> patched;
   if (!loose.empty()) {
-    for (const auto& [entry, path] : DiscPaks()) {
-      const auto whole = replaced.find(entry);
-      const std::string hostPath = whole != replaced.end() ? whole->second.hostPath : std::string();
+    struct Pending {
+      int32_t entry;
+      std::string path;
+      std::string hostPath;
       std::vector<uint8_t> header;
       uint64_t size = 0;
       PakTable table;
-      if (!ReadPakHeader(hostPath, entry, header, size, table)) {
-        Message("cannot read the table of " + path + (hostPath.empty() ? "" : " (from a mod)"));
+      std::vector<const LooseResource*> take;
+    };
+    std::vector<Pending> pending;
+    std::set<uint32_t> knownIds;
+    int32_t homeEntry = -1;
+    for (const auto& [entry, path] : DiscPaks()) {
+      const auto whole = replaced.find(entry);
+      Pending pak{entry, path, whole != replaced.end() ? whole->second.hostPath : std::string()};
+      if (!ReadPakHeader(pak.hostPath, entry, pak.header, pak.size, pak.table)) {
+        Message("cannot read the table of " + path + (pak.hostPath.empty() ? "" : " (from a mod)"));
         continue;
       }
-      std::vector<const LooseResource*> take;
       std::set<std::pair<uint32_t, uint32_t>> taken;
-      for (const PakResource& resource : table.resources) {
+      for (const PakResource& resource : pak.table.resources) {
+        knownIds.insert(resource.id);
         const auto found = loose.find({resource.type, resource.id});
         if (found != loose.end() && taken.insert(found->first).second) {
-          take.push_back(&found->second);
+          pak.take.push_back(&found->second);
           used.insert(found->first);
         }
       }
-      if (take.empty()) {
+      if (Lower(path) == "/noaram.pak") {
+        homeEntry = entry;
+      } else if (pak.take.empty()) {
         continue;
       }
-      auto file = std::make_shared<VirtualFile>(PatchPak(header, table, size, take, hostPath));
+      pending.push_back(std::move(pak));
+    }
+    std::vector<const LooseResource*> added;
+    for (const auto& [key, resource] : loose) {
+      if (used.count(key) != 0) {
+        continue;
+      }
+      const std::string name = PathString(PathFromString(resource.hostPath).filename());
+      if (knownIds.count(key.second) != 0) {
+        Message(resource.mod + ": " + name + " reuses an id another type holds; ignored");
+      } else if (homeEntry < 0) {
+        Message(resource.mod + ": " + name + " is in no PAK and NoARAM.pak is missing; ignored");
+      } else {
+        added.push_back(&resource);
+        used.insert(key);
+      }
+    }
+    for (Pending& pak : pending) {
+      const bool home = pak.entry == homeEntry;
+      if (pak.take.empty() && (!home || added.empty())) {
+        continue;
+      }
+      auto file = std::make_shared<VirtualFile>(PatchPak(pak.header, pak.table, pak.size, pak.take, pak.hostPath,
+                                                         home ? added : std::vector<const LooseResource*>{}));
       if (file->size == 0 || file->size >= 0xFFFFFFE0u) {
-        Message("cannot patch " + path);
+        Message("cannot patch " + pak.path);
         continue;
       }
-      file->discPath = path;
-      file->sourceEntry = entry;
-      patched[entry] = std::move(file);
+      file->discPath = pak.path;
+      file->sourceEntry = pak.entry;
+      patched[pak.entry] = std::move(file);
     }
     for (const auto& [key, resource] : loose) {
       if (used.count(key) != 0) {
         ++sStatus.mods[looseMod[key]].resources;
-      } else {
-        Message(resource.mod + ": " + PathString(PathFromString(resource.hostPath).filename()) + " is in no PAK; ignored");
       }
     }
   }

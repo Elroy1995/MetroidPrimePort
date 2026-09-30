@@ -203,6 +203,65 @@ void TestPatch(const fs::path& dir) {
             std::memcmp(out.data() + headerEnd, pak.data() + headerEnd, pak.size() - headerEnd) == 0,
         "hosted original data");
 }
+
+void TestAdd(const fs::path& dir) {
+  size_t headerEnd = 0;
+  const std::vector<uint8_t> pak = MakePak(headerEnd);
+  PortMods::PakTable table;
+  size_t needed = 0;
+  PortMods::ParsePakTable(pak.data(), pak.size(), table, needed);
+
+  const fs::path replacePath = dir / "00000011.TXTR";
+  const fs::path newPath = dir / "00000033.TXTR";
+  const fs::path smallPath = dir / "00000044.CMDL";
+  std::ofstream(replacePath, std::ios::binary) << std::string(40, 'A');
+  std::ofstream(newPath, std::ios::binary) << std::string(40, 'B');
+  std::ofstream(smallPath, std::ios::binary) << std::string(10, 'C');
+  PortMods::LooseResource replace{kTXTR, 0x11, replacePath.string(), 40, "test"};
+  PortMods::LooseResource added{kTXTR, 0x33, newPath.string(), 40, "test"};
+  PortMods::LooseResource small{0x434D444C, 0x44, smallPath.string(), 10, "test"};
+  const PortMods::VirtualFile file = PortMods::PatchPak(pak, table, pak.size(), {&replace}, {}, {&added, &small});
+
+  // Two entries (40 bytes) move the data down by 64.
+  const uint64_t shift = 64;
+  const uint64_t appended = (pak.size() + shift + 31) & ~uint64_t(31);
+  Check(file.size == appended + 64 + 64 + 32, "grown size");
+  sSource = &pak;
+  const std::vector<uint8_t> out = ReadAll(file, 4096);
+  if (out.size() != file.size) {
+    Check(false, "read grown file");
+    return;
+  }
+  PortMods::PakTable grown;
+  Check(PortMods::ParsePakTable(out.data(), out.size(), grown, needed) && grown.resources.size() == 5 &&
+            grown.headerEnd == headerEnd + 40,
+        "grown table");
+  if (grown.resources.size() != 5) {
+    return;
+  }
+  const PortMods::PakResource& strg = grown.resources[1];
+  Check(strg.compressed == 1 && strg.offset == table.resources[1].offset + shift, "shifted entry");
+  Check(std::memcmp(out.data() + strg.offset, pak.data() + table.resources[1].offset, 32) == 0, "shifted data");
+  Check(std::memcmp(out.data() + headerEnd + shift, pak.data() + headerEnd, pak.size() - headerEnd) == 0,
+        "original data moved whole");
+  Check(grown.resources[0].offset == appended && grown.resources[2].offset == appended, "replaced entry");
+  const PortMods::PakResource& first = grown.resources[3];
+  const PortMods::PakResource& second = grown.resources[4];
+  Check(first.type == kTXTR && first.id == 0x33 && first.compressed == 0 && first.size == 64 &&
+            first.offset == appended + 64,
+        "added entry");
+  Check(second.type == 0x434D444C && second.id == 0x44 && second.size == 32 && second.offset == appended + 128,
+        "second added entry");
+  Check(std::string(out.begin() + first.offset, out.begin() + first.offset + 40) == std::string(40, 'B'),
+        "added data");
+  Check(std::string(out.begin() + second.offset, out.begin() + second.offset + 10) == std::string(10, 'C'),
+        "second added data");
+  bool gap = true;
+  for (size_t i = grown.headerEnd; i < headerEnd + shift; ++i) {
+    gap = gap && out[i] == 0;
+  }
+  Check(gap, "table padding");
+}
 } // namespace
 
 int main() {
@@ -213,6 +272,7 @@ int main() {
   TestNames();
   TestParse();
   TestPatch(dir);
+  TestAdd(dir);
   fs::remove_all(dir, ec);
   if (sFailures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", sFailures);

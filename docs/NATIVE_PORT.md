@@ -387,8 +387,13 @@ skipped. Inside a mod:
   anywhere in the mod, replaces that resource, uncompressed, in every PAK that
   holds it. The PAK is served as a virtual file: its table is patched to point
   past the original data, where the loose file is appended (32-byte aligned). A
-  loose resource also applies inside a PAK another mod replaced whole. New ids
-  that no PAK holds are reported and ignored.
+  loose resource also applies inside a PAK another mod replaced whole. An id
+  that no PAK holds is added to `NoARAM.pak` (loaded from boot, so any model or
+  frame can reference it): the table grows by one entry and the original data
+  moves down to keep its 32-byte alignment. An id another PAK holds under a
+  different type is reported and ignored. A resource can be any size (the port
+  keeps PAK sizes whole; retail stops at 4 MB), though the game heap still
+  bounds what fits: a 16 MB texture runs it out of memory.
 - text and image files (`.txt`, `.md`, `.json`, `.png`, ...) are ignored
   silently, so a mod can carry its readme.
 

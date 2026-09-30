@@ -34,7 +34,7 @@ ships no disc image, and neither does any package or release built from it.
   beating the game
 - Memory card import and export as `.gci` files or raw card images, including
   straight from and to Dolphin
-- A mods folder that replaces loose disc files or single resources inside PAKs,
+- A mods folder that replaces loose disc files or single resources inside PAKs (or adds new ones),
   user texture packs, HD texture replacements, and in-game button prompts that
   follow the input bound to each action
 - Discord Rich Presence on desktop (bring your own Discord application id)
