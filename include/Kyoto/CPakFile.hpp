@@ -21,7 +21,16 @@ public:
 #pragma pack(push, 2)
   struct SResInfo {
     CAssetId x0_id;
+#ifdef TARGET_PC
+    // Port: retail packs offset and size into 23 and 17 bits of 32-byte units
+    // (256 MB, 4 MB). Resources from the mods folder can pass both, so the
+    // port keeps them whole.
+    uint x4_offset;
+    uint x8_size;
+    uchar xc_type;
+#else
     uchar x4_data[6];
+#endif
 
     SResInfo(uint id, uint fourCC, uint offset, uint size, uint flags);
 

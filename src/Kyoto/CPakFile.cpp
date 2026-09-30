@@ -15,6 +15,20 @@ static inline int round_up_32(int val) { return (val + 31) & ~31; }
 
 static int kMinReserveBytes = 64;
 
+#ifdef TARGET_PC
+CPakFile::SResInfo::SResInfo(uint id, uint fourCC, uint offset, uint size, uint flags)
+: x0_id(id), x4_offset(offset), x8_size(size) {
+  xc_type = static_cast< uchar >(CFactoryMgr::FourCCToTypeIdx(fourCC) | (flags != 0 ? 0x80 : 0));
+}
+
+uint CPakFile::SResInfo::GetType() const { return CFactoryMgr::TypeIdxToFourCC(xc_type & 0x7f); }
+
+uint CPakFile::SResInfo::GetOffset() const { return x4_offset; }
+
+uint CPakFile::SResInfo::GetSize() const { return x8_size; }
+
+bool CPakFile::SResInfo::IsCompressed() const { return (xc_type & ~0x7F) != 0; }
+#else
 CPakFile::SResInfo::SResInfo(uint id, uint fourCC, uint offset, uint size, uint flags) : x0_id(id) {
   uint typeIdx = CFactoryMgr::FourCCToTypeIdx(fourCC);
   x4_data[0] = static_cast< uchar >(typeIdx | (flags != 0 ? 0x80 : 0));
@@ -36,6 +50,7 @@ uint CPakFile::SResInfo::GetSize() const {
 }
 
 bool CPakFile::SResInfo::IsCompressed() const { return (x4_data[0] & ~0x7F) != 0; }
+#endif
 
 CPakFile::CPakFile(const rstl::string& filename, bool buildDepList, bool worldPak)
 : x0_file(filename.data())
