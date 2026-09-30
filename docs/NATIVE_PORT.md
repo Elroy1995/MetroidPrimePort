@@ -709,6 +709,13 @@ a temporary directory instead of mounting.
   `MP_DEBUG_TAB=<name>` (e.g. `Session`) opens the desktop overlay on that tab,
   enlarged, for captures. The console's `shot` leaves the overlay out; grab the
   X display instead (PIL `ImageGrab.grab(xdisplay=':99')` under Xvfb).
+- `MP_BOOT_WORLD=<MLVL hex>[:<MREA hex>]`: tests only. Skips the splash screens and
+  the front end and starts a new game (default options, no save card) in that world:
+  in its default area, or in the given MREA. It applies once, so quitting the game
+  returns to the normal front end. For example, `83F6FF6F` gives Chozo Ruins' default
+  room (MREA 3E6B2BB7) in first person about 5 s after launch, and
+  `39F2DE28:B2701146` gives the Landing Site. It needs no smoke build, and the
+  console's `status` answers as soon as the room is up.
 - `MP_TURBO[=<ticks>]`: lockstep for automated runs. Every frame runs exactly
   `<ticks>` fixed ticks (default 1, at most 16) with no frame limiter and no
   vsync, so a run goes as fast as the machine renders it; game time per tick

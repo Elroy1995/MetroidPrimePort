@@ -746,6 +746,25 @@ bool FastBoot() {
   return sFastBoot;
 }
 
+bool BootWorld(uint32_t& worldId, uint32_t& areaAssetId) {
+  static uint32_t sWorld = 0, sArea = 0;
+  static const bool sSet = [] {
+    const char* value = std::getenv("MP_BOOT_WORLD");
+    if (value == nullptr) {
+      return false;
+    }
+    char* end = nullptr;
+    sWorld = static_cast< uint32_t >(std::strtoul(value, &end, 16));
+    if (end != nullptr && *end == ':') {
+      sArea = static_cast< uint32_t >(std::strtoul(end + 1, nullptr, 16));
+    }
+    return sWorld != 0;
+  }();
+  worldId = sWorld;
+  areaAssetId = sArea;
+  return sSet;
+}
+
 bool SkipCutscenes() {
   EnsureInitialized();
   return sSkipCutscenes;

@@ -13,8 +13,13 @@
 
 #include "MetroidPrime/CMain.hpp"
 
+#include "MetroidPrime/Player/CGameState.hpp"
+
+#include "port_debug.h"
 #include "port_discord.h"
 #include "port_savestate.h"
+
+#include <stdio.h>
 
 CMainFlow::CMainFlow() : CIOWin(rstl::string_l("MainFlow")), x14_gameState(kCFS_Unspecified) {}
 
@@ -107,6 +112,23 @@ void CMainFlow::SetGameState(EClientFlowStates state, CArchitectureQueue& queue)
   case kCFS_FrontEnd: {
     PortDiscord::SetMenu();
     if (gpMain->GetRestartMode() == CMain::kRM_None) {
+      break;
+    }
+    // Port: MP_BOOT_WORLD skips the front end once, starting a new game in that
+    // world like CFrontEndUI's new game does (defaults, then the world id).
+    static bool sBootWorldUsed = false;
+    uint32_t bootWorld, bootArea;
+    if (!sBootWorldUsed && PortDebug::BootWorld(bootWorld, bootArea)) {
+      sBootWorldUsed = true;
+      gpGameState->SetCurrentWorldId(CAssetId(bootWorld));
+      CWorldState& worldState = gpGameState->CurrentWorldState();
+      worldState.SetAreaId(TAreaId(0));
+      worldState.SetDesiredAreaAssetId(bootArea != 0 ? static_cast< CAssetId >(bootArea)
+                                                     : kInvalidAssetId);
+      gpGameState->GameOptions().ResetToDefaults();
+      gpGameState->WriteBackupBuf();
+      fprintf(stderr, "[boot-world] new game in world %08X area %08X\n", bootWorld, bootArea);
+      SetGameState(kCFS_Game, queue);
       break;
     }
     CIOWin* ioWin;

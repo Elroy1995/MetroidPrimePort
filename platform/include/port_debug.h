@@ -38,6 +38,9 @@ void SetDiscPath(const char* path);
 
 // Fast iteration
 bool FastBoot();
+// MP_BOOT_WORLD=<MLVL hex>[:<MREA hex>]: no splash screens or front end; a new game
+// starts straight in that world (its default area without an MREA). Tests only.
+bool BootWorld(uint32_t& worldId, uint32_t& areaAssetId);
 // MP_SKIP_CUTSCENES / MP_CUTSCENE_SPEED (tests only; not a saved setting).
 bool SkipCutscenes();
 float CutsceneSpeed();
