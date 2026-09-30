@@ -24,9 +24,13 @@ import ssl
 import struct
 import sys
 import time
+import zlib
 
 
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+# Per-connection deflate state for clients that negotiated permessage-deflate.
+COMPRESSORS = {}
 
 
 def recv_exact(sock, size):
@@ -41,7 +45,15 @@ def recv_exact(sock, size):
 
 def send_frame(sock, opcode, payload):
     payload = payload if isinstance(payload, bytes) else payload.encode("utf-8")
-    header = bytearray([0x80 | opcode])
+    first = 0x80 | opcode
+    # permessage-deflate (RFC 7692): data messages go out compressed with RSV1
+    # set, sharing one window across the connection, as MultiServer's do.
+    compressor = COMPRESSORS.get(sock)
+    if compressor is not None and opcode in (1, 2):
+        payload = compressor.compress(payload) + compressor.flush(zlib.Z_SYNC_FLUSH)
+        payload = payload[:-4]
+        first |= 0x40
+    header = bytearray([first])
     length = len(payload)
     if length < 126:
         header.append(length)
@@ -87,7 +99,7 @@ def read_frame(sock):
     return opcode, payload
 
 
-def websocket_upgrade(sock):
+def websocket_upgrade(sock, allow_deflate=True):
     request = bytearray()
     while b"\r\n\r\n" not in request:
         data = sock.recv(4096)
@@ -107,13 +119,22 @@ def websocket_upgrade(sock):
     if key is None:
         return False
     accept = base64.b64encode(hashlib.sha1(key + GUID.encode("ascii")).digest()).decode("ascii")
+    offered = [part.split(b";")[0].strip().lower()
+               for part in headers.get(b"sec-websocket-extensions", b"").split(b",")]
+    deflate = allow_deflate and b"permessage-deflate" in offered
     response = (
         "HTTP/1.1 101 Switching Protocols\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+        + ("Sec-WebSocket-Extensions: permessage-deflate\r\n" if deflate else "")
+        + f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
     )
     sock.sendall(response.encode("ascii"))
+    if deflate:
+        COMPRESSORS[sock] = zlib.compressobj(6, zlib.DEFLATED, -15)
+    else:
+        # MultiServer's notice for a client that doesn't offer compression.
+        print("[server] client does not support compressed websocket connections", flush=True)
     return True
 
 
@@ -122,11 +143,20 @@ def packet_command(packet):
 
 
 def handle_client(sock, address, args, item_ids, bounce_sources=()):
+    try:
+        handle_session(sock, address, args, item_ids, bounce_sources)
+    finally:
+        COMPRESSORS.pop(sock, None)
+
+
+def handle_session(sock, address, args, item_ids, bounce_sources):
     with sock:
         sock.settimeout(None)
-        if not websocket_upgrade(sock):
+        if not websocket_upgrade(sock, not args.no_deflate):
             print(f"[server] rejected invalid WebSocket upgrade from {address}", flush=True)
             return
+        if sock in COMPRESSORS:
+            print("[server] permessage-deflate on", flush=True)
         send_json(sock, {
             "cmd": "RoomInfo",
             "version": {"major": 0, "minor": 6, "build": 0},
@@ -265,6 +295,8 @@ def main():
                         help="LocationInfo answers to LocationScouts; PLAYER defaults to 1 (this "
                              "slot), any other player is another game; FLAGS (default 0) are "
                              "the item's classification bits (1 progression, 2 useful, 4 trap)")
+    parser.add_argument("--no-deflate", action="store_true",
+                        help="refuse permessage-deflate and send uncompressed messages")
     parser.add_argument("--tls", action="store_true", help="serve wss:// (requires --cert and --key)")
     parser.add_argument("--cert", metavar="FILE", help="PEM server certificate chain for --tls")
     parser.add_argument("--key", metavar="FILE", help="PEM private key for --tls")

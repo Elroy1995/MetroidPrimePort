@@ -291,6 +291,226 @@ bool HasToken(std::string value, const std::string& wanted) {
   return false;
 }
 
+// A DEFLATE decoder in the style of zlib's puff: canonical Huffman codes read
+// a bit at a time. Archipelago messages are at most a few MB, so speed is not
+// a concern, and the port's zlib (the game's 1.1.3) is not linked into the
+// WebSocket tests.
+struct BitReader {
+  const uint8_t* data = nullptr;
+  size_t size = 0;
+  size_t pos = 0;
+  uint32_t bitBuffer = 0;
+  int bitCount = 0;
+
+  // Up to 16 bits, least significant first.
+  bool Bits(int need, uint32_t& value) {
+    uint32_t buffer = bitBuffer;
+    while (bitCount < need) {
+      if (pos == size)
+        return false;
+      buffer |= static_cast<uint32_t>(data[pos++]) << bitCount;
+      bitCount += 8;
+    }
+    value = buffer & ((1u << need) - 1);
+    bitBuffer = buffer >> need;
+    bitCount -= need;
+    return true;
+  }
+  void AlignToByte() {
+    bitBuffer = 0;
+    bitCount = 0;
+  }
+};
+
+constexpr int kMaxCodeBits = 15;
+
+struct Huffman {
+  uint16_t count[kMaxCodeBits + 1];
+  uint16_t symbol[288];
+};
+
+// False for an over-subscribed code. Incomplete codes are allowed (a single
+// distance code is common); decoding an unused code then fails.
+bool BuildHuffman(Huffman& huffman, const uint8_t* lengths, int symbols) {
+  std::fill(std::begin(huffman.count), std::end(huffman.count), 0);
+  for (int i = 0; i < symbols; ++i)
+    ++huffman.count[lengths[i]];
+  if (huffman.count[0] == symbols)
+    return true;
+  int left = 1;
+  for (int length = 1; length <= kMaxCodeBits; ++length) {
+    left = (left << 1) - huffman.count[length];
+    if (left < 0)
+      return false;
+  }
+  uint16_t offsets[kMaxCodeBits + 1];
+  offsets[1] = 0;
+  for (int length = 1; length < kMaxCodeBits; ++length)
+    offsets[length + 1] = offsets[length] + huffman.count[length];
+  for (int i = 0; i < symbols; ++i) {
+    if (lengths[i] != 0)
+      huffman.symbol[offsets[lengths[i]]++] = static_cast<uint16_t>(i);
+  }
+  return true;
+}
+
+int DecodeSymbol(BitReader& in, const Huffman& huffman) {
+  int code = 0;
+  int first = 0;
+  int index = 0;
+  for (int length = 1; length <= kMaxCodeBits; ++length) {
+    uint32_t bit = 0;
+    if (!in.Bits(1, bit))
+      return -1;
+    code |= static_cast<int>(bit);
+    const int count = huffman.count[length];
+    if (code - count < first)
+      return huffman.symbol[index + (code - first)];
+    index += count;
+    first = (first + count) << 1;
+    code <<= 1;
+  }
+  return -1;
+}
+
+// Decodes one Huffman-coded block's data, appending to `out`, whose bytes
+// before `start` are the window that distances may reach back into.
+bool InflateCodes(BitReader& in, const Huffman& literals, const Huffman& distances, std::string& out,
+                  size_t start, size_t maxSize) {
+  static constexpr uint16_t kLengthBase[29] = {3,  4,  5,  6,  7,  8,  9,  10, 11,  13,  15,  17,  19,  23, 27,
+                                               31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
+  static constexpr uint8_t kLengthExtra[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
+                                               2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
+  static constexpr uint16_t kDistanceBase[30] = {1,    2,    3,    4,    5,    7,     9,     13,    17,  25,
+                                                 33,   49,   65,   97,   129,  193,   257,   385,   513, 769,
+                                                 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
+  static constexpr uint8_t kDistanceExtra[30] = {0, 0, 0, 0, 1, 1, 2, 2,  3,  3,  4,  4,  5,  5,  6,
+                                                 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
+  for (;;) {
+    int symbol = DecodeSymbol(in, literals);
+    if (symbol < 0)
+      return false;
+    if (symbol < 256) {
+      if (out.size() - start >= maxSize)
+        return false;
+      out.push_back(static_cast<char>(symbol));
+      continue;
+    }
+    if (symbol == 256)
+      return true;
+    symbol -= 257;
+    if (symbol >= 29)
+      return false;
+    uint32_t extra = 0;
+    if (!in.Bits(kLengthExtra[symbol], extra))
+      return false;
+    const size_t length = kLengthBase[symbol] + extra;
+    symbol = DecodeSymbol(in, distances);
+    if (symbol < 0 || symbol >= 30 || !in.Bits(kDistanceExtra[symbol], extra))
+      return false;
+    const size_t distance = kDistanceBase[symbol] + extra;
+    if (distance > out.size() || length > maxSize - (out.size() - start))
+      return false;
+    // The copy may overlap what it produces, so it goes byte by byte.
+    const size_t from = out.size() - distance;
+    for (size_t i = 0; i < length; ++i)
+      out.push_back(out[from + i]);
+  }
+}
+
+bool InflateStored(BitReader& in, std::string& out, size_t start, size_t maxSize) {
+  in.AlignToByte();
+  if (in.size - in.pos < 4)
+    return false;
+  const uint8_t* header = in.data + in.pos;
+  const uint32_t length = header[0] | (header[1] << 8);
+  const uint32_t inverse = header[2] | (header[3] << 8);
+  in.pos += 4;
+  if (length != (~inverse & 0xffff) || in.size - in.pos < length || length > maxSize - (out.size() - start))
+    return false;
+  out.append(reinterpret_cast<const char*>(in.data + in.pos), length);
+  in.pos += length;
+  return true;
+}
+
+bool InflateFixed(BitReader& in, std::string& out, size_t start, size_t maxSize) {
+  static Huffman literals;
+  static Huffman distances;
+  static std::once_flag once;
+  std::call_once(once, [] {
+    uint8_t lengths[288];
+    std::fill(lengths, lengths + 144, 8);
+    std::fill(lengths + 144, lengths + 256, 9);
+    std::fill(lengths + 256, lengths + 280, 7);
+    std::fill(lengths + 280, lengths + 288, 8);
+    BuildHuffman(literals, lengths, 288);
+    std::fill(lengths, lengths + 30, 5);
+    BuildHuffman(distances, lengths, 30);
+  });
+  return InflateCodes(in, literals, distances, out, start, maxSize);
+}
+
+bool InflateDynamic(BitReader& in, std::string& out, size_t start, size_t maxSize) {
+  static constexpr uint8_t kOrder[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+  uint32_t literalCount = 0, distanceCount = 0, codeCount = 0;
+  if (!in.Bits(5, literalCount) || !in.Bits(5, distanceCount) || !in.Bits(4, codeCount))
+    return false;
+  literalCount += 257;
+  distanceCount += 1;
+  codeCount += 4;
+  if (literalCount > 286 || distanceCount > 30)
+    return false;
+  uint8_t lengths[286 + 30] = {};
+  for (uint32_t i = 0; i < codeCount; ++i) {
+    uint32_t length = 0;
+    if (!in.Bits(3, length))
+      return false;
+    lengths[kOrder[i]] = static_cast<uint8_t>(length);
+  }
+  Huffman lengthCode;
+  if (!BuildHuffman(lengthCode, lengths, 19))
+    return false;
+  std::fill(std::begin(lengths), std::end(lengths), 0);
+  const uint32_t total = literalCount + distanceCount;
+  for (uint32_t index = 0; index < total;) {
+    const int symbol = DecodeSymbol(in, lengthCode);
+    if (symbol < 0)
+      return false;
+    if (symbol < 16) {
+      lengths[index++] = static_cast<uint8_t>(symbol);
+      continue;
+    }
+    uint8_t value = 0;
+    uint32_t repeat = 0;
+    if (symbol == 16) {
+      if (index == 0 || !in.Bits(2, repeat))
+        return false;
+      value = lengths[index - 1];
+      repeat += 3;
+    } else if (symbol == 17) {
+      if (!in.Bits(3, repeat))
+        return false;
+      repeat += 3;
+    } else {
+      if (!in.Bits(7, repeat))
+        return false;
+      repeat += 11;
+    }
+    if (repeat > total - index)
+      return false;
+    std::fill(lengths + index, lengths + index + repeat, value);
+    index += repeat;
+  }
+  if (lengths[256] == 0)
+    return false;
+  Huffman literals;
+  Huffman distances;
+  if (!BuildHuffman(literals, lengths, static_cast<int>(literalCount)) ||
+      !BuildHuffman(distances, lengths + literalCount, static_cast<int>(distanceCount)))
+    return false;
+  return InflateCodes(in, literals, distances, out, start, maxSize);
+}
+
 bool ValidUrlCharacter(const std::string& text, bool allowPathSpace) {
   for (unsigned char c : text) {
     if (c <= 0x20 || c == 0x7f || (!allowPathSpace && std::isspace(c)))
@@ -525,6 +745,103 @@ bool SendAllTls(SSL* ssl, int storedSocket, const std::string& data, int timeout
 #endif
 
 } // namespace
+
+bool Inflater::InflateMessage(const std::string& in, std::string& out, size_t maxSize) {
+  // RFC 7692 7.2.2: the sender strips the empty stored block that ends a sync
+  // flush, so it goes back on before decoding.
+  std::string input = in;
+  input.append("\x00\x00\xff\xff", 4);
+  std::string work = mKeepWindow ? std::move(mWindow) : std::string();
+  mWindow.clear();
+  const size_t start = work.size();
+  BitReader reader;
+  reader.data = reinterpret_cast<const uint8_t*>(input.data());
+  reader.size = input.size();
+  for (;;) {
+    uint32_t last = 0;
+    uint32_t type = 0;
+    if (!reader.Bits(1, last) || !reader.Bits(2, type))
+      return false;
+    bool ok = false;
+    if (type == 0)
+      ok = InflateStored(reader, work, start, maxSize);
+    else if (type == 1)
+      ok = InflateFixed(reader, work, start, maxSize);
+    else if (type == 2)
+      ok = InflateDynamic(reader, work, start, maxSize);
+    if (!ok)
+      return false;
+    // The appended empty stored block ends the message unless a final block
+    // came first.
+    if (last != 0 || reader.pos == reader.size)
+      break;
+  }
+  out.assign(work, start, std::string::npos);
+  if (mKeepWindow) {
+    constexpr size_t kWindowSize = 32768;
+    mWindow = work.size() > kWindowSize ? work.substr(work.size() - kWindowSize) : std::move(work);
+  }
+  return true;
+}
+
+void Inflater::SetKeepWindow(bool keep) {
+  mKeepWindow = keep;
+  if (!keep)
+    mWindow.clear();
+}
+
+void Inflater::Reset() {
+  mWindow.clear();
+  mKeepWindow = true;
+}
+
+bool ParseDeflateResponse(const std::string& header, bool& deflate, bool& noContextTakeover) {
+  deflate = false;
+  noContextTakeover = false;
+  std::string_view rest = header;
+  while (!rest.empty()) {
+    const size_t comma = rest.find(',');
+    const std::string_view extension = Trim(rest.substr(0, comma));
+    rest = comma == std::string_view::npos ? std::string_view() : rest.substr(comma + 1);
+    if (extension.empty())
+      continue;
+    // Only one extension was offered, so it may be accepted only once.
+    if (deflate)
+      return false;
+    std::string_view params = extension;
+    const size_t semicolon = params.find(';');
+    if (Lower(std::string(Trim(params.substr(0, semicolon)))) != "permessage-deflate")
+      return false;
+    deflate = true;
+    params = semicolon == std::string_view::npos ? std::string_view() : params.substr(semicolon + 1);
+    while (!params.empty()) {
+      const size_t next = params.find(';');
+      const std::string_view param = Trim(params.substr(0, next));
+      params = next == std::string_view::npos ? std::string_view() : params.substr(next + 1);
+      const size_t equals = param.find('=');
+      const std::string name = Lower(std::string(Trim(param.substr(0, equals))));
+      std::string_view value = equals == std::string_view::npos ? std::string_view() : Trim(param.substr(equals + 1));
+      if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+        value = value.substr(1, value.size() - 2);
+      if (name == "server_no_context_takeover" && equals == std::string_view::npos) {
+        noContextTakeover = true;
+      } else if (name == "client_no_context_takeover" && equals == std::string_view::npos) {
+        // Client messages go out uncompressed, so this changes nothing.
+      } else if (name == "server_max_window_bits" || name == "client_max_window_bits") {
+        // A smaller server window only shortens back-references; the client
+        // one again doesn't apply to uncompressed sends.
+        unsigned bits = 0;
+        const auto result = std::from_chars(value.data(), value.data() + value.size(), bits);
+        if (value.empty() || result.ec != std::errc() || result.ptr != value.data() + value.size() || bits < 8 ||
+            bits > 15)
+          return false;
+      } else {
+        return false;
+      }
+    }
+  }
+  return true;
+}
 
 bool TlsAvailable() {
 #ifdef MP_HAVE_OPENSSL
@@ -764,7 +1081,9 @@ size_t FrameDecoder::Feed(const char* data, size_t size, std::vector<Frame>& out
     const bool final = (first & 0x80) != 0;
     const uint8_t opcode = first & 0x0f;
     const bool masked = (second & 0x80) != 0;
-    if ((first & 0x70) != 0) {
+    // RSV1 marks a compressed message and belongs only on its first frame.
+    const bool compressed = (first & 0x40) != 0;
+    if ((first & 0x30) != 0 || (compressed && (!mDeflate || (opcode != 0x1 && opcode != 0x2)))) {
       mFailed = true;
       break;
     }
@@ -850,18 +1169,25 @@ size_t FrameDecoder::Feed(const char* data, size_t size, std::vector<Frame>& out
     if (opcode == 0) {
       mMessage.append(payload);
       if (final) {
-        out.push_back(Frame{mMessageOpcode, std::move(mMessage)});
+        const bool wasCompressed = mMessageCompressed;
+        const uint8_t messageOpcode = mMessageOpcode;
+        std::string message = std::move(mMessage);
         mMessage.clear();
         mMessageOpcode = 0;
+        mMessageCompressed = false;
         mInMessage = false;
+        if (!PushMessage(messageOpcode, std::move(message), wasCompressed, out))
+          break;
       }
       continue;
     }
     if (final) {
-      out.push_back(Frame{opcode, std::move(payload)});
+      if (!PushMessage(opcode, std::move(payload), compressed, out))
+        break;
     } else {
       mMessage = std::move(payload);
       mMessageOpcode = opcode;
+      mMessageCompressed = compressed;
       mInMessage = true;
     }
   }
@@ -870,12 +1196,34 @@ size_t FrameDecoder::Feed(const char* data, size_t size, std::vector<Frame>& out
   return out.size() - initialCount;
 }
 
+bool FrameDecoder::PushMessage(uint8_t opcode, std::string payload, bool compressed, std::vector<Frame>& out) {
+  if (compressed) {
+    std::string inflated;
+    if (!mInflater.InflateMessage(payload, inflated, kMaxMessageSize)) {
+      mFailed = true;
+      return false;
+    }
+    payload = std::move(inflated);
+  }
+  out.push_back(Frame{opcode, std::move(payload)});
+  return true;
+}
+
+void FrameDecoder::EnableDeflate(bool serverNoContextTakeover) {
+  mDeflate = true;
+  mInflater.Reset();
+  mInflater.SetKeepWindow(!serverNoContextTakeover);
+}
+
 void FrameDecoder::Reset() {
   mBuffer.clear();
   mMessage.clear();
   mMessageOpcode = 0;
+  mMessageCompressed = false;
   mInMessage = false;
   mFailed = false;
+  mDeflate = false;
+  mInflater.Reset();
 }
 
 Client::Client() = default;
@@ -1084,7 +1432,8 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
     hostHeader += ":" + std::to_string(port);
   const std::string request = "GET " + path + " HTTP/1.1\r\nHost: " + hostHeader +
                               "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " +
-                              clientKey + "\r\nSec-WebSocket-Version: 13\r\n\r\n";
+                              clientKey +
+                              "\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
   std::string ioError;
   const int remainingForSend = RemainingMs(deadline, infinite);
   if (remainingForSend < 0 || !SendBytes(request, remainingForSend, ioError))
@@ -1131,6 +1480,7 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
   std::string accept;
   std::string upgrade;
   std::string connection;
+  std::string extensions;
   size_t lineStart = firstLineEnd == std::string::npos ? responseHeaders.size() : firstLineEnd + 2;
   while (lineStart < responseHeaders.size()) {
     const size_t lineEnd = responseHeaders.find("\r\n", lineStart);
@@ -1149,6 +1499,8 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
       upgrade = value;
     } else if (name == "connection") {
       connection = value;
+    } else if (name == "sec-websocket-extensions") {
+      extensions += (extensions.empty() ? "" : ", ") + value;
     }
     lineStart = lineEnd == std::string::npos ? responseHeaders.size() : lineEnd + 2;
   }
@@ -1156,6 +1508,13 @@ bool Client::Connect(const std::string& host, uint16_t port, const std::string& 
     return fail("invalid Sec-WebSocket-Accept header");
   if (Lower(upgrade) != "websocket" || !HasToken(connection, "upgrade"))
     return fail("invalid WebSocket upgrade headers");
+  bool deflate = false;
+  bool noContextTakeover = false;
+  if (!ParseDeflateResponse(extensions, deflate, noContextTakeover))
+    return fail("unsupported WebSocket extension: " + extensions);
+  if (deflate)
+    mDecoder.EnableDeflate(noContextTakeover);
+  mCompressed = deflate;
   mError.clear();
   return true;
 }
@@ -1407,6 +1766,7 @@ void Client::DropConnection() {
 #endif
   mTlsFailed = false;
   mTlsReadWantsWrite = false;
+  mCompressed = false;
   if (mSocket >= 0) {
     CloseNative(NativeFromStored(mSocket));
     mSocket = -1;

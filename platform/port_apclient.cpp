@@ -647,6 +647,8 @@ void WorkerLoop(Runtime& runtime) {
       } else {
         transportReady = true;
         client.SetTimeoutMs(10000);
+        PortLog::Write("archipelago: WebSocket open (%s)\n",
+                       client.Compressed() ? "permessage-deflate" : "uncompressed");
         break;
       }
       if (runtime.stop.load(std::memory_order_acquire))

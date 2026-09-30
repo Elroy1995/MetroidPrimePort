@@ -11,9 +11,10 @@
 // Archipelago servers speak WebSocket, not raw TCP, so this is the transport
 // under the Archipelago client. It deliberately covers only what that protocol
 // needs: an HTTP upgrade handshake, masked client text frames, unmasked server
-// frames, ping/pong, and close. No extensions and no per-message compression
-// (servers still accept uncompressed connections, but it is deprecated on their
-// side).
+// frames, ping/pong, and close. The one extension is permessage-deflate
+// (RFC 7692), receive side only: Archipelago servers warn clients that don't
+// offer it, and their messages are the large ones. Client messages always go
+// out uncompressed, which the extension allows.
 //
 // wss:// uses OpenSSL when the build defines MP_HAVE_OPENSSL. The server
 // certificate is always verified against the host name; there is no way to
@@ -63,24 +64,58 @@ struct Frame {
 // Client frames must be masked; server frames must not be. Both directions are
 // handled so the codec can round-trip in tests.
 std::string EncodeFrame(uint8_t opcode, const std::string& payload, uint32_t maskSeed);
+
+// Raw DEFLATE (RFC 1951) decoder for permessage-deflate messages. Unless the
+// server agreed to server_no_context_takeover, it compresses each message
+// against the ones before it, so the last 32 KiB of output are kept.
+class Inflater {
+public:
+  // Inflates one message, whose trailing 00 00 ff ff the sender stripped.
+  // False for corrupt data or more than maxSize bytes of output; the window is
+  // then unusable, so the connection has to go.
+  bool InflateMessage(const std::string& in, std::string& out, size_t maxSize);
+  void SetKeepWindow(bool keep);
+  void Reset();
+
+private:
+  std::string mWindow;
+  bool mKeepWindow = true;
+};
+
 // Incremental decoder. Feed() consumes bytes and appends whole frames to `out`,
 // returning the number appended. Failed() latches a protocol error (bad length,
-// a fragmented control frame, a message over the size limit).
+// a fragmented control frame, a message over the size limit, bad compressed
+// data).
 class FrameDecoder {
 public:
   static const size_t kMaxMessageSize = 16u * 1024u * 1024u;
 
   size_t Feed(const char* data, size_t size, std::vector<Frame>& out);
   bool Failed() const { return mFailed; }
+  // Clears the stream state and turns permessage-deflate back off.
   void Reset();
+  // After permessage-deflate is negotiated: a data message whose first frame
+  // has RSV1 set arrives compressed and is inflated before it is handed out.
+  void EnableDeflate(bool serverNoContextTakeover);
 
 private:
+  bool PushMessage(uint8_t opcode, std::string payload, bool compressed, std::vector<Frame>& out);
+
   std::string mBuffer;
   std::string mMessage;
   uint8_t mMessageOpcode = 0;
   bool mInMessage = false;
+  bool mMessageCompressed = false;
+  bool mDeflate = false;
   bool mFailed = false;
+  Inflater mInflater;
 };
+
+// Reads a Sec-WebSocket-Extensions response to the client's permessage-deflate
+// offer. False if the server named anything the client didn't offer; otherwise
+// `deflate` says whether it accepted, and `noContextTakeover` whether it will
+// reset its window for every message.
+bool ParseDeflateResponse(const std::string& header, bool& deflate, bool& noContextTakeover);
 
 // Exposed because they are the fiddly parts; the tests pin them to published
 // vectors.
@@ -105,6 +140,8 @@ public:
   // Sends a close frame if open and releases the socket. Idempotent.
   void Close();
   bool IsOpen() const { return mSocket >= 0; }
+  // Whether the server accepted permessage-deflate on this connection.
+  bool Compressed() const { return mCompressed; }
 
   // Sends one text message. Blocking with the configured timeout.
   bool SendText(const std::string& message);
@@ -146,6 +183,7 @@ private:
   bool mTlsFailed = false;
   // The last SSL_read wanted the socket writable (renegotiation, key update).
   bool mTlsReadWantsWrite = false;
+  bool mCompressed = false;
   int mTimeoutMs = 10000;
   const std::atomic<bool>* mCancel = nullptr;
   std::string mError = "not connected";

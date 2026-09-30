@@ -119,10 +119,15 @@ Bomb (the first is Spring Ball). How many copies have arrived is kept in
   `ConnectionRefused`/`InvalidPacket`, answers pings, and reconnects with
   backoff. Only queues (items, checks, chat) cross between threads.
 
-Transport is a minimal RFC 6455 client (`platform/port_ws.h`): text frames, no
-extensions and no per-message compression (servers still accept uncompressed
-connections, but it is deprecated on their side). `ws://` needs nothing extra;
-`wss://` uses OpenSSL when the build finds it.
+Transport is a minimal RFC 6455 client (`platform/port_ws.h`) with
+permessage-deflate (RFC 7692) on the receive side: the handshake offers it, and
+compressed server messages go through a built-in inflater (`PortWs::Inflater`,
+32 KiB window kept between messages unless the server sends
+`server_no_context_takeover`). The client's own messages stay uncompressed,
+which the extension allows. Without the offer, MultiServer warns that the
+client "does not support compressed websocket connections". The log line
+`archipelago: WebSocket open (...)` shows what was negotiated. `ws://` needs
+nothing extra; `wss://` uses OpenSSL when the build finds it.
 
 ### TLS
 
@@ -372,12 +377,19 @@ include Aurora's UI layer, so an F1 screenshot will not show either.
   state file round trip.
 - `port_ws_tests` pins SHA-1 to the RFC 3174 vectors, base64, the RFC 6455
   `Sec-WebSocket-Accept` example, URL parsing, frame encoding/decoding,
-  fragmentation, control frames and the size limit. Its TLS test generates a CA
+  fragmentation, control frames and the size limit, plus deflate: fixed, stored
+  and dynamic blocks from Python zlib, context takeover, the inflated size
+  limit, corrupt input, RSV1 placement rules and the extension-response parser.
+  Its TLS test generates a CA
   and server certificate, runs `tools/ap_fake_server.py --tls`, completes a
   handshake and asserts four rejections: wrong CA, host-name mismatch, system
   trust store only, and a missing CA file.
 - With the game: `wss://127.0.0.1` with a `tls_ca` connected, sent its Connect
   and received items; a missing CA was refused and never fell back to plaintext.
+- Deflate against Python `websockets` 17.1 (what MultiServer uses): it
+  negotiated `server_max_window_bits=12` and 60 messages of up to ~2 MB each
+  arrived intact. The fake server compresses by default (`--no-deflate`
+  turns it off) and prints MultiServer's warning when a client doesn't offer it.
 - End to end against `tools/ap_fake_server.py`: the client performed the
   WebSocket handshake and sent a well-formed Connect; the server's items were
   granted to the player state (the HUD's missile readout went from 15 to the

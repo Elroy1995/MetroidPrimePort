@@ -84,6 +84,156 @@ std::string ServerFrame(uint8_t opcode, bool final, const std::string& payload) 
   return frame;
 }
 
+std::string FromHex(const char* hex) {
+  std::string bytes;
+  for (size_t i = 0; hex[i] != '\0' && hex[i + 1] != '\0'; i += 2)
+    bytes.push_back(static_cast<char>(std::stoi(std::string(hex + i, 2), nullptr, 16)));
+  return bytes;
+}
+
+// A server frame with RSV1 set on its first byte.
+std::string CompressedFrame(uint8_t opcode, bool final, const std::string& payload) {
+  std::string frame = ServerFrame(opcode, final, payload);
+  frame[0] = static_cast<char>(frame[0] | 0x40);
+  return frame;
+}
+
+// Vectors from Python's zlib.compressobj(wbits=-15) with Z_SYNC_FLUSH and the
+// 00 00 ff ff tail stripped, as a permessage-deflate server sends them.
+const char* kFixedHello = "ca48cdc9c957c840900000"; // "hello hello hello", fixed Huffman
+const char* kStored = "000700f8ff73746f7265642100";  // "stored!", level 0
+const char* kRoomInfo = "aa564ace4d51b2520acacfcff5cc4bcb57aa0500";
+const char* kRoomInfoAgain = "aac6100100"; // the same text, only a back-reference into the window
+const char* kDynamic =
+    "7cd6318e90501846d1bd505b7081f7805982859ab804a799c2298cddc4bdeb023cd45ff55f029c8fe5c7cfd7e565f9f6ebedfdf7e7"
+    "ef5fbf2c9f96f7e565fdf3f1ff210d9b865dc3a16168981a4e0d97869b07fa74de1e8f8fd7c7f3e3fd31402c1013c4061b1b6c7efe"
+    "6cb0b1c1c6061b1b6c6cb0b1c1c6061b1bec6cb0b3c1ee97800d7636d8d96067839d0d7636d8d9e06083830d0e3638fc256083830d"
+    "0e3638d8e06083830d061b0c36186c30d860f873c806830d061b0c36186c30d960b2c16483c906930da6ff096c30d960b2c16483930d"
+    "4e3638d9e06483930d4e3638fd636483930d4e36b8d8e062838b0d2e36b8d8e062838b0d2eeb800d2e36b8d9e066839b0d6e36b8d9"
+    "e066839b0d6e36b84da407231949ab95b49a49ab9db41a4aaba5b49a4aabadb41a4bab6b3c91d1351ed0f8a0c607363eb8f1018e0f"
+    "727ca0a3ed98f198f598f998fd980199059909990d991199159919991d992199259929992d993199359939993d994199459949994d"
+    "995199559959995d996199659969996d997199759979997d998199859989998d999199959999999d99a199a599a999ad99b199b599b"
+    "999bd99c199c599c999cd99d199d599d999dd99e199e599e999ed99f199f599f999fd99019a059a099a0d9a119a159a199a1d9a219"
+    "a259a29da3f8bfe05";
+
+std::string DynamicText() {
+  std::string text;
+  for (int i = 0; i < 200; ++i)
+    text += "{\"cmd\":\"PrintJSON\",\"n\":" + std::to_string(i) + "}";
+  return text;
+}
+
+void CheckDeflate() {
+  const size_t limit = PortWs::FrameDecoder::kMaxMessageSize;
+  {
+    PortWs::Inflater inflater;
+    std::string out;
+    Check(inflater.InflateMessage(FromHex(kFixedHello), out, limit) && out == "hello hello hello",
+          "inflate a fixed-Huffman message");
+    Check(inflater.InflateMessage(FromHex(kStored), out, limit) && out == "stored!", "inflate a stored block");
+    Check(inflater.InflateMessage(FromHex("00"), out, limit) && out.empty(), "inflate an empty message");
+  }
+  {
+    PortWs::Inflater inflater;
+    std::string out;
+    Check(inflater.InflateMessage(FromHex(kDynamic), out, limit) && out == DynamicText(),
+          "inflate a dynamic-Huffman message");
+    PortWs::Inflater small;
+    Check(!small.InflateMessage(FromHex(kDynamic), out, 100), "inflate refuses output past the size limit");
+  }
+  {
+    PortWs::Inflater inflater;
+    std::string first;
+    std::string second;
+    Check(inflater.InflateMessage(FromHex(kRoomInfo), first, limit) &&
+              inflater.InflateMessage(FromHex(kRoomInfoAgain), second, limit) && first == "{\"cmd\":\"RoomInfo\"}" &&
+              second == first,
+          "context takeover: the second message reaches into the first's window");
+    PortWs::Inflater noWindow;
+    noWindow.SetKeepWindow(false);
+    Check(noWindow.InflateMessage(FromHex(kRoomInfo), first, limit) &&
+              !noWindow.InflateMessage(FromHex(kRoomInfoAgain), second, limit),
+          "without the window a back-reference into the previous message fails");
+  }
+  {
+    PortWs::Inflater inflater;
+    std::string out;
+    Check(!inflater.InflateMessage(FromHex("ffffffff"), out, limit), "reserved block type fails");
+    std::string truncated = FromHex(kDynamic);
+    truncated.resize(40);
+    Check(!inflater.InflateMessage(truncated, out, limit), "truncated dynamic block fails");
+  }
+
+  PortWs::FrameDecoder plain;
+  std::vector<PortWs::Frame> frames;
+  const std::string hello = CompressedFrame(1, true, FromHex(kFixedHello));
+  plain.Feed(hello.data(), hello.size(), frames);
+  Check(plain.Failed() && frames.empty(), "RSV1 without negotiated deflate fails");
+
+  PortWs::FrameDecoder decoder;
+  decoder.EnableDeflate(false);
+  const std::string dynamic = FromHex(kDynamic);
+  std::string stream = hello;
+  stream += ServerFrame(1, true, "plain");
+  stream += CompressedFrame(1, false, dynamic.substr(0, 100));
+  stream += ServerFrame(9, true, "p");
+  stream += ServerFrame(0, false, dynamic.substr(100, 200));
+  stream += ServerFrame(0, true, dynamic.substr(300));
+  frames.clear();
+  for (size_t i = 0; i < stream.size(); i += 7)
+    decoder.Feed(stream.data() + i, std::min<size_t>(7, stream.size() - i), frames);
+  Check(!decoder.Failed() && frames.size() == 4 && frames[0].payload == "hello hello hello" &&
+            frames[1].payload == "plain" && frames[2].opcode == 9 && frames[3].opcode == 1 &&
+            frames[3].payload == DynamicText(),
+        "decoder inflates compressed messages, fragmented or not, beside uncompressed ones");
+
+  const std::string badFrames[] = {
+      ServerFrame(1, false, "a") + CompressedFrame(0, true, "b"), // RSV1 on a continuation
+      CompressedFrame(9, true, ""),                                // RSV1 on a control frame
+      std::string("\xa1\x00", 2),                                  // RSV2
+      CompressedFrame(1, true, "\xff\xff"),                        // not DEFLATE
+  };
+  for (const std::string& bad : badFrames) {
+    PortWs::FrameDecoder strict;
+    strict.EnableDeflate(false);
+    std::vector<PortWs::Frame> ignored;
+    strict.Feed(bad.data(), bad.size(), ignored);
+    Check(strict.Failed(), "misplaced RSV bits and bad compressed data fail the decoder");
+  }
+  decoder.Reset();
+  frames.clear();
+  decoder.Feed(hello.data(), hello.size(), frames);
+  Check(decoder.Failed(), "Reset turns deflate back off");
+
+  struct ExtensionCase {
+    const char* header;
+    bool accepted;
+    bool deflate;
+    bool noContextTakeover;
+  };
+  const ExtensionCase extensions[] = {
+      {"", true, false, false},
+      {"permessage-deflate", true, true, false},
+      {"PerMessage-Deflate ; server_no_context_takeover", true, true, true},
+      {"permessage-deflate; client_no_context_takeover; server_max_window_bits=12", true, true, false},
+      {"permessage-deflate; server_max_window_bits=\"15\"", true, true, false},
+      {"permessage-deflate; server_max_window_bits=7", false, true, false},
+      {"permessage-deflate; server_max_window_bits", false, true, false},
+      {"permessage-deflate; unknown_param", false, true, false},
+      {"permessage-deflate, permessage-deflate", false, true, false},
+      {"x-webkit-deflate-frame", false, false, false},
+  };
+  for (const ExtensionCase& test : extensions) {
+    bool deflate = false;
+    bool noContextTakeover = false;
+    const bool accepted = PortWs::ParseDeflateResponse(test.header, deflate, noContextTakeover);
+    Check(accepted == test.accepted, "ParseDeflateResponse acceptance table");
+    if (accepted)
+      Check(deflate == test.deflate && noContextTakeover == test.noContextTakeover,
+            "ParseDeflateResponse values");
+  }
+}
+
 void CheckRoundTrip(size_t size) {
   const std::string payload(size, 'x');
   const std::string encoded = PortWs::EncodeFrame(1, payload, 0x12345678);
@@ -419,6 +569,7 @@ void CheckTlsEndToEnd() {
   std::string roomInfo;
   std::string reply;
   if (connected) {
+    Check(client.Compressed(), "the fake server accepts permessage-deflate");
     Check(client.ReceiveText(roomInfo, 3000) && Contains(roomInfo, "\"RoomInfo\""),
           "RoomInfo arrives over TLS");
     Check(client.SendText(R"([{"cmd":"Connect","name":"Player1","password":"","game":"Metroid Prime",)"
@@ -708,6 +859,8 @@ int main() {
   std::vector<PortWs::Frame> oversizedFrames;
   oversizedDecoder.Feed(oversized.data(), oversized.size(), oversizedFrames);
   Check(oversizedDecoder.Failed(), "oversized message latches decoder failure");
+
+  CheckDeflate();
 
 #ifndef _WIN32
   {
