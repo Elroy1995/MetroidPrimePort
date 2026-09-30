@@ -138,8 +138,8 @@ void CheckDeflate() {
     std::string out;
     Check(inflater.InflateMessage(FromHex(kDynamic), out, limit) && out == DynamicText(),
           "inflate a dynamic-Huffman message");
-    PortWs::Inflater small;
-    Check(!small.InflateMessage(FromHex(kDynamic), out, 100), "inflate refuses output past the size limit");
+    PortWs::Inflater limited;
+    Check(!limited.InflateMessage(FromHex(kDynamic), out, 100), "inflate refuses output past the size limit");
   }
   {
     PortWs::Inflater inflater;

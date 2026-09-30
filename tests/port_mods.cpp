@@ -219,8 +219,8 @@ void TestAdd(const fs::path& dir) {
   std::ofstream(smallPath, std::ios::binary) << std::string(10, 'C');
   PortMods::LooseResource replace{kTXTR, 0x11, replacePath.string(), 40, "test"};
   PortMods::LooseResource added{kTXTR, 0x33, newPath.string(), 40, "test"};
-  PortMods::LooseResource small{0x434D444C, 0x44, smallPath.string(), 10, "test"};
-  const PortMods::VirtualFile file = PortMods::PatchPak(pak, table, pak.size(), {&replace}, {}, {&added, &small});
+  PortMods::LooseResource smallRes{0x434D444C, 0x44, smallPath.string(), 10, "test"};
+  const PortMods::VirtualFile file = PortMods::PatchPak(pak, table, pak.size(), {&replace}, {}, {&added, &smallRes});
 
   // Two entries (40 bytes) move the data down by 64.
   const uint64_t shift = 64;
