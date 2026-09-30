@@ -793,6 +793,12 @@ touched, so events, sounds and particles are unchanged; attachments on locators
 and swarms stay on the tick pose. A bone that turns more than 45° or moves more
 than 4 units in a tick snaps the whole pose.
 
+Smooth particles (`particle_interpolation`, F1 Performance, off by default,
+experimental) draws particle effects, projectile effects included, between
+their last two 60 Hz positions when the frame limiter is off, using the game's
+own sub-frame particle path. Beam trails (swooshes), electric effects and
+the flamethrower still step at 60 Hz.
+
 ## Ownership and threading rules
 
 - Use `rstl::auto_ptr<T[]>` / `single_ptr<T[]>` for host arrays and scalar owners

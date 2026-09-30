@@ -235,6 +235,16 @@ private:
   float x330_LFOR;
   float x334_LSLA;
   CColor x338_moduColor;
+#ifdef TARGET_PC
+  // Presentation smoothing (particle_interpolation): the tick generation of
+  // the last single-step update, and the global translation before this
+  // tick's first move.
+  uint xPortStepGeneration;
+  uint xPortGlobalGeneration;
+  CVector3f xPortPrevGlobalTranslation;
+  bool xPortPresenting;
+  bool PortBeginPresent(CVector3f& savedGlobal);
+#endif
 
   static double kTickTime;
   static ushort sSeed;

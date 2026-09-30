@@ -914,6 +914,8 @@ void CActor::PortBeginTickSnapshot() {
 
 uint CActor::PortTickGeneration() { return sPortTickGeneration; }
 
+bool CActor::PortRenderScopeActive() { return sPortRenderScopeActive; }
+
 void CActor::PortSnapshotRenderTransform() {
   xPortPrevTransform = x34_transform;
   xPortPrevGeneration = sPortTickGeneration;

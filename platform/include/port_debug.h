@@ -64,6 +64,10 @@ void SetActorInterpolation(bool enabled);
 // blend of their previous and current tick poses. Off by default.
 bool PoseInterpolation();
 void SetPoseInterpolation(bool enabled);
+// Particle smoothing (phase 4): with the frame limiter off, particle systems
+// draw between their previous and current tick frames. Off by default.
+bool ParticleInterpolation();
+void SetParticleInterpolation(bool enabled);
 // MP_TURBO[=<ticks>]: lockstep for tests. Every loop runs exactly <ticks> fixed
 // ticks (default 1, at most 16) and nothing waits for the wall clock, so a run
 // goes as fast as the machine can render it; more ticks per frame skip

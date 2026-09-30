@@ -1,8 +1,9 @@
 # Frame interpolation: scope
 
-Status: phase 1 (look input per frame) is done; phase 2 (actor transforms) and
-phase 3 (skinned poses) are done behind `actor_interpolation` and
-`pose_interpolation` (off by default); phases 4-5 are scope only.
+Status: phase 1 (look input per frame) is done; phase 2 (actor transforms),
+phase 3 (skinned poses) and phase 4 (`CElementGen` particles) are done behind
+`actor_interpolation`, `pose_interpolation` and `particle_interpolation` (off
+by default); swooshes, electric and beams, and phase 5 are scope only.
 
 Goal: smooth motion above 60 FPS while the game logic stays at its console rate
 (60 Hz fixed step). Rendered frames between two ticks draw the world at a blend
@@ -103,15 +104,30 @@ rebuilt poses blend, the rest are first frames and cuts; the arm cannon
 
 ### 3. Particles, projectiles, effects
 
-- `CElementGen` particles store only the current position. Needs a previous
-  position per particle (memory: `CParticle` grows by 12 bytes) or drawing with
-  `pos + vel * t * dt` (cheap, wrong for accelerated or orbiting particles but
-  hard to see at these rates).
-- Swooshes (`CParticleSwoosh`), electric (`CParticleElectric`), beams and
-  projectiles (`CEnergyProjectile`, `CWaveBuster`, `CPlasmaProjectile`) have
-  their own geometry; each is a separate small job.
-- Effects attached to actors (locators via `CActorModelParticles`) follow once
-  the owning transform is blended.
+`CElementGen` (done, `particle_interpolation`) reuses the retail sub-frame
+path: particles already keep `x10_prevPos`, and when a system's time doesn't
+land on a 1/60 frame the render paths draw `prevPos + (pos - prevPos) *
+x80_timeDeltaScale`. No new per-particle state.
+
+- `InternalUpdate` records the tick generation when a system stepped exactly
+  one whole frame in this tick (`xPortStepGeneration`); `SetGlobalTranslation`
+  keeps the previous tick's global translation (`xPortPrevGlobalTranslation`).
+- `CElementGen::Render` (`PortBeginPresent`) temporarily sets
+  `x80_timeDeltaScale` to the presentation factor and the global translation to
+  the blend, then restores both. `RenderLines` got the same blend (retail draws
+  lines at the current position only).
+- Skipped: systems that didn't step exactly once this tick (paused, several
+  frames or a fractional step: they draw as retail), a global translation jump
+  of more than 4 units, and draws inside an actor render scope (phase 2 already
+  shifts them; blending again would double the offset).
+
+Projectile effects move through `SetGlobalTranslation` each tick
+(`CProjectileWeapon::UpdateChildParticleSystems`), so their queued draws blend
+too. Limits: swooshes (`CParticleSwoosh`, beam trails), electric
+(`CParticleElectric`), `CPlasmaProjectile` beams and the flamethrower
+(`RenderParticlesFlameThrower`) still step at 60 Hz; new particles spawn at the
+current emitter position; a particle teleported by the effect script lerps
+across the jump for one tick.
 
 ### 4. First-person view and look input (done)
 
@@ -156,13 +172,14 @@ so they work unchanged.
    paths (section 1). Done, `actor_interpolation`, off by default.
 3. **Skinned poses** and the bone-tracking/IK users (section 2). Done by
    blending built poses, `pose_interpolation`, off by default.
-4. **Particles and projectiles.** About 1 week, per-type.
+4. **Particles and projectiles** (section 3). `CElementGen` done,
+   `particle_interpolation`, off by default; swooshes, electric and beams remain.
 5. **Sweep:** ASan tour (`MP_RANDO_SWEEP`) with interpolation forced on (a
    fake fractional `t` under `MP_TURBO`), captures at t = 0/0.5/1 compared
    against tick frames to find paths that were missed.
 
 Each phase is useful on its own and behind one setting (`frame_interpolation`,
-F1 Performance). Phase 1 is on by default; phases 2 and 3 are off by default
+F1 Performance). Phase 1 is on by default; phases 2 to 4 are off by default
 until they have been tried at high refresh. With the frame limiter on (the default 60 FPS
 cap) nothing changes, as today.
 

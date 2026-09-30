@@ -253,6 +253,8 @@ public:
   // frames drawn between ticks then blend the two.
   static void PortBeginTickSnapshot();
   static uint PortTickGeneration();
+  // True while a CPortActorRenderScope has shifted the view for an actor.
+  static bool PortRenderScopeActive();
   void PortSnapshotRenderTransform();
   // The camera-to-world view that draws this actor at its blended transform
   // instead of x34_transform. False when no blend applies (the view is left

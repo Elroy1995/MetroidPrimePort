@@ -33,6 +33,12 @@
 #include "dolphin/gx/GXGeometry.h"
 #include "dolphin/gx/GXTev.h"
 
+#ifdef TARGET_PC
+#include "MetroidPrime/CActor.hpp"
+#include "MetroidPrime/Cameras/CCameraManager.hpp"
+#include "port_debug.h"
+#endif
+
 #pragma inline_max_size(250)
 #pragma inline_max_total_size(20000) // for RenderParticles vector inlining
 
@@ -137,7 +143,14 @@ CElementGen::CElementGen(TToken< CGenDescription > gen, EModelOrientationType or
 , x32c_falloffType(kFT_Linear)
 , x330_LFOR(1.f)
 , x334_LSLA(45.f)
-, x338_moduColor(0xFFFFFFFF) {
+, x338_moduColor(0xFFFFFFFF)
+#ifdef TARGET_PC
+, xPortStepGeneration(0)
+, xPortGlobalGeneration(0)
+, xPortPrevGlobalTranslation(CVector3f::Zero())
+, xPortPresenting(false)
+#endif
+{
   CGlobalRandom gr(x27c_randState);
 
   if (CIntElement* seed = x28_loadedGenDesc->x10_SEED) {
@@ -346,6 +359,14 @@ void CElementGen::SetTranslation(const CVector3f& translation) {
 }
 
 void CElementGen::SetGlobalTranslation(const CVector3f& translation) {
+#ifdef TARGET_PC
+  // Keep where the system was before this tick's first move.
+  const uint gen = CActor::PortTickGeneration();
+  if (xPortGlobalGeneration != gen) {
+    xPortPrevGlobalTranslation = xPortGlobalGeneration == 0 ? translation : xe8_globalTranslation;
+    xPortGlobalGeneration = gen;
+  }
+#endif
   xe8_globalTranslation = translation;
   for (AUTO(it, x290_activePartChildren.begin()); it != x290_activePartChildren.end(); ++it) {
     (*it)->SetGlobalTranslation(translation);
@@ -491,6 +512,16 @@ bool CElementGen::InternalUpdate(double dt) {
     UpdateChildParticleSystems(dt1 - (double)frameUpdateCount * kTickTime);
     x80_timeDeltaScale = 1.0f - static_cast< float >((t - x78_curSeconds) / kTickTime);
   }
+
+#ifdef TARGET_PC
+  // Only a system that stepped exactly one frame this tick can be drawn
+  // between its last two frames; anything else keeps the retail draw.
+  if (frameUpdateCount == 1 && x80_timeDeltaScale == 1.0f) {
+    xPortStepGeneration = CActor::PortTickGeneration();
+  } else if (frameUpdateCount != 0 || x80_timeDeltaScale != 1.0f) {
+    xPortStepGeneration = 0;
+  }
+#endif
 
   BuildParticleSystemBounds();
 
@@ -963,6 +994,12 @@ void CElementGen::Render() {
 
   CParticleGlobals::SParticleSystem sys('PART', this);
 
+#ifdef TARGET_PC
+  CVector3f portSavedGlobal = xe8_globalTranslation;
+  const float portSavedScale = x80_timeDeltaScale;
+  xPortPresenting = PortBeginPresent(portSavedGlobal);
+#endif
+
   if (x30_particles.size() > 0) {
     if (x28_loadedGenDesc->x48_PMDL || x28_loadedGenDesc->x31_26_PMUS) {
       RenderModels();
@@ -974,8 +1011,46 @@ void CElementGen::Render() {
     }
   }
 
+#ifdef TARGET_PC
+  if (xPortPresenting) {
+    xe8_globalTranslation = portSavedGlobal;
+    x80_timeDeltaScale = portSavedScale;
+    xPortPresenting = false;
+  }
+#endif
+
   x2d0 = timer.GetElapsedTime();
 }
+
+#ifdef TARGET_PC
+// Draws the system between its last two tick states when uncapped. The
+// retail sub-frame path (x80_timeDeltaScale < 1) already draws particles
+// between their previous and current positions; this feeds it the
+// presentation factor, and blends the system's global translation. Systems
+// drawn inside a shifted actor draw follow the actor instead.
+bool CElementGen::PortBeginPresent(CVector3f& savedGlobal) {
+  savedGlobal = xe8_globalTranslation;
+  const float t = CCameraManager::GetPresentationInterpolation();
+  if (t < 0.f || t >= 1.f || !PortDebug::ParticleInterpolation() ||
+      CActor::PortRenderScopeActive())
+    return false;
+  const uint gen = CActor::PortTickGeneration();
+  bool presenting = false;
+  if (xPortGlobalGeneration == gen) {
+    const CVector3f delta = xe8_globalTranslation - xPortPrevGlobalTranslation;
+    // Same snap rule as actors: a jump of more than 4 units is a teleport.
+    if (delta.MagSquared() <= 16.f) {
+      xe8_globalTranslation = xPortPrevGlobalTranslation + delta * t;
+      presenting = true;
+    }
+  }
+  if (xPortStepGeneration == gen && x80_timeDeltaScale == 1.f) {
+    x80_timeDeltaScale = t;
+    presenting = true;
+  }
+  return presenting;
+}
+#endif
 
 void CElementGen::RenderBasicParticlesNoRotTS(const CTransform4f& xf) {
   for (int i = 0; i < x30_particles.size(); ++i) {
@@ -2185,6 +2260,11 @@ void CElementGen::RenderLines() {
     }
 
     CVector3f dVec = particle.x4_pos - particle.x10_prevPos;
+#ifdef TARGET_PC
+    CVector3f linePos = particle.x4_pos;
+    if (xPortPresenting)
+      linePos = dVec * x80_timeDeltaScale + particle.x10_prevPos;
+#endif
 
     if (x26d_24_FXLL) {
       float mag = dVec.Magnitude();
@@ -2193,8 +2273,13 @@ void CElementGen::RenderLines() {
       }
     }
 
+#ifdef TARGET_PC
+    CVector3f p1 = systemCameraMatrix * linePos;
+    CVector3f p2 = systemCameraMatrix * (linePos + (particle.x2c_lineLengthOrSize * dVec));
+#else
     CVector3f p1 = systemCameraMatrix * particle.x4_pos;
     CVector3f p2 = systemCameraMatrix * (particle.x4_pos + (particle.x2c_lineLengthOrSize * dVec));
+#endif
 
     if (widtConst) {
       uint color = particle.x34_color.GetColor_u32();

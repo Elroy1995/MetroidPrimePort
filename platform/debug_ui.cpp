@@ -176,6 +176,7 @@ float sStickAimVelY = 0.f;
 bool sFrameInterpolation = true;
 bool sActorInterpolation = false;
 bool sPoseInterpolation = false;
+bool sParticleInterpolation = false;
 // The last tick applied look input. A paused game or a cinematic skips the
 // player update, and would then drop what the frames between ticks showed.
 bool sAimAppliedLastTick = false;
@@ -440,6 +441,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sActorInterpolation = ParseBool(value);
   } else if (key == "pose_interpolation") {
     sPoseInterpolation = ParseBool(value);
+  } else if (key == "particle_interpolation") {
+    sParticleInterpolation = ParseBool(value);
   } else if (key == "ai_audio") {
     sAiAudioEnabled = ParseBool(value);
   } else if (key == "musyx_audio") {
@@ -534,6 +537,7 @@ void SaveSettings() {
   file << "frame_interpolation=" << (sFrameInterpolation ? 1 : 0) << '\n';
   file << "actor_interpolation=" << (sActorInterpolation ? 1 : 0) << '\n';
   file << "pose_interpolation=" << (sPoseInterpolation ? 1 : 0) << '\n';
+  file << "particle_interpolation=" << (sParticleInterpolation ? 1 : 0) << '\n';
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
@@ -1592,6 +1596,17 @@ void SetPoseInterpolation(bool enabled) {
   MarkDirty();
 }
 
+bool ParticleInterpolation() {
+  EnsureInitialized();
+  return sParticleInterpolation;
+}
+
+void SetParticleInterpolation(bool enabled) {
+  EnsureInitialized();
+  sParticleInterpolation = enabled;
+  MarkDirty();
+}
+
 void GetFrameMouseDelta(float& dx, float& dy) {
   dx = sMouseFrameX;
   dy = sMouseFrameY;
@@ -2151,6 +2166,14 @@ void DrawPerformanceTab() {
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip("With the FPS cap off, animated models (Samus, enemies, the arm cannon) are "
                       "posed between their last two 60 Hz poses.");
+  }
+  bool smoothParticles = sParticleInterpolation;
+  if (ImGui::Checkbox("Smooth particles (uncapped, experimental)", &smoothParticles)) {
+    PortDebug::SetParticleInterpolation(smoothParticles);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("With the FPS cap off, particle effects and projectile trails are drawn "
+                      "between their last two 60 Hz positions.");
   }
 
   ImGui::Separator();
