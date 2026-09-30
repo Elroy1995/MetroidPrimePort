@@ -1197,7 +1197,17 @@ void CCompoundTargetReticle::DrawOrbitZoneGroup(const CMatrix3f& rot,
       scale *= static_cast< float >(PortDebug::CrosshairSize()) / 100.f;
     }
 #endif
-    gpRender->SetModelMatrix(CTransform4f(rot, xf4_targetPos) * CTransform4f::Scale(scale));
+    CVector3f targetPos = xf4_targetPos;
+#ifdef TARGET_PC
+    // The idle crosshair sits on the tick's aim ray; keep it on the view's
+    // centre while per-frame look turns the view ahead of the tick.
+    CTransform4f look = CTransform4f::Identity();
+    if (mgr.GetCameraManager()->GetPresentedLookRotation(mgr, look)) {
+      const CVector3f eye = mgr.GetCameraManager()->GetCurrentCameraTransform(mgr).GetTranslation();
+      targetPos = eye + look.Rotate(targetPos - eye);
+    }
+#endif
+    gpRender->SetModelMatrix(CTransform4f(rot, targetPos) * CTransform4f::Scale(scale));
 
     model->Draw(CModelFlags::Additive(
                     tweak->x1c0_crosshairsColor.WithAlphaModulatedBy(x1e8_crosshairsScale))

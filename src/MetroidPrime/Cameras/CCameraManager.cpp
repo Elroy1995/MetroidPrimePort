@@ -3,6 +3,7 @@
 #include "port_debug.h"
 
 #include "Kyoto/Math/CQuaternion.hpp"
+#include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
 #include "MetroidPrime/CExplosion.hpp"
 #include "MetroidPrime/CFluidPlaneCPU.hpp"
@@ -500,12 +501,34 @@ CTransform4f CCameraManager::GetCurrentCameraTransform(const CStateManager& mgr)
       // an older angle would put the visible reticle behind the shot direction.
       // Translation can still be interpolated for smooth first-person movement.
       CTransform4f latest = sCurrentCameraTransform;
+      // Look input that arrived since the tick is shown now; the next tick
+      // applies the same delta before it fires, so the view shows the shot.
+      CTransform4f look = CTransform4f::Identity();
+      if (GetPresentedLookRotation(mgr, look)) {
+        latest = look * latest.GetRotation();
+      }
       latest.SetTranslation(presentation.GetTranslation());
       return latest;
     }
     return presentation;
   }
   return GetSimulationCameraTransform(mgr);
+}
+
+bool CCameraManager::GetPresentedLookRotation(const CStateManager& mgr,
+                                              CTransform4f& rotation) const {
+  float dyaw = 0.f;
+  float dpitch = 0.f;
+  if (sPresentationInterpolation < 0.f || sCameraSnapshotOwner != this ||
+      sCameraSnapshotId != GetCurrentCameraId() || !mgr.GetPlayer()->MouseLookIsFree(mgr) ||
+      !PortDebug::PresentedAimDelta(sPresentationInterpolation, dyaw, dpitch)) {
+    return false;
+  }
+  // Yaw turns about world up, pitch about the camera's right axis.
+  const CTransform4f camRot = sCurrentCameraTransform.GetRotation();
+  rotation = CTransform4f::RotateZ(CRelAngle::FromRadians(dyaw)) * camRot *
+             CTransform4f::RotateX(CRelAngle::FromRadians(dpitch)) * camRot.GetInverse();
+  return true;
 }
 
 CTransform4f CCameraManager::GetSimulationCameraTransform(const CStateManager& mgr) const {

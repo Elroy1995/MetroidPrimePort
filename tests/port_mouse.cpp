@@ -59,7 +59,19 @@ int main() {
   aim.Update(true, false, 0.f, 1.f, 0.f, 0.f,
              std::numeric_limits<float>::infinity(), sensitivity, false, false);
   Check(Near(before, aim.pitch));
+  // Preview reaches Update's angles without touching the state.
+  float previewYaw = 0.f;
+  float previewPitch = 0.f;
+  const float stateYaw = aim.yaw;
+  const float statePitch = aim.pitch;
+  Check(aim.Preview(900.f, -40.f, sensitivity, true, false, previewYaw, previewPitch));
+  Check(aim.yaw == stateYaw && aim.pitch == statePitch);
+  aim.Update(true, false, 0.f, 1.f, 0.f, 900.f, -40.f, sensitivity, true, false);
+  Check(aim.yaw == previewYaw && aim.pitch == previewPitch);
+  Check(aim.Preview(0.f, 1.e6f, sensitivity, false, false, previewYaw, previewPitch));
+  Check(Near(previewPitch, -PortMouse::kMaxPitch));
   aim.Reset();
+  Check(!aim.Preview(1.f, 1.f, sensitivity, false, false, previewYaw, previewPitch));
   Check(!aim.Update(true, false, 0.f, 0.f, 0.f, 1.f, 1.f, sensitivity, false, false));
 
   PortMouse::ButtonGate buttons;

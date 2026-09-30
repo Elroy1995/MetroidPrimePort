@@ -163,6 +163,20 @@ float sMousePendingX = 0.f;
 float sMousePendingY = 0.f;
 float sMouseFrameX = 0.f;
 float sMouseFrameY = 0.f;
+// Gyro travel since the last tick. Kept apart from the mouse's pending delta,
+// which is dropped whenever the mouse is not captured (twin stick, phones).
+float sGyroPendingX = 0.f;
+float sGyroPendingY = 0.f;
+// The twin stick's aim speed at the last tick, in pixels per second, so frames
+// between ticks can show the travel the next tick will add.
+float sStickAimVelX = 0.f;
+float sStickAimVelY = 0.f;
+// Frame interpolation (docs/FRAME_INTERPOLATION.md): uncapped frames show look
+// input before the tick that applies it.
+bool sFrameInterpolation = true;
+// The last tick applied look input. A paused game or a cinematic skips the
+// player update, and would then drop what the frames between ticks showed.
+bool sAimAppliedLastTick = false;
 bool sAiAudioEnabled = true;
 bool sMusyxAudioEnabled = true;
 bool sResetRequested = false;
@@ -418,6 +432,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "sim_adaptive") {
     sSimAdaptive = ParseBool(value);
+  } else if (key == "frame_interpolation") {
+    sFrameInterpolation = ParseBool(value);
   } else if (key == "ai_audio") {
     sAiAudioEnabled = ParseBool(value);
   } else if (key == "musyx_audio") {
@@ -509,6 +525,7 @@ void SaveSettings() {
   file << "frame_limit=" << (sFrameLimitEnabled ? 1 : 0) << '\n';
   file << "sim_rate=" << sSimRate << '\n';
   file << "sim_adaptive=" << (sSimAdaptive ? 1 : 0) << '\n';
+  file << "frame_interpolation=" << (sFrameInterpolation ? 1 : 0) << '\n';
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
@@ -1205,8 +1222,10 @@ void AddStickAim(float x, float y, float dt) {
     y = -y;
   }
   // x right / y up; the aim state expects SDL-style right/down positive.
-  sMouseFrameX += x * sStickAimRate * dt;
-  sMouseFrameY -= y * sStickAimRate * dt;
+  sStickAimVelX = x * sStickAimRate;
+  sStickAimVelY = -y * sStickAimRate;
+  sMouseFrameX += sStickAimVelX * dt;
+  sMouseFrameY += sStickAimVelY * dt;
 }
 
 int GyroMode() {
@@ -1354,8 +1373,13 @@ bool ReadGyroRates(float& pitch, float& yaw) {
 
 void PollGyro() {
   EnsureInitialized();
-  const float dt = TickPeriod();
-  if (sSpringFlickLatch > 0.f && std::isfinite(dt)) {
+  // Called once per presented frame, which is not once per tick when the
+  // frame limiter is off, so the rates integrate over the real frame time.
+  static uint64_t sLastNs = 0;
+  const uint64_t nowNs = SDL_GetTicksNS();
+  const float dt = sLastNs == 0 ? 0.f : std::min(float(double(nowNs - sLastNs) * 1e-9), 0.1f);
+  sLastNs = nowNs;
+  if (sSpringFlickLatch > 0.f) {
     sSpringFlickLatch -= dt;
   }
   // Gyro feeds the same aim state the mouse and twin stick use, so aiming only
@@ -1413,8 +1437,8 @@ void PollGyro() {
   }
   // x right / y up, the same shape AddStickAim takes; the aim state expects
   // right/down positive.
-  sMouseFrameX += yaw * sGyroRate * dt;
-  sMouseFrameY -= pitch * sGyroRate * dt;
+  sGyroPendingX += yaw * sGyroRate * dt;
+  sGyroPendingY -= pitch * sGyroRate * dt;
 }
 
 void ResetMouseAim() {
@@ -1422,6 +1446,7 @@ void ResetMouseAim() {
   sMouseGameplayActive = false;
   sMouseButtonGate.Reset();
   sMousePendingX = sMousePendingY = sMouseFrameX = sMouseFrameY = 0.f;
+  sGyroPendingX = sGyroPendingY = sStickAimVelX = sStickAimVelY = 0.f;
 }
 
 void SetMouseCaptured(bool captured) {
@@ -1469,6 +1494,7 @@ bool UpdateMouseAim(bool active, bool locked, float x, float y, float z) {
   const bool applied = sMouseAimState.Update(active, locked, x, y, z, sMouseFrameX, sMouseFrameY,
                                             MouseSensitivity(), MouseInvertX(), MouseInvertY());
   if (applied) sMouseFrameX = sMouseFrameY = 0.f;
+  sAimAppliedLastTick = applied;
   return applied;
 }
 void SynchronizeMouseAim(float x, float y, float z) { sMouseAimState.Synchronize(x, y, z); }
@@ -1494,10 +1520,46 @@ void AddMouseDelta(float dx, float dy) {
 }
 
 void BeginFrameMouse() {
-  sMouseFrameX = sMousePendingX;
-  sMouseFrameY = sMousePendingY;
-  sMousePendingX = 0.f;
-  sMousePendingY = 0.f;
+  sMouseFrameX = sMousePendingX + sGyroPendingX;
+  sMouseFrameY = sMousePendingY + sGyroPendingY;
+  sMousePendingX = sMousePendingY = 0.f;
+  sGyroPendingX = sGyroPendingY = 0.f;
+  // AddStickAim sets it again during this tick's input update.
+  sStickAimVelX = sStickAimVelY = 0.f;
+  sAimAppliedLastTick = false;
+}
+
+bool PresentedAimDelta(float fraction, float& dyaw, float& dpitch) {
+  dyaw = dpitch = 0.f;
+  if (!sFrameInterpolation || !sMouseGameplayActive || !sAimAppliedLastTick ||
+      !std::isfinite(fraction) || fraction < 0.f) {
+    return false;
+  }
+  // What the next tick will consume: the mouse and gyro travel so far, plus the
+  // stick's travel over the part of the tick already shown.
+  const float ahead = std::min(fraction, 1.f) * TickPeriod();
+  const float dx = sMousePendingX + sGyroPendingX + sStickAimVelX * ahead;
+  const float dy = sMousePendingY + sGyroPendingY + sStickAimVelY * ahead;
+  float yaw = 0.f;
+  float pitch = 0.f;
+  if (!sMouseAimState.Preview(dx, dy, MouseSensitivity(), MouseInvertX(), MouseInvertY(), yaw,
+                              pitch)) {
+    return false;
+  }
+  dyaw = static_cast<float>(std::remainder(double(yaw) - sMouseAimState.yaw, 2.0 * PortMouse::kPi));
+  dpitch = pitch - sMouseAimState.pitch;
+  return dyaw != 0.f || dpitch != 0.f;
+}
+
+bool FrameInterpolation() {
+  EnsureInitialized();
+  return sFrameInterpolation;
+}
+
+void SetFrameInterpolation(bool enabled) {
+  EnsureInitialized();
+  sFrameInterpolation = enabled;
+  MarkDirty();
 }
 
 void GetFrameMouseDelta(float& dx, float& dy) {
@@ -2035,6 +2097,15 @@ void DrawPerformanceTab() {
     ImGui::Text("Measured simulation: %.1f ticks/s (target %u)", sActualTps, sSimRate);
   }
   ImGui::Text("Frame time: %.2f ms", static_cast< double >(ImGui::GetIO().DeltaTime) * 1000.0);
+
+  bool interpolate = sFrameInterpolation;
+  if (ImGui::Checkbox("Per-frame look (uncapped)", &interpolate)) {
+    PortDebug::SetFrameInterpolation(interpolate);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("With the FPS cap off, mouse, gyro and twin-stick look turn the view "
+                      "on every frame instead of every 60 Hz tick. Aim and shots are unchanged.");
+  }
 
   ImGui::Separator();
   ImGui::TextUnformatted("Experimental: simulation rate");

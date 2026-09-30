@@ -764,8 +764,16 @@ interpolates. The held cannon/arm and muzzle effects render against the matching
 simulation camera, then restore the world view before world-space effects. This
 keeps the viewmodel stable instead of mixing an interpolated view with a cached
 60 Hz gun transform. Weapon animation and projectile simulation remain 60 Hz.
-`docs/FRAME_INTERPOLATION.md` scopes interpolating the rest (actors, poses,
-particles, per-frame look input).
+
+Per-frame look (`frame_interpolation`, F1 Performance "Per-frame look
+(uncapped)", on by default) turns the presented view every rendered frame by the
+look input the next tick will consume: pending mouse and gyro deltas, plus
+twin-stick velocity times the time since the tick. The tick still applies the
+whole amount, so aim and shots are unchanged; the free-aim crosshair is rotated
+with the view so it stays centred. It only applies with the frame limiter off,
+under free mouse look (mouse aim, gyro aim or twin stick). The game's own stick
+look is not previewed. `docs/FRAME_INTERPOLATION.md` scopes interpolating the
+rest (actors, poses, particles).
 
 ## Ownership and threading rules
 

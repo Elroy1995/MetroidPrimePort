@@ -64,17 +64,33 @@ struct AimState {
     }
     if (!initialized || locked) Synchronize(x, y, z);
     if (!initialized || locked) return false;
-    if (!std::isfinite(dx) || !std::isfinite(dy) ||
-        !std::isfinite(sensitivity) || sensitivity <= 0.f) return true;
-    // SDL motion is right/down positive; world +pitch looks upward.
-    const double nextYaw = yaw + double(dx) * sensitivity * (invertX ? 1.0 : -1.0);
-    const double nextPitch = pitch + double(dy) * sensitivity * (invertY ? 1.0 : -1.0);
-    yaw = static_cast<float>(std::remainder(nextYaw, 2.0 * kPi));
-    pitch = ClampPitch(nextPitch);
+    Apply(dx, dy, sensitivity, invertX, invertY, yaw, pitch);
+    return true;
+  }
+
+  // The angles Update would reach with (dx, dy), leaving the state alone.
+  // Frames drawn between ticks show look input the next tick will apply.
+  bool Preview(float dx, float dy, float sensitivity, bool invertX, bool invertY,
+               float& outYaw, float& outPitch) const {
+    outYaw = yaw;
+    outPitch = pitch;
+    if (!initialized) return false;
+    Apply(dx, dy, sensitivity, invertX, invertY, outYaw, outPitch);
     return true;
   }
 
 private:
+  static void Apply(float dx, float dy, float sensitivity, bool invertX, bool invertY,
+                    float& outYaw, float& outPitch) {
+    if (!std::isfinite(dx) || !std::isfinite(dy) ||
+        !std::isfinite(sensitivity) || sensitivity <= 0.f) return;
+    // SDL motion is right/down positive; world +pitch looks upward.
+    const double nextYaw = outYaw + double(dx) * sensitivity * (invertX ? 1.0 : -1.0);
+    const double nextPitch = outPitch + double(dy) * sensitivity * (invertY ? 1.0 : -1.0);
+    outYaw = static_cast<float>(std::remainder(nextYaw, 2.0 * kPi));
+    outPitch = ClampPitch(nextPitch);
+  }
+
   static float ClampPitch(double angle) {
     return static_cast<float>(angle < -kMaxPitch ? -kMaxPitch : angle > kMaxPitch ? kMaxPitch : angle);
   }

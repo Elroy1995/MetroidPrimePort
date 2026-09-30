@@ -52,6 +52,10 @@ float SimPeriod();
 // tick-for-tick. Experimental.
 bool SimAdaptive();
 void SetSimAdaptive(bool enabled);
+// Per-frame look (docs/FRAME_INTERPOLATION.md, phase 1): with the frame limiter
+// off, frames between ticks show the look input the next tick will apply.
+bool FrameInterpolation();
+void SetFrameInterpolation(bool enabled);
 // MP_TURBO[=<ticks>]: lockstep for tests. Every loop runs exactly <ticks> fixed
 // ticks (default 1, at most 16) and nothing waits for the wall clock, so a run
 // goes as fast as the machine can render it; more ticks per frame skip
@@ -276,6 +280,9 @@ void AddMouseDelta(float dx, float dy);
 // Called once per simulated frame to latch the deltas for that frame.
 void BeginFrameMouse();
 void GetFrameMouseDelta(float& dx, float& dy);
+// The yaw/pitch change (radians) the next tick's look input will apply, as seen
+// a fraction of a tick after the last one. False when there is none to show.
+bool PresentedAimDelta(float fraction, float& dyaw, float& dpitch);
 // Mouse-look camera angles (radians): world yaw and pitch. The game owns the
 // update and applies them to the first-person camera.
 float AimYaw();

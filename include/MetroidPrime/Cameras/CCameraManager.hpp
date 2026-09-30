@@ -73,6 +73,9 @@ public:
   CTransform4f GetSimulationCameraTransform(const CStateManager& mgr) const;
   CVector3f GetGlobalCameraTranslation(const CStateManager& mgr) const;
   static void SetPresentationInterpolation(float t);
+  // Port: the world-frame rotation per-frame look adds to the presented view
+  // (docs/FRAME_INTERPOLATION.md), for things drawn at a tick-time aim point.
+  bool GetPresentedLookRotation(const CStateManager& mgr, CTransform4f& rotation) const;
   bool IsInFPCamera() const;
   bool IsInterpolationCameraActive() const;
   bool ShouldBypassInterpolationCamera() const;

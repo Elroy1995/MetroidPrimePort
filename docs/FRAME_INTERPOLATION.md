@@ -1,6 +1,6 @@
 # Frame interpolation: scope
 
-Status: scope only, nothing here is implemented beyond "What exists".
+Status: phase 1 (look input per frame) is done; phases 2-5 are scope only.
 
 Goal: smooth motion above 60 FPS while the game logic stays at its console rate
 (60 Hz fixed step). Rendered frames between two ticks draw the world at a blend
@@ -24,12 +24,13 @@ rendered frame. The alternative, running the simulation itself faster (`sim_rate
   (only translation is blended), so the reticle never trails the shot
   direction. The arm cannon, arm and muzzle effects render against the matching
   simulation camera (`NATIVE_PORT.md`, "In uncapped presentation").
+- **Per-frame look (phase 1).** See section 4.
 - **Render-time animation.** `CGraphics::TickRenderTimings` advances draw-time
   timers (texture scroll, UV animation) by whole ticks, not by frames.
 
-So at 144 Hz today the camera glides but every actor, animated pose, particle
-and projectile still steps at 60 Hz: moving objects visibly judder against a
-smooth camera, and mouse look updates at 60 Hz.
+So at 144 Hz today the camera and free look glide, but every actor, animated
+pose, particle and projectile still steps at 60 Hz: moving objects visibly
+judder against a smooth camera.
 
 ## What is needed
 
@@ -84,18 +85,26 @@ the render transform or they will pull limbs back to the tick position.
 - Effects attached to actors (locators via `CActorModelParticles`) follow once
   the owning transform is blended.
 
-### 4. First-person view and look input
+### 4. First-person view and look input (done)
 
-- Apply mouse and gyro deltas to the view every rendered frame: accumulate
-  yaw/pitch in `PortDebug` between ticks and add the unconsumed part to the
-  presented camera orientation. The tick still consumes the whole delta, so the
-  shot direction is unchanged; the reticle and the render agree because both
-  use the presented orientation.
-- The arm cannon must use the same presented orientation, or it will swim
-  against the view. Today it renders against the simulation camera; that
-  becomes the presented camera plus the gun's own tick-rate animation.
-- Stick look stays per-tick (it is integrated with acceleration curves in the
-  game code); only its result is blended like any camera.
+- `PortDebug::PresentedAimDelta` previews the yaw/pitch the next tick will
+  apply (`MouseAimState::Preview`, same clamp and sensitivity) from the pending
+  mouse delta, the gyro accumulator (`PollGyro`, per frame with the real frame
+  dt) and the twin-stick velocity times `t * dt`.
+  `CCameraManager::GetPresentedLookRotation` turns that into a world rotation
+  about the camera (yaw about world Z, pitch about the camera's right axis) and
+  `GetCurrentCameraTransform` applies it to the presented view. The tick still
+  consumes the whole delta, so the shot direction is unchanged.
+- It is only active when the last tick applied free aim
+  (`sAimAppliedLastTick`), so menus, morph ball and cinematics are untouched.
+- The arm cannon stays on the simulation camera, so it is fixed on screen while
+  the world turns, like a view model. The free-aim crosshair
+  (`CCompoundTargetReticle::DrawOrbitZoneGroup`) is drawn at a world point, so
+  it is rotated by the same look rotation to stay centred.
+- The game's own stick look stays per-tick (it is integrated with acceleration
+  curves in the game code); only its result is blended like any camera.
+- Fixed on the way: gyro aim used to write into the per-tick mouse frame delta,
+  which `BeginFrameMouse` overwrote, so most gyro input was lost.
 
 ### 5. HUD and 2D
 
@@ -114,8 +123,7 @@ so they work unchanged.
 
 ## Phased plan
 
-1. **Look input per frame** (section 4). Smallest change with the largest felt
-   gain for mouse and gyro users; no per-actor state. About 1-2 days.
+1. **Look input per frame** (section 4). Done.
 2. **Actor transforms** in `CActor` plus the player, morph ball and door
    paths. Turns most of the judder smooth. About 3-5 days including the audit
    of `Render` overrides and teleport resets.
@@ -128,7 +136,8 @@ so they work unchanged.
    against tick frames to find paths that were missed.
 
 Each phase is useful on its own and behind one setting (`frame_interpolation`,
-off by default until phase 3). With the frame limiter on (the default 60 FPS
+F1 Performance). Phase 1 is on by default; later phases stay off by default
+until phase 3. With the frame limiter on (the default 60 FPS
 cap) nothing changes, as today.
 
 ## Why not `sim_rate`
