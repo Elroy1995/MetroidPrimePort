@@ -972,16 +972,21 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       int64_t item = 0;
       int64_t location = 0;
       int64_t player = 0;
+      int64_t flags = 0;
       bool ok = false;
       if (entry.IsObject()) {
         ok = IntegerMember(entry, "item", item) && IntegerMember(entry, "location", location) &&
              IntegerMember(entry, "player", player);
+        if (ok && !IntegerMember(entry, "flags", flags))
+          flags = 0;
       } else if (entry.IsArray() && entry.Size() == 4) {
         ok = Integer(&entry.AsArray()[0], item) && Integer(&entry.AsArray()[1], location) &&
              Integer(&entry.AsArray()[2], player);
+        if (ok && !Integer(&entry.AsArray()[3], flags))
+          flags = 0;
       }
       if (ok)
-        mScouts[location] = ScoutedItem{item, player};
+        mScouts[location] = ScoutedItem{item, player, flags};
     }
   } else if (command == "ReceivedItems") {
     int64_t index = 0;
@@ -1408,11 +1413,14 @@ bool Session::AnnouncedLocally(int64_t locationId, int64_t finder) const {
   return mOwnSlot != 0 && finder == mOwnSlot && mAnnounced.count(locationId) != 0;
 }
 
-bool Session::ScoutedAt(int64_t locationId, int64_t& item, bool& sameGame) const {
+bool Session::ScoutedAt(int64_t locationId, int64_t& item, bool& sameGame,
+                        int64_t* flags) const {
   const auto scout = mScouts.find(locationId);
   if (scout == mScouts.end())
     return false;
   item = scout->second.item;
+  if (flags != nullptr)
+    *flags = scout->second.flags;
   if (mOwnSlot != 0 && scout->second.player == mOwnSlot) {
     sameGame = true;
   } else {

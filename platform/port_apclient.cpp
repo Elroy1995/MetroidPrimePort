@@ -1555,14 +1555,16 @@ bool PickupModel(uint32_t world, uint32_t area, uint32_t entity, PortRandomizer:
       return false;
     int64_t item = 0;
     bool sameGame = false;
+    int64_t flags = 0;
     {
       Runtime& runtime = GetRuntime();
       std::lock_guard<std::mutex> lock(runtime.mutex);
       if (!runtime.enabled || runtime.session == nullptr ||
-          !runtime.session->ScoutedAt(location->id, item, sameGame))
+          !runtime.session->ScoutedAt(location->id, item, sameGame, &flags))
         return false;
     }
-    const int key = sameGame ? MetroidPrime::PickupModelKey(item) : MetroidPrime::kModelOtherGame;
+    const int key = sameGame ? MetroidPrime::PickupModelKey(item)
+                             : MetroidPrime::OtherGameModelKey(flags);
     return PortSkipCutscenes::PickupModel(key, out);
   } catch (...) {
     return false;

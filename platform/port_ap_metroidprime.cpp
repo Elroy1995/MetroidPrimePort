@@ -236,14 +236,17 @@ int AmmoCapacity(const std::map< int64_t, int64_t >& counts, bool missiles, bool
 }
 
 int PickupModelKey(int64_t itemId) {
-  // The AP world's own choices (RoomData.py get_config_item_model), where the
-  // disc has the model: randomprime's Shiny Missile, refills and Cog are
-  // custom assets, so those fall back to the nearest retail pickup or the
-  // other-game stand-in.
+  // The AP world's own choices (RoomData.py get_config_item_model). The
+  // pickup table maps keys without a retail model (Power Beam, the visors,
+  // Phazon Suit) to randomprime's custom assets; Shiny Missile and refills
+  // fall back to the nearest retail pickup.
   const int64_t local = itemId - kItemBase;
   if (local >= 0 && local <= kArtifactNewborn)
     return static_cast<int>(local);
   switch (local) {
+  case kSpringBall:
+    return kModelOtherProgression; // the Cog
+
   case kUnlimitedMissiles:
   case kMissileLauncher:
     return kMissileExpansion;
@@ -269,6 +272,15 @@ int PickupModelKey(int64_t itemId) {
   default:
     return kModelOtherGame;
   }
+}
+
+int OtherGameModelKey(int64_t flags) {
+  // Traps get an Ice Trap model in the AP world, a custom asset we don't have.
+  if ((flags & 1) != 0)
+    return kModelOtherProgression;
+  if ((flags & 2) != 0)
+    return kModelOtherUseful;
+  return kModelOtherGame;
 }
 
 bool IsAmmoItem(int64_t itemId, bool& missiles) {

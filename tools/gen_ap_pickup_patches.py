@@ -40,7 +40,7 @@ RELAY = 0x15
 
 # Model keys past the item types (0-40).
 MODEL_MAIN_POWER_BOMB = 41
-MODEL_OTHER = 42  # items for other games; see OTHER_MODEL
+MODEL_OTHER = 42  # items for other games; see CUSTOM_MODELS
 
 
 def read_skip_inc(path):
@@ -79,6 +79,17 @@ def parse_meta(path):
             removed += [int(x) for x in ids.replace(' ', '').split(',') if x]
         rooms.append((mrea, pickups, removed))
     return rooms
+
+
+def model_dependencies(path):
+    """Every disc resource a pickup model needs (PickupModel::dependencies),
+    past the custom 0xDEAF ids. A pickup can show a model from another world,
+    whose PAK isn't loaded; randomprime copies these into the room's PAK, the
+    port reads them from the disc instead."""
+    text = open(path).read()
+    body = text.split('pub fn dependencies', 1)[1].split('pub fn ', 1)[0]
+    ids = {int(i, 16) for i in re.findall(r'\(0x([0-9A-Fa-f]{8}), FourCC', body)}
+    return sorted(i for i in ids if i >> 16 != 0xDEAF)
 
 
 def room_ops(mrea, scly, pickups, removed):
@@ -127,10 +138,52 @@ def pickup_models(sclys):
     return out
 
 
-# Other games' items have no model of their own on the disc (randomprime's
-# Cog/Zoomer/Nothing are custom assets): they show as the 100-energy orb, which
-# no upgrade uses.
-OTHER_MODEL = (0xFFFFFFFF, 0x3F21A526, 0, 0)
+MODEL_OTHER_PROGRESSION = 43
+MODEL_OTHER_USEFUL = 44
+
+# Models the disc lacks, as the AP world picks them. The 0xDEAF ids are
+# randomprime's custom assets, which platform/port_custom_res.cpp builds from
+# its extra_assets and disc models (a randomprime disc's own copies win).
+CUSTOM_MODELS = {
+    0: (0x853A56F0, 0x7C04E388, 0, 0),    # Power Beam: the Super Missile
+    5: (0x61DAB956, 0x9F0C908A, 0, 0),    # Scan Visor: the retail visor
+    9: (0xDEAF000B, 0xDEAF000C, 0, 0),    # Thermal Visor
+    13: (0xDEAF000D, 0xDEAF000E, 0, 0),   # X-Ray Visor
+    17: (0xDEAF000F, 0xDEAF0010, 0, 0),   # Combat Visor
+    23: (0xDEAF0002, 0xDEAF0003, 0, 0),   # Phazon Suit
+    MODEL_OTHER: (0xDEAF0005, 0xDEAF0006, 0, 0),              # Nothing
+    MODEL_OTHER_PROGRESSION: (0xDEAF0009, 0xDEAF000A, 0, 0),  # Cog
+    MODEL_OTHER_USEFUL: (0xDEAF0007, 0xDEAF0008, 0, 0),       # Zoomer
+}
+
+
+def c_float(v):
+    s = '%.9g' % v
+    return s + ('f' if '.' in s or 'e' in s else '.0f')
+
+
+def pickup_geometry(path):
+    """CMDL -> (aabb[6], rotation[3], scale[3]) from pickup_meta.rs.in: the
+    model's bounds and the rotation and scale randomprime gives a pickup that
+    shows it (update_pickup recentres a replaced model on the retail one)."""
+    text = open(path).read()
+    aabbs = {}
+    table = text.split('const PICKUP_CMDL_AABBS', 1)[1].split('];', 1)[0]
+    for cmdl, words in re.findall(r'\(0x([0-9A-F]{8}), \[([^\]]*)\]\)', table):
+        aabbs[int(cmdl, 16)] = struct.unpack('>6f', struct.pack(
+            '>6I', *(int(w, 16) for w in words.split(','))))
+    placement = {}
+    raw = text.split('fn raw_pickup_data', 1)[1]
+    for name, body in re.findall(r'PickupModel::(\w+) => &\[([^\]]*)\]', raw):
+        data = bytes(int(b, 16) for b in body.replace('\n', '').split(',') if b.strip())
+        start = data.index(b'\0', 4) + 1
+        rot = struct.unpack_from('>3f', data, start + 12)
+        scale = struct.unpack_from('>3f', data, start + 24)
+        cmdl = struct.unpack_from('>I', data, start + 84)[0]
+        # pickup_data()'s overrides of the raw scale.
+        scale = {'Nothing': (1.0,) * 3, 'Cog': (0.7,) * 3}.get(name, scale)
+        placement.setdefault(cmdl, (rot, scale))
+    return {m: (aabbs[m],) + placement[m] for m in aabbs if m in placement}
 
 
 def main():
@@ -162,7 +215,12 @@ def main():
         table.append((mrea, ops))
     table.sort()
     models = pickup_models(sclys)
-    models[MODEL_OTHER] = OTHER_MODEL
+    models.update(CUSTOM_MODELS)
+    deps = model_dependencies(meta)
+    geometry = pickup_geometry(meta)
+    for key, (model, _, _, _) in models.items():
+        if model not in geometry:
+            print('warning: no bounds for model %08X (key %d)' % (model, key))
 
     blob = bytearray()
     with open(out, 'w') as f:
@@ -175,12 +233,24 @@ def main():
         f.write('};\n\nstatic const unsigned char kPickupOps[] = {\n')
         for i in range(0, len(blob), 24):
             f.write('    ' + ','.join('0x%02X' % b for b in blob[i:i + 24]) + ',\n')
-        f.write('};\n\n// Item type (0-40), 41 = main Power Bomb, 42 = another game\'s item.\n'
+        f.write('};\n\n// Item type (0-40), 41 = main Power Bomb, 42-44 = another game\'s\n'
+                '// filler, progression and useful items.\n'
                 'static const PickupModelEntry kPickupModels[] = {\n')
         for key in sorted(models):
             f.write('    {%d, 0x%08X, 0x%08X, %d, %d},\n' % ((key,) + models[key]))
+        f.write('};\n\n// What those models load, sorted; read from the disc when no loaded\n'
+                '// PAK has them.\nstatic const uint32_t kPickupDependencies[] = {\n')
+        for i in range(0, len(deps), 6):
+            f.write('    ' + ', '.join('0x%08X' % d for d in deps[i:i + 6]) + ',\n')
+        f.write('};\n\n// Pickup models\' bounds and the rotation (degrees) and scale a pickup\n'
+                '// showing them gets, sorted by model.\n'
+                'static const PickupGeometry kPickupGeometry[] = {\n')
+        for m in sorted(geometry):
+            f.write('    {0x%08X, {%s}, {%s}, {%s}},\n' % ((m,) + tuple(
+                ', '.join(c_float(v) for v in vals) for vals in geometry[m])))
         f.write('};\n')
-    print('%d rooms, %d bytes of ops, %d models' % (len(table), len(blob), len(models)))
+    print('%d rooms, %d bytes of ops, %d models, %d dependencies'
+          % (len(table), len(blob), len(models), len(deps)))
 
 
 if __name__ == '__main__':

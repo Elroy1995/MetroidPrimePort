@@ -40,12 +40,27 @@ With the built-in tables, the client does what the AP ISO patch would:
   item arrives through the multiworld like any other. Locations are scouted on
   connect, so the HUD says `Found <item> for <player>` (`Checked <location>` if
   the scout reply has not arrived yet).
-- A pickup shows the scouted item's retail pickup model (the AP world's
-  choices, e.g. a Super Missile for a Progressive Power Beam). Another game's
-  item shows as a large energy orb, since randomprime's Cog and Zoomer models
-  are not on the disc. Items without a pickup of their own (Power Beam, Scan
-  and Combat Visor, Power and Phazon Suit) keep the location's model, as does
-  every pickup in a room loaded before the scout reply, or while offline.
+- A pickup shows the scouted item's pickup model, as the AP world picks it
+  (e.g. a Super Missile for Power Beam or a Progressive Power Beam, the retail
+  visor for Scan Visor). Models the disc lacks are randomprime's custom assets,
+  built at load time by `platform/port_custom_res.cpp` from its MIT
+  `extra_assets` (embedded by `tools/gen_custom_pickup_assets.py`) and disc
+  models, under randomprime's ids (0xDEAF0000-0xDEAF0010; a randomprime-patched
+  disc's own copies win): Thermal, X-Ray and Combat Visor, Phazon Suit, and for
+  another game's item Cog (progression), Zoomer (useful) or Nothing (filler
+  and traps; the Ice Trap model isn't ported). Spring Ball shows as a Cog.
+  Shiny Missile is not ported (plain Missile Expansion). A pickup model and
+  what it loads (`kPickupDependencies`) may live in another world's PAK, so
+  `CResLoader` reads those from the disc's PAKs when no loaded PAK has them.
+  Power Suit keeps the
+  location's model, as does every pickup in a room loaded before the scout
+  reply, or while offline. A swapped model is placed as randomprime's
+  `update_pickup` does: it takes the new model's rotation and scale, and the
+  pickup moves so the new model's centre sits where the retail one's was
+  (bounds from `pickup_meta.rs.in`'s `PICKUP_CMDL_AABBS`); without that, the
+  Alcove's replacements sank into the Space Jump pedestal. The offline
+  randomizer's swapped models are placed the same way. randomprime's
+  `nothing_texture.txtr` claims 0 mips, which the texture loader now reads as 1.
 - randomprime's pickup room patches (`tools/gen_ap_pickup_patches.py`, from its
   `pickup_meta.rs.in`) remove the script objects tied to each pickup's retail
   item (its cutscene, and the artifact special functions), and move what the cutscene's end did onto a relay that
@@ -450,6 +465,7 @@ still works; anything marked as a gap still limits a session.
   reported once rather than dropped silently.
 - **Pickup models.** Swapped from the scouts at load time (see above). Checked
   with `ap_fake_server.py --scouts`: Ruined Shrine's Morph Ball shows and
-  collects as a Missile Expansion without the cutscene, the Alcove shows Varia,
-  and another game's item shows the energy orb. Scouts are not saved, so an
-  offline session shows retail models.
+  collects as a Missile Expansion without the cutscene, the Alcove's Phazon
+  Suit hovers over the pedestal and still collects, and another game's item shows Cog, Zoomer or Nothing by the scout's flags
+  (`--scouts LOC=ITEM@PLAYER:FLAGS`). Scouts are not saved, so an offline
+  session shows retail models.

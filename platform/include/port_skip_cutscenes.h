@@ -29,6 +29,21 @@ bool PatchArea(uint32_t mreaId, const uint8_t* scly, size_t size, std::vector< u
 // False for keys without one (Power Beam, visors...).
 bool PickupModel(int key, PortRandomizer::PickupModel& out);
 
+// Whether a pickup model needs this resource (texture, skin, animation...).
+// Such a resource may sit in another world's PAK, so CResLoader reads it from
+// the disc when no loaded PAK has it.
+bool IsPickupDependency(uint32_t id);
+
+// Where randomprime puts a pickup showing `model`: the model's bounds (min xyz,
+// max xyz) and the rotation (editor degrees) and scale such a pickup gets.
+// False for models it has no bounds for.
+struct PickupPlacement {
+  float bounds[6];
+  float rotation[3];
+  float scale[3];
+};
+bool PickupPlacementFor(uint32_t model, PickupPlacement& out);
+
 // Applies an op stream to a SCLY section (big-endian, as on the disc).
 // Returns the number of ops whose target was missing; `out` holds the result
 // either way. Exposed for tests.

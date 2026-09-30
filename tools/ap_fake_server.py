@@ -186,8 +186,8 @@ def handle_client(sock, address, args, item_ids, bounce_sources=()):
                 # name are left out, as if the server didn't know them.
                 if packet_command(packet) == "LocationScouts":
                     send_json(sock, {"cmd": "LocationInfo", "locations": [
-                        {"item": item, "location": location, "player": player, "flags": 0}
-                        for location, (item, player) in args.scouts.items()
+                        {"item": item, "location": location, "player": player, "flags": flags}
+                        for location, (item, player, flags) in args.scouts.items()
                         if location in packet.get("locations", [])
                     ]})
                     continue
@@ -241,10 +241,11 @@ def parse_scouts(text):
     try:
         for entry in filter(None, text.split(",")):
             location, target = entry.split("=")
+            target, _, flags = target.partition(":")
             item, _, player = target.partition("@")
-            scouts[int(location, 10)] = (int(item, 10), int(player or "1", 10))
+            scouts[int(location, 10)] = (int(item, 10), int(player or "1", 10), int(flags or "0", 10))
     except ValueError as error:
-        raise argparse.ArgumentTypeError("scouts must look like LOC=ITEM[@PLAYER],...") from error
+        raise argparse.ArgumentTypeError("scouts must look like LOC=ITEM[@PLAYER][:FLAGS],...") from error
     return scouts
 
 
@@ -260,9 +261,10 @@ def main():
                         metavar="ID[:ID...]", help="item IDs sent in ReceivedItems (default: 1234:5678)")
     parser.add_argument("--slot-data", type=json.loads, default={}, metavar="JSON",
                         help="slot_data object sent in Connected (default: {})")
-    parser.add_argument("--scouts", type=parse_scouts, default={}, metavar="LOC=ITEM[@PLAYER],...",
+    parser.add_argument("--scouts", type=parse_scouts, default={}, metavar="LOC=ITEM[@PLAYER][:FLAGS],...",
                         help="LocationInfo answers to LocationScouts; PLAYER defaults to 1 (this "
-                             "slot), any other player is another game")
+                             "slot), any other player is another game; FLAGS (default 0) are "
+                             "the item's classification bits (1 progression, 2 useful, 4 trap)")
     parser.add_argument("--tls", action="store_true", help="serve wss:// (requires --cert and --key)")
     parser.add_argument("--cert", metavar="FILE", help="PEM server certificate chain for --tls")
     parser.add_argument("--key", metavar="FILE", help="PEM private key for --tls")

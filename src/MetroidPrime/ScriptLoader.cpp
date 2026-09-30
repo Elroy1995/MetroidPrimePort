@@ -18,6 +18,7 @@
 #include "port_apclient.h"
 #include "port_log.h"
 #include "port_randomizer.h"
+#include "port_skip_cutscenes.h"
 
 #include <string>
 #include "MetroidPrime/Enemies/CAmbientAI.hpp"
@@ -175,6 +176,36 @@ static CTransform4f LoadEditorTransform(CInputStream& in) {
   CVector3f position(in);
   CVector3f orientation(in);
   return ConvertEditorEulerToTransform4f(orientation, position);
+}
+
+// randomprime's update_pickup placement for a pickup whose model was swapped:
+// the pickup takes the new model's rotation and scale, and moves so the new
+// model's centre sits where the retail one's did (models have their origin at
+// different heights; the Alcove's Space Jump Boots stand on a pedestal that
+// swallowed any replacement). The collision box moves back by the same amount.
+static void PlaceReplacedPickup(uint32_t retailModel, uint32_t newModel, CTransform4f& xf,
+                                CVector3f& scale, CVector3f& offset) {
+  PortSkipCutscenes::PickupPlacement retail, placed;
+  // A model without bounds gets the Energy Tank's, as in randomprime.
+  if (!PortSkipCutscenes::PickupPlacementFor(retailModel, retail) ||
+      (!PortSkipCutscenes::PickupPlacementFor(newModel, placed) &&
+       !PortSkipCutscenes::PickupPlacementFor(0x86908399, placed)))
+    return;
+  const float* rb = retail.bounds;
+  const float* nb = placed.bounds;
+  const CVector3f retailCentre = xf.Rotate(CVector3f((rb[0] + rb[3]) / 2.f * scale.GetX(),
+                                                     (rb[1] + rb[4]) / 2.f * scale.GetY(),
+                                                     (rb[2] + rb[5]) / 2.f * scale.GetZ()));
+  const CTransform4f placedXf = ConvertEditorEulerToTransform4f(
+      CVector3f(placed.rotation[0], placed.rotation[1], placed.rotation[2]), xf.GetTranslation());
+  const CVector3f placedCentre = placedXf.Rotate(
+      CVector3f((nb[0] + nb[3]) / 2.f * placed.scale[0], (nb[1] + nb[4]) / 2.f * placed.scale[1],
+                (nb[2] + nb[5]) / 2.f * placed.scale[2]));
+  const CVector3f delta = placedCentre - retailCentre;
+  xf = placedXf;
+  xf.SetTranslation(placedXf.GetTranslation() - delta);
+  offset = offset + delta;
+  scale = CVector3f(placed.scale[0], placed.scale[1], placed.scale[2]);
 }
 
 static CTransform4f LoadEditorTransformPivotOnly(CInputStream& in) {
@@ -937,6 +968,9 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
                        apModel.model, apModel.acs);
       }
     }
+    if (static_cast< uint32_t >(staticModel) != originalModel.model)
+      PlaceReplacedPickup(originalModel.model, static_cast< uint32_t >(staticModel),
+                          head.x0_actorHead.x10_transform, head.x40_scale, offset);
   }
 
   FourCC staticModelType = gpResourceFactory->GetResourceTypeById(staticModel);

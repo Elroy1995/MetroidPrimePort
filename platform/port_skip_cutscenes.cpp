@@ -24,6 +24,13 @@ struct PickupModelEntry {
   uint32_t model, acs, character, animation;
 };
 
+struct PickupGeometry {
+  uint32_t model;
+  float bounds[6];
+  float rotation[3];
+  float scale[3];
+};
+
 #include "port_ap_pickups_data.inc"
 
 const uint32_t kLandingSite = 0xB2701146;
@@ -109,6 +116,22 @@ bool PickupModel(int key, PortRandomizer::PickupModel& out) {
     }
   }
   return false;
+}
+
+bool IsPickupDependency(uint32_t id) {
+  return std::binary_search(std::begin(kPickupDependencies), std::end(kPickupDependencies), id);
+}
+
+bool PickupPlacementFor(uint32_t model, PickupPlacement& out) {
+  const PickupGeometry* it = std::lower_bound(
+      std::begin(kPickupGeometry), std::end(kPickupGeometry), model,
+      [](const PickupGeometry& entry, uint32_t id) { return entry.model < id; });
+  if (it == std::end(kPickupGeometry) || it->model != model)
+    return false;
+  std::copy(std::begin(it->bounds), std::end(it->bounds), out.bounds);
+  std::copy(std::begin(it->rotation), std::end(it->rotation), out.rotation);
+  std::copy(std::begin(it->scale), std::end(it->scale), out.scale);
+  return true;
 }
 
 } // namespace PortSkipCutscenes

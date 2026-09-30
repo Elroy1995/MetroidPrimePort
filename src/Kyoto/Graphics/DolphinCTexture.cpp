@@ -79,6 +79,12 @@ CTexture::CTexture(CInputStream& in, EAutoMipmap automip, EBlackKey blackKey)
   mWidth = in.ReadUint16();
   mHeight = in.ReadUint16();
   mNumMips = in.ReadLong();
+#ifdef TARGET_PC
+  // randomprime's nothing_texture.txtr says 0 mips over a full base level; with
+  // 0 no texel data was read and the GPU sampled uninitialised memory.
+  if (mNumMips < 1)
+    mNumMips = 1;
+#endif
   if (IsCITextureFormat(mTexelFormat)) {
     mGraphicsPalette = rs_new CGraphicsPalette(in);
     mCanLoadPalette = true;

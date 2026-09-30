@@ -4,7 +4,167 @@
 #include "Kyoto/Streams/CZipInputStream.hpp"
 #include "rstl/StringExtras.hpp"
 
+#ifdef TARGET_PC
+#include "Kyoto/CDvdRequest.hpp"
+#include "port_custom_res.h"
+#include "port_mods.h"
+#include "port_skip_cutscenes.h"
+
+#include <dolphin/dvd.h>
+
+#include <cstring>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+#endif
+
 static inline int align_size(const int size) { return (size + 31) & ~31; }
+
+#ifdef TARGET_PC
+namespace {
+// A custom resource is already in memory, so its "read" is done at once.
+class CPortReadyDvdRequest : public CDvdRequest {
+public:
+  void WaitUntilComplete() override {}
+  bool IsComplete() override { return true; }
+  void PostCancelRequest() override {}
+  int GetMediaType() const override { return 1; }
+};
+
+void PortCopyCustom(const PortCustomRes::Resource& custom, int offset, int length, void* dest) {
+  if (length <= 0)
+    return;
+  // Past the end reads as zeros, like the padding of a 32-byte aligned read.
+  const int size = static_cast< int >(custom.data.size());
+  const int start = offset < 0 || offset > size ? size : offset;
+  const int copied = length < size - start ? length : size - start;
+  memcpy(dest, custom.data.data() + start, copied);
+  memset(static_cast< char* >(dest) + copied, 0, length - copied);
+}
+
+// A resource's bytes as stored in a PAK, decompressed into `out`.
+bool PortInflate(const char* buf, int len, bool compressed, std::vector< uint8_t >& out) {
+  if (!compressed) {
+    out.assign(buf, buf + len);
+    return true;
+  }
+  if (len < 4)
+    return false;
+  // Compressed resources start with their inflated size.
+  const uchar* b = reinterpret_cast< const uchar* >(buf);
+  out.resize((uint(b[0]) << 24) | (uint(b[1]) << 16) | (uint(b[2]) << 8) | b[3]);
+  try {
+    CZipInputStream zip(rstl::auto_ptr< CInputStream >(
+        rs_new CMemoryInStream(buf + 4, len - 4, CMemoryInStream::kOS_NotOwned)));
+    zip.Get(out.data(), out.size());
+  } catch (...) {
+    return false; // truncated or corrupt stream
+  }
+  return true;
+}
+
+struct PortDiscResource {
+  s32 entry;
+  uint type, offset, size;
+  bool compressed;
+};
+
+// Where each resource sits in the disc's PAKs, loaded or not; built on first use.
+const std::map< uint, PortDiscResource >& PortDiscIndex() {
+  static std::map< uint, PortDiscResource > index;
+  static std::once_flag once;
+  std::call_once(once, [] {
+    for (const std::pair< int32_t, std::string >& pak : PortMods::DiscPaks()) {
+      DVDFileInfo file;
+      if (!DVDFastOpen(pak.first, &file))
+        continue;
+      const size_t length = file.length;
+      std::vector< uint8_t > header;
+      PortMods::PakTable table;
+      for (size_t want = 64 * 1024;;) {
+        want = want < length ? want : length;
+        header.resize(want);
+        if (DVDReadPrio(&file, header.data(), s32(want), 0, 2) != s32(want))
+          break;
+        size_t needed = 0;
+        if (PortMods::ParsePakTable(header.data(), header.size(), table, needed)) {
+          for (size_t i = 0; i < table.resources.size(); ++i) {
+            const PortMods::PakResource& res = table.resources[i];
+            if (res.offset <= length && res.size <= length - res.offset)
+              index.insert(std::make_pair(res.id, PortDiscResource{pak.first, res.type, res.offset,
+                                                                   res.size, res.compressed != 0}));
+          }
+          break;
+        }
+        if (needed == 0 || needed > length || want >= length)
+          break;
+        want = needed > want * 2 ? needed : want * 2;
+      }
+      DVDClose(&file);
+    }
+  });
+  return index;
+}
+
+// A resource read straight from its PAK on the disc, decompressed.
+bool PortReadDisc(uint id, std::vector< uint8_t >& out, uint* type = nullptr) {
+  const std::map< uint, PortDiscResource >& index = PortDiscIndex();
+  const std::map< uint, PortDiscResource >::const_iterator found = index.find(id);
+  if (found == index.end())
+    return false;
+  const PortDiscResource& res = found->second;
+  DVDFileInfo file;
+  if (!DVDFastOpen(res.entry, &file))
+    return false;
+  std::vector< char > raw(res.size);
+  const bool read = res.size == 0 ||
+                    DVDReadPrio(&file, raw.data(), s32(res.size), s32(res.offset), 2) == s32(res.size);
+  DVDClose(&file);
+  if (!read || !PortInflate(raw.data(), int(raw.size()), res.compressed, out))
+    return false;
+  if (type)
+    *type = res.type;
+  return true;
+}
+} // namespace
+
+const PortCustomRes::Resource* CResLoader::PortCustomResource(const CAssetId asset) {
+  const bool custom = PortCustomRes::IsCustomId(asset);
+  if ((!custom && !PortSkipCutscenes::IsPickupDependency(asset)) || PortPakResourceExists(asset))
+    return nullptr;
+  if (custom) {
+    // Sources come from a loaded PAK when one has them, else from the disc.
+    return PortCustomRes::Find(asset, [this](uint32_t id, std::vector< uint8_t >& out) {
+      if (!PortPakResourceExists(id))
+        return PortReadDisc(id, out);
+      const CPakFile::SResInfo* info = x50_cachedResInfo;
+      const bool compressed = info->IsCompressed();
+      char* buf = nullptr;
+      int len = 0;
+      LoadMemResourceSync(SObjectTag(info->GetType(), id), &buf, &len);
+      const bool ok = PortInflate(buf, len, compressed, out);
+      delete[] buf;
+      return ok;
+    });
+  }
+
+  // A pickup model's texture, skin or animation from another world's PAK
+  // (randomprime copies these into the room's PAK instead). Kept for the run;
+  // a later load of that PAK is found first.
+  static std::mutex sMutex;
+  static std::map< uint, std::unique_ptr< PortCustomRes::Resource > > sCopies;
+  std::lock_guard< std::mutex > lock(sMutex);
+  std::map< uint, std::unique_ptr< PortCustomRes::Resource > >::iterator found = sCopies.find(asset);
+  if (found != sCopies.end())
+    return found->second.get();
+  std::unique_ptr< PortCustomRes::Resource > copy(new PortCustomRes::Resource);
+  if (!PortReadDisc(asset, copy->data, &copy->type))
+    copy.reset();
+  return (sCopies[asset] = std::move(copy)).get();
+}
+#endif
 
 CResLoader::CResLoader()
 : x48_curPak(x18_pakLoadedList.end())
@@ -99,6 +259,14 @@ CPakFile* CResLoader::FindResource(const SObjectTag& tag) {
 }
 
 bool CResLoader::ResourceExists(CAssetId asset) {
+#ifdef TARGET_PC
+  if (PortPakResourceExists(asset))
+    return true;
+  return PortCustomRes::IsCustomId(asset) && PortCustomResource(asset) != nullptr;
+}
+
+bool CResLoader::PortPakResourceExists(CAssetId asset) {
+#endif
   if (x4c_cachedResId == asset) {
     return true;
   }
@@ -172,6 +340,12 @@ const SObjectTag* CResLoader::GetResourceIdByName(const char* name) const {
 }
 
 FourCC CResLoader::GetResourceTypeById(const CAssetId asset) const {
+#ifdef TARGET_PC
+  if (const PortCustomRes::Resource* custom =
+          const_cast< CResLoader& >(*this).PortCustomResource(asset)) {
+    return custom->type;
+  }
+#endif
   if (const_cast< CResLoader& >(*this).ResourceExists(asset)) {
     return x50_cachedResInfo->GetType();
   }
@@ -186,6 +360,12 @@ bool CResLoader::ResourceExists(const SObjectTag& tag) const {
 }
 
 uint CResLoader::ResourceSize(const SObjectTag& tag) const {
+#ifdef TARGET_PC
+  if (const PortCustomRes::Resource* custom =
+          const_cast< CResLoader& >(*this).PortCustomResource(tag.GetId())) {
+    return custom->data.size();
+  }
+#endif
   if (const_cast< CResLoader& >(*this).ResourceExists(tag.GetId())) {
     return x50_cachedResInfo->GetSize();
   }
@@ -194,6 +374,11 @@ uint CResLoader::ResourceSize(const SObjectTag& tag) const {
 }
 
 CResLoader::ECompressionType CResLoader::GetResourceCompression(const SObjectTag& tag) const {
+#ifdef TARGET_PC
+  if (const_cast< CResLoader& >(*this).PortCustomResource(tag.GetId()) != nullptr) {
+    return kCompressionType_Uncompressed;
+  }
+#endif
   if (const_cast< CResLoader& >(*this).ResourceExists(tag.GetId())) {
     return x50_cachedResInfo->IsCompressed() ? kCompressionType_Compressed
                                              : kCompressionType_Uncompressed;
@@ -203,6 +388,13 @@ CResLoader::ECompressionType CResLoader::GetResourceCompression(const SObjectTag
 }
 
 CDvdRequest* CResLoader::LoadResourceAsync(const SObjectTag& tag, char* extBuf) {
+#ifdef TARGET_PC
+  if (const PortCustomRes::Resource* custom = PortCustomResource(tag.GetId())) {
+    const int size = static_cast< int >(custom->data.size());
+    PortCopyCustom(*custom, 0, align_size(size), extBuf);
+    return rs_new CPortReadyDvdRequest();
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = x50_cachedResInfo;
   return curPak->DvdFile().AsyncSeekRead(extBuf, align_size(info->GetSize()), kSO_Begin, info->GetOffset());
@@ -210,11 +402,27 @@ CDvdRequest* CResLoader::LoadResourceAsync(const SObjectTag& tag, char* extBuf) 
 
 CDvdRequest* CResLoader::LoadResourcePartAsync(const SObjectTag& tag, const int offset,
                                                const int length, char* extBuf) {
+#ifdef TARGET_PC
+  if (const PortCustomRes::Resource* custom = PortCustomResource(tag.GetId())) {
+    PortCopyCustom(*custom, offset, length, extBuf);
+    return rs_new CPortReadyDvdRequest();
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = x50_cachedResInfo;
   return curPak->DvdFile().AsyncSeekRead(extBuf, length, kSO_Begin, info->GetOffset() + offset);
 }
 CInputStream* CResLoader::LoadNewResourceSync(const SObjectTag& tag, char* extBuf) {
+#ifdef TARGET_PC
+  if (const PortCustomRes::Resource* custom = PortCustomResource(tag.GetId())) {
+    const int size = static_cast< int >(custom->data.size());
+    void* dest = extBuf ? extBuf : rs_new char[align_size(size)];
+    PortCopyCustom(*custom, 0, align_size(size), dest);
+    return rs_new CMemoryInStream(dest, size,
+                                  extBuf == nullptr ? CMemoryInStream::kOS_Owned
+                                                    : CMemoryInStream::kOS_NotOwned);
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = x50_cachedResInfo;
   uint len = align_size(info->GetSize());
@@ -234,6 +442,11 @@ CInputStream* CResLoader::LoadNewResourceSync(const SObjectTag& tag, char* extBu
 }
 
 CInputStream* CResLoader::LoadResourceFromMemorySync(const SObjectTag& tag, const void* extBuf) {
+#ifdef TARGET_PC
+  if (const PortCustomRes::Resource* custom = PortCustomResource(tag.GetId())) {
+    return rs_new CMemoryInStream(extBuf, custom->data.size());
+  }
+#endif
   FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = x50_cachedResInfo;
   CInputStream* input = rs_new CMemoryInStream(extBuf, info->GetSize());
@@ -246,6 +459,16 @@ CInputStream* CResLoader::LoadResourceFromMemorySync(const SObjectTag& tag, cons
 }
 
 void CResLoader::LoadMemResourceSync(const SObjectTag& tag, char** bufOut, int* lenOut) {
+#ifdef TARGET_PC
+  if (const PortCustomRes::Resource* custom = PortCustomResource(tag.GetId())) {
+    const int size = static_cast< int >(custom->data.size());
+    char* buf = rs_new char[align_size(size)];
+    PortCopyCustom(*custom, 0, align_size(size), buf);
+    *bufOut = buf;
+    *lenOut = size;
+    return;
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = x50_cachedResInfo;
   uint len = align_size(info->GetSize());
@@ -257,6 +480,15 @@ void CResLoader::LoadMemResourceSync(const SObjectTag& tag, char** bufOut, int* 
 
 CInputStream* CResLoader::LoadNewResourcePartSync(const SObjectTag& tag, int offset, int length,
                                                   char* extBuf) {
+#ifdef TARGET_PC
+  if (const PortCustomRes::Resource* custom = PortCustomResource(tag.GetId())) {
+    void* dest = extBuf ? extBuf : rs_new char[length];
+    PortCopyCustom(*custom, offset, length, dest);
+    return rs_new CMemoryInStream(dest, length,
+                                  extBuf == nullptr ? CMemoryInStream::kOS_Owned
+                                                    : CMemoryInStream::kOS_NotOwned);
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = x50_cachedResInfo;
 

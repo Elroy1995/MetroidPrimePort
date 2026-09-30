@@ -939,8 +939,10 @@ int main() {
           "item and location names follow the receiving slot's game");
     int64_t scoutedItem = 0;
     bool sameGame = true;
-    Check(session.ScoutedAt(5031158, scoutedItem, sameGame) && scoutedItem == 10 && !sameGame,
-          "another game's item is scouted as such");
+    int64_t scoutedFlags = 0;
+    Check(session.ScoutedAt(5031158, scoutedItem, sameGame, &scoutedFlags) && scoutedItem == 10 &&
+              !sameGame && scoutedFlags == 1,
+          "another game's item is scouted as such, with its classification");
     Check(session.ScoutedAt(5031100, scoutedItem, sameGame) && scoutedItem == 5031024 &&
               sameGame && !session.ScoutedAt(5031101, scoutedItem, sameGame),
           "an own item is scouted as this game's; an unscouted location isn't");
@@ -950,8 +952,15 @@ int main() {
                 PickupModelKey(kItemBase + 44) == kModelMainPowerBomb &&
                 PickupModelKey(kItemBase + 54) == 6 && PickupModelKey(kItemBase + 57) == 10 &&
                 PickupModelKey(kItemBase + 99) == kModelOtherGame &&
-                PickupModelKey(10) == kModelOtherGame,
+                PickupModelKey(10) == kModelOtherGame &&
+                PickupModelKey(kItemBase + kSpringBall) == kModelOtherProgression &&
+                PickupModelKey(kItemBase + 49) == 11,
             "AP items map to the retail pickup that shows them");
+      Check(OtherGameModelKey(1) == kModelOtherProgression &&
+                OtherGameModelKey(3) == kModelOtherProgression &&
+                OtherGameModelKey(2) == kModelOtherUseful && OtherGameModelKey(0) == kModelOtherGame &&
+                OtherGameModelKey(4) == kModelOtherGame,
+            "other games' items look like Cog, Zoomer or Nothing by classification");
     }
     std::string notification;
     while (session.TakeNotification(notification)) {

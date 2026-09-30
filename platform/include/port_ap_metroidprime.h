@@ -80,10 +80,19 @@ bool IsAmmoItem(int64_t itemId, bool& missiles);
 
 // Pickup model keys past the item types (0-40), matching the table
 // tools/gen_ap_pickup_patches.py writes.
-enum : int { kModelMainPowerBomb = 41, kModelOtherGame = 42 };
+// Another game's items look like the AP world draws them: progression = Cog,
+// useful = Zoomer, anything else = Nothing (randomprime's custom models).
+enum : int {
+  kModelMainPowerBomb = 41,
+  kModelOtherGame = 42,
+  kModelOtherProgression = 43,
+  kModelOtherUseful = 44,
+};
 // The model key a pickup holding this item id (with the base) is drawn with.
 // kModelOtherGame for ids this world doesn't have.
 int PickupModelKey(int64_t itemId);
+// The model key for another game's item with these AP classification flags.
+int OtherGameModelKey(int64_t flags);
 
 } // namespace MetroidPrime
 } // namespace PortAp

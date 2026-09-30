@@ -10,6 +10,11 @@
 #include "rstl/string.hpp"
 
 class CDvdRequest;
+#ifdef TARGET_PC
+namespace PortCustomRes {
+struct Resource;
+}
+#endif
 
 class CResLoader {
 public:
@@ -51,6 +56,13 @@ public:
   CPakFile* GetPakFile(int idx) const;
 
 private:
+#ifdef TARGET_PC
+  // Port: randomprime's custom pickup assets (platform/port_custom_res.cpp),
+  // answered for their ids when no PAK has them.
+  bool PortPakResourceExists(CAssetId asset);
+  const PortCustomRes::Resource* PortCustomResource(CAssetId asset);
+#endif
+
   rstl::list< rstl::auto_ptr< CPakFile > > x0_aramList;
   rstl::list< rstl::auto_ptr< CPakFile > > x18_pakLoadedList;
   rstl::list< rstl::auto_ptr< CPakFile > > x30_pakLoadingList;

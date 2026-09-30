@@ -160,35 +160,6 @@ bool ReadPakHeader(const std::string& hostPath, int32_t entry, std::vector<uint8
   }
 }
 
-// Every .pak on the disc, as (entryNum, path).
-std::vector<std::pair<int32_t, std::string>> DiscPaks() {
-  std::vector<std::pair<int32_t, std::string>> paks;
-  std::vector<std::string> dirs{"/"};
-  while (!dirs.empty()) {
-    const std::string dirPath = dirs.back();
-    dirs.pop_back();
-    DVDDir dir;
-    if (!DVDOpenDir(dirPath.c_str(), &dir)) {
-      continue;
-    }
-    DVDDirEntry entry;
-    while (DVDReadDir(&dir, &entry)) {
-      if (entry.name == nullptr) {
-        continue;
-      }
-      const std::string path = dirPath + entry.name;
-      if (entry.isDir) {
-        dirs.push_back(path + "/");
-      } else if (EndsWith(Lower(path), ".pak")) {
-        paks.emplace_back(int32_t(entry.entryNum), path);
-      }
-    }
-    DVDCloseDir(&dir);
-  }
-  std::sort(paks.begin(), paks.end());
-  return paks;
-}
-
 std::string DiscPathFor(int32_t entry) {
   char path[512];
   if (!DVDConvertEntrynumToPath(entry, path, sizeof(path))) {
@@ -245,6 +216,35 @@ std::string Folder() {
 }
 
 const Status& CurrentStatus() { return sStatus; }
+
+// Every .pak on the disc, as (entryNum, path).
+std::vector<std::pair<int32_t, std::string>> DiscPaks() {
+  std::vector<std::pair<int32_t, std::string>> paks;
+  std::vector<std::string> dirs{"/"};
+  while (!dirs.empty()) {
+    const std::string dirPath = dirs.back();
+    dirs.pop_back();
+    DVDDir dir;
+    if (!DVDOpenDir(dirPath.c_str(), &dir)) {
+      continue;
+    }
+    DVDDirEntry entry;
+    while (DVDReadDir(&dir, &entry)) {
+      if (entry.name == nullptr) {
+        continue;
+      }
+      const std::string path = dirPath + entry.name;
+      if (entry.isDir) {
+        dirs.push_back(path + "/");
+      } else if (EndsWith(Lower(path), ".pak")) {
+        paks.emplace_back(int32_t(entry.entryNum), path);
+      }
+    }
+    DVDCloseDir(&dir);
+  }
+  std::sort(paks.begin(), paks.end());
+  return paks;
+}
 
 void Initialize() {
   sStatus = {};

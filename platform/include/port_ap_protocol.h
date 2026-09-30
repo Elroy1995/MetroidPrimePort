@@ -206,8 +206,10 @@ public:
   // The item at one of this slot's locations, from the LocationScouts reply,
   // and whether a slot playing this game receives it (this one or another
   // Metroid Prime slot), so the id is one of this game's. False before the
-  // reply, or for a location it did not cover.
-  bool ScoutedAt(int64_t locationId, int64_t& item, bool& sameGame) const;
+  // reply, or for a location it did not cover. flags, when given, gets the
+  // item's classification bits (1 progression, 2 useful, 4 trap).
+  bool ScoutedAt(int64_t locationId, int64_t& item, bool& sameGame,
+                 int64_t* flags = nullptr) const;
 
   // slot_data from Connected, for built-in tables; defaults before it arrives.
   const SlotData& GetSlotData() const { return mSlotData; }
@@ -309,6 +311,7 @@ private:
   struct ScoutedItem {
     int64_t item = 0;
     int64_t player = 0;
+    int64_t flags = 0;
   };
   std::map< int64_t, ScoutedItem > mScouts;
   // Locations whose text the HUD showed when they were collected, so the

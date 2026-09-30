@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace PortMods {
@@ -137,6 +138,8 @@ void Initialize();
 const Status& CurrentStatus();
 // The mods folder, created if missing. Empty if there is no pref folder.
 std::string Folder();
+// Every .pak on the disc (with mods applied), as (entry number, path).
+std::vector<std::pair<int32_t, std::string>> DiscPaks();
 
 // Folder names the settings disable, '/'-separated (no folder name has one).
 std::vector<std::string> SplitDisabled(const std::string& list);
