@@ -954,7 +954,9 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_diff = pbr_base * (1.0 - pbr_metal);
       let pbr_a2 = pow(pbr_rough, 4.0);
       let pbr_k = (pbr_rough + 1.0) * (pbr_rough + 1.0) / 8.0;
+      let pbr_refl = reflect(-pbr_v, pbr_n);
       var pbr_lo = vec3f(0.0);
+      var pbr_env = vec3f(0.0);
       for (var i = 0u; i < {4}u; i++) {{
           if ((ubuf.lightState0 & (1u << i)) == 0u) {{ continue; }}
           let light = ubuf.lights[i];
@@ -975,16 +977,22 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           // 1/pi and the specular lobe is scaled by pi to match.
           let rad = pow(max(light.color.rgb, vec3f(0.0)), vec3f(2.2)) * attn;
           pbr_lo += ((1.0 - f) * pbr_diff + spec * pbr_pi) * rad * nl;
+          // Stand-in environment: the surroundings as a soft hemisphere lit by this light,
+          // seen along the reflection vector.
+          let env_w = 0.5 + 0.5 * dot(pbr_refl, ldir);
+          pbr_env += rad * (env_w * env_w);
       }}
-      // Ambient: diffuse plus the split-sum environment BRDF (Karis' analytic fit) standing
-      // in for the missing reflection probe, both occluded.
+      // Ambient: diffuse plus the split-sum environment BRDF (Karis' analytic fit) applied
+      // to the ambient and the stand-in environment above, since there is no reflection
+      // probe; both occluded.
       let pbr_c0 = vec4f(-1.0, -0.0275, -0.572, 0.022);
       let pbr_c1 = vec4f(1.0, 0.0425, 1.04, -0.04);
       let pbr_r = pbr_rough * pbr_c0 + pbr_c1;
       let pbr_a004 = min(pbr_r.x * pbr_r.x, exp2(-9.28 * pbr_nv)) * pbr_r.x + pbr_r.y;
       let pbr_ab = vec2f(-1.04, 1.04) * pbr_a004 + pbr_r.zw;
       let pbr_amb = pow(max({6}, vec3f(0.0)), vec3f(2.2));
-      pbr_lo += pbr_amb * (pbr_diff + pbr_f0 * pbr_ab.x + pbr_ab.y) * pbr_ao;
+      let pbr_envspec = pbr_amb + pbr_env * 0.35;
+      pbr_lo += (pbr_amb * pbr_diff + pbr_envspec * (pbr_f0 * pbr_ab.x + pbr_ab.y)) * pbr_ao;
       prev = vec4f(pow(clamp(pbr_lo + pbr_emissive, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), prev.a);
     }})""",
                      sampled(0, ""), sampled(1, "vec4f(1.0, 0.6, 0.0, 1.0)"), sampled(3, "vec4f(0.0)"), normal,
