@@ -268,6 +268,11 @@ public:
 
 protected:
   void SetDrawEnabled(bool v) { xe7_29_drawEnabled = v; }
+#ifdef TARGET_PC
+  // Beams and flames span from the gun to their far end, so a rigid shift by
+  // the actor transform moves them wrongly; they smooth their own draw.
+  void PortSetOwnPresentation() { xPortOwnPresentation = true; }
+#endif
 
 private:
   CTransform4f x34_transform;
@@ -320,6 +325,7 @@ private:
 #ifdef TARGET_PC
   CTransform4f xPortPrevTransform;
   uint xPortPrevGeneration;
+  bool xPortOwnPresentation;
 #endif
 };
 

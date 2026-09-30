@@ -95,6 +95,7 @@ CActor::CActor(const TUniqueId uid, const bool active, const rstl::string& name,
 #ifdef TARGET_PC
 , xPortPrevTransform(xf)
 , xPortPrevGeneration(0)
+, xPortOwnPresentation(false)
 #endif
 {
   if (!x64_modelData.null()) {
@@ -924,7 +925,7 @@ void CActor::PortSnapshotRenderTransform() {
 bool CActor::PortPresentedView(const CTransform4f& view, CTransform4f& out) const {
   const float t = CCameraManager::GetPresentationInterpolation();
   if (t < 0.f || t >= 1.f || xPortPrevGeneration != sPortTickGeneration ||
-      !PortDebug::ActorInterpolation())
+      xPortOwnPresentation || !PortDebug::ActorInterpolation())
     return false;
   if (xPortPrevTransform == x34_transform)
     return false;

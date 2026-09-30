@@ -6,6 +6,10 @@
 #include "Kyoto/CRandom16.hpp"
 #include "rstl/single_ptr.hpp"
 
+#ifdef TARGET_PC
+#include "port_tick_pair.h"
+#endif
+
 class CParticleSwoosh;
 class CSwooshDescription;
 
@@ -82,6 +86,22 @@ private:
   bool x3d0_26_trackingTarget : 1;
   bool x3d0_27_collided : 1;
   bool x3d0_28_collidedWithWorld : 1;
+#ifdef TARGET_PC
+  // RenderSwooshes spins the swooshes and spawns sparks on every draw, which
+  // retail did once per 60 Hz frame; uncapped frames do it once per tick.
+  mutable uint xPortSwooshGeneration;
+  // Presentation smoothing (particle_interpolation): the spiral the last two
+  // ticks drew.
+  struct SPortSpiral {
+    SPortSpiral() : xf(CTransform4f::Identity()), offset(0.f) {}
+    CTransform4f xf;
+    CVector3f b;
+    CVector3f c;
+    CVector3f d;
+    float offset;
+  };
+  mutable PortTickPair< SPortSpiral > xPortSpiral;
+#endif
 };
 CHECK_SIZEOF(CWaveBuster, (VERSION >= VERSION_GM8P_00 && VERSION != VERSION_GM8E_02 ? 0x400
                            : VERSION >= VERSION_GM8P_00                             ? 0x3e8

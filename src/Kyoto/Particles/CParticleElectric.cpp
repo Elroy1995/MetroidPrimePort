@@ -18,6 +18,12 @@
 #include "math.h"
 #include "rstl/math.hpp"
 
+#ifdef TARGET_PC
+#include "MetroidPrime/CActor.hpp"
+#include "MetroidPrime/Cameras/CCameraManager.hpp"
+#include "port_debug.h"
+#endif
+
 ushort CParticleElectric::sSeed = 99;
 
 CParticleElectric::CParticleElectric(TToken< CElectricDescription > desc)
@@ -372,10 +378,28 @@ void CParticleElectric::RenderLines() {
   CGraphics::DisableAllLights();
   CGraphics::SetDepthWriteMode(true, kE_LEqual, false);
   CGraphics::SetBlendMode(kBM_Blend, kBF_SrcAlpha, kBF_One, kLO_Clear);
+#ifdef TARGET_PC
+  // Draw the lines at the transform between the last two ticks when
+  // uncapped (the fractal itself still changes once per tick).
+  CTransform4f lineXf = CTransform4f::Translate(xa4_globalTranslation) * xb0_globalOrientation *
+                        CTransform4f::Translate(x38_translation) * x44_orientation;
+  const float t = CCameraManager::GetPresentationInterpolation();
+  if (t >= 0.f && t < 1.f && PortDebug::ParticleInterpolation() &&
+      !CActor::PortRenderScopeActive() &&
+      xPortLineXf.Note(lineXf, CActor::PortTickGeneration()) && !(xPortLineXf.prev == lineXf)) {
+    CTransform4f blend = CTransform4f::Identity();
+    CTransform4f cur = CTransform4f::Identity();
+    if (CActor::PortBlendRigid(xPortLineXf.prev, lineXf, t, blend, cur))
+      lineXf = blend * cur.GetQuickInverse() * lineXf;
+  }
+  CGraphics::SetModelMatrix(lineXf * CTransform4f::Scale(xe0_globalScale) *
+                            CTransform4f::Scale(xec_localScale));
+#else
   CGraphics::SetModelMatrix(CTransform4f::Translate(xa4_globalTranslation) * xb0_globalOrientation *
                             CTransform4f::Translate(x38_translation) * x44_orientation *
                             CTransform4f::Scale(xe0_globalScale) *
                             CTransform4f::Scale(xec_localScale));
+#endif
   CGraphics::SetCullMode(kCM_None);
   SetupLineGXMaterial();
   for (AUTO(it, x3e8_electricManagers.begin()); it != x3e8_electricManagers.end(); ++it) {

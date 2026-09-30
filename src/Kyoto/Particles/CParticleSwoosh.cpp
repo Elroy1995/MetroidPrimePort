@@ -16,6 +16,12 @@
 #include "rstl/math.hpp"
 #include "rstl/reserved_vector.hpp"
 
+#ifdef TARGET_PC
+#include "MetroidPrime/CActor.hpp"
+#include "MetroidPrime/Cameras/CCameraManager.hpp"
+#include "port_debug.h"
+#endif
+
 uint CParticleSwoosh::mSwooshAliveCount = 0;
 static float kFrameTime = 1.f / 60.f;
 
@@ -315,6 +321,11 @@ bool CParticleSwoosh::IsSystemDeletable() const {
 }
 
 void CParticleSwoosh::Render() {
+#ifdef TARGET_PC
+  const CVector3f portGlobalTranslation = xa4_globalTranslation;
+  const CTransform4f portGlobalOrientation = xb0_globalOrientation;
+  const bool portPresenting = PortBeginPresent();
+#endif
   if (x1b4_LENG >= 2 && x1ac_particleCount > 1) {
     CStopwatch timer;
     CParticleGlobals::SetParticleLifetime(x1b4_LENG);
@@ -385,7 +396,111 @@ void CParticleSwoosh::Render() {
     x1c8_ = timer.GetElapsedTime();
     CGraphics::SetCullMode(kCM_Front);
   }
+#ifdef TARGET_PC
+  if (portPresenting) {
+    PortEndPresent();
+    xa4_globalTranslation = portGlobalTranslation;
+    xb0_globalOrientation = portGlobalOrientation;
+  }
+#endif
 }
+
+#ifdef TARGET_PC
+// Draws the swoosh between its last two tick states when uncapped. Segments
+// are matched by age (head - index), so an emitter's trail slides along
+// instead of growing a segment per tick; swooshes their owner writes directly
+// (grapple beam, Wave Beam) never step, where age and slot are the same.
+// Systems drawn inside a shifted actor draw follow the actor instead.
+bool CParticleSwoosh::PortBeginPresent() {
+  const float t = CCameraManager::GetPresentationInterpolation();
+  if (t < 0.f || t >= 1.f || !PortDebug::ParticleInterpolation() ||
+      CActor::PortRenderScopeActive())
+    return false;
+  const int count = x15c_swooshes.size();
+  if (count == 0 || x158_curParticle < 0 || x158_curParticle >= count)
+    return false;
+  const uint gen = CActor::PortTickGeneration();
+  if (xPortState.curGen != gen) {
+    SPortState now;
+    now.segs.resize(count);
+    for (int i = 0; i < count; ++i) {
+      const SSwooshData& swoosh = x15c_swooshes[i];
+      SPortSegment& seg = now.segs[i];
+      seg.pos = swoosh.mTranslation;
+      seg.useOffset = swoosh.mUseOffset;
+      seg.rot = swoosh.mInitialRot + swoosh.mRotm;
+      seg.active = swoosh.mActive;
+    }
+    now.head = x158_curParticle;
+    now.frame = x28_curFrame;
+    now.global = CTransform4f::Translate(xa4_globalTranslation) * xb0_globalOrientation;
+    xPortState.Note(now, gen);
+  }
+  if (!xPortState.Valid(gen))
+    return false;
+  const SPortState& prev = xPortState.prev;
+  const int frames = x28_curFrame - prev.frame;
+  if (prev.segs.size() != count || frames < 0 || frames > 2)
+    return false;
+  // Owner-written swooshes (no steps) move whole segments per tick, and the
+  // grapple beam extends fast; stepped trails use the actor snap rule.
+  const float maxJumpSq = frames == 0 ? 256.f : 16.f;
+  xPortSaved.resize(count);
+  for (int i = 0; i < count; ++i) {
+    SSwooshData& swoosh = x15c_swooshes[i];
+    SPortSegment& saved = xPortSaved[i];
+    saved.pos = swoosh.mTranslation;
+    saved.useOffset = swoosh.mUseOffset;
+    saved.rot = swoosh.mInitialRot;
+    saved.active = swoosh.mActive;
+    if (!swoosh.mActive)
+      continue;
+    int age = x158_curParticle - i;
+    if (age < 0)
+      age += count;
+    int from = prev.head - age;
+    if (from < 0)
+      from += count;
+    const SPortSegment& before = prev.segs[from];
+    if (!before.active)
+      continue;
+    const CVector3f delta =
+        (swoosh.mTranslation + swoosh.mUseOffset) - (before.pos + before.useOffset);
+    if (delta.MagSquared() > maxJumpSq)
+      continue;
+    swoosh.mTranslation = CVector3f::Lerp(before.pos, swoosh.mTranslation, t);
+    swoosh.mUseOffset = CVector3f::Lerp(before.useOffset, swoosh.mUseOffset, t);
+    // Spin (degrees) takes the short way round; a half-turn or more cuts.
+    float spin = swoosh.mInitialRot + swoosh.mRotm - before.rot;
+    spin -= 360.f * floorf(spin / 360.f + 0.5f);
+    if (fabsf(spin) <= 90.f)
+      swoosh.mInitialRot -= (1.f - t) * spin;
+  }
+  const CTransform4f global =
+      CTransform4f::Translate(xa4_globalTranslation) * xb0_globalOrientation;
+  CTransform4f blend = CTransform4f::Identity();
+  CTransform4f cur = CTransform4f::Identity();
+  if (!(prev.global == global) && CActor::PortBlendRigid(prev.global, global, t, blend, cur)) {
+    xa4_globalTranslation = blend.GetTranslation();
+    xb0_globalOrientation =
+        blend.GetRotation() * cur.GetRotation().GetQuickInverse() * xb0_globalOrientation;
+  }
+  return true;
+}
+
+void CParticleSwoosh::PortEndPresent() {
+  const int count = rstl::min_val< int >(x15c_swooshes.size(), xPortSaved.size());
+  for (int i = 0; i < count; ++i) {
+    SSwooshData& swoosh = x15c_swooshes[i];
+    const SPortSegment& saved = xPortSaved[i];
+    if (!saved.active)
+      continue;
+    swoosh.mTranslation = saved.pos;
+    swoosh.mUseOffset = saved.useOffset;
+    swoosh.mInitialRot = saved.rot;
+  }
+}
+#endif
 
 static inline float fast_sine(float x) {
   float c1 = 0.99980587f;

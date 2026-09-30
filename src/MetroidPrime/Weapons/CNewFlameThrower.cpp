@@ -68,7 +68,12 @@ CNewFlameThrower::CNewFlameThrower(const TToken< CWeaponDescription >& desc,
 , x37c_28_activeLighting(false)
 , x380_flameContactPoints(3, rstl::vector< SSortedListEntry >())
 , x3b4_numSmokeParticlesSpawned(0)
-, x3b8_lightIds() {}
+, x3b8_lightIds() {
+#ifdef TARGET_PC
+  // The flame particles and swooshes blend themselves; a rigid actor shift would move them twice.
+  PortSetOwnPresentation();
+#endif
+}
 
 rstl::optional_object< CAABox > CNewFlameThrower::GetTouchBounds() const {
   return rstl::optional_object_null();

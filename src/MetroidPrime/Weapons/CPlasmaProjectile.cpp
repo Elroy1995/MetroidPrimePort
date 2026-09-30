@@ -18,6 +18,10 @@
 
 #include <Kyoto/Particles/CElementGen.hpp>
 
+#ifdef TARGET_PC
+#include "port_debug.h"
+#endif
+
 const int CPlasmaProjectile::kMaxPlasmaLights = 3;
 const float CPlasmaProjectile::kInvMaxPlasmaLights = 1.f / CCast::ToReal32(kMaxPlasmaLights - 1);
 
@@ -75,7 +79,11 @@ CPlasmaProjectile::CPlasmaProjectile(const TToken< CWeaponDescription >& wDesc,
 , x548_26_firing(false)
 , x548_27_texturesLoaded(false)
 , x548_28_drawOwnerFirst(growingBeam)
-, x548_29_activePlayerPhazon(false) {
+, x548_29_activePlayerPhazon(false)
+#ifdef TARGET_PC
+, xPortDrawLength(-1.f)
+#endif
+{
   x4e8_texture.Lock();
   x4f4_glowTexture.Lock();
   x518_contactGen->SetGlobalScale(
@@ -253,6 +261,37 @@ void CPlasmaProjectile::Render(const CStateManager& mgr) const {
     return;
   }
   CTransform4f xf = GetBeamTransform();
+  float beamWidth = x4b8_beamWidth;
+  float beamAngle = x4c8_beamAngle;
+#ifdef TARGET_PC
+  // Draw the beam between the last two ticks when uncapped.
+  const float t = CCameraManager::GetPresentationInterpolation();
+  if (t >= 0.f && t < 1.f && PortDebug::ParticleInterpolation()) {
+    SPortBeam now;
+    now.xf = xf;
+    now.length = GetCurrentLength();
+    now.width = beamWidth;
+    now.angle = beamAngle;
+    if (xPortBeam.Note(now, CActor::PortTickGeneration())) {
+      const SPortBeam& prev = xPortBeam.prev;
+      CTransform4f blend = CTransform4f::Identity();
+      CTransform4f cur = CTransform4f::Identity();
+      if (CActor::PortBlendRigid(prev.xf, xf, t, blend, cur)) {
+        xf = blend * cur.GetQuickInverse() * xf;
+        xPortDrawLength = prev.length + (now.length - prev.length) * t;
+        beamWidth = prev.width + (beamWidth - prev.width) * t;
+        // The spin wraps to 0 past 360 degrees; blend the short way.
+        float turn = beamAngle - prev.angle;
+        if (turn < -180.f) {
+          turn += 360.f;
+        } else if (turn > 180.f) {
+          turn -= 360.f;
+        }
+        beamAngle = prev.angle + turn * t;
+      }
+    }
+  }
+#endif
   int flags = 0;
   if (mgr.GetPlayerState()->GetActiveVisor(mgr) == CPlayerState::kPV_XRay) {
     flags = 0x10;
@@ -265,13 +304,16 @@ void CPlasmaProjectile::Render(const CStateManager& mgr) const {
     RenderMotionBlur();
   }
   gpRender->SetModelMatrix(xf);
-  RenderBeam(3, 0.25f * x4b8_beamWidth, CColor(1.f, 1.f, 1.f, 0.3f), flags | 4);
-  gpRender->SetModelMatrix(xf * CTransform4f::RotateY(CRelAngle::FromDegrees(x4c8_beamAngle)));
-  RenderBeam(4, 0.5f * x4b8_beamWidth, x490_innerColor, flags | 1);
-  gpRender->SetModelMatrix(xf * CTransform4f::RotateY(CRelAngle::FromDegrees(-x4c8_beamAngle)));
-  RenderBeam(8, x4b8_beamWidth, x494_outerColor, flags | 3);
+  RenderBeam(3, 0.25f * beamWidth, CColor(1.f, 1.f, 1.f, 0.3f), flags | 4);
+  gpRender->SetModelMatrix(xf * CTransform4f::RotateY(CRelAngle::FromDegrees(beamAngle)));
+  RenderBeam(4, 0.5f * beamWidth, x490_innerColor, flags | 1);
+  gpRender->SetModelMatrix(xf * CTransform4f::RotateY(CRelAngle::FromDegrees(-beamAngle)));
+  RenderBeam(8, beamWidth, x494_outerColor, flags | 3);
   gpRender->SetModelMatrix(xf);
-  RenderBeam(6, 1.25f * x4b8_beamWidth, x494_outerColor, flags | 0xd);
+  RenderBeam(6, 1.25f * beamWidth, x494_outerColor, flags | 0xd);
+#ifdef TARGET_PC
+  xPortDrawLength = -1.f;
+#endif
 }
 
 void CPlasmaProjectile::Fire(const CTransform4f& xf, CStateManager& mgr, const bool b) {
@@ -331,8 +373,13 @@ void CPlasmaProjectile::RenderBeam(int subdivs, float width, const CColor& color
   const int count = subdivs + 1;
   const float angleStep = (2.f * M_PIF) / subdivs;
   const float uvY0 = -(0.0625f * x4cc_energyPulseStartY);
-  const float uvY1 = uvY0 + ((flags & 3) == 3) ? 2.f : 0.5f * GetCurrentLength();
-  const CVector3f beamEnd(0.f, GetCurrentLength(), 0.f);
+#ifdef TARGET_PC
+  const float length = xPortDrawLength >= 0.f ? xPortDrawLength : GetCurrentLength();
+#else
+  const float length = GetCurrentLength();
+#endif
+  const float uvY1 = uvY0 + ((flags & 3) == 3) ? 2.f : 0.5f * length;
+  const CVector3f beamEnd(0.f, length, 0.f);
   float angle = 0.f;
   CGraphics::SetAlphaCompare(kAF_Always, 0, kAO_And, kAF_Always, 0);
   const GXVtxDescList vtxDesc[] = {{GX_VA_POS, GX_DIRECT},

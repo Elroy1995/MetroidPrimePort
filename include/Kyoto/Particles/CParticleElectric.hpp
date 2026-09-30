@@ -14,6 +14,10 @@
 #include "rstl/reserved_vector.hpp"
 #include "rstl/vector.hpp"
 
+#ifdef TARGET_PC
+#include "port_tick_pair.h"
+#endif
+
 class CElectricDescription;
 class CElementGen;
 class CParticleSwoosh;
@@ -154,6 +158,12 @@ private:
   bool x450_27_haveSSWH : 1;
   bool x450_28_haveLWD : 1;
   bool x450_29_transformDirty : 1;
+
+#ifdef TARGET_PC
+  // Presentation smoothing (particle_interpolation): the line transform the
+  // last two ticks drew. Child swooshes and generators smooth themselves.
+  PortTickPair< CTransform4f > xPortLineXf{CTransform4f::Identity()};
+#endif
 
   static ushort sSeed;
 };

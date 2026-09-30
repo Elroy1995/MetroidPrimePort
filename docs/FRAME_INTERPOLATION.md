@@ -4,7 +4,8 @@ Status: phase 1 (look input per frame) is done; phase 2 (actor transforms),
 phase 3 (skinned poses) and phase 4 (`CElementGen` particles) are done behind
 `actor_interpolation`, `pose_interpolation` and `particle_interpolation` (off
 by default); phase 5 (the sweep, section 7) found and fixed the arm cannon's
-bob. Swooshes, electric, beams and the HUD sway are scope only.
+bob; phase 6 (swooshes, electric effects and beam weapons, section 3) is done
+behind `particle_interpolation`. The HUD sway is scope only.
 
 Goal: smooth motion above 60 FPS while the game logic stays at its console rate
 (60 Hz fixed step). Rendered frames between two ticks draw the world at a blend
@@ -124,11 +125,36 @@ x80_timeDeltaScale`. No new per-particle state.
 
 Projectile effects move through `SetGlobalTranslation` each tick
 (`CProjectileWeapon::UpdateChildParticleSystems`), so their queued draws blend
-too. Limits: swooshes (`CParticleSwoosh`, beam trails), electric
-(`CParticleElectric`), `CPlasmaProjectile` beams and the flamethrower
-(`RenderParticlesFlameThrower`) still step at 60 Hz; new particles spawn at the
-current emitter position; a particle teleported by the effect script lerps
-across the jump for one tick.
+too. Limits: new particles spawn at the current emitter position; a particle
+teleported by the effect script lerps across the jump for one tick.
+
+Phase 6 (same setting) covers the rest. `PortTickPair<T>`
+(`platform/include/port_tick_pair.h`, unit-tested) keeps the first value
+drawn in each tick generation, and blends only when the previous one is from
+the tick right before.
+
+- `CParticleSwoosh`: segment positions, rotations and the global transform
+  are blended, with segments matched by age (head - index), so an emitter's
+  trail slides along rather than growing one segment per tick. Swooshes that
+  the owner writes directly (grapple beam, Wave Beam) never step, so age and
+  slot are the same there. A segment that jumps more than 4 units (16 for
+  owner-written swooshes) snaps.
+- `CParticleElectric`: the line transform is blended. The fractal itself
+  still changes once per tick, as on console.
+- Beam weapons draw in world space, so they opt out of the phase 2 rigid shift
+  (`CActor::PortSetOwnPresentation`): `CWaveBuster`, `CBeamProjectile`
+  (Plasma and electric beams), `CFlameThrower` and `CNewFlameThrower`.
+  `CWaveBuster` blends the spiral transform, the bezier points and the
+  spiral offset, and advances its spin and sparks only once per tick.
+  `CPlasmaProjectile` blends the transform, length, width and angle. The
+  flamethrower's particles already blend through `CElementGen`.
+- Checked with temporary counters (`present cycle`): swoosh segments blend
+  100 % idle and ~97 % while flamethrowing, electric lines 720/720, and the
+  Wavebuster spiral 479/480. Captures of the Wavebuster at t = 0, 0.5 and 0.99
+  progress smoothly toward the next tick.
+- Limits: `CPlasmaProjectile`'s motion blur stays at the tick position.
+  Not tried live: the grapple beam, `CPlasmaProjectile` (bosses only) and
+  `CElectricBeamProjectile`.
 
 ### 4. First-person view and look input (done)
 
@@ -203,7 +229,8 @@ t = 1 = N+1.
 3. **Skinned poses** and the bone-tracking/IK users (section 2). Done by
    blending built poses, `pose_interpolation`, off by default.
 4. **Particles and projectiles** (section 3). `CElementGen` done,
-   `particle_interpolation`, off by default; swooshes, electric and beams remain.
+   `particle_interpolation`, off by default; swooshes, electric effects and
+   beam weapons too (phase 6).
 5. **Sweep:** ASan tour (`MP_RANDO_SWEEP`) with interpolation forced on (a
    fake fractional `t` under `MP_TURBO`), captures at t = 0/0.5/1 compared
    against tick frames to find paths that were missed (section 7). Done.

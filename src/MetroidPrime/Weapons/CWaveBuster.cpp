@@ -18,6 +18,11 @@
 #include "dolphin/gx.h"
 #include "dolphin/os/OSCache.h"
 
+#ifdef TARGET_PC
+#include "MetroidPrime/Cameras/CCameraManager.hpp"
+#include "port_debug.h"
+#endif
+
 static const CVector3f kTargetNodePosition(0.f, -3.f, -1.5f);
 static const CVector3f kSourceNodePosition(0.f, 2.f, 1.5f);
 
@@ -62,7 +67,14 @@ CWaveBuster::CWaveBuster(const TToken< CWeaponDescription >& desc, EWeaponType t
 , x3d0_25_seeking(true)
 , x3d0_26_trackingTarget(false)
 , x3d0_27_collided(false)
-, x3d0_28_collidedWithWorld(true) {
+, x3d0_28_collidedWithWorld(true)
+#ifdef TARGET_PC
+, xPortSwooshGeneration(0)
+#endif
+{
+#ifdef TARGET_PC
+  PortSetOwnPresentation();
+#endif
   const rstl::vector< CParticleSwoosh::SSwooshData >& swooshes =
       x384_busterSwoosh1Gen->GetSwooshes();
   for (int i = 0; i < swooshes.size() - 1; ++i) {
@@ -356,11 +368,43 @@ inline void DrawLineList(const CVector3f* vertices, const CColor& color, int cou
 }
 
 void CWaveBuster::RenderElectricSpiral() const {
-  const CTransform4f inverse = x2e8_originalXf.GetInverse();
-  const CVector3f a = inverse * x2e8_originalXf.GetTranslation();
-  const CVector3f b = inverse * x318_bezierB;
-  const CVector3f c = inverse * x324_bezierC;
-  const CVector3f d = inverse * GetTranslation();
+  CTransform4f spiralXf = x2e8_originalXf;
+  CVector3f bezierB = x318_bezierB;
+  CVector3f bezierC = x324_bezierC;
+  CVector3f bezierD = GetTranslation();
+  float spiralOffset = x398_spiralOffset;
+#ifdef TARGET_PC
+  // Draw the spiral between the last two ticks when uncapped.
+  const float t = CCameraManager::GetPresentationInterpolation();
+  if (t >= 0.f && t < 1.f && PortDebug::ParticleInterpolation()) {
+    SPortSpiral now;
+    now.xf = spiralXf;
+    now.b = bezierB;
+    now.c = bezierC;
+    now.d = bezierD;
+    now.offset = spiralOffset;
+    if (xPortSpiral.Note(now, CActor::PortTickGeneration())) {
+      const SPortSpiral& prev = xPortSpiral.prev;
+      CTransform4f blend = CTransform4f::Identity();
+      CTransform4f cur = CTransform4f::Identity();
+      if (CActor::PortBlendRigid(prev.xf, spiralXf, t, blend, cur) &&
+          (bezierD - prev.d).MagSquared() <= 256.f) {
+        spiralXf = blend * cur.GetQuickInverse() * spiralXf;
+        bezierB = CVector3f::Lerp(prev.b, bezierB, t);
+        bezierC = CVector3f::Lerp(prev.c, bezierC, t);
+        bezierD = CVector3f::Lerp(prev.d, bezierD, t);
+        float turn = spiralOffset - prev.offset;
+        turn -= 2.f * M_PIF * floorf(turn / (2.f * M_PIF) + 0.5f);
+        spiralOffset = prev.offset + turn * t;
+      }
+    }
+  }
+#endif
+  const CTransform4f inverse = spiralXf.GetInverse();
+  const CVector3f a = inverse * spiralXf.GetTranslation();
+  const CVector3f b = inverse * bezierB;
+  const CVector3f c = inverse * bezierC;
+  const CVector3f d = inverse * bezierD;
   float radius = 0.f;
   CVector3f* vertices = reinterpret_cast< CVector3f* >(LCGetBase());
   CVector3f previous = a;
@@ -370,8 +414,8 @@ void CWaveBuster::RenderElectricSpiral() const {
     for (int i = 0; i < 36; ++i) {
       const float randX = x394_rand.Range(-0.041667f, 0.041667f);
       const float randZ = x394_rand.Range(-0.041667f, 0.041667f);
-      const float x = radius * CMath::FastCosR(angle + x398_spiralOffset) + randX;
-      const float z = radius * CMath::FastSinR(angle + x398_spiralOffset) + randZ;
+      const float x = radius * CMath::FastCosR(angle + spiralOffset) + randX;
+      const float z = radius * CMath::FastSinR(angle + spiralOffset) + randZ;
       *vertices++ = CVector3f::Lerp(previous, point, angle / (2.f * M_PIF)) + CVector3f(x, 0.f, z);
       angle += CMath::Deg2Rad(10.f);
     }
@@ -390,7 +434,7 @@ void CWaveBuster::RenderElectricSpiral() const {
   CGX::SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
   CGraphics::SetTevOp(kTS_Stage0, CGraphics::kEnvPassthru);
   CGraphics::SetTevOp(kTS_Stage1, CGraphics::kEnvPassthru);
-  gpRender->SetModelMatrix(x2e8_originalXf);
+  gpRender->SetModelMatrix(spiralXf);
   DrawLineList(reinterpret_cast< CVector3f* >(LCGetBase()), CColor::White(), 216, 12);
   DrawLineList(reinterpret_cast< CVector3f* >(LCGetBase()), CColor(1.f, 0.f, 1.f, 0.5f), 216, 48);
   CGX::SetLineWidth(6, GX_TO_ZERO);
@@ -405,6 +449,13 @@ void CWaveBuster::RenderSwooshes() const {
                                   colors[x3cc_innerSwooshColorIdx + 1], x3c8_innerSwooshColorT));
   rstl::vector< CParticleSwoosh::SSwooshData >& swooshes1 = x384_busterSwoosh1Gen->Swooshes();
   rstl::vector< CParticleSwoosh::SSwooshData >& swooshes2 = x388_busterSwoosh2Gen->Swooshes();
+#ifdef TARGET_PC
+  const uint gen = CActor::PortTickGeneration();
+  const bool advance = xPortSwooshGeneration != gen;
+  xPortSwooshGeneration = gen;
+#else
+  const bool advance = true;
+#endif
   float t = 0.f;
   float previousRot1 = swooshes1[swooshes1.size() - 1].mInitialRot;
   float previousRot2 = swooshes2[swooshes2.size() - 1].mInitialRot;
@@ -418,14 +469,16 @@ void CWaveBuster::RenderSwooshes() const {
     swoosh1.mOrientation = rotation;
     swoosh2.mOrientation = rotation;
     swoosh2.mColor = color;
-    const float rot1 = swoosh1.mInitialRot;
-    const float rot2 = swoosh2.mInitialRot;
-    swoosh1.mInitialRot = previousRot1;
-    previousRot1 = rot1;
-    swoosh2.mInitialRot = previousRot2;
-    previousRot2 = rot2;
-    x38c_busterSparksGen->SetTranslation(point);
-    x38c_busterSparksGen->ForceParticleCreation(1);
+    if (advance) {
+      const float rot1 = swoosh1.mInitialRot;
+      const float rot2 = swoosh2.mInitialRot;
+      swoosh1.mInitialRot = previousRot1;
+      previousRot1 = rot1;
+      swoosh2.mInitialRot = previousRot2;
+      previousRot2 = rot2;
+      x38c_busterSparksGen->SetTranslation(point);
+      x38c_busterSparksGen->ForceParticleCreation(1);
+    }
     t += 0.04f;
   }
   x38c_busterSparksGen->SetParticleEmission(false);

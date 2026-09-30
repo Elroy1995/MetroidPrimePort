@@ -30,7 +30,12 @@ CBeamProjectile::CBeamProjectile(const TToken< CWeaponDescription >& wDesc,
 , x384_(CVector3f::Zero())
 , x400_pointCache(CVector3f::Zero())
 , x464_24_growingBeam(growingBeam)
-, x464_25_enableTouchDamage(false) {}
+, x464_25_enableTouchDamage(false) {
+#ifdef TARGET_PC
+  // The beam is drawn from its own transform, not the actor's; see CPlasmaProjectile::Render.
+  PortSetOwnPresentation();
+#endif
+}
 
 rstl::optional_object< CAABox > CBeamProjectile::GetTouchBounds() const {
   if (!GetActive() || !x464_25_enableTouchDamage) {

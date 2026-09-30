@@ -5,6 +5,10 @@
 #include "MetroidPrime/Weapons/CBeamProjectile.hpp"
 #include "MetroidPrime/Weapons/CWeaponAssetInfo.hpp"
 
+#ifdef TARGET_PC
+#include "port_tick_pair.h"
+#endif
+
 class CElectricDescription;
 
 class CPlasmaProjectile : public CBeamProjectile {
@@ -90,6 +94,19 @@ private:
   bool x548_27_texturesLoaded : 1;
   bool x548_28_drawOwnerFirst : 1;
   bool x548_29_activePlayerPhazon : 1;
+#ifdef TARGET_PC
+  // Presentation smoothing (particle_interpolation): the beam the last two
+  // ticks drew, and the length RenderBeam uses for the blended draw.
+  struct SPortBeam {
+    SPortBeam() : xf(CTransform4f::Identity()), length(0.f), width(0.f), angle(0.f) {}
+    CTransform4f xf;
+    float length;
+    float width;
+    float angle;
+  };
+  mutable PortTickPair< SPortBeam > xPortBeam;
+  mutable float xPortDrawLength;
+#endif
 };
 CHECK_SIZEOF(CPlasmaProjectile, (VERSION >= VERSION_GM8P_00 && VERSION != VERSION_GM8E_02 ? 0x578
                                  : VERSION >= VERSION_GM8P_00                             ? 0x560

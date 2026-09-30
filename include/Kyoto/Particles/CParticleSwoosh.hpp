@@ -11,6 +11,11 @@
 
 #include "dolphin/gx/GXEnum.h"
 
+#ifdef TARGET_PC
+#include "port_tick_pair.h"
+#include <vector>
+#endif
+
 class CParticleSwoosh : public CParticleGen {
   friend class CParticleElectric;
 
@@ -155,6 +160,29 @@ private:
   CVector3f x1fc_aabbMax;
   float x208_maxRadius;
   CColor x20c_moduColor;
+
+#ifdef TARGET_PC
+  // Presentation smoothing (particle_interpolation): what the last two ticks
+  // drew, recorded at draw time, since grapple and Wave Beam swooshes are
+  // written directly by their owners rather than stepped by Update.
+  struct SPortSegment {
+    CVector3f pos;
+    CVector3f useOffset;
+    float rot;
+    bool active;
+  };
+  struct SPortState {
+    SPortState() : head(0), frame(0), global(CTransform4f::Identity()) {}
+    std::vector< SPortSegment > segs;
+    int head;
+    int frame;
+    CTransform4f global;
+  };
+  PortTickPair< SPortState > xPortState;
+  std::vector< SPortSegment > xPortSaved;
+  bool PortBeginPresent();
+  void PortEndPresent();
+#endif
 
   static uint mSwooshAliveCount;
 };

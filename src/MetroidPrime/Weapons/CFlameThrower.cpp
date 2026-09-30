@@ -37,7 +37,12 @@ CFlameThrower::CFlameThrower(const TToken< CWeaponDescription >& wDesc, const rs
 , x400_24_active(false)
 , x400_25_particlesActive(false)
 , x400_26_zTest((flameInfo.GetAttributes() & 1) == 0)
-, x400_27_coneCollision((flameInfo.GetAttributes() & 2) != 0) {}
+, x400_27_coneCollision((flameInfo.GetAttributes() & 2) != 0) {
+#ifdef TARGET_PC
+  // The flame particles blend themselves; a rigid actor shift would move them twice.
+  PortSetOwnPresentation();
+#endif
+}
 
 rstl::optional_object< CAABox > CFlameThrower::GetTouchBounds() const {
   // Retail retains this impossible state condition.
