@@ -30,46 +30,87 @@ namespace {
 // MP_LOG_DOORS: how long each door waited to open, and on which condition.
 struct SPortDoorWait {
   std::chrono::steady_clock::time_point start;
+  long long reportedMs;
   std::map< const char*, int > ticks;
 };
 std::map< ushort, SPortDoorWait > sPortDoorWaits;
 const char* sPortDoorReason = "";
+// The area (occluding) or door (otherDoor) the last wait was on, or -1.
+int sPortDoorDetail = -1;
 
-void PortLogDoorWait(TUniqueId door, CScriptDoor::EDoorOpenCondition cond) {
-  static const bool enabled = std::getenv("MP_LOG_DOORS") != nullptr;
-  if (!enabled) {
-    return;
+void PortPrintDoorWait(TUniqueId door, const char* what, const SPortDoorWait& wait, long long ms) {
+  std::fprintf(stderr, "MP door %04X %s after %lld ms:", door.Value(), what, ms);
+  for (std::map< const char*, int >::const_iterator r = wait.ticks.begin(); r != wait.ticks.end();
+       ++r) {
+    std::fprintf(stderr, " %s=%d", r->first, r->second);
   }
-  const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-  if (cond == CScriptDoor::kDOC_Loading) {
-    std::map< ushort, SPortDoorWait >::iterator it = sPortDoorWaits.find(door.Value());
-    if (it == sPortDoorWaits.end()) {
-      it = sPortDoorWaits.insert(std::make_pair(door.Value(), SPortDoorWait())).first;
-      it->second.start = now;
-    }
-    ++it->second.ticks[sPortDoorReason];
+  std::fprintf(stderr, "\n");
+}
+
+bool PortLogDoors() {
+  static const bool enabled = std::getenv("MP_LOG_DOORS") != nullptr;
+  return enabled;
+}
+
+// Anything else that happens to a door: opened without a wait, an Open it
+// refused, or a wait that a Close cut short (the door's timer can close it
+// while it is still waiting, and the shield comes back).
+void PortLogDoorEvent(TUniqueId door, const char* what) {
+  if (!PortLogDoors()) {
     return;
   }
   std::map< ushort, SPortDoorWait >::iterator it = sPortDoorWaits.find(door.Value());
+  if (it == sPortDoorWaits.end()) {
+    std::fprintf(stderr, "MP door %04X %s\n", door.Value(), what);
+    return;
+  }
+  const long long ms = std::chrono::duration_cast< std::chrono::milliseconds >(
+                           std::chrono::steady_clock::now() - it->second.start)
+                           .count();
+  PortPrintDoorWait(door, what, it->second, ms);
+  sPortDoorWaits.erase(it);
+}
+
+void PortLogDoorWait(TUniqueId door, CScriptDoor::EDoorOpenCondition cond) {
+  if (!PortLogDoors()) {
+    return;
+  }
+  const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+  std::map< ushort, SPortDoorWait >::iterator it = sPortDoorWaits.find(door.Value());
+  if (cond == CScriptDoor::kDOC_Loading) {
+    if (it == sPortDoorWaits.end()) {
+      it = sPortDoorWaits.insert(std::make_pair(door.Value(), SPortDoorWait())).first;
+      it->second.start = now;
+      it->second.reportedMs = 0;
+    }
+    ++it->second.ticks[sPortDoorReason];
+    // A door that never opens would otherwise never be reported.
+    const long long ms =
+        std::chrono::duration_cast< std::chrono::milliseconds >(now - it->second.start).count();
+    if (ms - it->second.reportedMs >= 3000) {
+      it->second.reportedMs = ms;
+      PortPrintDoorWait(door, "still waiting", it->second, ms);
+      if (sPortDoorDetail >= 0) {
+        std::fprintf(stderr, "MP door %04X now on %s %04X\n", door.Value(), sPortDoorReason,
+                     sPortDoorDetail);
+      }
+    }
+    return;
+  }
   if (it == sPortDoorWaits.end()) {
     return;
   }
   const long long ms =
       std::chrono::duration_cast< std::chrono::milliseconds >(now - it->second.start).count();
-  std::fprintf(stderr, "MP door %04X %s after %lld ms:", door.Value(),
-               cond == CScriptDoor::kDOC_Ready ? "opened" : "gave up", ms);
-  for (std::map< const char*, int >::const_iterator r = it->second.ticks.begin();
-       r != it->second.ticks.end(); ++r) {
-    std::fprintf(stderr, " %s=%d", r->first, r->second);
-  }
-  std::fprintf(stderr, "\n");
+  PortPrintDoorWait(door, cond == CScriptDoor::kDOC_Ready ? "opened" : "gave up", it->second, ms);
   sPortDoorWaits.erase(it);
 }
 } // namespace
-#define DOOR_WAIT(reason) (sPortDoorReason = (reason), kDOC_Loading)
+#define DOOR_WAIT_ON(reason, id) (sPortDoorReason = (reason), sPortDoorDetail = (id), kDOC_Loading)
 #else
-#define DOOR_WAIT(reason) kDOC_Loading
+#define DOOR_WAIT_ON(reason, id) kDOC_Loading
 #endif
+#define DOOR_WAIT(reason) DOOR_WAIT_ON(reason, -1)
 
 CScriptDoor::CScriptDoor(TUniqueId uid, const rstl::string& name, const CEntityInfo& info,
                          const CTransform4f& xf, const CModelData& modelData,
@@ -172,7 +213,7 @@ CScriptDoor::EDoorOpenCondition CScriptDoor::GetDoorOpenCondition(CStateManager&
           (door->GetCurrentAreaId() == GetCurrentAreaId() ||
            door->GetCurrentAreaId() == connectedArea) &&
           door->mWasOpen && door->mDockId != kInvalidUniqueId) {
-        return DOOR_WAIT("otherDoor");
+        return DOOR_WAIT_ON("otherDoor", door->GetUniqueId().Value());
       }
     }
   }
@@ -180,7 +221,7 @@ CScriptDoor::EDoorOpenCondition CScriptDoor::GetDoorOpenCondition(CStateManager&
   for (CGameArea::CConstChainIterator it = mgr.GetWorld()->GetChainHead(CWorld::kC_Alive);
        it != CWorld::skGlobalEnd; ++it) {
     if (it->GetAreaId() != area->GetAreaId() && !it->IsFinishedOccluding()) {
-      return DOOR_WAIT("occluding");
+      return DOOR_WAIT_ON("occluding", it->GetAreaId().Value());
     }
   }
 
@@ -279,6 +320,9 @@ void CScriptDoor::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CStat
         SetDoorAnimation(kDAT_Close);
         mgr.GetCameraManager()->BallCamera()->DoorClosing(GetUniqueId());
       } else if (mConditionsMet) {
+#ifdef TARGET_PC
+        PortLogDoorEvent(GetUniqueId(), "wait cancelled by Close");
+#endif
         mConditionsMet = false;
         SendScriptMsgs(kSS_Closed, mgr, kSM_None);
       }
@@ -308,6 +352,9 @@ void CScriptDoor::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CStat
   }
   case kSM_Open: {
     if (!GetActive()) {
+#ifdef TARGET_PC
+      PortLogDoorEvent(GetUniqueId(), "ignored Open (inactive)");
+#endif
       return;
     }
 
@@ -323,10 +370,16 @@ void CScriptDoor::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CStat
         mPrevDoor = uid;
         break;
       case kDOC_Ready:
+#ifdef TARGET_PC
+        PortLogDoorEvent(GetUniqueId(), "opened at once");
+#endif
         OpenDoor(uid, mgr);
         break;
       case kDOC_NotReady:
       default:
+#ifdef TARGET_PC
+        PortLogDoorEvent(GetUniqueId(), "refused Open (area missing)");
+#endif
         mWasOpen = false;
         mClosing = true;
         break;
@@ -451,6 +504,9 @@ void CScriptDoor::ForceClosed(CStateManager& mgr) {
     mAnimTime = 0.f;
     mDoClose = false;
   } else if (mConditionsMet) {
+#ifdef TARGET_PC
+    PortLogDoorEvent(GetUniqueId(), "wait cancelled by ForceClosed");
+#endif
     mConditionsMet = false;
     mDoClose = false;
     SendScriptMsgs(kSS_Closed, mgr, kSM_None);

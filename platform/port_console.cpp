@@ -552,6 +552,13 @@ void CmdObj(CStateManager& mgr) {
     if (const CHealthInfo* health = actor->GetHealthInfo(mgr)) {
       Out("hp %.2f", health->GetHP());
     }
+    const rstl::optional_object< CAABox > touch = actor->GetTouchBounds();
+    if (touch.valid()) {
+      const CVector3f lo = touch->GetMinPoint();
+      const CVector3f hi = touch->GetMaxPoint();
+      Out("touch bounds (%.1f, %.1f, %.1f) .. (%.1f, %.1f, %.1f)", lo.GetX(), lo.GetY(), lo.GetZ(),
+          hi.GetX(), hi.GetY(), hi.GetZ());
+    }
   }
   if (const CPhysicsActor* physics = TCastToConstPtr< CPhysicsActor >(ent)) {
     const CVector3f vel = physics->GetVelocityWR();
