@@ -98,6 +98,11 @@ void initialize() noexcept {
   ZoneScoped;
   SDL_Renderer* renderer = window::get_sdl_renderer();
   ImGui_ImplSDL3_InitForSDLRenderer(window::get_sdl_window(), renderer);
+  // The application feeds the gamepad keys itself (it knows which pad is the
+  // player's and remaps some inputs). Two writers that disagree about one key
+  // each queue a change per frame while ImGui applies one, so the input queue
+  // grows and everything behind it, mouse clicks included, arrives late.
+  ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_Manual, nullptr, 0);
   g_useSdlRenderer = renderer != nullptr;
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_Init(renderer);
@@ -199,7 +204,10 @@ void new_frame(const AuroraWindowSize& size) noexcept {
     }
     ImGui_ImplWGPU_NewFrame();
   }
+  // With no pads of its own the backend clears HasGamepad; keep the app's.
+  const ImGuiBackendFlags hasGamepad = ImGui::GetIO().BackendFlags & ImGuiBackendFlags_HasGamepad;
   ImGui_ImplSDL3_NewFrame();
+  ImGui::GetIO().BackendFlags |= hasGamepad;
 
   ImGuiIO& io = ImGui::GetIO();
   io.DisplayFramebufferScale = framebufferScale;

@@ -3,6 +3,7 @@
 // to build the windows between aurora_begin_frame and aurora_end_frame.
 
 #include "port_debug.h"
+#include "port_log.h"
 #include "port_apclient.h"
 #include "port_controls.h"
 #include "port_gci.h"
@@ -2170,6 +2171,20 @@ void UpdateControllerNav() {
   ImGuiIO& io = ImGui::GetIO();
   io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+  // ImGui applies one change per key and frame and holds everything queued
+  // behind a second one. Whatever queues changes faster than that stalls the
+  // overlay's input until it stops, and then the backlog replays. Nothing
+  // should; if something does, take the queue in one go and say so.
+  {
+    const int queued = ImGui::GetCurrentContext()->InputEventsQueue.Size;
+    io.ConfigInputTrickleEventQueue = queued <= 64;
+    static uint64_t sLastLogNs = 0;
+    const uint64_t now = SDL_GetTicksNS();
+    if (queued > 64 && (sLastLogNs == 0 || now - sLastLogNs > 2000000000ull)) {
+      sLastLogNs = now;
+      PortLog::Write("metroid_prime_port: %d overlay input events were queued; flushed\n", queued);
+    }
+  }
   // The SDL3 backend calls SDL_ShowCursor on every NewFrame, and the main loop
   // hides the cursor again during play, so it flickered wherever relative
   // mouse mode wasn't hiding it (Android, menus, cutscenes). Let the backend
@@ -2180,13 +2195,15 @@ void UpdateControllerNav() {
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
   }
 
+  // This is the only writer of the gamepad keys (Aurora turns the backend's
+  // own pad polling off): a second one that disagrees about a key, as the
+  // backend did with a stick held as a d-pad or with another pad than the
+  // player's, queues two changes a frame where ImGui applies one.
   SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0);
-  if (pad == nullptr) {
-    return;
-  }
   // While the Controls tab captures a pad input, the pad binds instead of
   // navigating (releasing everything here also ends any nav press in progress).
-  const bool capturing = PortControls::Capturing();
+  // A pad that went away releases everything the same way.
+  const bool capturing = pad == nullptr || PortControls::Capturing();
   const auto held = [pad, capturing](SDL_GamepadButton button) {
     return !capturing && SDL_GetGamepadButton(pad, button);
   };
@@ -2204,6 +2221,8 @@ void UpdateControllerNav() {
                  held(SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || axis(SDL_GAMEPAD_AXIS_LEFTX) > kStickThreshold);
   io.AddKeyEvent(ImGuiKey_GamepadFaceDown, held(SDL_GAMEPAD_BUTTON_SOUTH));
   io.AddKeyEvent(ImGuiKey_GamepadFaceRight, held(SDL_GAMEPAD_BUTTON_EAST));
+  io.AddKeyEvent(ImGuiKey_GamepadFaceLeft, held(SDL_GAMEPAD_BUTTON_WEST));
+  io.AddKeyEvent(ImGuiKey_GamepadFaceUp, held(SDL_GAMEPAD_BUTTON_NORTH));
   io.AddKeyEvent(ImGuiKey_GamepadL1, held(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
   io.AddKeyEvent(ImGuiKey_GamepadR1, held(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
 
