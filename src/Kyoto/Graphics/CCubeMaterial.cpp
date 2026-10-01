@@ -881,6 +881,7 @@ void CCubeModel::DisableShadowMaps() { sbRenderModelShadow = false; }
 
 #ifdef TARGET_PC
 float CCubeMaterial::sPortPBRProbeWeight = 0.f;
+int CCubeMaterial::sPortPBRProbeMode = -1;
 uint CCubeMaterial::sPortPBRDraws = 0;
 
 bool CCubeMaterial::PortPBRAllowed(const CModelFlags& flags) {

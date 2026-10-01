@@ -12,6 +12,7 @@
 #include "port_savestate.h"
 #include "port_tracker.h"
 #include "port_viewmodel.h"
+#include "Kyoto/Graphics/CCubeMaterial.hpp"
 #include "MetroidPrime/CActor.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
@@ -406,6 +407,7 @@ void CmdHelp() {
   Out("gyro <pitch> [yaw] [frames] fake gyro rates in rad/s (pitch > 0 tilts up; a flick is ~6)");
   Out("shot                       take a screenshot and print its path");
   Out("wait <frames>              let frames pass");
+  Out("probe [off|on|mirror|window]   the PBR reflection probe, or what PBR surfaces show of it");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
   Out("fov <45..90>               first-person vertical FOV, as the Options row does");
   Out("msaa <1|4>, aniso <1..16>  anti-aliasing and anisotropic filtering, applied next frame");
@@ -437,6 +439,12 @@ void CmdWorlds() {
     const uint32_t id = static_cast< uint32_t >(worlds[i].first);
     Out("%08X %s%s", id, WorldName(i).c_str(), id == current ? "  <- current" : "");
   }
+}
+
+const char* ProbeModeName() {
+  static const char* const names[] = {"off", "on", "mirror", "window"};
+  const int mode = CCubeMaterial::sPortPBRProbeMode;
+  return mode >= 0 && mode < 4 ? names[mode] : "unset";
 }
 
 void CmdStatus(CStateManager& mgr) {
@@ -478,6 +486,15 @@ void CmdStatus(CStateManager& mgr) {
     Out("orbit target u%u %08X %s", target->GetUniqueId().Value(), target->GetEditorId().Value(),
         target->GetDebugName().data());
   }
+  Out("first person %d, cinematic %d", mgr.GetCameraManager()->IsInFPCamera() ? 1 : 0,
+      mgr.GetCameraManager()->IsInCinematicCamera() ? 1 : 0);
+  if (world != nullptr) {
+    char sky[256];
+    world->PortDescribeSky(sky, sizeof(sky));
+    Out("sky %s", sky);
+  }
+  Out("probe %s weight %.0f, pbr draws %u", ProbeModeName(), CCubeMaterial::sPortPBRProbeWeight,
+      CCubeMaterial::sPortPBRDraws);
 }
 
 void CmdAreas(CStateManager& mgr) {
@@ -898,6 +915,23 @@ void RunFrame() {
       return Finish("usage: pickups <0|1>   pickup dots on the map (on in randomized games)");
     }
     PortDebug::SetMapPickups(value == "1");
+    Finish();
+  } else if (name == "probe") {
+    static const char* const names[] = {"off", "on", "mirror", "window"};
+    if (sCmd.args.size() > 1) {
+      const std::string arg = Lower(sCmd.args[1]);
+      int mode = -1;
+      for (int i = 0; i < 4; ++i) {
+        if (arg == names[i]) {
+          mode = i;
+        }
+      }
+      if (mode < 0) {
+        return Finish("usage: probe [off|on|mirror|window]");
+      }
+      CCubeMaterial::sPortPBRProbeMode = mode;
+    }
+    Out("probe %s weight %.0f", ProbeModeName(), CCubeMaterial::sPortPBRProbeWeight);
     Finish();
   } else if (name == "viewmodel") {
     const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";

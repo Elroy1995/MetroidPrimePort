@@ -2577,10 +2577,14 @@ CGameArea::CConstChainIterator CWorld::GetAliveAreasEnd() { return skGlobalEnd; 
 // CCubeRenderer::CacheReflection draws its sphere map, so the probe is six frames old at
 // worst. World geometry and sky only. MP_PBR_PROBE=0 turns it off, and MP_PBR_PROBE=mirror
 // or =window draws PBR surfaces as mirrors of it or windows onto it, to check the faces.
+// The console's `probe` changes the mode live (CCubeMaterial::sPortPBRProbeMode).
 void CStateManager::PortCaptureProbeFace() const {
-  static const char* const env = getenv("MP_PBR_PROBE");
-  static const bool enabled = env == nullptr || env[0] != '0';
-  static const float weight = env == nullptr ? 1.f : env[0] == 'm' ? 2.f : env[0] == 'w' ? 3.f : 1.f;
+  if (CCubeMaterial::sPortPBRProbeMode < 0) {
+    const char* const env = getenv("MP_PBR_PROBE");
+    CCubeMaterial::sPortPBRProbeMode =
+        env == nullptr ? 1 : env[0] == '0' ? 0 : env[0] == 'm' ? 2 : env[0] == 'w' ? 3 : 1;
+  }
+  const bool enabled = CCubeMaterial::sPortPBRProbeMode != 0;
   static uint lastDraws = 0;
   static int face = 0;
   static int filled = 0;
@@ -2588,7 +2592,11 @@ void CStateManager::PortCaptureProbeFace() const {
   const bool used = draws != lastDraws;
   lastDraws = draws;
   if (!enabled) {
+    CCubeMaterial::sPortPBRProbeWeight = 0.f;
     return;
+  }
+  if (filled == 6) {
+    CCubeMaterial::sPortPBRProbeWeight = static_cast< float >(CCubeMaterial::sPortPBRProbeMode);
   }
   if (!used || x8b8_playerState->GetActiveVisor(*this) == CPlayerState::kPV_Thermal ||
       x8b8_playerState->GetActiveVisor(*this) == CPlayerState::kPV_XRay) {
@@ -2665,8 +2673,8 @@ void CStateManager::PortCaptureProbeFace() const {
                         oldViewport.mHeight);
 
   face = (face + 1) % 6;
-  if (filled < 6 && ++filled == 6) {
-    CCubeMaterial::sPortPBRProbeWeight = weight;
+  if (filled < 6) {
+    ++filled;
   }
 }
 #endif

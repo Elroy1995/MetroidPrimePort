@@ -742,7 +742,9 @@ a temporary directory instead of mounting.
   command console on 127.0.0.1. Its `press`/`stick` input is read even when
   the window has no keyboard focus. `tools/mpcon.py` is the client: one-shot
   (`tools/mpcon.py 'warp chozo 492CBF4A' 'objs eyeball' shot`), a script
-  (`-f file`) or an interactive prompt with no arguments. Commands: `status`,
+  (`-f file`) or an interactive prompt with no arguments. Commands: `status`
+  (world, area, position, whether the camera is first person or a cinematic
+  has it, the sky, and the probe mode, weight and PBR draw count),
   `worlds`, `areas`, `warp <world id or name prefix> [mrea]` (replies once the
   new world runs), `tp x y z`, `enter <area>` (makes an area of the current
   world the current one, as walking into it would; `tp` alone does not),
@@ -757,11 +759,24 @@ a temporary directory instead of mounting.
   gyro rates in rad/s), `shot` (prints the bmp path), `present
   <0..1|cycle|tick|off>`, `hold <0|1>` (stop ticking), `step [ticks]` (run
   that many ticks while held), `interp [actor|pose|particle|all <0|1>]`,
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `crosshair <25..100>`, `reveal <0|1>`, `pickups <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `viewmodel <cmdl> [dist] [yaw] [pitch] | off | status | light <0|1>` (draws any model, retail or a mod's, in front of the camera with the arm cannon hidden; dist 0 fits its bounds; `light 1` swaps the flat white ambient for a key light, which PBR mod materials need to shade), `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `crosshair <25..100>`, `reveal <0|1>`, `pickups <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `viewmodel <cmdl> [dist] [yaw] [pitch] | off | status | light <0|1>` (draws any model, retail or a mod's, in front of the camera with the arm cannon hidden; dist 0 fits its bounds; `light 1` swaps the flat white ambient for a key light, which PBR mod materials need to shade), `probe [off|on|mirror|window]` (the PBR reflection probe, live: `mirror` and `window` show the probe itself on PBR materials, as a reflection and looked straight through; no argument prints the mode), `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the
   title screen or while paused. Pair with `MP_TURBO` for speed.
+- `MP_PBR_PROBE=<off|on|mirror|window>` (or 0-3): the reflection probe PBR mod
+  materials reflect, on by default. The console's `probe` changes it live.
+- `tools/pbr_shots.py`: contact sheets of models under PBR, for comparing mod
+  builds. One game per (variant, place), each booted straight into the room
+  with `MP_BOOT_WORLD` on its own console port and an Xvfb display, about 10 s
+  a game. `--variant name=<mod dir>|none` (columns), `--place
+  chozo|tallon|frigate|phendrana|mines|magmoor|crater`, `<MLVL>[:<MREA>]` or
+  `name=<file.mpss>` for an exact spot from a save state, `--model <cmdl>`,
+  `--probe off,on`, `--yaw`. Writes `<out>/<place>.png` and a `.tsv` with the
+  mean luminance of each cell, and exits 1 naming any game that never reached
+  first-person gameplay. Needs a smoke build (`--build`, default
+  `build/fm-smoke`) and `MP_ISO` or `--iso`. Do not use `MP_SMOKE_WORLD` for
+  this: it starts a new game and only warps once the Frigate intro has played.
 - `MP_TOUCH_UI=1`: force the page layout for the debug overlay even when
   Render > "Overlay as a floating window" is set. The page layout is the default
   everywhere (the only one on Android): a full-screen window inside the safe

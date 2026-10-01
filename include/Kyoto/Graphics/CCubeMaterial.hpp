@@ -49,6 +49,8 @@ public:
   // Port: the PBR reflection probe. The weight is 1 once CStateManager has filled all six
   // faces, and the draw count tells it whether anything would reflect the probe.
   static float sPortPBRProbeWeight;
+  // 0 off, 1 on, 2 mirror, 3 window; -1 takes it from MP_PBR_PROBE on first use.
+  static int sPortPBRProbeMode;
   static uint sPortPBRDraws;
 #endif
   uint GetTextureCount() const {
