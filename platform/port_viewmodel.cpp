@@ -8,6 +8,7 @@
 #include "MetroidPrime/CModelData.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
+#include "MetroidPrime/Cameras/CGameCamera.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -25,6 +26,8 @@ struct SView {
   bool light = false;
   CVector3f centre = CVector3f(0.f, 0.f, 0.f);
   float fitDist = 1.f;
+  float radius = 1.f;
+  float fov = 55.f;
   std::unique_ptr< CModelData > model;
 };
 
@@ -64,11 +67,11 @@ std::string Status() {
   if (sView.model == nullptr) {
     return "viewmodel off";
   }
-  char buf[160];
+  char buf[192];
   std::snprintf(buf, sizeof(buf),
-                "viewmodel %08X %s dist %.3f yaw %.1f pitch %.1f centre %.3f %.3f %.3f", sView.id,
-                sView.loaded ? "loaded" : "loading",
-                sView.dist > 0.f ? sView.dist : sView.fitDist, sView.yaw, sView.pitch,
+                "viewmodel %08X %s dist %.3f fov %.1f yaw %.1f pitch %.1f centre %.3f %.3f %.3f",
+                sView.id, sView.loaded ? "loaded" : "loading",
+                sView.dist > 0.f ? sView.dist : sView.fitDist, sView.fov, sView.yaw, sView.pitch,
                 sView.centre.GetX(), sView.centre.GetY(), sView.centre.GetZ());
   return buf;
 }
@@ -87,11 +90,17 @@ void Draw(const CStateManager& mgr) {
     const CVector3f hi = box.GetMaxPoint();
     sView.centre = (lo + hi) * 0.5f;
     const CVector3f ext = hi - lo;
-    const float radius = 0.5f * std::sqrt(ext.MagSquared());
-    // Fits the bounding sphere in the retail 55 degree vertical FOV with some margin.
-    sView.fitDist = radius / std::sin(0.5f * 55.f * (M_PIF / 180.f)) * 1.1f + 0.05f;
+    sView.radius = 0.5f * std::sqrt(ext.MagSquared());
     sView.loaded = true;
   }
+  // Fit the bounding sphere into whatever vertical FOV the camera currently has, not a hardcoded
+  // 55: CStateManager sets the projection from cam.GetFov() every frame, so a cinematic or a
+  // visor transition silently changes the on-screen size of every model between shots. Recomputing
+  // from the live FOV keeps a model's framing the same in every cell of a capture sheet.
+  const CGameCamera& camera = mgr.GetCameraManager()->GetCurrentCamera(mgr);
+  sView.fov = camera.GetFov();
+  const float fovDeg = sView.fov > 5.f && sView.fov < 150.f ? sView.fov : 55.f;
+  sView.fitDist = sView.radius / std::sin(0.5f * fovDeg * (M_PIF / 180.f)) * 1.1f + 0.05f;
   const float dist = sView.dist > 0.f ? sView.dist : sView.fitDist;
   const CTransform4f cam = mgr.GetCameraManager()->GetCurrentCameraTransform(mgr);
   const CTransform4f xf = cam * CTransform4f::Translate(0.f, dist, 0.f) *
