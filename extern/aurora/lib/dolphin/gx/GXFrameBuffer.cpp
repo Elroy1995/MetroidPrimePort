@@ -4,6 +4,7 @@
 #include "../../gfx/tex_copy_conv.hpp"
 #include "../../gfx/texture.hpp"
 #include "../../gfx/recording.hpp"
+#include "../../gfx/probe.hpp"
 #include "../../window.hpp"
 #include "../../gfx/clear.hpp"
 #include "../../webgpu/gpu.hpp"
@@ -84,6 +85,12 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
   handle.height = g_gxState.texCopyDstHeight;
   g_gxState.copyTextures[dest] = handle;
   texture::invalidate_bindings();
+}
+
+void copy_probe_face(u32 face) noexcept {
+  const auto rect = map_logical_scissor(g_gxState.texCopySrc);
+  gfx::resolve_pass_into(gfx::probe::face(face), rect, true, true, true, g_gxState.clearColor, clear_depth_value(),
+                         GX_TF_RGBA8, static_cast<int>(face % 6));
 }
 } // namespace aurora::gx
 

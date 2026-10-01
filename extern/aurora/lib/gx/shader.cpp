@@ -1,4 +1,5 @@
 #include "../gfx/hash.hpp"
+#include "../gfx/probe.hpp"
 #include "../gfx/types.hpp"
 
 #include "../internal.hpp"
@@ -983,20 +984,34 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           pbr_env += rad * (env_w * env_w);
       }}
       // Ambient: diffuse plus the split-sum environment BRDF (Karis' analytic fit) applied
-      // to the ambient and the stand-in environment above, since there is no reflection
-      // probe; both occluded.
+      // to the reflection probe, a cube map whose mips are picked by roughness. The
+      // probe's weight is 0 until the game has filled it; the ambient and the stand-in
+      // environment above take its place then. Both occluded.
       let pbr_c0 = vec4f(-1.0, -0.0275, -0.572, 0.022);
       let pbr_c1 = vec4f(1.0, 0.0425, 1.04, -0.04);
       let pbr_r = pbr_rough * pbr_c0 + pbr_c1;
       let pbr_a004 = min(pbr_r.x * pbr_r.x, exp2(-9.28 * pbr_nv)) * pbr_r.x + pbr_r.y;
       let pbr_ab = vec2f(-1.04, 1.04) * pbr_a004 + pbr_r.zw;
       let pbr_amb = pow(max({6}, vec3f(0.0)), vec3f(2.2));
-      let pbr_envspec = pbr_amb + pbr_env * 0.35;
+      let pbr_pd = ubuf.pbr_probe[0].xyz * pbr_refl.x + ubuf.pbr_probe[1].xyz * pbr_refl.y +
+                   ubuf.pbr_probe[2].xyz * pbr_refl.z;
+      let pbr_cubed = textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_pd, pbr_rough * {7}.0).rgb;
+      let pbr_envspec = mix(pbr_amb + pbr_env * 0.35, pow(pbr_cubed, vec3f(2.2)), min(ubuf.pbr_probe[0].w, 1.0));
       pbr_lo += (pbr_amb * pbr_diff + pbr_envspec * (pbr_f0 * pbr_ab.x + pbr_ab.y)) * pbr_ao;
       prev = vec4f(pow(clamp(pbr_lo + pbr_emissive, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), prev.a);
+      // A weight above 1 is a diagnostic: 2 makes the surface a perfect mirror of the
+      // probe, and 3 a window onto it, which must line up with the scene around it.
+      if (ubuf.pbr_probe[0].w > 1.5) {{
+          var pbr_dd = pbr_pd;
+          if (ubuf.pbr_probe[0].w > 2.5) {{
+              pbr_dd = -(ubuf.pbr_probe[0].xyz * pbr_v.x + ubuf.pbr_probe[1].xyz * pbr_v.y +
+                         ubuf.pbr_probe[2].xyz * pbr_v.z);
+          }}
+          prev = vec4f(textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_dd, 0.0).rgb, prev.a);
+      }}
     }})""",
                      sampled(0, ""), sampled(1, "vec4f(1.0, 0.6, 0.0, 1.0)"), sampled(3, "vec4f(0.0)"), normal,
-                     GX::MaxLights, attn, amb);
+                     GX::MaxLights, attn, amb, gfx::probe::MipCount - 1);
 }
 
 absl::flat_hash_set<gfx::ShaderRef> s_seenShaders;
@@ -1658,7 +1673,16 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
                     underlying(stage.texMapId), uvIn);
   }
   if (config.pbr) {
-    fragmentFn += pbr_func(config, info, vtxOutAttrs, vtxXfrAttrs, vtxOutIdx);
+    uniBufAttrs += "\n    pbr_probe: mat3x4f,";
+    const auto pbr = pbr_func(config, info, vtxOutAttrs, vtxXfrAttrs, vtxOutIdx);
+    if (!pbr.empty()) {
+      fragmentFn += pbr;
+      texBindings += fmt::format("\n@group(2) @binding({})\n"
+                                 "var pbr_cube: texture_cube<f32>;\n"
+                                 "@group(2) @binding({})\n"
+                                 "var pbr_cube_samp: sampler;",
+                                 MaxTextures * 2, MaxTextures * 2 + 1);
+    }
   }
   if (info.usesPTTexMtx.any()) {
     uniBufAttrs += fmt::format("\n    postmtx: array<mat3x4f, {}>,", MaxPTTexMtx);

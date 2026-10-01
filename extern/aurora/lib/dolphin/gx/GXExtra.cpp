@@ -43,4 +43,20 @@ void GXSetPBR(GXBool enable) {
   GX_WRITE_AURORA(GX_AURORA_SET_PBR);
   GX_WRITE_U8(enable ? 1 : 0);
 }
+
+void GXCopyProbeFace(u32 face) {
+  GX_WRITE_AURORA(GX_AURORA_COPY_PROBE_FACE);
+  GX_WRITE_U8(static_cast<u8>(face));
+  aurora::gx::fifo::publish();
+}
+
+void GXSetPBRProbe(const f32 viewToProbe[3][3], f32 weight) {
+  GX_WRITE_AURORA(GX_AURORA_SET_PBR_PROBE);
+  for (int col = 0; col < 3; ++col) {
+    GX_WRITE_F32(viewToProbe[0][col]);
+    GX_WRITE_F32(viewToProbe[1][col]);
+    GX_WRITE_F32(viewToProbe[2][col]);
+    GX_WRITE_F32(col == 0 ? weight : 0.f);
+  }
+}
 }

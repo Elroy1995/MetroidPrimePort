@@ -119,6 +119,22 @@ extern "C" {
  */
 #define GX_AURORA_SET_PBR 0x0043
 
+/**
+ * Port extension: copies the EFB (GXSetTexCopySrc rectangle) into one face of the PBR
+ * environment probe, a cube map the PBR path reflects, and clears the EFB like a
+ * clearing GXCopyTex. Must be followed by a u8 face index (+X, -X, +Y, -Y, +Z, -Z).
+ */
+#define GX_AURORA_COPY_PROBE_FACE 0x0044
+
+/**
+ * Port extension: the view-to-probe rotation for PBR draws, as three vec4f columns (the
+ * probe-space images of view X, Y and Z). The first column's w is the probe's weight:
+ * 0 keeps the light-derived stand-in environment, 1 uses the probe, and 2 and 3
+ * are diagnostics that draw every PBR surface as a perfect mirror of the probe, or as a
+ * window onto it.
+ */
+#define GX_AURORA_SET_PBR_PROBE 0x0045
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

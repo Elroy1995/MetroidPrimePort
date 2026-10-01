@@ -307,6 +307,9 @@ public:
   bool GetVisSetForArea(TAreaId, TAreaId, CPVSVisSet&) const;
   void ResetViewAfterDraw(const CViewport&, const CTransform4f&) const;
   void DrawWorld() const;
+#ifdef TARGET_PC
+  void PortCaptureProbeFace() const;
+#endif
   void RenderCamerasAndAreaLights() const;
   void DrawE3DeathEffect() const;
   void DrawAdditionalFilters() const;

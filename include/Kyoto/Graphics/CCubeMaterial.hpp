@@ -46,6 +46,10 @@ public:
   // Port: whether a kStateFlag_PortPBR material may use the PBR path for this
   // draw. The black, shadow-map, thermal and blended paths keep the TEV.
   static bool PortPBRAllowed(const CModelFlags& flags);
+  // Port: the PBR reflection probe. The weight is 1 once CStateManager has filled all six
+  // faces, and the draw count tells it whether anything would reflect the probe.
+  static float sPortPBRProbeWeight;
+  static uint sPortPBRDraws;
 #endif
   uint GetTextureCount() const {
     return CBasics::SwapBytes(*reinterpret_cast< const uint* >(GetData() + 4));

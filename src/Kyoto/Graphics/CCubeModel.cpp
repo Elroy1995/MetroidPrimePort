@@ -171,7 +171,17 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
   const bool pbr =
       material.IsFlagSet(kStateFlag_PortPBR) && CCubeMaterial::PortPBRAllowed(modelFlags);
   if (pbr) {
+    // The probe is in world space with Y and Z swapped (world Z-up to cube Y-up), and the
+    // shader's reflection vector is in view space: right, up, -forward.
+    const CTransform4f& view = CGraphics::GetViewMatrix();
+    const f32 viewToProbe[3][3] = {
+        {view.Get00(), view.Get02(), -view.Get01()},
+        {view.Get20(), view.Get22(), -view.Get21()},
+        {view.Get10(), view.Get12(), -view.Get11()},
+    };
+    GXSetPBRProbe(viewToProbe, CCubeMaterial::sPortPBRProbeWeight);
     GXSetPBR(GX_TRUE);
+    ++CCubeMaterial::sPortPBRDraws;
   }
 #endif
   surface.CallDisplayList();

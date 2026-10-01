@@ -83,6 +83,12 @@
 #include "MetroidPrime/CGameArea.hpp"
 #include "Kyoto/CTimeProvider.hpp"
 #include "Kyoto/Graphics/CGraphicsPalette.hpp"
+#ifdef TARGET_PC
+#include "Kyoto/Graphics/CCubeMaterial.hpp"
+#include "Kyoto/Graphics/CGX.hpp"
+#include <dolphin/gx/GXExtra.h>
+#include <stdlib.h>
+#endif
 #include "Kyoto/Graphics/CLight.hpp"
 #include "Kyoto/Graphics/CModel.hpp"
 #include "Kyoto/Graphics/CTexture.hpp"
@@ -2565,7 +2571,110 @@ void CStateManager::SetupFogForArea3XRange(TAreaId area) const {
 
 CGameArea::CConstChainIterator CWorld::GetAliveAreasEnd() { return skGlobalEnd; }
 
+#ifdef TARGET_PC
+// Port: the PBR reflection probe (GXCopyProbeFace). One face of a cube map of the world
+// around the camera is drawn into a corner of the EFB each frame, the way
+// CCubeRenderer::CacheReflection draws its sphere map, so the probe is six frames old at
+// worst. World geometry and sky only. MP_PBR_PROBE=0 turns it off, and MP_PBR_PROBE=mirror
+// or =window draws PBR surfaces as mirrors of it or windows onto it, to check the faces.
+void CStateManager::PortCaptureProbeFace() const {
+  static const char* const env = getenv("MP_PBR_PROBE");
+  static const bool enabled = env == nullptr || env[0] != '0';
+  static const float weight = env == nullptr ? 1.f : env[0] == 'm' ? 2.f : env[0] == 'w' ? 3.f : 1.f;
+  static uint lastDraws = 0;
+  static int face = 0;
+  static int filled = 0;
+  const uint draws = CCubeMaterial::sPortPBRDraws;
+  const bool used = draws != lastDraws;
+  lastDraws = draws;
+  if (!enabled) {
+    return;
+  }
+  if (!used || x8b8_playerState->GetActiveVisor(*this) == CPlayerState::kPV_Thermal ||
+      x8b8_playerState->GetActiveVisor(*this) == CPlayerState::kPV_XRay) {
+    // Nothing reflects it, or the world is not drawn in its own colours. A probe that
+    // was filled stays in use, stale, and catches up when the captures resume.
+    return;
+  }
+
+  // Forward and up per face, +X -X +Y -Y +Z -Z in the probe's space (world Y and Z
+  // swapped), which is what the cube map's face layout expects.
+  static const float kFaces[6][6] = {
+      {1.f, 0.f, 0.f, 0.f, 0.f, 1.f},  {-1.f, 0.f, 0.f, 0.f, 0.f, 1.f},
+      {0.f, 0.f, 1.f, 0.f, -1.f, 0.f}, {0.f, 0.f, -1.f, 0.f, 1.f, 0.f},
+      {0.f, 1.f, 0.f, 0.f, 0.f, 1.f},  {0.f, -1.f, 0.f, 0.f, 0.f, 1.f},
+  };
+  const int kSize = 128;
+  const CGameCamera& cam = x870_cameraManager->GetCurrentCamera(*this);
+  const CVector3f pos = x870_cameraManager->GetCurrentCameraTransform(*this).GetTranslation();
+  const CVector3f fwd(kFaces[face][0], kFaces[face][1], kFaces[face][2]);
+  const CVector3f up(kFaces[face][3], kFaces[face][4], kFaces[face][5]);
+  const CVector3f right = CVector3f::Cross(fwd, up);
+  const CTransform4f xf(right.GetX(), fwd.GetX(), up.GetX(), pos.GetX(), right.GetY(), fwd.GetY(),
+                        up.GetY(), pos.GetY(), right.GetZ(), fwd.GetZ(), up.GetZ(), pos.GetZ());
+
+  const CViewport oldViewport = CGraphics::GetViewport();
+  const int captureTop = static_cast< int >(CGraphics::GetRenderMode().efbHeight) - kSize;
+  CGraphics::SetViewport(0, captureTop, kSize, kSize);
+  CGraphics::SetScissor(0, captureTop, kSize, kSize);
+  GXSetTexCopySrc(0, 0, kSize, kSize);
+  CGX::SetZMode(true, GX_LEQUAL, true);
+  GXCopyTex(CGraphics::GetDolphinSpareBuffer(), true);
+
+  gpRender->SetWorldViewpoint(xf);
+  CGraphics::SetDepthRange(0.125f, 1.f);
+  gpRender->SetPerspective(90.f, 1.f, 1.f, cam.GetNearClipDistance(), cam.GetFarClipDistance());
+  gpRender->SetClippingPlanes(
+      CFrustumPlanes(xf, 0.5f * M_PIF, 1.f, cam.GetNearClipDistance(), false, 100.f));
+  gpRender->PrimColor(CColor::White());
+  gpRender->SetModelMatrix(CTransform4f::Identity());
+  gpRender->SetThermal(false, 0.f, CColor::Black());
+
+  const TAreaId visAreaId = GetVisAreaId();
+  x850_world->TouchSky();
+  int areaCount = 0;
+  const CGameArea* lastArea = nullptr;
+  for (CGameArea::CConstChainIterator it = x850_world->GetChainHead(CWorld::kC_Alive);
+       it != CWorld::GetAliveAreasEnd() && areaCount != 10; ++it) {
+    if (it->GetOcclusionState() != CGameArea::kOS_Visible) {
+      continue;
+    }
+    const CGameArea& area = *it;
+    CPVSVisSet set(kVSS_OutOfBounds);
+    GetVisSetForArea(area.GetId(), visAreaId, set);
+    SetupFogForArea(area);
+    gpRender->EnablePVS(&set, area.GetId().Value());
+    gpRender->SetWorldLightFadeLevel(area.GetPostConstructed()->x1128_worldLightingLevel);
+    gpRender->DrawUnsortedGeometry(area.GetId().Value(), 1 << 1, 0);
+    lastArea = &area;
+    ++areaCount;
+  }
+  if (!SetupFogForDraw()) {
+    gpRender->SetWorldFog(kRFM_None, 0.f, 1.f, CColor::Black());
+  }
+  x850_world->DrawSky(CTransform4f::Translate(pos));
+  if (lastArea != nullptr) {
+    SetupFogForArea(*lastArea);
+  }
+
+  CGX::SetZMode(true, GX_LEQUAL, true);
+  GXCopyProbeFace(face);
+  CGraphics::SetViewport(oldViewport.mLeft, oldViewport.mTop, oldViewport.mWidth,
+                         oldViewport.mHeight);
+  CGraphics::SetScissor(oldViewport.mLeft, oldViewport.mTop, oldViewport.mWidth,
+                        oldViewport.mHeight);
+
+  face = (face + 1) % 6;
+  if (filled < 6 && ++filled == 6) {
+    CCubeMaterial::sPortPBRProbeWeight = weight;
+  }
+}
+#endif
+
 void CStateManager::DrawWorld() const {
+#ifdef TARGET_PC
+  PortCaptureProbeFace();
+#endif
   const CTimeProvider timeProvider(xf14_curTimeMod900);
   const CViewport backupViewport = CGraphics::GetViewport();
   const CFrustumPlanes frustum = SetupViewForDraw(backupViewport);

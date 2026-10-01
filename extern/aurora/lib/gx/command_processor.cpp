@@ -768,6 +768,21 @@ void handle_aurora(ByteReader& reader) noexcept {
       g_gxState.pbr = pbr;
       g_gxState.dirty |= DirtyPipeline;
     }
+  } else if (subCmd == GX_AURORA_COPY_PROBE_FACE) {
+    copy_probe_face(reader.read<u8>());
+  } else if (subCmd == GX_AURORA_SET_PBR_PROBE) {
+    Mat3x4<float> mtx;
+    for (Vec4<float>* col : {&mtx.m0, &mtx.m1, &mtx.m2}) {
+      const f32 x = reader.read<f32>();
+      const f32 y = reader.read<f32>();
+      const f32 z = reader.read<f32>();
+      const f32 w = reader.read<f32>();
+      *col = Vec4<float>{x, y, z, w};
+    }
+    if (g_gxState.pbrProbe != mtx) {
+      g_gxState.pbrProbe = mtx;
+      g_gxState.dirty |= DirtyUniform;
+    }
   }
 
   else {

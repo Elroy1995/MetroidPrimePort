@@ -7,6 +7,7 @@
 #include "../internal.hpp"
 #include "../window.hpp"
 #include "../gfx/resources.hpp"
+#include "../gfx/probe.hpp"
 #include "../gfx/recording.hpp"
 #include "../gfx/resource_cache.hpp"
 #include "../gfx/texture.hpp"
@@ -483,7 +484,11 @@ GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept {
   }
 
   // Using C WGPU types instead of C++ wrappers to avoid destructor overhead
-  std::array<WGPUBindGroupEntry, MaxTextures * 2> textureEntries{};
+  std::array<WGPUBindGroupEntry, MaxTextures * 2 + 2> textureEntries{};
+  textureEntries[MaxTextures * 2].binding = MaxTextures * 2;
+  textureEntries[MaxTextures * 2].textureView = gfx::probe::cube_view().Get();
+  textureEntries[MaxTextures * 2 + 1].binding = MaxTextures * 2 + 1;
+  textureEntries[MaxTextures * 2 + 1].sampler = gfx::probe::sampler().Get();
   for (u32 i = 0; i < MaxTextures; ++i) {
     const auto& tex = g_gxState.textures[i];
     WGPUBindGroupEntry& textureEntry = textureEntries[i * 2];
@@ -511,7 +516,22 @@ GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept {
 
 void initialize() noexcept {
   {
-    std::array<wgpu::BindGroupLayoutEntry, MaxTextures * 2> textureEntries;
+    std::array<wgpu::BindGroupLayoutEntry, MaxTextures * 2 + 2> textureEntries;
+    // The PBR environment probe (GX_AURORA_COPY_PROBE_FACE)
+    textureEntries[MaxTextures * 2] = {
+        .binding = MaxTextures * 2,
+        .visibility = wgpu::ShaderStage::Fragment,
+        .texture =
+            {
+                .sampleType = wgpu::TextureSampleType::Float,
+                .viewDimension = wgpu::TextureViewDimension::Cube,
+            },
+    };
+    textureEntries[MaxTextures * 2 + 1] = {
+        .binding = MaxTextures * 2 + 1,
+        .visibility = wgpu::ShaderStage::Fragment,
+        .sampler = {.type = wgpu::SamplerBindingType::Filtering},
+    };
     for (u32 i = 0; i < MaxTextures; ++i) {
       textureEntries[i * 2] = {
           .binding = i * 2,
@@ -550,7 +570,15 @@ void initialize() noexcept {
     sEmptyTextureView = sEmptyTexture.CreateView();
   }
   {
-    std::array<wgpu::BindGroupEntry, MaxTextures * 2> entries;
+    std::array<wgpu::BindGroupEntry, MaxTextures * 2 + 2> entries;
+    entries[MaxTextures * 2] = {
+        .binding = MaxTextures * 2,
+        .textureView = gfx::probe::cube_view(),
+    };
+    entries[MaxTextures * 2 + 1] = {
+        .binding = MaxTextures * 2 + 1,
+        .sampler = gfx::probe::sampler(),
+    };
     for (u32 i = 0; i < MaxTextures; ++i) {
       entries[i * 2] = {
           .binding = i * 2,

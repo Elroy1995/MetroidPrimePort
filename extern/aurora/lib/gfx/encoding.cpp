@@ -5,6 +5,7 @@
 #include "clear.hpp"
 #include "depth_peek.hpp"
 #include "pipeline_cache.hpp"
+#include "probe.hpp"
 #include "tex_copy_conv.hpp"
 #include "tex_palette_conv.hpp"
 #include "../gx/gx.hpp"
@@ -257,7 +258,9 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
   if (passInfo.resolveTarget) {
     const auto& dstSize = passInfo.resolveTarget->size;
     const bool needsConversion = tex_copy_conv::needs_conversion(passInfo.resolveFormat);
-    const bool needsScaling = dstSize.width != static_cast<uint32_t>(passInfo.resolveRect.width) ||
+    // A probe face is a layer of a cube texture, which only the blit addresses.
+    const bool needsScaling = passInfo.probeFace >= 0 ||
+                              dstSize.width != static_cast<uint32_t>(passInfo.resolveRect.width) ||
                               dstSize.height != static_cast<uint32_t>(passInfo.resolveRect.height);
     const bool isDepth = gx::is_depth_format(passInfo.resolveFormat);
     if (isDepth && passInfo.msaaSamples > 1) {
@@ -293,6 +296,9 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
           .depthOrArrayLayers = 1,
       };
       cmd.CopyTextureToTexture(&src, &dst, &size);
+    }
+    if (passInfo.probeFace >= 0) {
+      probe::encode_mips(cmd, passInfo.probeFace, passInfo.probeUniformRange);
     }
   }
 

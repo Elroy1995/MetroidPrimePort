@@ -793,7 +793,8 @@ PipelineRef pipeline_ref(const clear::PipelineConfig& config) {
 }
 
 void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
-                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {
+                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat,
+                       int probeFace) {
   // Resolve current render pass
   auto& prevPass = current_render_passes()[g_recorder.currentRenderPass];
   prevPass.resolveTarget = std::move(texture);
@@ -809,6 +810,10 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
       static_cast<float>(rect.height) / srcH,
   };
   prevPass.resolveUniformRange = push_uniform(uvTransform);
+  if (probeFace >= 0) {
+    prevPass.probeFace = probeFace;
+    prevPass.probeUniformRange = push_uniform(std::array{0.f, 0.f, 1.f, 1.f});
+  }
   enqueue_pass(current_frame_packet(), g_recorder.currentRenderPass);
 
   // Populate new render pass from previous

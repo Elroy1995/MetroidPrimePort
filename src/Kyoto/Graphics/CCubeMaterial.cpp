@@ -880,6 +880,9 @@ void CCubeModel::EnableShadowMaps(const CTexture* shadowTex, const CTransform4f&
 void CCubeModel::DisableShadowMaps() { sbRenderModelShadow = false; }
 
 #ifdef TARGET_PC
+float CCubeMaterial::sPortPBRProbeWeight = 0.f;
+uint CCubeMaterial::sPortPBRDraws = 0;
+
 bool CCubeMaterial::PortPBRAllowed(const CModelFlags& flags) {
   return !sbRenderModelBlack && !sbRenderModelShadow && !CCubeRenderer::That()->GetThermal() &&
          flags.GetTrans() == CModelFlags::kT_Opaque;

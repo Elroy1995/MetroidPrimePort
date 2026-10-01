@@ -389,6 +389,7 @@ struct GXState {
   u8 numTevStages = 0;
   u8 numTexGens = 0;
   bool pbr = false; // GX_AURORA_SET_PBR
+  Mat3x4<float> pbrProbe; // GX_AURORA_SET_PBR_PROBE
 
   // GX2 polygon offset state
   f32 frontOffset = 0.0f;
@@ -457,6 +458,7 @@ void set_render_scissor(const gfx::ClipRect& scissor) noexcept;
 void set_draw_sync_token(u16 token) noexcept;
 u16 draw_sync_token() noexcept;
 void copy_tex(const void* dest, GXBool clear) noexcept;
+void copy_probe_face(u32 face) noexcept;
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept;
 void resolve_sampled_textures(const ShaderInfo& info) noexcept;
 
@@ -537,6 +539,7 @@ struct ShaderInfo {
   bool usesFog : 1 = false;
   bool lightingEnabled : 1 = false;
   u8 lineMode : 2 = 0;
+  bool usesPbr : 1 = false;
 };
 struct BindGroupRanges {
   std::array<gfx::Range, MaxIndexAttr> vaRanges{};

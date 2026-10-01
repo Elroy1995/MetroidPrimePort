@@ -24,6 +24,10 @@ void GXDestroyCopyTex(void* dest);
 void GXSetArrayBaseIndex(GXAttr attr, u32 base);
 // Aurora extension: PBR shading for the following draws (see GX_AURORA_SET_PBR).
 void GXSetPBR(GXBool enable);
+// Aurora extension: the PBR environment probe (see GX_AURORA_COPY_PROBE_FACE and
+// GX_AURORA_SET_PBR_PROBE).
+void GXCopyProbeFace(u32 face);
+void GXSetPBRProbe(const f32 viewToProbe[3][3], f32 weight);
 
 void GXColor4f32(float r, float g, float b, float a);
 

@@ -88,6 +88,8 @@ struct RenderPass {
   GXTexFmt resolveFormat = GX_TF_RGBA8;
   ClipRect resolveRect;
   Range resolveUniformRange;
+  int probeFace = -1; // resolveTarget is this face of the PBR probe
+  Range probeUniformRange;
   wgpu::Texture snapshotColorDst;
   wgpu::TextureView snapshotDepthDst;
   float clearDepthValue = 1.f;

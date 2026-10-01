@@ -2,6 +2,7 @@
 
 #include "depth_peek.hpp"
 #include "pipeline_cache.hpp"
+#include "probe.hpp"
 #include "recording.hpp"
 #include "render_worker.hpp"
 #include "resource_cache.hpp"
@@ -533,6 +534,7 @@ void shutdown() {
   shutdown_pipeline_cache();
   depth_peek::shutdown();
   tex_copy_conv::shutdown();
+  probe::shutdown();
   tex_palette_conv::shutdown();
   texture_replacement::shutdown();
   gx::shutdown();
