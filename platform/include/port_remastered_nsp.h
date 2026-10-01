@@ -1,0 +1,70 @@
+#pragma once
+
+// Reads the RomFS of Metroid Prime Remastered straight out of the user's .nsp.
+//
+// Nothing is extracted: Open() parses the PFS0, the ticket, the NCA header and
+// the RomFS tables (a few MB), and Read() decrypts only the ranges asked for.
+// The keys come from the user's own key file (hactool's "name = hex" format);
+// the port embeds none and never prints them; only the one content key that
+// Read() needs stays in memory, and it is wiped on Close().
+//
+// Supported: NCA3, title-key crypto with a common ticket, an AES-CTR section
+// holding a RomFS behind IVFC. Anything else (BKTR patch sections, NCA0/NCA2,
+// compressed NCZ, personalized tickets) fails Open() with a clear error.
+// Hashes are not verified.
+
+#include <cstddef>
+#include <cstdint>
+#include <fstream>
+#include <string>
+#include <vector>
+
+namespace PortRemastered {
+
+struct RomfsFile {
+  // Forward slashes, no leading slash: "Worlds/MP1/.../x.pak".
+  std::string path;
+  // Where the file starts, counted from the start of the RomFS, and its length.
+  uint64_t offset = 0;
+  uint64_t size = 0;
+};
+
+class Nsp {
+public:
+  Nsp() = default;
+  Nsp(const Nsp&) = delete;
+  Nsp& operator=(const Nsp&) = delete;
+  ~Nsp();
+
+  bool Open(const std::string& nspPath, const std::string& keysPath, std::string& error);
+  void Close();
+  bool IsOpen() const { return m_open; }
+
+  // Sorted by path.
+  const std::vector<RomfsFile>& Files() const { return m_files; }
+  const RomfsFile* Find(const std::string& path) const;
+
+  // Decrypts [offset, offset + size) of `file` into `out`. Thread-compatible:
+  // safe from one thread at a time (it shares the file handle and a scratch buffer).
+  bool Read(const RomfsFile& file, uint64_t offset, void* out, size_t size, std::string& error) const;
+
+private:
+  // Reads and decrypts `size` bytes at `offset` in the RomFS section.
+  bool ReadSection(uint64_t offset, void* out, size_t size, std::string& error) const;
+
+  bool m_open = false;
+  mutable std::ifstream m_file;
+  // Absolute position of the section in the .nsp, and of the RomFS inside it.
+  uint64_t m_sectionBase = 0;
+  uint64_t m_sectionSize = 0;
+  uint64_t m_romfsOffset = 0;
+  uint64_t m_dataOffset = 0;
+  // Offset of the NCA from the section start's counter point of view.
+  uint64_t m_sectionInNca = 0;
+  uint8_t m_ctrHigh[8] = {};
+  uint8_t m_contentKey[16] = {};
+  std::vector<RomfsFile> m_files;
+  mutable std::vector<uint8_t> m_scratch;
+};
+
+} // namespace PortRemastered
