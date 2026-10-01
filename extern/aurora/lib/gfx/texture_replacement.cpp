@@ -1370,10 +1370,8 @@ void clear_replacement_runtime_state_locked(std::vector<std::shared_ptr<VirtualR
 
 bool is_source_key(const ReplacementKey& key) noexcept { return std::holds_alternative<TextureSourceKey>(key); }
 
-ReplacementRegistration register_file_replacement(TextureSourceKey key, std::filesystem::path path,
-                                                  ReplacementOptions options) {
-  std::lock_guard lk(s_registryMutex);
-  ReplacementKey replacementKey{key};
+ReplacementRegistration register_file_replacement_locked(ReplacementKey replacementKey, std::filesystem::path path,
+                                                         ReplacementOptions options) {
   ReplacementRegistration registration{
       .id = s_nextRegistrationId++,
       .key = replacementKey,
@@ -1388,11 +1386,13 @@ ReplacementRegistration register_file_replacement(TextureSourceKey key, std::fil
       .label = fmt::format("TextureReplacement {}", io::fs_path_to_string(path.filename())),
       .path = std::move(path),
   });
-  ++s_sourceEntryCount;
   const auto snapshot = snapshot_entry(replacementKey, entries.back());
   queue_thumbnail_load(snapshot);
   erase_cache_locked(replacementKey);
-  gx::clear_static_texture_cache();
+  if (is_source_key(replacementKey)) {
+    ++s_sourceEntryCount;
+    gx::clear_static_texture_cache();
+  }
   return registration;
 }
 } // namespace
@@ -1527,6 +1527,15 @@ ReplacementRegistration register_replacement(ReplacementKey key, RawTextureRepla
   return registration;
 }
 
+ReplacementRegistration register_file_replacement(ReplacementKey key, const std::filesystem::path& path,
+                                                  ReplacementOptions options) {
+  if (std::holds_alternative<TexturePointerKey>(key) && std::get<TexturePointerKey>(key).data == nullptr) {
+    return {};
+  }
+  std::lock_guard lk(s_registryMutex);
+  return register_file_replacement_locked(key, path, options);
+}
+
 void unregister_replacement(const ReplacementRegistration& registration) {
   if (registration.id == 0) {
     return;
@@ -1537,9 +1546,14 @@ void unregister_replacement(const ReplacementRegistration& registration) {
   {
     std::lock_guard lk(s_registryMutex);
     removed = unregister_replacement_locked(registration, waitStates);
-    if (removed) {
+    if (removed && is_source_key(registration.key)) {
       gx::clear_static_texture_cache();
     }
+  }
+  if (removed && !is_source_key(registration.key)) {
+    // A pointer key names one texture, so only the objects that took this entry go stale.
+    gx::texture::invalidate_replacement(registration.id);
+    gx::texture::invalidate_bindings();
   }
   wait_for_virtual_reads(waitStates);
 }
@@ -1694,7 +1708,9 @@ ReplacementGroup load_replacement_directory(const std::filesystem::path& root, R
       continue;
     }
     registeredKeys.insert(*parsed);
-    group.registrations.push_back(register_file_replacement(*parsed, candidate.path, options));
+    std::lock_guard lk(s_registryMutex);
+    group.registrations.push_back(
+        register_file_replacement_locked(ReplacementKey{*parsed}, candidate.path, options));
   }
 
   Log.info("Loaded {} texture replacement registrations from {}", group.registrations.size(),
@@ -1848,6 +1864,13 @@ std::optional<ReplacementResult> find_pointer_replacement(const GXTexObj_& obj) 
   }
 
   std::lock_guard lk(s_registryMutex);
+  // The object's user data first: a key that stays put while the texel buffer is reallocated.
+  if (obj.userData != nullptr) {
+    ReplacementKey userKey{TexturePointerKey{.data = obj.userData}};
+    if (s_entriesByKey.contains(userKey)) {
+      return find_replacement_for_key_locked(userKey);
+    }
+  }
   ReplacementKey pointerKey{TexturePointerKey{.data = obj.data}};
   if (!s_entriesByKey.contains(pointerKey)) {
     return std::nullopt;

@@ -97,6 +97,7 @@ void emit_loaded_texobj_metadata(const GXTexObj_& obj, GXTexMapID id) {
   GX_WRITE_AURORA(GX_AURORA_LOAD_TEXOBJ);
   GX_WRITE_U8(static_cast<u8>(id));
   GX_WRITE_U64(reinterpret_cast<u64>(obj.data));
+  GX_WRITE_U64(reinterpret_cast<u64>(obj.userData)); // a pointer-keyed replacement can be registered under it
   GX_WRITE_U32(obj.width());
   GX_WRITE_U32(obj.height());
   GX_WRITE_U32(obj.format());

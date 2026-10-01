@@ -113,6 +113,11 @@ void TestNames() {
   Check(!PortMods::ParseLooseName("1A2B3C4G.TXTR", type, id), "bad hex");
   Check(!PortMods::ParseLooseName("1A2B3C4D.TXT", type, id), "short type");
   Check(!PortMods::ParseLooseName("Metroid1.pak", type, id), "disc name");
+  Check(PortMods::ParseNativeTextureName("1a2B3c4D.DdS", id) && id == 0x1A2B3C4D, "native texture name");
+  Check(!PortMods::ParseNativeTextureName("1A2B3C4D.png", id), "native texture: not a dds");
+  Check(!PortMods::ParseNativeTextureName("1A2B3C4G.dds", id), "native texture: bad hex");
+  Check(!PortMods::ParseNativeTextureName("tex1_64x64_0123456789abcdef_14.dds", id), "native texture: a texture pack name");
+  Check(!PortMods::ParseLooseName("1A2B3C4D.dds", type, id), "native texture is not a loose resource");
   Check(PortMods::FourCCString(kTXTR) == "TXTR", "fourcc");
   Check(PortMods::SplitDisabled("a/b//c") == std::vector<std::string>({"a", "b", "c"}), "split");
   Check(PortMods::JoinDisabled({"a", "", "b/c", "d"}) == "a/d", "join");

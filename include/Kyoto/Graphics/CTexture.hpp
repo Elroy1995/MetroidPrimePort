@@ -138,6 +138,13 @@ private:
   mutable EClampMode mClampMode;
   mutable CARAMToken mARAMToken;
   mutable uint mFrameAllocated;
+#ifdef TARGET_PC
+  // Port: the asset id, when a mod draws this texture from <id>.dds (port_mods.h).
+  uint mPortNativeId;
+
+public:
+  void PortSetNativeId(uint id);
+#endif
 };
 CHECK_SIZEOF(CTexture, 0x68)
 

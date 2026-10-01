@@ -11,6 +11,13 @@
 //    as a virtual file: its table patched to point past the original data, where
 //    the loose file is appended. An id no PAK holds is added to NoARAM.pak,
 //    which stays loaded from boot, so mods can bring new resources.
+//  - a file named <8 hex digits>.dds, anywhere in the mod, is the full-size
+//    image of the TXTR with that id (BC7, BC5, BC3, BC1 or RGBA8, with mips).
+//    The TXTR itself still loads (the mod's own small one, or the disc's) and
+//    supplies the sampler state; the .dds is what gets drawn, streamed by
+//    Aurora outside the game heap, so its size does not count against the
+//    arena. A mod that brings a TXTR without a .dds drops an earlier mod's
+//    .dds for that id. Without BC support on the GPU the TXTR is drawn.
 // Mods are read at startup only: the game caches PAK tables when it boots.
 
 #include <cstddef>
@@ -46,6 +53,8 @@ bool ParsePakTable(const uint8_t* data, size_t size, PakTable& table, size_t& ne
 
 // "1A2B3C4D.TXTR" (any case) -> id 0x1A2B3C4D, type 'TXTR'.
 bool ParseLooseName(const std::string& fileName, uint32_t& type, uint32_t& id);
+// "1A2B3C4D.dds" (any case) -> id 0x1A2B3C4D: a native texture.
+bool ParseNativeTextureName(const std::string& fileName, uint32_t& id);
 std::string FourCCString(uint32_t type);
 
 // --- Virtual files ------------------------------------------------------------
@@ -125,6 +134,7 @@ struct ModInfo {
   bool enabled = true;
   int files = 0;     // disc files replaced
   int resources = 0; // loose resources used
+  int textures = 0;  // <id>.dds images
 };
 
 struct Status {
@@ -143,6 +153,17 @@ const Status& CurrentStatus();
 std::string Folder();
 // Every .pak on the disc (with mods applied), as (entry number, path).
 std::vector<std::pair<int32_t, std::string>> DiscPaks();
+
+// Native textures, for CTexture. HasNativeTexture: a mod has <id>.dds.
+// BindTexture: registers that .dds under `owner`, which the texture then passes
+// to GXInitTexObjUserData so its draws show the image; false when there is
+// none. UnbindTexture: `owner` is being destroyed. Main thread only.
+bool HasNativeTexture(uint32_t id);
+bool BindTexture(const void* owner, uint32_t id);
+void UnbindTexture(const void* owner);
+// How many .dds files the mods supply, and how many are bound now.
+size_t NativeTextureCount();
+size_t NativeTexturesBound();
 
 // Folder names the settings disable, '/'-separated (no folder name has one).
 std::vector<std::string> SplitDisabled(const std::string& list);

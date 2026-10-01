@@ -397,6 +397,16 @@ skipped. Inside a mod:
   raises the emulated MEM1 arena (default 24 MB, capped at 1024) and the game
   heap with it, for mods heavier than the retail heap allows; the log says
   `port: MEM1 arena raised to <n> MB`.
+- a file named `<8 hex digits>.dds`, anywhere in the mod, is a native texture:
+  the full-size image of the TXTR with that id, as BC7, BC5 (two-channel, for
+  PBR normal maps), BC3, BC1 or RGBA8, with a full mip chain. The TXTR still
+  loads (the mod's own, which can be a few texels across, or the disc's) and
+  supplies the wrap and filter state; the `.dds` is what is drawn. Aurora
+  streams it on worker threads into GPU memory, so its size never counts
+  against the game heap: a mod of 2048 px maps runs at the default arena. A
+  later mod's TXTR without a `.dds` drops an earlier mod's `.dds` for that id.
+  On a GPU without BC support (most phones) the TXTR is drawn instead. The log
+  and the Mods panel count them (`mods: <n> native texture(s)`).
 - text and image files (`.txt`, `.md`, `.json`, `.png`, ...) are ignored
   silently, so a mod can carry its readme.
 

@@ -83,6 +83,15 @@ struct VirtualFileSource {
 ReplacementRegistration register_virtual_replacement(std::string_view path, VirtualFileSource source,
                                                      ReplacementOptions options = {});
 
+/// Registers an encoded (.dds/.png) file under a key the caller chooses, loaded like a directory
+/// replacement (thumbnail first, the rest streamed). With a TexturePointerKey the file stands in for
+/// the texture whose data pointer that is, or whose GXInitTexObjUserData value it is: the user
+/// data is looked up first, and is the one to use when the texel buffer can move. Register it
+/// before the texture is first drawn, and unregister it before the pointer is freed or reused.
+/// Main thread only.
+ReplacementRegistration register_file_replacement(ReplacementKey key, const std::filesystem::path& path,
+                                                  ReplacementOptions options = {});
+
 ReplacementRegistration register_replacement(ReplacementKey key, RawTextureReplacement replacement,
                                              ReplacementOptions options = {});
 void unregister_replacement(const ReplacementRegistration& registration);

@@ -2677,7 +2677,11 @@ void DrawMods() {
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (mod.enabled) {
-      ImGui::TextDisabled("%d file(s), %d resource(s)", mod.files, mod.resources);
+      if (mod.textures > 0) {
+        ImGui::TextDisabled("%d file(s), %d resource(s), %d native texture(s)", mod.files, mod.resources, mod.textures);
+      } else {
+        ImGui::TextDisabled("%d file(s), %d resource(s)", mod.files, mod.resources);
+      }
     } else {
       ImGui::TextDisabled("not loaded");
     }
@@ -2688,6 +2692,9 @@ void DrawMods() {
   }
   for (const std::string& message : status.messages) {
     ImGui::TextColored(ImVec4(1.f, 0.5f, 0.3f, 1.f), "%s", message.c_str());
+  }
+  if (PortMods::NativeTextureCount() > 0) {
+    ImGui::TextDisabled("Native textures: %zu, %zu in use", PortMods::NativeTextureCount(), PortMods::NativeTexturesBound());
   }
   ImGui::TextWrapped("Folder: %s", status.folder.c_str());
 #if !defined(__ANDROID__)

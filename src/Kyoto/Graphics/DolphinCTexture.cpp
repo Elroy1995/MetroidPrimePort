@@ -21,6 +21,8 @@
 
 #ifdef TARGET_PC
 #include <dolphin/gx/GXExtra.h>
+
+#include "port_mods.h"
 #endif
 
 int CTexture::sCurrentFrameCount = 0;
@@ -50,7 +52,11 @@ CTexture::CTexture(ETexelFormat fmt, const short w, const short h, int mips)
 #endif
 , mNativeFormat(GX_TF_RGB565)
 , mNativeCIFormat(GX_TF_C8)
-, mClampMode(kCM_Repeat) {
+, mClampMode(kCM_Repeat)
+#ifdef TARGET_PC
+, mPortNativeId(0)
+#endif
+{
   InitBitmapBuffers(fmt, w, h, mips);
   InitTextureObjects();
 }
@@ -74,7 +80,11 @@ CTexture::CTexture(CInputStream& in, EAutoMipmap automip, EBlackKey blackKey)
 #endif
 , mNativeFormat(GX_TF_RGB565)
 , mNativeCIFormat(GX_TF_C8)
-, mClampMode(kCM_Repeat) {
+, mClampMode(kCM_Repeat)
+#ifdef TARGET_PC
+, mPortNativeId(0)
+#endif
+{
   mTexelFormat = ETexelFormat(in.Get< uint >());
   mWidth = in.ReadUint16();
   mHeight = in.ReadUint16();
@@ -121,7 +131,23 @@ CTexture::CTexture(CInputStream& in, EAutoMipmap automip, EBlackKey blackKey)
   PPCSync();
 }
 
-CTexture::~CTexture() { UncountMemory(); }
+CTexture::~CTexture() {
+#ifdef TARGET_PC
+  if (mPortNativeId != 0) {
+    PortMods::UnbindTexture(this);
+  }
+#endif
+  UncountMemory();
+}
+
+#ifdef TARGET_PC
+// A mod's <id>.dds is drawn in place of this texture's texels (port_mods.h). The image is
+// registered under this object's address, which Load hands to GX as the tex object's user
+// data: the texel buffer moves when the texture is swapped out to ARAM and back, this does not.
+void CTexture::PortSetNativeId(uint id) {
+  mPortNativeId = PortMods::BindTexture(this, id) ? id : 0;
+}
+#endif
 
 void CTexture::InitTextureObjects() {
   mIsPowerOfTwo =
@@ -189,6 +215,12 @@ void CTexture::Load(GXTexMapID tex, EClampMode clamp) const {
     }
 
     GXInitTexObjData(&mTexObj, ptr);
+#ifdef TARGET_PC
+    if (mPortNativeId != 0) {
+      // InitTextureObjects rebuilds the object, so name the owner again on every load.
+      GXInitTexObjUserData(&mTexObj, const_cast< CTexture* >(this));
+    }
+#endif
     GXLoadTexObj(&mTexObj, tex);
     sLoadedTextures[tex] = this;
     mFrameAllocated = sCurrentFrameCount;
@@ -475,7 +507,14 @@ void CTexture::UnLock() {
 
 const CFactoryFnReturn FTextureFactory(const SObjectTag& tag, CInputStream& in,
                                  const CVParamTransfer& xfer) {
+#ifdef TARGET_PC
+  // A mod's <id>.dds is drawn in place of the texels just read (port_mods.h).
+  CTexture* texture = rs_new CTexture(in, CTexture::kAM_Zero, CTexture::kBK_Zero);
+  texture->PortSetNativeId(tag.GetId());
+  return texture;
+#else
   return rs_new CTexture(in, CTexture::kAM_Zero, CTexture::kBK_Zero);
+#endif
 }
 
 const void* CTexture::GetConstBitMapData(const int mip) const {

@@ -105,6 +105,26 @@ bool ParsePakTable(const uint8_t* data, size_t size, PakTable& table, size_t& ne
   return true;
 }
 
+bool ParseNativeTextureName(const std::string& fileName, uint32_t& id) {
+  if (fileName.size() != 12 || fileName[8] != '.') {
+    return false;
+  }
+  for (size_t i = 9; i < 12; ++i) {
+    if ((fileName[i] | 0x20) != "dds"[i - 9]) {
+      return false;
+    }
+  }
+  id = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    const int digit = HexDigit(fileName[i]);
+    if (digit < 0) {
+      return false;
+    }
+    id = (id << 4) | uint32_t(digit);
+  }
+  return true;
+}
+
 bool ParseLooseName(const std::string& fileName, uint32_t& type, uint32_t& id) {
   if (fileName.size() != 13 || fileName[8] != '.') {
     return false;

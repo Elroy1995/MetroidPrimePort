@@ -8,6 +8,8 @@
 #include "port_log.h"
 
 #include <aurora/dvd.h>
+#include <dolphin/gx.h>
+#include <aurora/texture.hpp>
 #include <dolphin/dvd.h>
 
 #include <SDL3/SDL_filesystem.h>
@@ -19,6 +21,7 @@
 #include <filesystem>
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <utility>
 
 namespace fs = std::filesystem;
@@ -30,6 +33,10 @@ Status sStatus;
 // Registered with Aurora; filled once, so the pointers handed out stay put.
 std::vector<std::shared_ptr<const VirtualFile>> sFiles;
 std::vector<std::string> sOverlayNames;
+
+// <id>.dds files, and the textures (by owner) currently drawn from one.
+std::unordered_map<uint32_t, std::string> sNativeTextures;
+std::unordered_map<const void*, aurora::texture::ReplacementRegistration> sBoundTextures;
 
 std::string PathString(const fs::path& path) {
   const auto u8 = path.u8string();
@@ -246,8 +253,37 @@ std::vector<std::pair<int32_t, std::string>> DiscPaks() {
   return paks;
 }
 
+bool HasNativeTexture(uint32_t id) { return sNativeTextures.count(id) != 0; }
+
+bool BindTexture(const void* owner, uint32_t id) {
+  UnbindTexture(owner);
+  const auto found = sNativeTextures.find(id);
+  if (found == sNativeTextures.end()) {
+    return false;
+  }
+  const auto registration = aurora::texture::register_file_replacement(
+      aurora::texture::TexturePointerKey{owner}, PathFromString(found->second));
+  if (registration.id == 0) {
+    return false;
+  }
+  sBoundTextures[owner] = registration;
+  return true;
+}
+
+void UnbindTexture(const void* owner) {
+  const auto found = sBoundTextures.find(owner);
+  if (found != sBoundTextures.end()) {
+    aurora::texture::unregister_replacement(found->second);
+    sBoundTextures.erase(found);
+  }
+}
+
+size_t NativeTextureCount() { return sNativeTextures.size(); }
+size_t NativeTexturesBound() { return sBoundTextures.size(); }
+
 void Initialize() {
   sStatus = {};
+  sNativeTextures.clear();
   sStatus.folder = Folder();
   sStatus.active = PortDebug::ModsEnabled();
   if (sStatus.folder.empty()) {
@@ -292,6 +328,7 @@ void Initialize() {
       }
     }
     std::sort(files.begin(), files.end());
+    std::unordered_map<uint32_t, std::string> native;
     for (const fs::path& file : files) {
       const std::string name = PathString(file.filename());
       const std::string relative = PathString(file.lexically_relative(modDir).generic_u8string());
@@ -302,6 +339,10 @@ void Initialize() {
       }
       uint32_t type = 0;
       uint32_t id = 0;
+      if (ParseNativeTextureName(name, id)) {
+        native[id] = PathString(file);
+        continue;
+      }
       if (ParseLooseName(name, type, id)) {
         if (size == 0) {
           Message(info.name + ": " + relative + " is empty; ignored");
@@ -309,6 +350,9 @@ void Initialize() {
         }
         loose[{type, id}] = {type, id, PathString(file), size, info.name};
         looseMod[{type, id}] = modIndex;
+        if (type == 0x54585452) { // 'TXTR': an earlier mod's image was made for another texture
+          sNativeTextures.erase(id);
+        }
         continue;
       }
       const int32_t entry = DVDConvertPathToEntrynum(("/" + relative).c_str());
@@ -324,6 +368,10 @@ void Initialize() {
         continue;
       }
       replaced[entry] = {PathString(file), size, modIndex};
+    }
+    info.textures = int(native.size());
+    for (auto& [id, path] : native) {
+      sNativeTextures[id] = std::move(path);
     }
   }
 
@@ -404,6 +452,10 @@ void Initialize() {
     }
   }
 
+  if (!sNativeTextures.empty()) {
+    PortLog::Write("mods: %d native texture(s)\n", int(sNativeTextures.size()));
+  }
+
   sFiles.clear();
   sOverlayNames.clear();
   for (const auto& [entry, replacement] : replaced) {
@@ -454,7 +506,8 @@ void Initialize() {
   }
   for (const ModInfo& mod : sStatus.mods) {
     if (mod.enabled) {
-      PortLog::Write("mods: %s: %d file(s), %d resource(s)\n", mod.name.c_str(), mod.files, mod.resources);
+      PortLog::Write("mods: %s: %d file(s), %d resource(s), %d native texture(s)\n", mod.name.c_str(), mod.files,
+                     mod.resources, mod.textures);
     }
   }
   PortLog::Write("mods: %d disc file(s) served from %s\n", sStatus.overlays, sStatus.folder.c_str());

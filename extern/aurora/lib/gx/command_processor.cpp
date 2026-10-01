@@ -611,6 +611,7 @@ void handle_aurora(ByteReader& reader) noexcept {
     CHECK(texMapId < MaxTextures, "invalid texture map id {}", texMapId);
     auto& slot = g_gxState.loadedTextures[texMapId];
     const auto newData = reinterpret_cast<const void*>(reader.read<u64>());
+    const auto newUserData = reinterpret_cast<const void*>(reader.read<u64>());
     const u32 newWidth = reader.read<u32>();
     const u32 newHeight = reader.read<u32>();
     const auto newFormat = static_cast<GXTexFmt>(reader.read<u32>());
@@ -623,10 +624,11 @@ void handle_aurora(ByteReader& reader) noexcept {
     }
     const u32 newTexObjId = reader.read<u32>();
     const u32 newTexDataVersion = reader.read<u32>();
-    if (slot.data != newData || slot.mWidth != newWidth || slot.mHeight != newHeight ||
+    if (slot.data != newData || slot.userData != newUserData || slot.mWidth != newWidth || slot.mHeight != newHeight ||
         slot.mFormat != static_cast<u32>(newFormat) || slot.tlut != newTlut || slot.flags != newFlags ||
         slot.texObjId != newTexObjId || slot.texDataVersion != newTexDataVersion) {
       slot.data = newData;
+      slot.userData = newUserData;
       slot.mWidth = newWidth;
       slot.mHeight = newHeight;
       slot.mFormat = newFormat;
