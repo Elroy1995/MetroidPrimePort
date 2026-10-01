@@ -115,12 +115,11 @@ void Draw(const CStateManager& mgr) {
   // material paths (per-vertex lighting, the PBR shading) can be compared.
   CActorLights lights(0, CVector3f(0.f, 0.f, 0.f), 1, 0);
   rstl::vector< CLight > key;
-  // CLight::BuildDirectional takes the direction *toward* the light (the shaders work it out
-  // as light.pos - vertex), so this has to point back at the camera: over its left shoulder and
-  // a little above. Pointing it the other way put the key light behind the model, leaving the
-  // side facing the camera with nothing but ambient - invisible on retail's unlit materials but
-  // it left every PBR model flat and desaturated, which read as a conversion fault.
-  CVector3f dir = -(cam.GetForward() + cam.GetRight() * 0.5f - cam.GetUp() * 0.7f);
+  // CLight::BuildDirectional takes the direction of travel, not the direction toward the light:
+  // DolphinCGraphics places a directional light at -dir (DolphinCGraphics.cpp, the directional
+  // case), so this points from over the camera's shoulder into the scene. Negating it puts the key
+  // light behind the model and leaves the camera-facing side lit by ambient only.
+  CVector3f dir = cam.GetForward() + cam.GetRight() * 0.5f - cam.GetUp() * 0.7f;
   dir.Normalize();
   key.push_back(CLight::BuildDirectional(dir, CColor(0.9f, 0.9f, 0.9f)));
   // Ambient was 0.3, which is 0.07 once the PBR shader takes it to linear space, so a PBR
