@@ -21,6 +21,7 @@
 #include "port_build_info.h"
 #include "port_log.h"
 #include "port_mods.h"
+#include "port_importers.h"
 
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
@@ -415,6 +416,13 @@ int main(int argc, char** argv) {
         std::printf("Metroid Prime native port %s\n", MP_BUILD_REVISION);
         return 0;
     }
+#if !defined(__ANDROID__)
+    // --import [name [argument]]: run a mod importer (port_importers.h) from
+    // the terminal, without starting the game.
+    if (argc >= 2 && std::strcmp(argv[1], "--import") == 0) {
+        return PortImporters::RunFromCommandLine(argc, argv);
+    }
+#endif
     PortLog::Write( "metroid_prime_port: build %s\n", MP_BUILD_REVISION);
     PortRandomizer::EnsureLoaded();
     PortAp::EnsureLoaded();

@@ -8,6 +8,7 @@
 #include "port_controls.h"
 #include "port_gci.h"
 #include "port_mods.h"
+#include "port_importers.h"
 #include "port_discord.h"
 #include "port_livesplit.h"
 #include "port_map_pickups.h"
@@ -2649,6 +2650,59 @@ void DrawMemoryCard() {
       "folder.");
 }
 
+#if !defined(__ANDROID__)
+// Importers (port_importers.h): the user's own programs that build a mod.
+// Nothing is drawn until the importers folder holds one.
+void DrawImporters() {
+  // The folder is read when the panel opens and after a run, not every frame.
+  static std::vector<std::string> sNames;
+  static int sListedFrame = -2;
+  static char sArgument[512] = "";
+  const int frame = ImGui::GetFrameCount();
+  const PortImporters::State& state = PortImporters::Poll();
+  if (sListedFrame != frame - 1 || ImGui::IsWindowAppearing()) {
+    sNames = PortImporters::List();
+  }
+  sListedFrame = frame;
+  if (sNames.empty() && !state.running && !state.finished) {
+    return;
+  }
+  ImGui::SeparatorText("Importers");
+  ImGui::BeginDisabled(state.running);
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+  ImGui::InputTextWithHint("Argument", "optional, e.g. the file to import", sArgument, sizeof(sArgument));
+  for (const std::string& name : sNames) {
+    if (ImGui::Button(("Run " + name).c_str())) {
+      PortImporters::Start(name, sArgument);
+    }
+  }
+  ImGui::EndDisabled();
+  if (state.running) {
+    ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), "%s is running...", state.name.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+      PortImporters::Cancel();
+    }
+  } else if (state.finished && state.exitCode == 0) {
+    ImGui::TextColored(ImVec4(0.5f, 1.f, 0.5f, 1.f), "%s finished. Restart the game to load the mod.",
+                       state.name.c_str());
+  } else if (state.finished && state.cancelled) {
+    ImGui::TextDisabled("%s was cancelled.", state.name.c_str());
+  } else if (state.finished) {
+    ImGui::TextColored(ImVec4(1.f, 0.5f, 0.3f, 1.f), "%s failed (exit code %d).", state.name.c_str(), state.exitCode);
+  }
+  if (!state.lines.empty()) {
+    // The tail of the output; a failure shows more of it.
+    const size_t shown = std::min<size_t>(state.lines.size(), state.finished && state.exitCode != 0 && !state.cancelled ? 12 : 3);
+    for (size_t i = state.lines.size() - shown; i < state.lines.size(); ++i) {
+      ImGui::TextWrapped("%s", state.lines[i].c_str());
+    }
+  }
+  ImGui::TextWrapped("An importer is a program in the importers folder beside the mods folder; it builds a "
+                     "mod from files of your own.");
+}
+#endif
+
 void DrawMods() {
   ImGui::SeparatorText("Mods");
   const PortMods::Status& status = PortMods::CurrentStatus();
@@ -2710,6 +2764,9 @@ void DrawMods() {
       "Each folder in the mods folder is a mod; later names win. A file at a disc path "
       "(Metroid1.pak, Audio/..., Video/...) replaces that file, and a resource named "
       "by id and type (1A2B3C4D.TXTR) replaces it in every PAK. Mods load at startup.");
+#if !defined(__ANDROID__)
+  DrawImporters();
+#endif
 }
 } // namespace
 
@@ -4133,6 +4190,11 @@ void DrawUI() {
   }
   DrawSpeedrunTimer();
   ProcessCardPicks();
+#if !defined(__ANDROID__)
+  // Every frame, not only with the panel open: an importer stops when its
+  // output pipe fills.
+  PortImporters::Poll();
+#endif
   if (!sVisible) {
     sTouchScroll = TouchScroll{};
     return;

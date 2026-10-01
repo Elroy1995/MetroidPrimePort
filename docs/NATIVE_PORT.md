@@ -425,6 +425,23 @@ a resource's original bytes to edit. Checked with a `0552A456.STRG` (the file
 select's "New Game") read from the disc and from a whole-file `MiscData.pak`
 mod. On Android the folder is in app storage with no picker yet.
 
+#### Importers
+
+An importer is a program of your own that builds a mod from files you have (a
+model pack, another release of the game); the port ships none. Put an
+executable file (Windows: `.exe`, `.bat`, `.cmd`) in `importers` in the pref
+folder, beside `mods`, and F1 > Extras > Mods gets a Run button for it, with an
+optional argument field, the tail of its output while it runs, and Cancel.
+`metroid_prime_port --import` lists them and `--import <name> [argument]` runs
+one in the terminal without starting the game, returning its exit code.
+
+The importer gets the argument as `argv[1]`, the mods folder to write into as
+`MP_MODS_DIR`, and the importers folder as its working directory. Its stdout
+and stderr are shown a line at a time (a carriage return rewrites the line, so
+progress bars work); exit code 0 means the mod is in place, and the game has to
+be restarted to load it. Cancel sends a terminate request to the importer
+alone, so a script should pass it on to its children. Desktop only.
+
 ### Platforms
 
 The port is built and tested on Linux and Windows. Its own platform code is
