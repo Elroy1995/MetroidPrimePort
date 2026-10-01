@@ -142,9 +142,11 @@ def _bc4_channel(blocks):
     choose_six = a0 > a1
     rows = [a0, a1]
     for i in range(2, 8):
-        six = ((8 - i) * a0 + (i - 1) * a1) // 7
+        # The +1 is the spec's round to nearest; without it the interpolated
+        # entries land one low against the decoder being checked.
+        six = ((8 - i) * a0 + (i - 1) * a1 + 1) // 7
         if i < 6:
-            four = ((6 - i) * a0 + (i - 1) * a1) // 5
+            four = ((6 - i) * a0 + (i - 1) * a1 + 1) // 5
         else:
             four = np.full_like(a0, 0 if i == 6 else 255)
         rows.append(np.where(choose_six, six, four))

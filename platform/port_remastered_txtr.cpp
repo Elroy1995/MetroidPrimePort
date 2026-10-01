@@ -2418,7 +2418,11 @@ bool DecodeAstcBlock(const uint8_t* block, uint32_t blockWidth, uint32_t blockHe
     blockBits.lo |= uint64_t(block[i]) << (8 * i);
     blockBits.hi |= uint64_t(block[i + 8]) << (8 * i);
   }
-  U128 reversed{lo: ReverseBits64(blockBits.hi), hi: ReverseBits64(blockBits.lo)};
+  // Reversing the whole 128 bit value swaps the halves as well as the bits
+  // inside them, since the low half of the result is the top half of the block.
+  U128 reversed;
+  reversed.lo = ReverseBits64(blockBits.hi);
+  reversed.hi = ReverseBits64(blockBits.lo);
   // Keep only the low nWeightBits of the reversed value, which is how many bits
   // the weights take: the weight stream is the tail of the block.
   if (nWeightBits < 64) {
