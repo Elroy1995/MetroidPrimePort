@@ -497,7 +497,8 @@ void StopImport() {
 bool ApplyPendingImport() {
   const fs::path staging = StagingFolder();
   std::error_code ec;
-  if (staging.empty() || !fs::is_directory(staging, ec)) {
+  // A running import is still writing there.
+  if (staging.empty() || ImportStatus().running || !fs::is_directory(staging, ec)) {
     return false;
   }
   if (!fs::exists(staging / kMarkerName, ec)) {

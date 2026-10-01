@@ -52,6 +52,12 @@ public:
   const rstl::vector< CAssetId >* GetTagListForFile(const rstl::string& pak) const;
   rstl::vector< rstl::pair< rstl::string, SObjectTag > > GetResourceIdToNameList() const;
 
+#ifdef TARGET_PC
+  // Port: closes every PAK, calls `between`, then opens them again and reads
+  // their tables anew (the mods folder changed). No load may be in flight.
+  void PortReopenPaks(void (*between)());
+#endif
+
   int GetPakCount() const;
   CPakFile* GetPakFile(int idx) const;
 

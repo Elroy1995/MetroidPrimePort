@@ -148,6 +148,12 @@ struct Status {
 // Scans the mods folder and registers the overlays. Call once, after the disc
 // is open and before the game starts.
 void Initialize();
+// Reloading while the game runs (PortSaveState::RequestModReload drives it, at
+// a world reload with every PAK closed). BeginReload lets go of the mods'
+// files, so the folder can change; FinishReload scans again, replaces the
+// overlays and binds the live textures to the new images.
+void BeginReload();
+void FinishReload();
 const Status& CurrentStatus();
 // The mods folder, created if missing. Empty if there is no pref folder.
 std::string Folder();

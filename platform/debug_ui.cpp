@@ -2722,7 +2722,12 @@ void DrawRemasteredImport() {
     }
     ImGui::EndDisabled();
     if (state.finished && state.ok) {
-      ImGui::TextColored(ImVec4(0.5f, 1.f, 0.5f, 1.f), "%s Restart the game to load the mod.", state.message.c_str());
+      ImGui::TextColored(ImVec4(0.5f, 1.f, 0.5f, 1.f), "%s", state.message.c_str());
+      if (ImGui::Button("Load it now##remastered")) {
+        PortSaveState::RequestModReload();
+      }
+      ImGui::SameLine();
+      ImGui::TextDisabled("or restart the game");
     } else if (state.finished && state.cancelled) {
       ImGui::TextDisabled("The import was cancelled.");
     } else if (state.finished) {
@@ -2772,7 +2777,7 @@ void DrawImporters() {
       PortImporters::Cancel();
     }
   } else if (state.finished && state.exitCode == 0) {
-    ImGui::TextColored(ImVec4(0.5f, 1.f, 0.5f, 1.f), "%s finished. Restart the game to load the mod.",
+    ImGui::TextColored(ImVec4(0.5f, 1.f, 0.5f, 1.f), "%s finished. Reload the mods to load it.",
                        state.name.c_str());
   } else if (state.finished && state.cancelled) {
     ImGui::TextDisabled("%s was cancelled.", state.name.c_str());
@@ -2830,7 +2835,13 @@ void DrawMods() {
     changed = changed || (sModsEnabled && on) != mod.enabled;
   }
   if (changed) {
-    ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), "Restart the game to apply.");
+    ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), "Reload the mods to apply.");
+  }
+  if (ImGui::Button("Reload mods")) {
+    PortSaveState::RequestModReload();
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Reads the mods folder again and reloads the room, as a save state does.");
   }
   for (const std::string& message : status.messages) {
     ImGui::TextColored(ImVec4(1.f, 0.5f, 0.3f, 1.f), "%s", message.c_str());

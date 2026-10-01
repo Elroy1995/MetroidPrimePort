@@ -2,8 +2,13 @@
 
 #include "port_debug.h"
 #include "port_gci.h"
+#include "port_mods.h"
+#if !defined(__ANDROID__)
+#include "port_remastered_import.h"
+#endif
 #include "port_tracker.h"
 
+#include "Kyoto/CResFactory.hpp"
 #include "Kyoto/Streams/CMemoryInStream.hpp"
 #include "Kyoto/Streams/CMemoryStreamOut.hpp"
 #include "MetroidPrime/CMain.hpp"
@@ -40,6 +45,9 @@ constexpr size_t kBlobSize = 4096;
 int sSelected = 1;
 int sSaveRequest = -1;
 int sLoadRequest = -1;
+bool sReloadRequest = false;
+// The mods are read again where the next game starts (InstallPending).
+bool sReloadMods = false;
 std::string sMessage;
 // SlotInfo is drawn every overlay frame; files change only through WriteSlot.
 Info sInfoCache[kSlotCount + 1];
@@ -189,6 +197,41 @@ void DoSave(CStateManager& mgr, int slot) {
   SetMessage("Saved " + SlotName(slot) + ": " + header.world + " - " + header.room);
 }
 
+void QuitToPending(CStateManager& mgr) {
+  sInstallPending = true;
+  sPlacePending = false;
+
+  // As the debug world warp: stop the outgoing world's loads, retire its PAKs
+  // and quit to CMainFlow, which starts the next game (InstallPending).
+  const_cast< CWorld* >(mgr.GetWorld())->SetLoadPauseState(true);
+  gpGameState->SetCurrentWorldId(static_cast< CAssetId >(sPendingHeader.worldId));
+  gpMain->SetRestartMode(CMain::kRM_None);
+  mgr.QuitGame();
+}
+
+// The game is rebuilt where it stands, as a state saved and loaded at once,
+// so that everything it draws is loaded again, from the new files.
+bool DoModReload(CStateManager& mgr) {
+  std::string why;
+  if (!PlayerCanSave(mgr, why)) {
+    SetMessage("Can't reload the mods: " + why);
+    return false;
+  }
+  Capture(mgr, sPendingHeader, sPendingBlob);
+  sReloadMods = true;
+  QuitToPending(mgr);
+  SetMessage("Reloading the mods");
+  return true;
+}
+
+void ReloadModFiles() {
+  PortMods::BeginReload();
+#if !defined(__ANDROID__)
+  PortRemastered::ApplyPendingImport();
+#endif
+  PortMods::FinishReload();
+}
+
 bool DoLoad(CStateManager& mgr, int slot) {
   Header header;
   std::vector< uint8_t > blob;
@@ -210,15 +253,7 @@ bool DoLoad(CStateManager& mgr, int slot) {
 
   sPendingHeader = header;
   sPendingBlob = std::move(blob);
-  sInstallPending = true;
-  sPlacePending = false;
-
-  // As the debug world warp: stop the outgoing world's loads, retire its PAKs
-  // and quit to CMainFlow, which starts the next game (InstallPending).
-  const_cast< CWorld* >(mgr.GetWorld())->SetLoadPauseState(true);
-  gpGameState->SetCurrentWorldId(static_cast< CAssetId >(header.worldId));
-  gpMain->SetRestartMode(CMain::kRM_None);
-  mgr.QuitGame();
+  QuitToPending(mgr);
   SetMessage("Loading " + SlotName(slot) + ": " + header.world + " - " + header.room);
   return true;
 }
@@ -324,6 +359,17 @@ bool RequestLoad(int slot) {
   return true;
 }
 
+bool RequestModReload() {
+  if (PortDebug::StateManager() == nullptr) {
+    // Nothing of a game is loaded: the next one starts from the new files.
+    sReloadMods = true;
+    SetMessage("The mods reload when the game starts");
+    return true;
+  }
+  sReloadRequest = true;
+  return true;
+}
+
 std::string LastMessage() { return sMessage; }
 
 bool Tick(CStateManager& mgr) {
@@ -349,10 +395,21 @@ bool Tick(CStateManager& mgr) {
     sLoadRequest = -1;
     return DoLoad(mgr, slot);
   }
+  if (sReloadRequest) {
+    sReloadRequest = false;
+    return DoModReload(mgr);
+  }
   return false;
 }
 
 void InstallPending() {
+  if (sReloadMods) {
+    sReloadMods = false;
+    gpResourceFactory->PortReopenPaks(ReloadModFiles);
+    const PortMods::Status& status = PortMods::CurrentStatus();
+    SetMessage("Mods reloaded: " + std::to_string(status.overlays) + " disc file(s), " +
+               std::to_string(PortMods::NativeTextureCount()) + " native texture(s)");
+  }
   if (!sInstallPending)
     return;
   sInstallPending = false;

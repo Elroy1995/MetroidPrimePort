@@ -10,7 +10,9 @@
 #include "port_mods.h"
 #include "port_skip_cutscenes.h"
 
+#include <dolphin/ar.h>
 #include <dolphin/dvd.h>
+#include <dolphin/os.h>
 
 #include <cstring>
 #include <map>
@@ -291,6 +293,43 @@ bool CResLoader::PortPakResourceExists(CAssetId asset) {
 
   return false;
 }
+
+#ifdef TARGET_PC
+void CResLoader::PortReopenPaks(void (*between)()) {
+  struct SPak {
+    rstl::auto_ptr< CPakFile >* slot;
+    rstl::string name;
+    bool depList;
+    bool worldPak;
+  };
+  std::vector< SPak > paks;
+  rstl::list< rstl::auto_ptr< CPakFile > >* lists[] = {&x0_aramList, &x18_pakLoadedList,
+                                                        &x30_pakLoadingList};
+  ClearCache();
+  for (int i = 0; i < ARRAY_SIZE(lists); ++i) {
+    for (AUTO(it, lists[i]->begin()); it != lists[i]->end(); ++it) {
+      const CPakFile* pak = it->get();
+      const SPak entry = {&*it, pak->GetDvdFile().GetFilename(), pak->PortBuildsDepList(),
+                          pak->IsWorldPak()};
+      paks.push_back(entry);
+      // Closes the file (the destructor finishes a table still being read).
+      *it = rstl::auto_ptr< CPakFile >();
+    }
+  }
+  between();
+  for (size_t i = 0; i < paks.size(); ++i) {
+    CPakFile* pak = rs_new CPakFile(paks[i].name, paks[i].depList, paks[i].worldPak);
+    while (!pak->IsCompletelyLoaded()) {
+      pak->AsyncIdle();
+      if (!pak->IsCompletelyLoaded()) {
+        ARQPoll();
+        OSYieldThread();
+      }
+    }
+    *paks[i].slot = rstl::auto_ptr< CPakFile >(pak);
+  }
+}
+#endif
 
 void CResLoader::ClearCache() {
   x48_curPak = x18_pakLoadedList.end();

@@ -425,6 +425,18 @@ a resource's original bytes to edit. Checked with a `0552A456.STRG` (the file
 select's "New Game") read from the disc and from a whole-file `MiscData.pak`
 mod. On Android the folder is in app storage with no picker yet.
 
+#### Reloading without a restart
+
+F1 > Extras > Mods > Reload mods (console: `mods reload`) reads the mods folder
+again while the game runs: added, removed, edited, enabled and disabled mods
+all take effect, PAK resources and native `.dds` textures alike. The game is
+rebuilt where Samus stands, exactly as a save state load does (enemies, doors
+and puzzles come back as after a memory card load), with every PAK reopened so
+that all it draws is loaded from the new files. It runs at the next game tick,
+so unpause first; pressed in the menus, it happens when a game starts. Change
+the folder first, then reload: until then the game still reads the old files,
+so don't delete a loaded mod and keep playing.
+
 #### Importers
 
 An importer is a program of your own that builds a mod from files you have (a
@@ -438,8 +450,8 @@ one in the terminal without starting the game, returning its exit code.
 The importer gets the argument as `argv[1]`, the mods folder to write into as
 `MP_MODS_DIR`, and the importers folder as its working directory. Its stdout
 and stderr are shown a line at a time (a carriage return rewrites the line, so
-progress bars work); exit code 0 means the mod is in place, and the game has to
-be restarted to load it. Cancel sends a terminate request to the importer
+progress bars work); exit code 0 means the mod is in place, and Reload mods (or
+a restart) loads it. Cancel sends a terminate request to the importer
 alone, so a script should pass it on to its children. Desktop only.
 
 #### Metroid Prime Remastered models
@@ -449,7 +461,8 @@ nothing of it ships. F1 > Extras > Mods > "Metroid Prime Remastered models"
 takes the game's `.nsp` and your console's key file (`~/.switch/prod.keys` is
 filled in when it exists), and Import converts in the background while the game
 runs, on all but two cores. The result is staged in `mods/.remastered-models.importing`
-and becomes `mods/remastered-models` at the next start, replacing an older one;
+and becomes `mods/remastered-models` when you press Load it now (a mod reload,
+above) or at the next start, replacing an older one;
 a cancelled or interrupted import leaves nothing behind. From a terminal,
 `metroid_prime_port --import-remastered <image.nsp> [key file]` does the same
 on every core without starting the game and installs at once (the disc comes
@@ -811,7 +824,7 @@ a temporary directory instead of mounting.
   gyro rates in rad/s), `shot` (prints the bmp path), `present
   <0..1|cycle|tick|off>`, `hold <0|1>` (stop ticking), `step [ticks]` (run
   that many ticks while held), `interp [actor|pose|particle|all <0|1>]`,
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `crosshair <25..100>`, `reveal <0|1>`, `pickups <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `viewmodel <cmdl> [dist] [yaw] [pitch] | off | status | light <0|1>` (draws any model, retail or a mod's, in front of the camera with the arm cannon hidden; dist 0 fits its bounds; `light 1` swaps the flat white ambient for a key light, which PBR mod materials need to shade), `probe [off|on|mirror|window]` (the PBR reflection probe, live: `mirror` and `window` show the probe itself on PBR materials, as a reflection and looked straight through; no argument prints the mode), `remastered [start <image.nsp> [key file] | cancel]` (the Remastered model import and its progress), `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `crosshair <25..100>`, `reveal <0|1>`, `pickups <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `viewmodel <cmdl> [dist] [yaw] [pitch] | off | status | light <0|1>` (draws any model, retail or a mod's, in front of the camera with the arm cannon hidden; dist 0 fits its bounds; `light 1` swaps the flat white ambient for a key light, which PBR mod materials need to shade), `probe [off|on|mirror|window]` (the PBR reflection probe, live: `mirror` and `window` show the probe itself on PBR materials, as a reflection and looked straight through; no argument prints the mode), `remastered [start <image.nsp> [key file] | cancel]` (the Remastered model import and its progress), `mods [reload]` (what is loaded; `reload` reads the mods folder again), `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

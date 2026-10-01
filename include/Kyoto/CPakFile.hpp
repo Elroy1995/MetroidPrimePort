@@ -52,6 +52,9 @@ public:
 
   void AsyncIdle();
   bool IsWorldPak() const { return x28_26_worldPak; }
+#ifdef TARGET_PC
+  bool PortBuildsDepList() const { return x28_24_buildDepList; }
+#endif
   bool IsCompletelyLoaded() const { return x2c_asyncLoadPhase == kAP_Loaded; }
   void EnsureWorldPakReady();
   void sub_8036742c();

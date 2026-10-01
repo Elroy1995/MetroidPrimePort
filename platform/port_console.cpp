@@ -10,6 +10,7 @@
 #include "port_livesplit.h"
 #include "port_remastered_import.h"
 #include "port_smoke.h"
+#include "port_mods.h"
 #include "port_savestate.h"
 #include "port_tracker.h"
 #include "port_viewmodel.h"
@@ -916,6 +917,22 @@ void RunFrame() {
       return Finish("usage: pickups <0|1>   pickup dots on the map (on in randomized games)");
     }
     PortDebug::SetMapPickups(value == "1");
+    Finish();
+  } else if (name == "mods") {
+    // mods [reload]: what is loaded; reload reads the folder again.
+    if (sCmd.args.size() > 1 && Lower(sCmd.args[1]) == "reload") {
+      PortSaveState::RequestModReload();
+      Out("reload queued");
+      return Finish();
+    }
+    const PortMods::Status& status = PortMods::CurrentStatus();
+    Out("%d mod(s), %d disc file(s), %zu native texture(s), %zu bound", int(status.mods.size()), status.overlays,
+        PortMods::NativeTextureCount(), PortMods::NativeTexturesBound());
+    for (const PortMods::ModInfo& mod : status.mods) {
+      Out("%s %s files=%d resources=%d textures=%d", mod.enabled ? "+" : "-", mod.name.c_str(), mod.files,
+          mod.resources, mod.textures);
+    }
+    Out("%s", PortSaveState::LastMessage().c_str());
     Finish();
   } else if (name == "remastered") {
     // remastered [start <image.nsp> [key file] | cancel]: the import of

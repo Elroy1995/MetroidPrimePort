@@ -9,6 +9,7 @@
 #include "zlib/zlib.h"
 
 #include <dolphin/ar.h>
+#include <dolphin/os.h>
 
 static const int kDecompChunkSize = 4096;
 
@@ -133,6 +134,16 @@ int CResFactory::PortLoadState(const SObjectTag& tag) {
     return 0;
   }
   return it->x8_dvdReq->IsComplete() ? 2 : 1;
+}
+
+void CResFactory::PortReopenPaks(void (*between)()) {
+  // A load reads its whole resource in one request, from the PAK as it is now.
+  while (!x84_loadList.empty() || !xb0_cancelledList.empty()) {
+    AsyncIdle(1000000);
+    ARQPoll();
+    OSYieldThread();
+  }
+  x4_resLoader.PortReopenPaks(between);
 }
 
 void CResFactory::PortLoadListCounts(int& total, int& pending) {

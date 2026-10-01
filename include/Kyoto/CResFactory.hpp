@@ -67,6 +67,8 @@ public:
   int PortLoadState(const SObjectTag& tag);
   // Entries in the load list: all of them, and those whose read is pending.
   void PortLoadListCounts(int& total, int& pending);
+  // Finishes the loads in flight, then CResLoader::PortReopenPaks.
+  void PortReopenPaks(void (*between)());
 #endif
   CFactoryMgr& GetFactoryMgr() { return x5c_factoryMgr; }
 

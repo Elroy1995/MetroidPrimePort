@@ -57,6 +57,10 @@ void SetSelectedSlot(int slot);
 // A request with no game running is refused at once.
 bool RequestSave(int slot); // false (and LastMessage says why) if refused now
 bool RequestLoad(int slot);
+// Reads the mods folder again (and installs a finished Remastered import):
+// the game is rebuilt where Samus stands, as by a save and a load, with every
+// PAK reopened. With no game running, the next one to start does it.
+bool RequestModReload();
 // What the last request did, for the overlay and the console.
 std::string LastMessage();
 

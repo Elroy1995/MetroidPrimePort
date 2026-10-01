@@ -36,7 +36,14 @@ std::vector<std::string> sOverlayNames;
 
 // <id>.dds files, and the textures (by owner) currently drawn from one.
 std::unordered_map<uint32_t, std::string> sNativeTextures;
-std::unordered_map<const void*, aurora::texture::ReplacementRegistration> sBoundTextures;
+struct BoundTexture {
+  aurora::texture::ReplacementRegistration registration;
+  uint32_t id = 0;
+};
+std::unordered_map<const void*, BoundTexture> sBoundTextures;
+// Reload: the textures that were bound, to bind again from the new set.
+std::vector<std::pair<const void*, uint32_t>> sRebind;
+bool sOverlaysRegistered = false;
 
 std::string PathString(const fs::path& path) {
   const auto u8 = path.u8string();
@@ -266,20 +273,38 @@ bool BindTexture(const void* owner, uint32_t id) {
   if (registration.id == 0) {
     return false;
   }
-  sBoundTextures[owner] = registration;
+  sBoundTextures[owner] = {registration, id};
   return true;
 }
 
 void UnbindTexture(const void* owner) {
   const auto found = sBoundTextures.find(owner);
   if (found != sBoundTextures.end()) {
-    aurora::texture::unregister_replacement(found->second);
+    aurora::texture::unregister_replacement(found->second.registration);
     sBoundTextures.erase(found);
   }
 }
 
 size_t NativeTextureCount() { return sNativeTextures.size(); }
 size_t NativeTexturesBound() { return sBoundTextures.size(); }
+
+void BeginReload() {
+  sRebind.clear();
+  for (const auto& [owner, bound] : sBoundTextures) {
+    aurora::texture::unregister_replacement(bound.registration);
+    sRebind.emplace_back(owner, bound.id);
+  }
+  sBoundTextures.clear();
+}
+
+void FinishReload() {
+  Initialize();
+  // A texture whose image is gone keeps its stub until the game loads it again.
+  for (const auto& [owner, id] : sRebind) {
+    BindTexture(owner, id);
+  }
+  sRebind.clear();
+}
 
 void Initialize() {
   sStatus = {};
@@ -456,6 +481,8 @@ void Initialize() {
     PortLog::Write("mods: %d native texture(s)\n", int(sNativeTextures.size()));
   }
 
+  // Aurora holds pointers into the previous set until the new one is registered.
+  const std::vector<std::shared_ptr<const VirtualFile>> previous = std::move(sFiles);
   sFiles.clear();
   sOverlayNames.clear();
   for (const auto& [entry, replacement] : replaced) {
@@ -481,6 +508,10 @@ void Initialize() {
     sFiles.push_back(std::move(file));
   }
   if (sFiles.empty()) {
+    if (sOverlaysRegistered) {
+      aurora_dvd_overlay_files(nullptr, 0, nullptr);
+      sOverlaysRegistered = false;
+    }
     if (!sStatus.mods.empty()) {
       PortLog::Write("mods: nothing to apply from %s\n", sStatus.folder.c_str());
     }
@@ -497,6 +528,7 @@ void Initialize() {
   aurora_dvd_overlay_callbacks(&callbacks);
   std::vector<s32> entries(overlays.size(), -1);
   aurora_dvd_overlay_files(overlays.data(), overlays.size(), entries.data());
+  sOverlaysRegistered = true;
   for (size_t i = 0; i < overlays.size(); ++i) {
     if (entries[i] < 0) {
       Message("Aurora refused " + sFiles[i]->discPath);
