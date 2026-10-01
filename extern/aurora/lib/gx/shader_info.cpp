@@ -357,7 +357,7 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   }
   if (config.pbr) {
     info.usesPbr = true;
-    info.uniformSize += sizeof(Mat3x4<float>);
+    info.uniformSize += sizeof(Mat3x4<float>) + sizeof(Vec4<float>) * 2;
   }
   if (info.usesPTTexMtx.any()) {
     info.uniformSize += sizeof(Mat3x4<float>) * MaxPTTexMtx;
@@ -460,6 +460,8 @@ static void fill_uniform(ByteBuffer& buf, const ShaderInfo& info) noexcept {
   }
   if (info.usesPbr) {
     buf.append(g_gxState.pbrProbe);
+    buf.append(g_gxState.pbrEmissive);
+    buf.append(g_gxState.pbrBacklight);
   }
   if (info.usesPTTexMtx.any()) {
     for (int i = 0; i < info.usesPTTexMtx.size(); ++i) {

@@ -28,6 +28,9 @@ void GXSetPBR(GXBool enable);
 // GX_AURORA_SET_PBR_PROBE).
 void GXCopyProbeFace(u32 face);
 void GXSetPBRProbe(const f32 viewToProbe[3][3], f32 weight);
+// Aurora extension: the emissive multiplier and backlight weight of the following PBR
+// draws (see GX_AURORA_SET_PBR_MATERIAL).
+void GXSetPBRMaterial(const f32 emissive[3], const f32 backlight[3]);
 
 void GXColor4f32(float r, float g, float b, float a);
 

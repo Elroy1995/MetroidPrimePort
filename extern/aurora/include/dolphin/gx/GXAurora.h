@@ -135,6 +135,15 @@ extern "C" {
  */
 #define GX_AURORA_SET_PBR_PROBE 0x0045
 
+/**
+ * Port extension: per-material constants for PBR draws, as two vec4f. The first is a
+ * multiplier on the emissive map (rgb; 1 leaves it as sampled). The second is a backlight
+ * weight (rgb, linear): a rim of the surface's base colour times that weight, scaled by the
+ * light reaching the surface, on the edges facing away from the viewer; zero is off. Both
+ * w are reserved. Stays in effect until changed.
+ */
+#define GX_AURORA_SET_PBR_MATERIAL 0x0046
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

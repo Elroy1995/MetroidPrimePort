@@ -390,6 +390,8 @@ struct GXState {
   u8 numTexGens = 0;
   bool pbr = false; // GX_AURORA_SET_PBR
   Mat3x4<float> pbrProbe; // GX_AURORA_SET_PBR_PROBE
+  Vec4<float> pbrEmissive{1.f, 1.f, 1.f, 0.f}; // GX_AURORA_SET_PBR_MATERIAL
+  Vec4<float> pbrBacklight{0.f, 0.f, 0.f, 0.f};
 
   // GX2 polygon offset state
   f32 frontOffset = 0.0f;

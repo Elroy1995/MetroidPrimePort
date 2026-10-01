@@ -103,6 +103,9 @@ public:
   int GetModelIndex() const { return x44_idx; } // TODO: name
 
   CCubeMaterial GetMaterialByIndex(const int idx) const;
+#ifdef TARGET_PC
+  void PortSetPBRMaterial(const int idx) const;
+#endif
   void SetStaticArraysCurrent() const;
   void SetArraysCurrent() const;
   void SetSkinningArraysCurrent(const float* positions, const float* normals) const;

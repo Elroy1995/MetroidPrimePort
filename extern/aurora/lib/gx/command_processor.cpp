@@ -785,6 +785,18 @@ void handle_aurora(ByteReader& reader) noexcept {
       g_gxState.pbrProbe = mtx;
       g_gxState.dirty |= DirtyUniform;
     }
+  } else if (subCmd == GX_AURORA_SET_PBR_MATERIAL) {
+    for (Vec4<float>* v : {&g_gxState.pbrEmissive, &g_gxState.pbrBacklight}) {
+      const f32 x = reader.read<f32>();
+      const f32 y = reader.read<f32>();
+      const f32 z = reader.read<f32>();
+      const f32 w = reader.read<f32>();
+      const Vec4<float> value{x, y, z, w};
+      if (*v != value) {
+        *v = value;
+        g_gxState.dirty |= DirtyUniform;
+      }
+    }
   }
 
   else {

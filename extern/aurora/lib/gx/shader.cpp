@@ -946,7 +946,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_ao = pbr_orm.r;
       let pbr_rough = clamp(pbr_orm.g, 0.045, 1.0);
       let pbr_metal = clamp(pbr_orm.b, 0.0, 1.0);
-      let pbr_emissive = pow(max({2}.rgb, vec3f(0.0)), vec3f(2.2));
+      let pbr_emissive = pow(max({2}.rgb, vec3f(0.0)), vec3f(2.2)) * ubuf.pbr_emissive.rgb;
       let pbr_ng = normalize(in.pbr_nrm);
       var pbr_n = pbr_ng;{3}
       let pbr_v = normalize(-in.pbr_pos);
@@ -958,6 +958,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_refl = reflect(-pbr_v, pbr_n);
       var pbr_lo = vec3f(0.0);
       var pbr_env = vec3f(0.0);
+      var pbr_lsum = vec3f(0.0);
       for (var i = 0u; i < {4}u; i++) {{
           if ((ubuf.lightState0 & (1u << i)) == 0u) {{ continue; }}
           let light = ubuf.lights[i];
@@ -982,6 +983,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           // seen along the reflection vector.
           let env_w = 0.5 + 0.5 * dot(pbr_refl, ldir);
           pbr_env += rad * (env_w * env_w);
+          pbr_lsum += rad;
       }}
       // Ambient: diffuse plus the split-sum environment BRDF (Karis' analytic fit) applied
       // to the reflection probe, a cube map whose mips are picked by roughness. The
@@ -998,6 +1000,13 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_cubed = textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_pd, pbr_rough * {7}.0).rgb;
       let pbr_envspec = mix(pbr_amb + pbr_env * 0.35, pow(pbr_cubed, vec3f(2.2)), min(ubuf.pbr_probe[0].w, 1.0));
       pbr_lo += (pbr_amb * pbr_diff + pbr_envspec * (pbr_f0 * pbr_ab.x + pbr_ab.y)) * pbr_ao;
+      // Backlight (GX_AURORA_SET_PBR_MATERIAL): a rim on the edges turned away from the
+      // viewer, the surface's own colour times the backlight weight. It is scaled by the
+      // light that reaches the surface from any side, so it stays a lighting term and goes
+      // dark with the room.
+      let pbr_rim = 1.0 - pbr_nv;
+      pbr_lo += max(ubuf.pbr_backlight.rgb, vec3f(0.0)) * pbr_base * min(pbr_amb + pbr_lsum, vec3f(1.0)) *
+                (pbr_rim * pbr_rim * pbr_ao);
       prev = vec4f(pow(clamp(pbr_lo + pbr_emissive, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), prev.a);
       // A weight above 1 is a diagnostic: 2 makes the surface a perfect mirror of the
       // probe, and 3 a window onto it, which must line up with the scene around it.
@@ -1674,6 +1683,8 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
   }
   if (config.pbr) {
     uniBufAttrs += "\n    pbr_probe: mat3x4f,";
+    uniBufAttrs += "\n    pbr_emissive: vec4f,";
+    uniBufAttrs += "\n    pbr_backlight: vec4f,";
     const auto pbr = pbr_func(config, info, vtxOutAttrs, vtxXfrAttrs, vtxOutIdx);
     if (!pbr.empty()) {
       fragmentFn += pbr;
