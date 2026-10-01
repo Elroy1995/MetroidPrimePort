@@ -133,6 +133,8 @@ if(WIN32)
     # UTF-8 as the ANSI code page, so the UTF-8 paths SDL returns work with the
     # narrow file APIs; see the manifest. CMake merges it into the linker's own.
     target_sources(metroid_prime_port PRIVATE packaging/metroid_prime_port.manifest)
+    # The icon Explorer and the window show.
+    target_sources(metroid_prime_port PRIVATE packaging/metroid_prime_port.rc)
 endif()
 # OpenSSL gives the Archipelago WebSocket client wss://. On the desktop it is
 # optional: without it the port still builds and a wss:// server fails with a

@@ -459,6 +459,16 @@ int main(int argc, char** argv) {
         .mem1Size = mem1Size,
         .mem2Size = ARAM_DEFAULT_SIZE,
     };
+#if !defined(__ANDROID__)
+    // The window icon, for a bare binary that no desktop entry describes.
+    // Android takes its icon from the APK.
+    static uint8_t windowIcon[] = {
+#include "port_window_icon.inc"
+    };
+    config.iconRGBA8 = windowIcon;
+    config.iconWidth = 64;
+    config.iconHeight = 64;
+#endif
     config.msaa = static_cast<uint32_t>(PortDebug::Msaa());
     config.maxTextureAnisotropy = static_cast<uint16_t>(PortDebug::Anisotropy());
 

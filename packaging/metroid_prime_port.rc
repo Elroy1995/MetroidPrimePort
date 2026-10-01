@@ -1,0 +1,3 @@
+// The executable's icon. Explorer shows the first icon resource, and SDL uses
+// it for the window. Generated from varia-bolt.svg by tools/gen_icons.py.
+1 ICON "metroid_prime_port.ico"

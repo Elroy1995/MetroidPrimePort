@@ -187,14 +187,16 @@ under GNOME unless the port's own X11 preference applies — see
    manifest is unproven against a real runtime. That part needs
    `flatpak-builder`, which is not installed. Two things also remain before it
    could be published:
-   - **No icon is shipped at all.** The desktop entry's
-     `Icon=io.github.odrannnn.metroidprimeport` names a file that no packaging
-     format installs: there is no `share/icons/` entry in the install rules, in
-     the manifest, or in the tree. A desktop environment falls back to a generic
-     icon, and Flathub requires one. It has to be *original* artwork for the
-     same reason the screenshots cannot be supplied — anything recognisably
-     Nintendo's is not ours to redistribute. This is new; it was not on any
-     list until the installed tree was inspected.
+   - **~~No icon is shipped at all~~ — resolved.** `packaging/varia-bolt.svg` is
+     the maintainer's own artwork (it has to be *original*: anything
+     recognisably Nintendo's is not ours to redistribute), and every package
+     carries it. The install rules put the SVG in `share/icons/` under the app
+     id for the Flatpak; `tools/gen_icons.py` rasterises it into the committed
+     `packaging/metroid_prime_port.png` (AppImage), `metroid_prime_port.ico`
+     (linked into the Windows executable through `metroid_prime_port.rc`), the
+     Android adaptive icon's foreground, and `platform/port_window_icon.inc`,
+     which the desktop builds set as the window icon so the bare binary in the
+     tarball has it too. Run the script again after changing the SVG.
    - **No screenshots.** Flathub requires them, and any screenshot of the running
      game shows Nintendo's game, which this package may not redistribute. This
      one cannot be fixed by writing a file.

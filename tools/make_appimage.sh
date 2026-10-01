@@ -15,7 +15,7 @@ BUILD=${1:-"$ROOT/build/port-gcc"}
 OUT=${2:-"$ROOT/build/appimage"}
 BIN="$BUILD/metroid_prime_port"
 TEXTURES="$ROOT/textures"
-ICON="$ROOT/assets/metroid-prime.png"
+ICON="$ROOT/packaging/metroid_prime_port.png"
 TOOL="$OUT/appimagetool-x86_64.AppImage"
 TOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
 
@@ -36,6 +36,8 @@ install -m755 "$BIN" "$APPDIR/usr/bin/metroid_prime_port"
 # The port looks for replacements next to the executable.
 cp -r "$TEXTURES" "$APPDIR/usr/bin/textures"
 install -m644 "$ICON" "$APPDIR/metroid-prime.png"
+# File managers and AppImage launchers read the icon from here.
+ln -s metroid-prime.png "$APPDIR/.DirIcon"
 
 # Bundle the shared libraries a base desktop may not have. glibc, libstdc++ and
 # libgcc are deliberately left to the system: shipping them is what breaks
