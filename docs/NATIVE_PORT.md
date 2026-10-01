@@ -407,6 +407,11 @@ skipped. Inside a mod:
   later mod's TXTR without a `.dds` drops an earlier mod's `.dds` for that id.
   On a GPU without BC support (most phones) the TXTR is drawn instead. The log
   and the Mods panel count them (`mods: <n> native texture(s)`).
+- a PBR material (flag bit 14) may end in a 28-byte record: six big-endian floats
+  (emissive multiplier rgb, backlight weight rgb) and the tag `PBRM`, inside the
+  material's own span in the offset table. The multiplier scales the emissive map;
+  the backlight adds a rim of the surface's colour on edges turned away from the
+  viewer. A material without the record gets 1 and 0.
 - text and image files (`.txt`, `.md`, `.json`, `.png`, ...) are ignored
   silently, so a mod can carry its readme.
 
