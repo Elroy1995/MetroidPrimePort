@@ -871,7 +871,10 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
 // GX_AURORA_SET_PBR: replaces the TEV colour result with a metal/roughness evaluation of
 // texture maps 0-3 (base colour, glTF occlusion/roughness/metal in R/G/B, two-channel
 // tangent-space normal, emissive) lit by channel 0's GX lights and ambient. TEV alpha is
-// kept. Each map is read from the TEV stage that samples it, so the material's fallback
+// kept. The lobe is Metroid Prime Remastered's, as its model shader evaluates it: GGX with
+// alpha = roughness^2 floored at roughness 0.02, visibility 1/4((N.L(1-k)+k)(N.V(1-k)+k))
+// with k = alpha/2, Schlick Fresnel on the specular only, and occlusion on the direct
+// diffuse as well as the ambient. Each map is read from the TEV stage that samples it, so the material's fallback
 // TEV must reference all four; a missing map gets a neutral default. The tangent frame
 // comes from screen-space derivatives, so no tangent attribute is needed. Maths is done
 // on linearised colours and converted back, since the rest of the pipeline is gamma.
@@ -944,7 +947,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_base = pow(max({0}.rgb, vec3f(0.0)), vec3f(2.2));
       let pbr_orm = {1}.rgb;
       let pbr_ao = pbr_orm.r;
-      let pbr_rough = clamp(pbr_orm.g, 0.045, 1.0);
+      let pbr_rough = clamp(pbr_orm.g, 0.02, 1.0);
       let pbr_metal = clamp(pbr_orm.b, 0.0, 1.0);
       let pbr_emissive = pow(max({2}.rgb, vec3f(0.0)), vec3f(2.2)) * ubuf.pbr_emissive.rgb;
       let pbr_ng = normalize(in.pbr_nrm);
@@ -954,8 +957,11 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_f0 = mix(vec3f(0.04), pbr_base, pbr_metal);
       let pbr_diff = pbr_base * (1.0 - pbr_metal);
       let pbr_a2 = pow(pbr_rough, 4.0);
-      let pbr_k = (pbr_rough + 1.0) * (pbr_rough + 1.0) / 8.0;
-      let pbr_refl = reflect(-pbr_v, pbr_n);
+      let pbr_k = pbr_rough * pbr_rough * 0.5;
+      // A normal-mapped reflection can point into the surface; lift it back to the horizon
+      // of the geometric normal.
+      let pbr_rn = reflect(-pbr_v, pbr_n);
+      let pbr_refl = pbr_rn + pbr_ng * clamp(-dot(pbr_ng, pbr_rn), 0.0, 1.0);
       var pbr_lo = vec3f(0.0);
       var pbr_env = vec3f(0.0);
       var pbr_lsum = vec3f(0.0);
@@ -971,14 +977,14 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           let nh = max(dot(pbr_n, h), 0.0);
           let vh = max(dot(pbr_v, h), 0.0);
           let dd = nh * nh * (pbr_a2 - 1.0) + 1.0;
-          let d = pbr_a2 / (pbr_pi * dd * dd);
-          let g = (pbr_nv / (pbr_nv * (1.0 - pbr_k) + pbr_k)) * (nl / (nl * (1.0 - pbr_k) + pbr_k));
+          let d = pbr_a2 / max(pbr_pi * dd * dd, 1e-6 * pbr_a2);
+          let vis = 0.25 / (max(pbr_nv * (1.0 - pbr_k) + pbr_k, 1e-4) * max(nl * (1.0 - pbr_k) + pbr_k, 1e-4));
           let f = pbr_f0 + (1.0 - pbr_f0) * pow(1.0 - vh, 5.0);
-          let spec = d * g * f / max(4.0 * pbr_nv * nl, 1e-4);
+          let spec = d * vis * f;
           // GX lights are unnormalised (colour * N.L is full brightness), so Lambert has no
           // 1/pi and the specular lobe is scaled by pi to match.
           let rad = pow(max(light.color.rgb, vec3f(0.0)), vec3f(2.2)) * attn;
-          pbr_lo += ((1.0 - f) * pbr_diff + spec * pbr_pi) * rad * nl;
+          pbr_lo += (pbr_diff * pbr_ao + spec * pbr_pi) * rad * nl;
           // Stand-in environment: the surroundings as a soft hemisphere lit by this light,
           // seen along the reflection vector.
           let env_w = 0.5 + 0.5 * dot(pbr_refl, ldir);
