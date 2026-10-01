@@ -9,6 +9,7 @@
 #include <SDL3/SDL_timer.h>
 
 #include "port_debug.h"
+#include "port_log.h"
 #include "port_disc.h"
 #include "port_textures.h"
 #include "port_prompts.h"
@@ -915,6 +916,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
           ++event;
         }
       }
+      const uint64_t eventsDoneNs = SDL_GetTicksNS();
       // SDL/compositor relative capture owns cursor visibility and warp handling.
 #ifdef MP_ENABLE_SMOKE_DRIVER
       if (PortSmokeMouseEnabled()) {
@@ -968,6 +970,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
       // re-icon the prompts if a binding changed.
       PortTextures::Poll();
       PortPrompts::Poll();
+      const uint64_t inputDoneNs = SDL_GetTicksNS();
       // Port: run ARAM transfer callbacks completed by Aurora's ARQ.
       ARQPoll();
       // Port: service the streamed-audio AI DMA callback on the main thread.
@@ -1002,6 +1005,7 @@ int CMain::RsMain(int argc, const char* const* argv) {
       // as such it zeroed the loader's budget below whenever presentation was
       // the bottleneck, and a big area's first load took 20 s and more.
       const double beginSceneStart = archSupport->GetStopwatch2().GetElapsedTime();
+      const uint64_t tickDoneNs = SDL_GetTicksNS();
       if (!x160_26_screenFading && gpRender->BeginScene()) {
         const double beginSceneWait =
             archSupport->GetStopwatch2().GetElapsedTime() - beginSceneStart;
@@ -1100,6 +1104,45 @@ int CMain::RsMain(int argc, const char* const* argv) {
         nextFrameDeadline = SDL_GetTicksNS();
       }
       PortDebug::RecordFrame(workEndNs - loopStartNs, sTicksAdvanced, presented);
+      // Port: a stalled loop shows up as input that does nothing and then lands
+      // all at once, since SDL and ImGui keep queueing events meanwhile. Say
+      // where the time went; on Android this is the only trace a report has.
+      {
+        static const bool sLogStalls = getenv("MP_NO_STALL_LOG") == nullptr;
+        static uint32_t sSkipped = 0;
+        static uint64_t sSkippedSinceNs = 0;
+        const auto ms = [](uint64_t ns) { return static_cast< unsigned long long >(ns / 1000000ull); };
+        // At most a line every two seconds: a device that is slow throughout
+        // would otherwise write one per frame.
+        static uint64_t sLastStallLogNs = 0;
+        static uint32_t sStallsUnlogged = 0;
+        if (sLogStalls && workEndNs - loopStartNs > 250000000ull) {
+          if (sLastStallLogNs != 0 && workEndNs - sLastStallLogNs < 2000000000ull) {
+            ++sStallsUnlogged;
+          } else {
+            PortLog::Write("MP stall: frame %u took %llu ms (events %llu, input %llu, tick %llu, draw %llu)%s, "
+                           "%u more since the last line\n",
+                           s_frameLog, ms(workEndNs - loopStartNs), ms(eventsDoneNs - loopStartNs),
+                           ms(inputDoneNs - eventsDoneNs), ms(tickDoneNs - inputDoneNs),
+                           ms(workEndNs - tickDoneNs), presented ? "" : ", not presented", sStallsUnlogged);
+            sLastStallLogNs = workEndNs;
+            sStallsUnlogged = 0;
+          }
+        }
+        // Frames that are not presented never start an ImGui frame either, so
+        // the overlay is deaf for as long as a run of them lasts.
+        if (!presented) {
+          if (sSkipped++ == 0) {
+            sSkippedSinceNs = loopStartNs;
+          }
+        } else if (sSkipped != 0) {
+          if (sLogStalls && workEndNs - sSkippedSinceNs > 250000000ull) {
+            PortLog::Write("MP stall: %u frames not presented over %llu ms\n", sSkipped,
+                           ms(workEndNs - sSkippedSinceNs));
+          }
+          sSkipped = 0;
+        }
+      }
       if (firstFrameNs == 0 && presented)
         firstFrameNs = SDL_GetTicksNS();
     }

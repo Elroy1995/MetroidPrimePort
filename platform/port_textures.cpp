@@ -8,6 +8,7 @@
 #include <dolphin/gx.h>
 #include <dolphin/pad.h>
 #include <aurora/texture.hpp>
+#include <SDL3/SDL_timer.h>
 
 #include <atomic>
 #include <filesystem>
@@ -21,6 +22,8 @@ struct Layer {
   int32_t priority;
   std::string root;
   aurora::texture::ReplacementGroup group;
+  // The folder the registrations came from; empty when nothing is loaded.
+  std::filesystem::path dir;
   bool loaded = false;
 };
 
@@ -92,11 +95,13 @@ void Unload(Layer& layer) {
   if (layer.loaded) {
     aurora::texture::unregister_replacements(layer.group);
     layer.group = {};
+    layer.dir.clear();
     layer.loaded = false;
   }
 }
 
-void Load(Layer& layer) {
+// force rescans a folder that is already loaded, for a pack whose files changed.
+void Load(Layer& layer, bool force) {
   if (layer.root.empty()) {
     return;
   }
@@ -110,7 +115,16 @@ void Load(Layer& layer) {
     }
     return;
   }
+  // A pack without device folders serves every device from its root. Reloading
+  // it for a device switch re-registers the same files, and every reload drops
+  // each texture the game has uploaded, so the next frames stall re-reading the
+  // pack: on a phone, switching from the touch controls to a mouse froze the
+  // overlay while its input queued up.
+  if (!force && layer.loaded && layer.dir == *dir) {
+    return;
+  }
   const aurora::texture::ReplacementOptions options{.priority = layer.priority};
+  layer.dir = *dir;
   if (layer.loaded) {
     aurora::texture::reload_replacement_directory(*dir, layer.group, options);
   } else {
@@ -173,22 +187,25 @@ void Initialize(const char* root, const char* userRoot) {
   sUser.root = userRoot != nullptr ? userRoot : "";
   sDevice = ResolveDeviceName();
   ApplyPendingUserPack();
-  Load(sBuiltIn);
-  Load(sUser);
+  Load(sBuiltIn, true);
+  Load(sUser, true);
 }
 
 void Poll() {
   if (sUserPending.exchange(false, std::memory_order_acq_rel)) {
     ApplyPendingUserPack();
-    Load(sUser);
+    Load(sUser, true);
   }
   const char* device = ResolveDeviceName();
   if (sDevice == device) {
     return;
   }
   sDevice = device;
-  Load(sBuiltIn);
-  Load(sUser);
+  const uint64_t startNs = SDL_GetTicksNS();
+  Load(sBuiltIn, false);
+  Load(sUser, false);
+  PortLog::Write("metroid_prime_port: switched the texture set to '%s' in %llu ms\n", device,
+                 static_cast<unsigned long long>((SDL_GetTicksNS() - startNs) / 1000000ull));
 }
 
 void RequestUserPackReload() { sUserPending.store(true, std::memory_order_release); }

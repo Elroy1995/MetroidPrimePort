@@ -970,6 +970,12 @@ factor is not 1. The overlay's **Voices** tab lists the live voices (loudest
 first) with a per-sample mute checkbox and an "Unmute all" button; the muted ids
 are saved to `voices_muted` in the settings file.
 
+A main-loop iteration that takes longer than 250 ms logs `MP stall: frame N took
+… ms (events, input, tick, draw)`, at most one line every two seconds, and a run
+of frames that were not presented logs `MP stall: N frames not presented over …
+ms` when presenting resumes. On Android they go to logcat under the tag
+`metroidprime` (`adb logcat -s metroidprime`). `MP_NO_STALL_LOG=1` turns them off.
+
 For doors that stay shut, `MP_LOG_DOORS=1` prints `MP door <id> opened after N
 ms` with the ticks spent on each condition that held it (`anim`, `thisArea`,
 `sky`, `areaLoad`, `actors`, `otherDoor`, `occluding`, `aram`, `map`), `still
