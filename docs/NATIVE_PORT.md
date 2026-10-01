@@ -442,6 +442,26 @@ progress bars work); exit code 0 means the mod is in place, and the game has to
 be restarted to load it. Cancel sends a terminate request to the importer
 alone, so a script should pass it on to its children. Desktop only.
 
+#### Metroid Prime Remastered models
+
+The port can build a model mod from your own copy of Metroid Prime Remastered;
+nothing of it ships. F1 > Extras > Mods > "Metroid Prime Remastered models"
+takes the game's `.nsp` and your console's key file (`~/.switch/prod.keys` is
+filled in when it exists), and Import converts in the background while the game
+runs, on all but two cores. The result is staged in `mods/.remastered-models.importing`
+and becomes `mods/remastered-models` at the next start, replacing an older one;
+a cancelled or interrupted import leaves nothing behind. From a terminal,
+`metroid_prime_port --import-remastered <image.nsp> [key file]` does the same
+on every core without starting the game and installs at once (the disc comes
+from `MP_DISC`, the remembered path, or a copy beside the executable).
+
+The port reads the image itself (`platform/port_remastered_nsp.cpp`, `_pak`,
+`_txtr`, `_cmdl`), and `_convert` writes a CMDL (plus CSKR for skinned models)
+over each retail model listed in `_table`, with its PBR maps as native `.dds`
+textures. Measured on the development machine: 342 models, 26 seconds on 16
+threads, 540 MB. Texture ids are a CRC of the Remastered texture's id and its
+role, so a map shared by several models is written once. Desktop only.
+
 ### Platforms
 
 The port is built and tested on Linux and Windows. Its own platform code is
@@ -791,7 +811,7 @@ a temporary directory instead of mounting.
   gyro rates in rad/s), `shot` (prints the bmp path), `present
   <0..1|cycle|tick|off>`, `hold <0|1>` (stop ticking), `step [ticks]` (run
   that many ticks while held), `interp [actor|pose|particle|all <0|1>]`,
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `crosshair <25..100>`, `reveal <0|1>`, `pickups <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `viewmodel <cmdl> [dist] [yaw] [pitch] | off | status | light <0|1>` (draws any model, retail or a mod's, in front of the camera with the arm cannon hidden; dist 0 fits its bounds; `light 1` swaps the flat white ambient for a key light, which PBR mod materials need to shade), `probe [off|on|mirror|window]` (the PBR reflection probe, live: `mirror` and `window` show the probe itself on PBR materials, as a reflection and looked straight through; no argument prints the mode), `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `crosshair <25..100>`, `reveal <0|1>`, `pickups <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `viewmodel <cmdl> [dist] [yaw] [pitch] | off | status | light <0|1>` (draws any model, retail or a mod's, in front of the camera with the arm cannon hidden; dist 0 fits its bounds; `light 1` swaps the flat white ambient for a key light, which PBR mod materials need to shade), `probe [off|on|mirror|window]` (the PBR reflection probe, live: `mirror` and `window` show the probe itself on PBR materials, as a reflection and looked straight through; no argument prints the mode), `remastered [start <image.nsp> [key file] | cancel]` (the Remastered model import and its progress), `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the

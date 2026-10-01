@@ -8,6 +8,7 @@
 #include "port_debug.h"
 #include "port_discord.h"
 #include "port_livesplit.h"
+#include "port_remastered_import.h"
 #include "port_smoke.h"
 #include "port_savestate.h"
 #include "port_tracker.h"
@@ -915,6 +916,25 @@ void RunFrame() {
       return Finish("usage: pickups <0|1>   pickup dots on the map (on in randomized games)");
     }
     PortDebug::SetMapPickups(value == "1");
+    Finish();
+  } else if (name == "remastered") {
+    // remastered [start <image.nsp> [key file] | cancel]: the import of
+    // port_remastered_import.h, and how far it is.
+    const std::string verb = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "";
+    if (verb == "start" && sCmd.args.size() > 2) {
+      const std::string keys = sCmd.args.size() > 3 ? sCmd.args[3] : PortRemastered::DefaultKeysPath();
+      if (!PortRemastered::StartImport(sCmd.args[2], keys)) {
+        return Finish("an import is already running, or there is no mods folder");
+      }
+    } else if (verb == "cancel") {
+      PortRemastered::CancelImport();
+    } else if (!verb.empty()) {
+      return Finish("usage: remastered [start <image.nsp> [key file] | cancel]");
+    }
+    const PortRemastered::ImportState state = PortRemastered::ImportStatus();
+    Out("%s %d/%d failed %d: %s",
+        state.running ? "running" : !state.finished ? "idle" : state.ok ? "done" : state.cancelled ? "cancelled" : "failed",
+        state.done, state.total, state.failed, state.message.c_str());
     Finish();
   } else if (name == "probe") {
     static const char* const names[] = {"off", "on", "mirror", "window"};

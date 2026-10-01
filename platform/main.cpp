@@ -22,6 +22,7 @@
 #include "port_log.h"
 #include "port_mods.h"
 #include "port_importers.h"
+#include "port_remastered_import.h"
 
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
@@ -422,6 +423,31 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::strcmp(argv[1], "--import") == 0) {
         return PortImporters::RunFromCommandLine(argc, argv);
     }
+    // --import-remastered <image.nsp> [key file]: build the remastered-models
+    // mod from the user's own copy, without starting the game. The disc comes
+    // from MP_DISC or the path the game remembers.
+    if (argc >= 2 && std::strcmp(argv[1], "--import-remastered") == 0) {
+        if (argc < 3) {
+            std::fprintf(stderr, "usage: %s --import-remastered <image.nsp> [key file]\n", argv[0]);
+            return 2;
+        }
+        PortDebug::LoadDiscPath();
+        const char* disc = ResolveDiscPath(1, argv);
+        if (disc == nullptr || !aurora_dvd_open(disc)) {
+            std::fprintf(stderr, "cannot open the Metroid Prime disc image; set MP_DISC\n");
+            return 1;
+        }
+        const DVDDiskID* id = DVDGetCurrentDiskID();
+        int result = 1;
+        if (id == nullptr || std::memcmp(id->gameName, "GM8E", 4) != 0 || std::memcmp(id->company, "01", 2) != 0 ||
+            id->diskNumber != 0 || id->gameVersion != 0) {
+            std::fprintf(stderr, "unsupported disc; expected GM8E01 USA revision 0\n");
+        } else {
+            result = PortRemastered::RunImportFromCommandLine(argv[2], argc >= 4 ? argv[3] : "");
+        }
+        aurora_dvd_close();
+        return result;
+    }
 #endif
     PortLog::Write( "metroid_prime_port: build %s\n", MP_BUILD_REVISION);
     PortRandomizer::EnsureLoaded();
@@ -610,6 +636,13 @@ int main(int argc, char** argv) {
         aurora_shutdown();
         return 1;
     }
+#if !defined(__ANDROID__)
+    // A Remastered import finished in the last session becomes the mod now,
+    // before anything has a file of the old one open.
+    if (PortRemastered::ApplyPendingImport()) {
+        PortLog::Write("metroid_prime_port: installed the imported Remastered models\n");
+    }
+#endif
     PortMods::Initialize();
 
     // Prime the window/event state so the game's first aurora_begin_frame can
@@ -624,6 +657,10 @@ int main(int argc, char** argv) {
     }
 
     AIPortShutdown();
+#if !defined(__ANDROID__)
+    // An import still running reads the disc.
+    PortRemastered::StopImport();
+#endif
     aurora_dvd_close();
     aurora_shutdown();
     return result;

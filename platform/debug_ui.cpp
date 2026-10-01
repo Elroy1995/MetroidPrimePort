@@ -9,6 +9,7 @@
 #include "port_gci.h"
 #include "port_mods.h"
 #include "port_importers.h"
+#include "port_remastered_import.h"
 #include "port_discord.h"
 #include "port_livesplit.h"
 #include "port_map_pickups.h"
@@ -2651,6 +2652,93 @@ void DrawMemoryCard() {
 }
 
 #if !defined(__ANDROID__)
+// The Remastered import (port_remastered_import.h): the user's own image and
+// key file, converted here into the remastered-models mod.
+std::mutex sRemasteredPickMutex;
+std::vector<std::pair<int, std::string>> sRemasteredPicks;
+
+void OpenRemasteredDialog(int which) {
+  int windowCount = 0;
+  SDL_Window** windows = SDL_GetWindows(&windowCount);
+  SDL_Window* window = windows != nullptr && windowCount > 0 ? windows[0] : nullptr;
+  SDL_free(windows);
+  const SDL_DialogFileCallback done = [](void* userdata, const char* const* files, int) {
+    if (files != nullptr && files[0] != nullptr) {
+      std::lock_guard lock(sRemasteredPickMutex);
+      sRemasteredPicks.emplace_back(int(reinterpret_cast< intptr_t >(userdata)), files[0]);
+    }
+  };
+  static const SDL_DialogFileFilter imageFilters[] = {{"Switch images (.nsp)", "nsp"}, {"All files", "*"}};
+  static const SDL_DialogFileFilter keyFilters[] = {{"Key files (.keys)", "keys"}, {"All files", "*"}};
+  SDL_ShowOpenFileDialog(done, reinterpret_cast< void* >(static_cast< intptr_t >(which)), window,
+                         which == 0 ? imageFilters : keyFilters, 2, nullptr, false);
+}
+
+void DrawRemasteredImport() {
+  static char sImage[1024] = "";
+  static char sKeys[1024] = "";
+  static bool sFilled = false;
+  if (!sFilled) {
+    sFilled = true;
+    std::snprintf(sKeys, sizeof(sKeys), "%s", PortRemastered::DefaultKeysPath().c_str());
+  }
+  {
+    std::lock_guard lock(sRemasteredPickMutex);
+    for (const auto& [which, path] : sRemasteredPicks) {
+      std::snprintf(which == 0 ? sImage : sKeys, sizeof(sImage), "%s", path.c_str());
+    }
+    sRemasteredPicks.clear();
+  }
+  if (!ImGui::CollapsingHeader("Metroid Prime Remastered models")) {
+    return;
+  }
+  const PortRemastered::ImportState state = PortRemastered::ImportStatus();
+  ImGui::TextWrapped("Converts the models of your own copy of Metroid Prime Remastered into a mod. It needs the "
+                     "game's .nsp and your console's key file (prod.keys), and takes a few minutes.");
+  ImGui::BeginDisabled(state.running);
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+  ImGui::InputTextWithHint("##remastered-image", "Metroid Prime Remastered .nsp", sImage, sizeof(sImage));
+  ImGui::SameLine();
+  if (ImGui::Button("Browse...##remastered-image")) {
+    OpenRemasteredDialog(0);
+  }
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+  ImGui::InputTextWithHint("##remastered-keys", "prod.keys", sKeys, sizeof(sKeys));
+  ImGui::SameLine();
+  if (ImGui::Button("Browse...##remastered-keys")) {
+    OpenRemasteredDialog(1);
+  }
+  ImGui::EndDisabled();
+  if (state.running) {
+    ImGui::ProgressBar(state.total > 0 ? float(state.done) / float(state.total) : 0.f, ImVec2(-1.f, 0.f),
+                       state.message.c_str());
+    if (ImGui::Button("Cancel##remastered")) {
+      PortRemastered::CancelImport();
+    }
+  } else {
+    ImGui::BeginDisabled(sImage[0] == '\0' || sKeys[0] == '\0');
+    if (ImGui::Button("Import##remastered")) {
+      PortRemastered::StartImport(sImage, sKeys);
+    }
+    ImGui::EndDisabled();
+    if (state.finished && state.ok) {
+      ImGui::TextColored(ImVec4(0.5f, 1.f, 0.5f, 1.f), "%s Restart the game to load the mod.", state.message.c_str());
+    } else if (state.finished && state.cancelled) {
+      ImGui::TextDisabled("The import was cancelled.");
+    } else if (state.finished) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.f, 0.5f, 0.3f, 1.f));
+      ImGui::TextWrapped("The import failed: %s", state.message.c_str());
+      ImGui::PopStyleColor();
+    }
+  }
+  if (!state.lines.empty() && ImGui::TreeNode("remastered-log", "%d notes", int(state.lines.size()))) {
+    for (const std::string& line : state.lines) {
+      ImGui::TextWrapped("%s", line.c_str());
+    }
+    ImGui::TreePop();
+  }
+}
+
 // Importers (port_importers.h): the user's own programs that build a mod.
 // Nothing is drawn until the importers folder holds one.
 void DrawImporters() {
@@ -2765,6 +2853,7 @@ void DrawMods() {
       "(Metroid1.pak, Audio/..., Video/...) replaces that file, and a resource named "
       "by id and type (1A2B3C4D.TXTR) replaces it in every PAK. Mods load at startup.");
 #if !defined(__ANDROID__)
+  DrawRemasteredImport();
   DrawImporters();
 #endif
 }
