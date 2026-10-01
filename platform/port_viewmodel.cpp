@@ -118,7 +118,11 @@ void Draw(const CStateManager& mgr) {
   CVector3f dir = cam.GetForward() + cam.GetRight() * 0.5f - cam.GetUp() * 0.7f;
   dir.Normalize();
   key.push_back(CLight::BuildDirectional(dir, CColor(0.9f, 0.9f, 0.9f)));
-  lights.BuildFakeLightList(key, CColor(0.3f, 0.3f, 0.3f));
+  // Ambient was 0.3, which is 0.07 once the PBR shader takes it to linear space, so a PBR
+  // surface in a dim room rendered as its emissive map alone and a correctly converted model
+  // read as a dark smudge next to retail's unlit one. 0.55 (0.27 linear) lights the albedo
+  // without washing out the emissive, which is what the comparison needs.
+  lights.BuildFakeLightList(key, CColor(0.55f, 0.55f, 0.55f));
   sView.model->Render(CModelData::kWM_Normal, xf, &lights, CModelFlags::Normal());
 }
 
