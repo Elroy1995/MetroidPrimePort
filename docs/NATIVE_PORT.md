@@ -439,6 +439,13 @@ skipped. Inside a mod:
   material's own span in the offset table. The multiplier scales the emissive map;
   the backlight adds a rim of the surface's colour on edges turned away from the
   viewer. A material without the record gets 1 and 0.
+  Two longer forms follow the same six floats: `PBR2` (36 bytes) adds a height-blend
+  threshold and a mode (1 unlit: the material's own colour and glow; 2 the base
+  map's alpha scales the glow; 3 both), and `PBR3` (56 bytes) adds a second
+  layer's edge width and the scale and offset of both layers' heights. A `PBR3`
+  material binds three more maps (base, metal/roughness, normal of the second
+  layer) and blends the two by the vertex alpha and the base maps' alphas.
+  A colour attribute on a PBR material tints its albedo.
 - text and image files (`.txt`, `.md`, `.json`, `.png`, ...) are ignored
   silently, so a mod can carry its readme.
 
@@ -902,7 +909,7 @@ a temporary directory instead of mounting.
   0.6, chosen by eye over four rooms; 1 is the room's own exposure and washes
   out without Remastered's tone curve), `MP_ROOM_ENV_VOLUME_BIAS` (metres off
   the surface a sample is taken, default 0.25) and `MP_ROOM_ENV_VOLUME_SHOW`
-  (1 draws the texture coordinates, 2 the light alone).
+  (1 draws the texture coordinates, 2 the light alone, 3 the shading normal).
 - `tools/pbr_shots.py`: contact sheets of models under PBR, for comparing mod
   builds. One game per (variant, place), each booted straight into the room
   with `MP_BOOT_WORLD` on its own console port and an Xvfb display, about 10 s
