@@ -910,12 +910,14 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
   vtxOutAttrs += fmt::format("\n    @location({}) pbr_pos: vec3f,", vtxOutIdx++);
   vtxOutAttrs += fmt::format("\n    @location({}) pbr_nrm: vec3f,", vtxOutIdx++);
   vtxXfrAttrs += "\n    out.pbr_pos = mv_pos;\n    out.pbr_nrm = mv_nrm;";
-  // A vertex colour is the surface's tint whatever the channel does with it: the game
-  // points an unlit channel at its material register, which would lose it.
+  // A vertex colour is the surface's tint where the material says so (mode 4), whatever
+  // the channel does with it: the game points an unlit channel at its material register,
+  // which would lose it. A retail model's colours are not a tint.
   std::string tint, tintAlpha;
   if (config.attrs[GX_VA_CLR0].attrType != GX_NONE) {
     vtxOutAttrs += fmt::format("\n    @location({}) pbr_vclr: vec4f,", vtxOutIdx++);
-    vtxXfrAttrs += fmt::format("\n    out.pbr_vclr = {};", vtx_attr(config, GX_VA_CLR0));
+    vtxXfrAttrs += fmt::format("\n    out.pbr_vclr = select(vec4f(1.0), {}, ubuf.pbr_backlight.w > 3.5);",
+                                vtx_attr(config, GX_VA_CLR0));
     tint = " * in.pbr_vclr.rgb";
     tintAlpha = " * in.pbr_vclr.a";
   }
@@ -1134,8 +1136,9 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           let pbr_hs = clamp((pbr_hx - 0.5 + ubuf.pbr_emissive.w) / (2.0 * ubuf.pbr_emissive.w), 0.0, 1.0);
           pbr_alpha = pbr_hs * pbr_hs * (3.0 - 2.0 * pbr_hs);
       }}
-      // 1 = unlit, 2 = the base map's alpha masks the glow, 3 = both.
-      let pbr_mode = ubuf.pbr_backlight.w;
+      // 1 = unlit, 2 = the base map's alpha masks the glow, 4 = tinted by the vertex colour
+      // (taken in the vertex stage); the sum of those.
+      let pbr_mode = ubuf.pbr_backlight.w - select(0.0, 4.0, ubuf.pbr_backlight.w > 3.5);
       if (pbr_mode > 1.5) {{
           // The base map's alpha is how much of the glow shows, and no opacity: the
           // vertex alpha alone is.

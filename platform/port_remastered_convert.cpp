@@ -1232,8 +1232,8 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
 // The port's material record (CCubeModel::PortSetPBRMaterial), appended to a
 // PBR material: emissive multiplier rgb, backlight weight rgb, 'PBRM'; or,
 // for a material with a height blend or no lighting, those, the blend's
-// threshold, the mode (1 unlit, 2 glow masked by the base alpha, 3 both), and 'PBR2';
-// or, for a layered one, those, the blend's edge width, the scale and offset of
+// threshold, the mode (1 unlit, 2 glow masked by the base alpha, 4 tinted by
+// the vertex colour, summed), and 'PBR2'; or, for a layered one, those, the blend's edge width, the scale and offset of
 // each layer's height, and 'PBR3'.
 // Remastered's emissive strengths are HDR values meant for its bloom, and the
 // port's output is 8-bit with none, so the strength is compressed (square
@@ -1247,9 +1247,9 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
   for (int i = 0; i < 3; ++i) {
     PF(b, k);
   }
-  if (m.height > 0.0 || m.unlit || m.mask || m.layered) {
+  if (m.height > 0.0 || m.unlit || m.mask || m.layered || m.tinted) {
     PF(b, m.height);
-    PF(b, (m.unlit ? 1.0 : 0.0) + (m.mask ? 2.0 : 0.0));
+    PF(b, (m.unlit ? 1.0 : 0.0) + (m.mask ? 2.0 : 0.0) + (m.tinted ? 4.0 : 0.0));
     if (m.layered) {
       PF(b, m.layerSmooth);
       for (double h : m.layerHeight) {
@@ -1953,6 +1953,12 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     }
     // A retail material's vertices have no layer weight.
     rem.layered = rem.layered && opt.standalone && useColor && rem.tinted;
+    // Nor do the alpha and shading modes belong on one: what they say is about the
+    // Remastered surface, and a retail model keeps the retail material's.
+    if (!opt.standalone) {
+      rem.unlit = rem.mask = false;
+      rem.height = 0.0;
+    }
     const MapRef* rt = rem.maps;
     // A retail descriptor with no texcoord slot at all cannot feed a material
     // that samples texcoord 0, so one is declared: bits 8..23 are the eight
@@ -1969,6 +1975,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     // Bits 4 and 5 are colour 0. Only a tinted material declares it: the port's
     // PBR shader tints by whatever colour the descriptor has.
     const bool tinted = useColor && rem.tinted;
+    rem.tinted = tinted;
     if (tinted) {
       vtx |= 3u << 4;
     }
@@ -1978,7 +1985,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     // Only a room's own material asks for a cutout: a retail material's alpha
     // test says nothing about what the Remastered map's alpha holds.
     const char* const baseAlpha =
-        !opt.standalone ? "" : rem.cutout ? "punch" : rem.mask || rem.layered ? "mask" : rem.blended ? "blend" : "";
+        !opt.standalone ? "" : rem.cutout ? "punch" : rem.mask || rem.layered || rem.height > 0.0 ? "mask" : rem.blended ? "blend" : "";
     const bool usePbr = opt.pbr && rt[kBase].has && (opt.standalone || !IsFx(pm)) &&
                         Get("pbr:base", rt, baseAlpha, opt).has_value();
     if (usePbr) {

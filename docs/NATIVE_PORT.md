@@ -441,11 +441,11 @@ skipped. Inside a mod:
   viewer. A material without the record gets 1 and 0.
   Two longer forms follow the same six floats: `PBR2` (36 bytes) adds a height-blend
   threshold and a mode (1 unlit: the material's own colour and glow; 2 the base
-  map's alpha scales the glow; 3 both), and `PBR3` (56 bytes) adds a second
-  layer's edge width and the scale and offset of both layers' heights. A `PBR3`
+  map's alpha scales the glow; 4 the vertex colour tints the surface; summed),
+  and `PBR3` (56 bytes) adds a second layer's edge width and the scale and offset of both layers' heights. A `PBR3`
   material binds three more maps (base, metal/roughness, normal of the second
   layer) and blends the two by the vertex alpha and the base maps' alphas.
-  A colour attribute on a PBR material tints its albedo.
+  A colour attribute tints a PBR material's albedo only with mode 4.
 - text and image files (`.txt`, `.md`, `.json`, `.png`, ...) are ignored
   silently, so a mod can carry its readme.
 

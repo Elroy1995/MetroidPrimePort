@@ -477,7 +477,8 @@ bool Select(const float origin[3], Selection& out) {
       if (pick >= 0) {
         const Grid& grid = area.file.grids[pick];
         GpuVolume& gpu = area.volumes[pick];
-        if (gpu.id == 0) {
+        const bool fresh = gpu.id == 0;
+        if (fresh) {
           UploadVolume(area.file, grid, gpu);
         }
         const float* m = grid.worldToGrid;
@@ -500,11 +501,9 @@ bool Select(const float origin[3], Selection& out) {
         sLast.volumeBias = volumeBias;
         static const float show = EnvFloat("MP_ROOM_ENV_VOLUME_SHOW", 0.f);
         sLast.volumeDiagnostic = show;
-        static bool logged = false;
-        if (!logged) {
-          logged = true;
-          PortLog::Write("room env: volume %u %ux%ux%u exposure %g average %g level %g\n", gpu.id, grid.size[0],
-                         grid.size[1], grid.size[2], area.exposure, grid.average, sLast.volumeLevel);
+        if (fresh) {
+          PortLog::Write("room env: %08X volume %u %ux%ux%u exposure %g average %g level %g\n", sHintArea, gpu.id,
+                         grid.size[0], grid.size[1], grid.size[2], area.exposure, grid.average, sLast.volumeLevel);
         }
       }
     }
