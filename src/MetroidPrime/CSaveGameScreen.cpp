@@ -452,9 +452,14 @@ void CSaveGameScreen::StartGame(int idx) {
   x6c_cardDriver->BuildNewFileSlot(idx);
   if (newGame) {
 #ifdef TARGET_PC
-    // Port: an Archipelago seed starts at the Landing Site, not the frigate.
-    if (const uint32_t world = PortAp::NewGameWorld())
+    // Port: an Archipelago seed starts in its own room, not on the frigate.
+    uint32_t world, area;
+    if (PortAp::NewGameStart(world, area)) {
       gpGameState->SetCurrentWorldId(CAssetId(world));
+      CWorldState& worldState = gpGameState->CurrentWorldState();
+      worldState.SetAreaId(TAreaId(0));
+      worldState.SetDesiredAreaAssetId(area != 0 ? static_cast< CAssetId >(area) : kInvalidAssetId);
+    }
 #endif
     x6c_cardDriver->StartFileCreateTransactional();
   } else {

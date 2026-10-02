@@ -1762,9 +1762,15 @@ CIOWin::EMessageReturn CFrontEndUI::Update(float dt, CArchitectureQueue& queue) 
           if (saveUI != nullptr && saveUI->GetUIType() == CSaveGameScreen::kUIT_SaveReady) {
             gpGameState->SetCardSerial(saveUI->GetCardSerial());
           }
-          // Like StartGame, an Archipelago seed starts at the Landing Site.
-          if (const uint32_t world = PortAp::NewGameWorld())
+          // Like StartGame, an Archipelago seed starts in its own room.
+          uint32_t world, area;
+          if (PortAp::NewGameStart(world, area)) {
             gpGameState->SetCurrentWorldId(CAssetId(world));
+            CWorldState& worldState = gpGameState->CurrentWorldState();
+            worldState.SetAreaId(TAreaId(0));
+            worldState.SetDesiredAreaAssetId(area != 0 ? static_cast< CAssetId >(area)
+                                                       : kInvalidAssetId);
+          }
           TransitionToFive();
         }
         break;

@@ -839,7 +839,8 @@ int main() {
     std::vector<ItemGrant> grants;
     session.HandlePacket(Packet(R"({"cmd":"Connected","slot":1,"team":0,"players":[],
         "checked_locations":[],"slot_data":{"missile_launcher":1,"main_power_bomb":0,
-        "death_link":1,"elevator_randomization":true,"starting_room_name":"Landing Site",
+        "death_link":1,"elevator_randomization":true,"starting_room_name":"Arboretum",
+        "remove_hive_mecha":1,
         "spring_ball":1,"non_varia_heat_damage":1,"required_artifacts":12,
         "etank_capacity":100,"shuffle_unlimited_missiles":0,"pre_scan_elevators":1}})"),
                          outgoing, grants);
@@ -854,7 +855,8 @@ int main() {
               session.GetState().logic.preScanElevators &&
               session.GetState().logic.trickDifficulty == -1,
           "slot_data fills the logic options");
-    Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "elevator"),
+    Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "Hive Mecha") &&
+              session.GetState().hasWorld && session.GetState().world.startRoom == "Arboretum",
           "only the unsupported option is warned about");
     Check(session.GetConfig().deathLink && outgoing.size() == 4 &&
               Contains(outgoing[0], "ConnectUpdate") && Contains(outgoing[0], "DeathLink"),
@@ -1060,6 +1062,57 @@ int main() {
               session.TakeChatLine(line) && line.text == "Samus sent Hookshot" &&
               !session.TakeChatLine(line),
           "the chat log keeps every PrintJSON, announced finds included");
+  }
+
+  {
+    // The seed's layout: slot_data -> Layout -> the saved copy and back.
+    PortJson::Value slotData;
+    size_t offset = 0;
+    const char* reason = nullptr;
+    Check(PortJson::Parse(R"({"starting_room_name":"Arboretum","final_bosses":1,
+        "elevator_mapping":{"Tallon Overworld":{
+          "Transport to Chozo Ruins West":"Transport to Magmoor Caverns East"},
+          "Chozo Ruins":{"Transport to Tallon Overworld North":"Transport to Tallon Overworld North"}}})",
+                          slotData, offset, &reason),
+          "the layout fixture parses");
+    PortApWorld::Layout layout;
+    PortApWorld::Parse(slotData, layout);
+    Check(layout.startRoom == "Arboretum" && layout.finalBosses == 1 &&
+              layout.elevators.size() == 2,
+          "slot_data fills the layout");
+
+    PortJson::Value saved;
+    PortApWorld::Layout reread;
+    Check(PortJson::Parse(PortApWorld::Text(layout), saved, offset, &reason),
+          "the saved layout is JSON");
+    PortApWorld::Parse(saved, reread);
+    Check(reread == layout, "the saved layout reads back the same");
+
+    PortApWorld::Place place;
+    Check(PortApWorld::StartRoom(layout, place) && place.mlvl == 0x83F6FF6Fu &&
+              place.mrea == 0x18AB6106u,
+          "the start room resolves to its world and area");
+    PortApWorld::Layout unknown;
+    Check(!PortApWorld::StartRoom(unknown, place), "no start room means the retail start");
+    unknown.startRoom = "No Such Room";
+    Check(!PortApWorld::StartRoom(unknown, place), "an unknown start room is refused");
+
+    const PortApWorld::Place retailChozo{0x83F6FF6Fu, 0x3E6B2BB7u};
+    PortApWorld::Place dest;
+    // The area bits of the editor id are the loader's, the table has the rest.
+    Check(PortApWorld::TeleporterDestination(layout, 0x39F2DE28u, 0x000E0005u, retailChozo,
+                                             dest) &&
+              dest.mlvl == 0x39F2DE28u && dest.mrea == 0x15D6FF8Bu,
+          "a remapped elevator leads to its new room");
+    Check(!PortApWorld::TeleporterDestination(layout, 0x39F2DE28u, 0x000E0006u, retailChozo, dest),
+          "a teleporter that is no elevator is left alone");
+    const PortApWorld::Place crater{0xC13B09D1u, 0x93668996u};
+    Check(PortApWorld::TeleporterDestination(layout, 0x39F2DE28u, 0x00100001u, crater, dest) &&
+              dest.mlvl == 0x13D79165u && dest.mrea == 0xB4B41C48u,
+          "without Metroid Prime the temple portal leads to the credits");
+    layout.finalBosses = 0;
+    Check(!PortApWorld::TeleporterDestination(layout, 0x39F2DE28u, 0x00100001u, crater, dest),
+          "with both bosses the temple portal is the disc's");
   }
 
   std::filesystem::remove_all(testDir);

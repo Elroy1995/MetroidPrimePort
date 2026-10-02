@@ -1066,9 +1066,24 @@ void CStateManager::InitializeState(unsigned int mlvlId, TAreaId aid, unsigned i
   }
 
   allList = x808_objectLists[kOL_All].get();
+#ifdef TARGET_PC
+  // Port: a randomized start room may have no spawn point marked as the first
+  // one; any active one will do then.
+  bool portAnySpawn = true;
+  for (int i = allList->GetFirstObjectIndex(); i != -1; i = allList->GetNextObjectIndex(i)) {
+    const CScriptSpawnPoint* const spawnPoint = TCastToConstPtr< CScriptSpawnPoint >((*allList)[i]);
+    if (spawnPoint != nullptr && spawnPoint->GetActive() && spawnPoint->FirstSpawn()) {
+      portAnySpawn = false;
+      break;
+    }
+  }
+#else
+  const bool portAnySpawn = false;
+#endif
   for (int i = allList->GetFirstObjectIndex(); i != -1; i = allList->GetNextObjectIndex(i)) {
     CScriptSpawnPoint* const spawnPoint = TCastToPtr< CScriptSpawnPoint >((*allList)[i]);
-    if (spawnPoint != nullptr && spawnPoint->GetActive() && spawnPoint->FirstSpawn()) {
+    if (spawnPoint != nullptr && spawnPoint->GetActive() &&
+        (spawnPoint->FirstSpawn() || portAnySpawn)) {
       const CVector3f pos = spawnPoint->GetTransform().GetTranslation();
       CVector3f lookDir = spawnPoint->GetTransform().GetForward();
       lookDir.SetZ(0.f);

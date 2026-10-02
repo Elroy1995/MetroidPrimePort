@@ -419,16 +419,13 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
     const char* text;
   };
   static const Unsupported kUnsupported[] = {
-      {"elevator_randomization", 0, "elevator randomization"},
       {"door_color_randomization", 0, "door color randomization"},
       {"blast_shield_randomization", 0, "blast shield randomization"},
       {"locked_door_count", 0, "locked doors"},
-      {"randomize_starting_beam", 0, "a random starting beam"},
       {"final_bosses", 0, "a final boss choice"},
       {"remove_hive_mecha", 0, "Hive Mecha removal"},
       {"backwards_lower_mines", 0, "backwards Lower Mines"},
       {"flaahgra_power_bombs", 0, "Flaahgra power bombs"},
-      {"shuffle_scan_visor", 0, "a shuffled Scan Visor"},
       {"remove_xray_requirements", 0, "removed X-Ray requirements"},
       {"remove_thermal_requirements", 0, "removed Thermal requirements"},
       {"etank_capacity", 100, "a changed energy tank capacity"},
@@ -440,8 +437,13 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
   }
   slot.springBall = static_cast< int >(std::clamp< int64_t >(number("spring_ball", 0), 0, 3));
   const PortJson::Value* room = Member(data, "starting_room_name");
-  if (room != nullptr && room->IsString() && room->AsString() != "Landing Site")
-    slot.warnings.push_back("not supported: starting in " + room->AsString());
+  if (room != nullptr && room->IsString()) {
+    PortApWorld::Layout layout;
+    PortApWorld::Place place;
+    layout.startRoom = room->AsString();
+    if (!PortApWorld::StartRoom(layout, place))
+      slot.warnings.push_back("not supported: starting in " + room->AsString());
+  }
 }
 
 } // namespace
@@ -698,6 +700,11 @@ State LoadStateFile(const std::string& path) {
       ParseLogicOptions(*logic, state.logic);
       state.hasLogic = true;
     }
+    const PortJson::Value* world = Member(root, "world");
+    if (world != nullptr && world->IsObject()) {
+      PortApWorld::Parse(*world, state.world);
+      state.hasWorld = true;
+    }
   } catch (...) {
     return State();
   }
@@ -726,6 +733,8 @@ bool SaveStateFile(const std::string& path, const State& state) {
     text << '}';
     if (state.hasLogic)
       text << ",\"logic\":" << LogicOptionsText(state.logic);
+    if (state.hasWorld)
+      text << ",\"world\":" << PortApWorld::Text(state.world);
     text << '}';
     return WriteFileAtomically(path, text.str());
   } catch (...) {
@@ -984,6 +993,8 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
       ParseSlotData(*slotData, mSlotData);
       ParseLogicOptions(*slotData, mState.logic);
       mState.hasLogic = true;
+      PortApWorld::Parse(*slotData, mState.world);
+      mState.hasWorld = true;
       for (const std::string& warning : mSlotData.warnings)
         AppendNotification(mNotifications, "Seed option " + warning);
       // The seed's DeathLink option decides unless archipelago.json said

@@ -102,6 +102,7 @@ set(MP_PORT_SOURCES
     platform/port_ap_metroidprime.cpp
     platform/port_ap_protocol.cpp
     platform/port_ap_logic.cpp
+    platform/port_ap_world.cpp
     platform/port_apclient.cpp
     platform/port_json.cpp
     platform/port_discord.cpp
@@ -315,6 +316,7 @@ if(MP_BUILD_TESTS)
         platform/port_ap_metroidprime.cpp
         platform/port_ap_protocol.cpp
         platform/port_ap_logic.cpp
+        platform/port_ap_world.cpp
         platform/port_json.cpp
         platform/port_randomizer.cpp)
     target_include_directories(port_apclient_tests PRIVATE

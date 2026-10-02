@@ -720,6 +720,8 @@ void WorkerLoop(Runtime& runtime) {
               const std::string oldSeed = runtime.session->GetState().seed;
               const bool oldHasLogic = runtime.session->GetState().hasLogic;
               const PortApLogic::Options oldLogic = runtime.session->GetState().logic;
+              const bool oldHasWorld = runtime.session->GetState().hasWorld;
+              const PortApWorld::Layout oldWorld = runtime.session->GetState().world;
               const std::string oldError = runtime.session->LastError();
               const std::string oldResetReason = runtime.session->ResetReason();
               runtime.session->HandlePacket(command, outgoing, newGrants);
@@ -735,7 +737,8 @@ void WorkerLoop(Runtime& runtime) {
               const Protocol::State& state = runtime.session->GetState();
               if (state.nextItemIndex != oldIndex || state.checkedLocations != oldChecks ||
                   state.progressive != oldProgressive || state.seed != oldSeed ||
-                  state.hasLogic != oldHasLogic || state.logic != oldLogic)
+                  state.hasLogic != oldHasLogic || state.logic != oldLogic ||
+                  state.hasWorld != oldHasWorld || state.world != oldWorld)
                 runtime.MarkStateDirtyLocked();
               runtime.grants.insert(runtime.grants.end(), newGrants.begin(), newGrants.end());
               runtime.lastMessage = runtime.session->LastMessage();
@@ -1499,6 +1502,19 @@ bool BuiltinRules() {
   return gpGameState != nullptr && IsApGame(gpGameState->PortApProgress());
 }
 
+// The layout of the seed in play, once its slot_data has been seen (in this
+// session or an earlier one).
+bool SeedLayout(PortApWorld::Layout& out) {
+  EnsureLoaded();
+  Runtime& runtime = GetRuntime();
+  std::lock_guard<std::mutex> lock(runtime.mutex);
+  if (!runtime.enabled || runtime.session == nullptr || !runtime.session->GetConfig().builtin ||
+      !runtime.session->GetState().hasWorld)
+    return false;
+  out = runtime.session->GetState().world;
+  return true;
+}
+
 } // namespace
 
 bool OwnsPickup(uint32_t world, uint32_t area, uint32_t entity) {
@@ -1610,11 +1626,51 @@ bool ArtifactHint(int itemType, std::string& out) {
   }
 }
 
-uint32_t NewGameWorld() {
+bool NewGameStart(uint32_t& world, uint32_t& area) {
   try {
-    return BuiltinEnabled() ? MetroidPrime::kTallonWorld : 0;
+    if (!BuiltinEnabled())
+      return false;
+    world = MetroidPrime::kTallonWorld;
+    area = 0;
+    PortApWorld::Layout layout;
+    if (SeedLayout(layout)) {
+      PortApWorld::Place place;
+      if (PortApWorld::StartRoom(layout, place)) {
+        world = place.mlvl;
+        area = place.mrea;
+      }
+    }
+    return true;
   } catch (...) {
-    return 0;
+    return false;
+  }
+}
+
+bool SeedGivesStartItems() {
+  try {
+    PortApWorld::Layout layout;
+    return SeedLayout(layout);
+  } catch (...) {
+    return false;
+  }
+}
+
+bool TeleporterDestination(uint32_t world, uint32_t editorId, uint32_t& destWorld,
+                           uint32_t& destArea) {
+  try {
+    PortApWorld::Layout layout;
+    if (!SeedLayout(layout))
+      return false;
+    PortApWorld::Place retail, place;
+    retail.mlvl = destWorld;
+    retail.mrea = destArea;
+    if (!PortApWorld::TeleporterDestination(layout, world, editorId, retail, place))
+      return false;
+    destWorld = place.mlvl;
+    destArea = place.mrea;
+    return true;
+  } catch (...) {
+    return false;
   }
 }
 

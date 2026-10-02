@@ -156,10 +156,21 @@ bool ArtifactHint(int itemType, std::string& out);
 // replays them. No-op when AP is off.
 void OnInventoryReset();
 
-// The world a new game starts in, or 0 for the retail start. With the built-in
-// tables this is Tallon Overworld (its first area is the Landing Site): the
-// seeds the port supports skip the frigate.
-uint32_t NewGameWorld();
+// Where a new game starts: false for the retail start. With the built-in
+// tables it is the seed's starting room, or the Landing Site until the seed's
+// layout is known (seeds skip the frigate). `area` is 0 for the world's first.
+bool NewGameStart(uint32_t& world, uint32_t& area);
+
+// The seed's layout is known, so the server hands out everything Samus starts
+// with (the starting beam, the Scan Visor unless shuffled, the start room's
+// loadout) and a spawn point gives only the Combat Visor and Power Suit.
+bool SeedGivesStartItems();
+
+// Where the seed leads the world teleporter `editorId` of `world`: rewrites
+// the destination and returns true for a shuffled elevator, and for the
+// Artifact Temple's portal when the seed has no Metroid Prime fight.
+bool TeleporterDestination(uint32_t world, uint32_t editorId, uint32_t& destWorld,
+                           uint32_t& destArea);
 
 // The connected seed wants heat to hurt through every suit but the Varia Suit
 // (the AP world's non_varia_heat_damage, on by default). False when AP is off.
