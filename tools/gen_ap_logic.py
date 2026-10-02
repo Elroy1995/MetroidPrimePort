@@ -13,10 +13,11 @@ resolved here instead of at run time:
 
 - A section's rules are its room's rules with its own appended (PopTracker's
   parent merge).
-- The port does not randomize elevators, door colours, blast shields or the
-  starting room, and does not remove the Hive Mecha or open Lower Mines
-  backwards, so those options are folded in as their vanilla values, and
-  $can_open is looked up in the pack's vanilla door table.
+- The pack has the player mark where a shuffled elevator leads and what
+  shield a door has. The port knows the seed, so an elevator room's two rules
+  become one Elevator token (the room is reached from whichever elevator
+  leads to it), and $can_open and @doors/ become Door tokens that carry the
+  disc's lock for the seed's door colours and blast shields to be applied to.
 - Trick codes become an index into the trick table.
 """
 
@@ -27,16 +28,15 @@ import sys
 
 AREA_FILES = ["tallon.json", "chozo.json", "magmoor.json", "phen.json", "mines.json", "rules.json"]
 
-ALWAYS = {"ElevatorsNormal", "DoorRandoNone", "BlastShieldsNone", "StartingRoom", "StartingRoomLandingSite"}
-NEVER = {"NoLogic", "False", "Softlocks", "ElevatorsRandom", "RemoveHiveMecha", "BackwardsLowerMines",
-         "$can_backwards_lower_mines", "DoorRando", "BlastShieldRando"}
+NEVER = {"NoLogic", "False", "Softlocks", "ElevatorsRandom"}
 
 # Functions that return an accessibility level; the rest return a boolean.
 LEVEL_FUNCS = {"can_xray", "can_thermal", "can_combat_omega_pirate", "can_crashed_frigate",
                "can_crashed_frigate_front"}
 
-DOOR_FUNC = {"Missile": "can_missile", "IceBeam": "can_ice_beam", "WaveBeam": "can_wave_beam",
-             "PlasmaBeam": "can_plasma_beam", "PowerBeam": "can_power_beam"}
+# The pack's door colours under the apworld's lock names.
+DOOR_LOCK = {"IceBeam": "Ice Beam", "WaveBeam": "Wave Beam", "PlasmaBeam": "Plasma Beam",
+             "PowerBeam": "Power Beam Only"}
 
 OPTIONAL, BRACE, LEVEL = 1, 2, 4
 
@@ -99,6 +99,8 @@ class Compiler:
         self.missile, self.mix = load_doors(pack)
         self.tricks, self.trick_codes = load_tricks(pack)
         self.nodes = []  # (area, room, section, [rule strings])
+        self.doors, self.door_index = [], {}  # (area, source, destination, lock, missile)
+        self.starts = []
         self.index = {}
         for name in AREA_FILES:
             for area in load_json(os.path.join(pack, "locations", name)):
@@ -121,22 +123,28 @@ class Compiler:
             self.index[f"{area}/{room['name']}/{section.get('name', '')}"] = len(self.nodes)
             self.nodes.append((area, room["name"], section.get("name", ""), merged))
 
+    def door(self, area, source, destination, lock, missile):
+        entry = (area, source, destination, lock, missile)
+        if entry not in self.door_index:
+            self.door_index[entry] = len(self.doors)
+            self.doors.append(entry)
+        return ("Door", str(self.door_index[entry]), 0, "Code::None")
+
     def can_open(self, area, source, destination):
-        """The vanilla answer of the pack's can_open(): None when always open, else a function."""
+        """The door of the pack's can_open(): None when the pack doesn't know it, else a Door token."""
         missile, mix = self.missile.get(area), self.mix.get(area)
         if missile is None or mix is None:
             return None
-        if f"{source}|{destination}" in missile or f"{destination}|{source}" in missile:
-            return "can_missile"
+        is_missile = f"{source}|{destination}" in missile or f"{destination}|{source}" in missile
         colour = None
         if f"{source}|{destination}" in mix:
             colour = mix[f"{source}|{destination}"][0]
         elif f"{destination}|{source}" in mix:
             forward, reverse = mix[f"{destination}|{source}"]
             colour = reverse or forward
-        if colour is None or colour == "AnyBeam":
+        if colour is None and not is_missile:
             return None
-        return DOOR_FUNC[colour]
+        return self.door(area, source, destination, DOOR_LOCK.get(colour), is_missile)
 
     def find(self, key):
         """PopTracker matches a location by the end of its path."""
@@ -173,13 +181,16 @@ class Compiler:
             s, n = s.split(":")
             count = int(n)
 
-        if s in ALWAYS:
-            return "true", flags
-        if s in NEVER or s.startswith("StartingRoom"):
+        if s in NEVER:
             return "false", flags
+        if s.startswith("StartingRoom"):
+            if s not in self.starts:
+                self.starts.append(s)
+            return ("Start", flags, str(self.starts.index(s)), 0, "Code::None"), flags
         if s.startswith("@doors/"):
             _, area, colour = s.split("/")
-            return ("Func", flags, f"Func::{DOOR_FUNC[colour]}", 0, "Code::None"), flags
+            kind, ident, arg, code = self.door(area, None, None, DOOR_LOCK[colour], False)
+            return (kind, flags, ident, arg, code), flags
         if s.startswith("@"):
             node = self.find(s[1:])
             if node is None:
@@ -188,10 +199,13 @@ class Compiler:
         if s.startswith("$"):
             name, *args = s[1:].split("|")
             if name == "can_open":
-                func = self.can_open(*args)
-                if func is None:
+                door = self.can_open(*args)
+                if door is None:
                     return "true", flags
-                return ("Func", flags, f"Func::{func}", 0, "Code::None"), flags
+                kind, ident, arg, code = door
+                return (kind, flags, ident, arg, code), flags
+            if name == "can_backwards_lower_mines":
+                return ("Code", flags, "Code::BackwardsLowerMines", 1, "Code::None"), flags
             if name == "trick":
                 return ("Trick", flags, str(self.trick_codes[args[0]]), int(args[1]), "Code::None"), flags
             if name == "has":
@@ -215,6 +229,13 @@ class Compiler:
     def rule(self, tokens, where):
         """A rule's tokens, or None when a folded constant makes it unreachable."""
         out, inspect = [], False
+        if tokens[0] == "ElevatorsNormal":
+            # "ElevatorsNormal,@the room this elevator comes from,$can_access_elevators"
+            assert len(tokens) == 3 and tokens[1].startswith("@") and where in self.index, where
+            partner = self.find(tokens[1][1:])
+            assert partner is not None, where
+            out.append(("Elevator", 0, str(self.index[where]), partner, "Code::None"))
+            tokens = tokens[2:]
         for text in tokens:
             result, flags = self.token(text, where, inspect)
             inspect = inspect or bool(flags & BRACE)
@@ -260,6 +281,13 @@ class Compiler:
         out += ["};", "", "// { name in the AP world's trick lists, difficulty (1 easy .. 3 hard, 0 = always) }",
                 "const Trick kTricks[] = {"]
         out += [f"    {{{json.dumps(name)}, {level}}}," for name, level in self.tricks]
+        out += ["};", "", "// { area, the two rooms (null for any door of the lock), lock on the disc, missile shield }",
+                "const Door kDoors[] = {"]
+        text = lambda v: "nullptr" if v is None else json.dumps(v)
+        for area, source, destination, lock, missile in self.doors:
+            out.append(f"    {{{text(area)}, {text(source)}, {text(destination)}, {text(lock)}, {str(missile).lower()}}},")
+        out += ["};", "", "// starting_room_name without its spaces", "const char* const kStartRooms[] = {"]
+        out += [f"    {json.dumps(name[len('StartingRoom'):])}," for name in self.starts]
         out += ["};", "", "// { AP location id, node }", "const LocationNode kLocationNodes[] = {"]
         for ident in port_location_ids():
             if ident not in location_ids or location_ids[ident] not in self.index:

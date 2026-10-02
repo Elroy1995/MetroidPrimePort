@@ -35,6 +35,23 @@ struct Options {
   std::vector< std::string > trickAllow;
   std::vector< std::string > trickDeny;
 
+  // The seed's layout (PortApWorld::FillLogic), under the apworld's names.
+  std::string startRoom; // empty: Landing Site
+  bool removeHiveMecha = false;
+  bool backwardsLowerMines = false;
+  // area -> elevator room -> the room it leads to; one not listed leads where the disc's does.
+  std::map< std::string, std::map< std::string, std::string > > elevators;
+  // area -> a door's lock on the disc -> its lock in the seed.
+  std::map< std::string, std::map< std::string, std::string > > doorColors;
+  struct Door {
+    std::string lock;   // "Blue", "Wave Beam", ... "Disabled"
+    std::string shield; // empty for none, else "Missile", "Power Bomb", ...
+    bool operator==(const Door& other) const { return lock == other.lock && shield == other.shield; }
+  };
+  // "Area|Room|Room behind the door" -> the door as the seed leaves it; one not
+  // listed is the disc's, recoloured by doorColors.
+  std::map< std::string, Door > doors;
+
   bool operator==(const Options& other) const;
   bool operator!=(const Options& other) const { return !(*this == other); }
 };

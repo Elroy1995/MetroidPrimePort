@@ -33,6 +33,8 @@ enum class Code : uint16_t {
   PhazonSuit,
   EnergyTank,
   FlaahgraPowerBombs,
+  RemoveHiveMecha,
+  BackwardsLowerMines,
   TricksEasy,
   TricksMedium,
   TricksHard,
@@ -92,6 +94,10 @@ enum class Kind : uint8_t {
   Node,  // id = another node, whose level is taken
   Code,  // id = Code, arg = the count needed
   Never, // "[]": counts nothing
+  Start,    // id = a starting room in kStartRooms: the seed starts there
+  Elevator, // id = this node, arg = the node its elevator comes from on the disc: the level
+            // of whichever elevator leads here in the seed
+  Door,     // id = a door in kDoors: it can be opened
   Empty, // "{}": only opens the inspect braces
 };
 
@@ -128,6 +134,14 @@ struct Trick {
   int difficulty;
 };
 
+struct Door {
+  const char* area;
+  const char* source;      // null: any door of the area with this lock
+  const char* destination;
+  const char* lock;        // null for a plain door
+  bool missile;
+};
+
 struct LocationNode {
   int64_t id;
   uint16_t node;
@@ -138,6 +152,16 @@ struct LocationNode {
 constexpr size_t kNodeCount = sizeof(kNodes) / sizeof(kNodes[0]);
 constexpr size_t kTrickCount = sizeof(kTricks) / sizeof(kTricks[0]);
 constexpr size_t kLocationCount = sizeof(kLocationNodes) / sizeof(kLocationNodes[0]);
+constexpr size_t kTokenCount = sizeof(kTokens) / sizeof(kTokens[0]);
+
+std::string Squeezed(const std::string& name) {
+  std::string out;
+  for (const char c : name) {
+    if (c != ' ')
+      out += c;
+  }
+  return out;
+}
 
 enum TrickSetting : int8_t { kDeny = -1, kGlobal = 0, kAllow = 1 };
 
@@ -151,12 +175,50 @@ public:
       // The tracker pack applies the allow list after the deny list.
       mTricks[i] = listed(options.trickAllow) ? kAllow : listed(options.trickDeny) ? kDeny : kGlobal;
     }
+    mStart = Squeezed(options.startRoom.empty() ? "Landing Site" : options.startRoom);
+
+    // Where every elevator leads: the disc's pairs, then the seed's.
+    std::map< uint16_t, uint16_t > leads;
+    for (size_t i = 0; i < kTokenCount; ++i) {
+      if (kTokens[i].kind == Kind::Elevator)
+        leads[static_cast< uint16_t >(kTokens[i].arg)] = kTokens[i].id;
+    }
+    const auto elevator = [&leads](const std::string& area, const std::string& name) {
+      // A name two areas share comes as "Area: name".
+      const size_t colon = name.find(": ");
+      const std::string in = colon != std::string::npos ? name.substr(0, colon) : area;
+      const std::string room = colon != std::string::npos ? name.substr(colon + 2) : name;
+      for (const auto& entry : leads) {
+        const Node& node = kNodes[entry.first];
+        if (room == node.room && (in.empty() || in == node.area))
+          return static_cast< int >(entry.first);
+      }
+      return -1;
+    };
+    for (const auto& area : options.elevators) {
+      for (const auto& entry : area.second) {
+        const int from = elevator(area.first, entry.first);
+        const int to = elevator(std::string(), entry.second);
+        if (from >= 0 && to >= 0)
+          leads[static_cast< uint16_t >(from)] = static_cast< uint16_t >(to);
+      }
+    }
+    for (const auto& entry : leads)
+      mArrivals[entry.second].push_back(entry.first);
   }
 
   std::vector< Level > Run() {
     // PopTracker's cacheAccessibility: nodes refer to each other, so resolve
     // every one that is not yet in logic until a pass changes nothing.
     std::vector< Level > levels(kNodeCount, Level::None);
+    // A starting room the pack has no rule for is still where the game starts.
+    const auto known = [this](const char* name) { return mStart == name; };
+    if (std::none_of(std::begin(kStartRooms), std::end(kStartRooms), known)) {
+      for (size_t i = 0; i < kNodeCount; ++i) {
+        if (kNodes[i].section == nullptr && Squeezed(kNodes[i].room) == mStart)
+          levels[i] = Level::Normal;
+      }
+    }
     for (size_t pass = 0; pass < kNodeCount; ++pass) {
       bool changed = false;
       for (size_t i = 0; i < kNodeCount; ++i) {
@@ -219,6 +281,8 @@ private:
     case Code::PhazonSuit: return Item(23);
     case Code::EnergyTank: return Item(24);
     case Code::FlaahgraPowerBombs: return mOptions.flaahgraPowerBombs ? 1 : 0;
+    case Code::RemoveHiveMecha: return mOptions.removeHiveMecha ? 1 : 0;
+    case Code::BackwardsLowerMines: return mOptions.backwardsLowerMines ? 1 : 0;
     // The stages of the pack's trick option do not inherit: each code is its own stage only.
     case Code::TricksEasy: return mOptions.trickDifficulty == 0 ? 1 : 0;
     case Code::TricksMedium: return mOptions.trickDifficulty == 1 ? 1 : 0;
@@ -378,6 +442,77 @@ private:
     return Level::None;
   }
 
+  // A door lock under randomprime's name; one it can't be opened with is none of these.
+  bool Lock(const std::string& lock) const {
+    if (lock.empty() || lock == "Blue" || lock == "None")
+      return true;
+    if (lock == "Wave Beam")
+      return Has(Code::WaveBeam);
+    if (lock == "Ice Beam")
+      return Has(Code::IceBeam);
+    if (lock == "Plasma Beam")
+      return Has(Code::PlasmaBeam);
+    if (lock == "Power Beam Only")
+      return Has(Code::PowerBeam);
+    if (lock == "Missile")
+      return Missile();
+    if (lock == "Bomb")
+      return Bomb();
+    return false;
+  }
+
+  bool Shield(const std::string& shield) const {
+    if (shield.empty() || shield == "None")
+      return true;
+    if (shield == "Missile")
+      return Missile();
+    if (shield == "Bomb")
+      return Bomb();
+    if (shield == "Power Bomb")
+      return PowerBomb();
+    if (shield == "Charge Beam")
+      return Charge(Code::None);
+    if (shield == "Super Missile")
+      return SuperMissile();
+    if (shield == "Wavebuster")
+      return ChargeCombo(Code::WaveBeam);
+    if (shield == "Ice Spreader")
+      return ChargeCombo(Code::IceBeam);
+    if (shield == "Flamethrower")
+      return ChargeCombo(Code::PlasmaBeam);
+    return false;
+  }
+
+  bool Opens(const Door& door) const {
+    if (door.source != nullptr) {
+      const auto seen =
+          mOptions.doors.find(std::string(door.area) + '|' + door.source + '|' + door.destination);
+      if (seen != mOptions.doors.end())
+        return Shield(seen->second.shield) && Lock(seen->second.lock);
+    }
+    if (door.missile && !Missile())
+      return false;
+    if (door.lock == nullptr)
+      return true;
+    const auto area = mOptions.doorColors.find(door.area);
+    if (area != mOptions.doorColors.end()) {
+      const auto lock = area->second.find(door.lock);
+      if (lock != area->second.end())
+        return Lock(lock->second);
+    }
+    return Lock(door.lock);
+  }
+
+  Level Arrival(uint16_t node, const std::vector< Level >& levels) const {
+    Level best = Level::None;
+    const auto arrivals = mArrivals.find(node);
+    if (arrivals != mArrivals.end()) {
+      for (const uint16_t from : arrivals->second)
+        best = std::max(best, levels[from]);
+    }
+    return best;
+  }
+
   // Whether a token that counts something counts enough.
   bool Passes(const Token& token) const {
     switch (token.kind) {
@@ -389,6 +524,8 @@ private:
       return mOptions.trickDifficulty + 1 >= token.arg;
     }
     case Kind::Code: return Count(static_cast< Code >(token.id)) >= token.arg;
+    case Kind::Start: return mStart == kStartRooms[token.id];
+    case Kind::Door: return Opens(kDoors[token.id]);
     default: return false;
     }
   }
@@ -410,13 +547,15 @@ private:
         const bool optional = (token.flags & kOptional) != 0;
         if (token.kind == Kind::Empty)
           continue;
-        if (token.kind == Kind::Node || (token.flags & kLevel)) {
-          Level sub = token.kind == Kind::Node ? levels[token.id] : Call(token);
+        const bool elevator = token.kind == Kind::Elevator;
+        if (token.kind == Kind::Node || elevator || (token.flags & kLevel)) {
+          Level sub = elevator ? Arrival(token.id, levels)
+                               : token.kind == Kind::Node ? levels[token.id] : Call(token);
           if (!inspectOnly && sub == Level::Inspect) {
             // A node that can only be inspected does not lead anywhere, though
             // PopTracker leaves the rule standing; a function that inspects
             // turns the whole rule into an inspection.
-            if (token.kind == Kind::Node)
+            if (token.kind == Kind::Node || elevator)
               sub = Level::None;
             else
               inspectOnly = true;
@@ -446,6 +585,9 @@ private:
   const Options& mOptions;
   const Items& mItems;
   TrickSetting mTricks[kTrickCount];
+  std::string mStart;
+  // Elevator node -> the elevator nodes that lead to it.
+  std::map< uint16_t, std::vector< uint16_t > > mArrivals;
 };
 
 } // namespace
@@ -456,7 +598,9 @@ bool Options::operator==(const Options& other) const {
          flaahgraPowerBombs == other.flaahgraPowerBombs && progressiveBeams == other.progressiveBeams &&
          mainMissile == other.mainMissile && mainPowerBomb == other.mainPowerBomb &&
          variaOnlyHeat == other.variaOnlyHeat && preScanElevators == other.preScanElevators &&
-         trickAllow == other.trickAllow && trickDeny == other.trickDeny;
+         trickAllow == other.trickAllow && trickDeny == other.trickDeny && startRoom == other.startRoom &&
+         removeHiveMecha == other.removeHiveMecha && backwardsLowerMines == other.backwardsLowerMines &&
+         elevators == other.elevators && doorColors == other.doorColors && doors == other.doors;
 }
 
 const Check* Checks(size_t& count) {

@@ -1,6 +1,7 @@
 #ifndef METROID_PRIME_PORT_PORT_AP_WORLD_H
 #define METROID_PRIME_PORT_PORT_AP_WORLD_H
 
+#include "port_ap_logic.h"
 #include "port_skip_cutscenes.h"
 
 #include <cstdint>
@@ -99,6 +100,10 @@ std::vector< uint8_t > TempleOps(const Layout& layout);
 // change.
 std::vector< uint8_t > RoomOps(const Layout& layout, uint32_t mrea,
                                const std::vector< PortSkipCutscenes::ScriptObject >& objects);
+
+// Gives the logic tracker the seed's layout: where the game starts, where the
+// elevators lead, and every door's lock and blast shield as Doors() leaves them.
+void FillLogic(const Layout& layout, PortApLogic::Options& options);
 
 // A script layer the seed keeps on or off; they apply in order.
 struct LayerChange {

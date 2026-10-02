@@ -508,6 +508,46 @@ void LogicOps(uint32_t mrea, const std::vector< PortSkipCutscenes::ScriptObject 
 
 } // namespace
 
+void FillLogic(const Layout& layout, PortApLogic::Options& options) {
+  // The lock a door is left with under each blast shield, as in Doors().
+  static const char* const kUnderShield[] = {"Bomb",       "Blue", "Plasma Beam",     "Ice Beam",
+                                             "Wave Beam",  "Blue", "Power Beam Only", "Blue",
+                                             "Disabled",   "Blue"};
+  const int kDisabled = NameIndex(kShields, "Disabled");
+  const int kNoShield = NameIndex(kShields, "None");
+  options.startRoom = layout.startRoom;
+  options.removeHiveMecha = layout.removeHiveMecha;
+  options.backwardsLowerMines = layout.backwardsLowerMines;
+  options.elevators = layout.elevators;
+  options.doorColors.clear();
+  if (layout.hasDoorColors)
+    options.doorColors = layout.doorColors;
+  options.doors.clear();
+  const Resolved resolved = Resolve(layout);
+  for (int i = 0; i < kDoorCount; ++i) {
+    const Door& d = kDoors[i];
+    if (d.dest < 0)
+      continue;
+    const Room& room = kRooms[d.room];
+    PortApLogic::Options::Door door;
+    door.lock = kLocks[resolved.lock[i] >= 0 ? resolved.lock[i] : d.defaultLock];
+    if ((resolved.lock[i] < 0 || resolved.lock[i] == d.defaultLock) && layout.hasDoorColors) {
+      const auto area = layout.doorColors.find(kAreas[room.area]);
+      if (area != layout.doorColors.end()) {
+        const auto entry = area->second.find(kLocks[d.defaultLock]);
+        if (entry != area->second.end())
+          door.lock = entry->second;
+      }
+    }
+    if (resolved.shield[i] >= 0) {
+      door.lock = kUnderShield[resolved.shield[i]];
+      if (resolved.shield[i] != kDisabled && resolved.shield[i] != kNoShield)
+        door.shield = kShields[resolved.shield[i]];
+    }
+    options.doors[std::string(kAreas[room.area]) + '|' + room.name + '|' + kRooms[d.dest].name] = door;
+  }
+}
+
 std::vector< LayerChange > Layers(const Layout& layout) {
   std::vector< LayerChange > out;
   if (layout.removeHiveMecha) {

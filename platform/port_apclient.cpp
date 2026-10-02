@@ -260,6 +260,8 @@ struct Runtime {
   // an item or the seed's options, and the map asks every frame.
   bool logicValid = false;
   PortApLogic::Options logicOptions;
+  bool logicHasWorld = false;
+  PortApWorld::Layout logicWorld;
   PortApLogic::Items logicItems;
   std::vector<PortApLogic::Level> logicLevels;
   bool enabled = false;
@@ -1925,10 +1927,16 @@ bool Logic(LogicState& out) {
       if (!state.hasLogic)
         return false;
       if (!runtime.logicValid || runtime.logicOptions != state.logic ||
+          runtime.logicHasWorld != state.hasWorld || runtime.logicWorld != state.world ||
           runtime.logicItems != state.progressive) {
         runtime.logicOptions = state.logic;
+        runtime.logicHasWorld = state.hasWorld;
+        runtime.logicWorld = state.world;
         runtime.logicItems = state.progressive;
-        runtime.logicLevels = PortApLogic::Evaluate(state.logic, state.progressive);
+        PortApLogic::Options options = state.logic;
+        if (state.hasWorld)
+          PortApWorld::FillLogic(state.world, options);
+        runtime.logicLevels = PortApLogic::Evaluate(options, state.progressive);
         runtime.logicValid = true;
       }
       out.levels = runtime.logicLevels;

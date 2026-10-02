@@ -1472,6 +1472,53 @@ int main() {
           "the door shields can be loaded from another world");
   }
 
+  // The tracker's logic through a retail layout is the pack's own: the door
+  // table and the pack agree on every lock and missile shield.
+  {
+    PortApLogic::Options plain;
+    plain.trickDifficulty = 2;
+    PortApLogic::Options filled = plain;
+    PortApWorld::FillLogic(PortApWorld::Layout(), filled);
+    Check(!filled.doors.empty(), "the logic is given the doors");
+    bool same = true;
+    PortApLogic::Items items;
+    for (int item = 0; item <= 45; ++item) {
+      items[PortAp::MetroidPrime::kItemBase + item] = 20;
+      same = same && PortApLogic::Evaluate(filled, items) == PortApLogic::Evaluate(plain, items);
+    }
+    for (int item = 0; item <= 45; ++item) {
+      PortApLogic::Items without = items;
+      without.erase(PortAp::MetroidPrime::kItemBase + item);
+      same = same && PortApLogic::Evaluate(filled, without) == PortApLogic::Evaluate(plain, without);
+    }
+    Check(same, "a retail layout leaves the tracker's logic as the pack has it");
+
+    PortApWorld::Layout layout;
+    layout.startRoom = "Arboretum";
+    layout.removeHiveMecha = true;
+    layout.hasShields = true;
+    layout.shields["Tallon Overworld"]["Landing Site"][3] = "Flamethrower";
+    layout.hasDoorColors = true;
+    layout.doorColors["Chozo Ruins"]["Wave Beam"] = "Ice Beam";
+    PortApWorld::FillLogic(layout, filled);
+    const PortApLogic::Options::Door there = filled.doors["Tallon Overworld|Landing Site|Alcove"];
+    const PortApLogic::Options::Door back = filled.doors["Tallon Overworld|Alcove|Landing Site"];
+    Check(there.shield == "Flamethrower" && there.lock == "Plasma Beam" && back == there,
+          "a blast shield reaches the logic from both sides of its door");
+    Check(filled.startRoom == "Arboretum" && filled.removeHiveMecha && !filled.backwardsLowerMines &&
+              filled.doorColors["Chozo Ruins"]["Wave Beam"] == "Ice Beam",
+          "the layout's options reach the logic");
+    bool recoloured = false, shielded = false;
+    for (const auto& door : filled.doors) {
+      if (door.first.compare(0, 12, "Chozo Ruins|") == 0)
+        recoloured = recoloured || door.second.lock == "Wave Beam";
+      else if (door.first.compare(0, 17, "Tallon Overworld|") == 0 && door.first.find("Alcove") == std::string::npos)
+        shielded = shielded || !door.second.shield.empty();
+    }
+    Check(!recoloured, "no Chozo Ruins door keeps a recoloured lock");
+    Check(!shielded, "a seed with blast shields has only its own");
+  }
+
   std::filesystem::remove_all(testDir);
   if (!sPassed)
     return 1;

@@ -139,6 +139,92 @@ int main() {
     CHECK(CountOf(options, items, Level::Normal) <= charged);
   }
 
+  // The seed's layout. A game that starts in the Ruined Fountain has no way
+  // to the Landing Site with nothing, and its own room in reach.
+  {
+    Options options;
+    const Items items{{kBase + 16, 1}, {kBase + 19, 1}};
+    CHECK(At(options, items, "Ruined Fountain", "Spider tracks") == Level::None);
+    options.startRoom = "Ruined Fountain";
+    CHECK(At(options, items, "Landing Site", "Morph Ball tunnel") == Level::None);
+    CHECK(At(options, items, "Ruined Fountain", "Spider tracks") != Level::None);
+    // A room the pack has no rule for is in reach all the same.
+    options.startRoom = "Hive Totem";
+    CHECK(At(options, items, "Hive Totem", "Hive Mecha") != Level::None);
+    CHECK(At(Options(), items, "Hive Totem", "Hive Mecha") == Level::None);
+  }
+
+  // Elevators: with the Landing Site's west elevator leading to Magmoor, the
+  // Hive Totem is no longer a scan away, and is again from an elevator that
+  // leads to its room.
+  {
+    Options options;
+    const Items items{{kBase + 0, 1}, {kBase + 5, 1}};
+    CHECK(At(options, items, "Hive Totem", "Hive Mecha") == Level::Normal);
+    options.elevators["Tallon Overworld"]["Transport to Chozo Ruins West"] = "Transport to Tallon Overworld West";
+    options.elevators["Magmoor Caverns"]["Transport to Tallon Overworld West"] = "Transport to Chozo Ruins West";
+    options.elevators["Chozo Ruins"]["Transport to Tallon Overworld North"] =
+        "Phazon Mines: Transport to Tallon Overworld South";
+    options.elevators["Phazon Mines"]["Transport to Tallon Overworld South"] =
+        "Transport to Tallon Overworld North";
+    CHECK(At(options, items, "Hive Totem", "Hive Mecha") == Level::None);
+    options.elevators["Tallon Overworld"]["Transport to Chozo Ruins West"] = "Transport to Tallon Overworld North";
+    CHECK(At(options, items, "Hive Totem", "Hive Mecha") == Level::Normal);
+  }
+
+  // Doors: the Landing Site's door to the Alcove behind a blast shield, a
+  // disabled door, or another colour.
+  {
+    Options options;
+    options.trickDifficulty = 0;
+    Items items{{kBase + 0, 1}, {kBase + 5, 1}};
+    CHECK(At(options, items, "Alcove", "") == Level::Normal);
+    options.doors["Tallon Overworld|Landing Site|Alcove"] = {"Blue", "Power Bomb"};
+    CHECK(At(options, items, "Alcove", "") == Level::None);
+    items[kBase + 16] = 1;
+    items[kBase + 7] = 1;
+    CHECK(At(options, items, "Alcove", "") == Level::Normal);
+    options.doors["Tallon Overworld|Landing Site|Alcove"] = {"Disabled", ""};
+    CHECK(At(options, items, "Alcove", "") == Level::None);
+    options.doors["Tallon Overworld|Landing Site|Alcove"] = {"Ice Beam", ""};
+    CHECK(At(options, items, "Alcove", "") == Level::None);
+    items[kBase + 1] = 1;
+    CHECK(At(options, items, "Alcove", "") == Level::Normal);
+  }
+
+  // A recoloured area: every item but the Wave Beam reaches everything once
+  // the Wave doors are Ice doors, and not before.
+  {
+    Options options;
+    Items items;
+    for (int i = 0; i <= 45; ++i)
+      items[kBase + i] = 20;
+    items.erase(kBase + 2);
+    const size_t before = CountOf(options, items, Level::Normal);
+    for (const char* area : {"Tallon Overworld", "Chozo Ruins", "Magmoor Caverns", "Phendrana Drifts", "Phazon Mines"})
+      options.doorColors[area]["Wave Beam"] = "Ice Beam";
+    CHECK(CountOf(options, items, Level::Normal) > before);
+  }
+
+  // The Hive Mecha fight needs nothing once the seed removes it, and the
+  // lower mines open from their far end only when the seed says so.
+  {
+    Options options;
+    Items items;
+    for (int i = 0; i <= 45; ++i)
+      items[kBase + i] = 20;
+    const size_t all = CountOf(options, items, Level::Normal);
+    options.removeHiveMecha = true;
+    options.backwardsLowerMines = true;
+    CHECK(CountOf(options, items, Level::Normal) == all);
+    Options other;
+    CHECK(options != other);
+    other.removeHiveMecha = other.backwardsLowerMines = true;
+    CHECK(options == other);
+    other.doors["a|b|c"] = {"Blue", "Missile"};
+    CHECK(options != other);
+  }
+
   // Tricks are named as the seed's allow and deny lists name them.
   CHECK(PortApLogic::TrickName(0) != nullptr && PortApLogic::TrickName(100000) == nullptr);
   bool found = false;

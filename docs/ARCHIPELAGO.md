@@ -519,10 +519,15 @@ still works; anything marked as a gap still limits a session.
   [Metroid Prime AP PopTracker pack](https://github.com/lilDavid/MetroidPrimeAP-PoptrackerPack)
   (MIT, v1.2.0), compiled into `platform/port_ap_logic_data.inc` by
   `tools/gen_ap_logic.py <pack checkout> > platform/port_ap_logic_data.inc`;
-  run that again when the apworld's logic changes. It assumes the vanilla
-  starting room and unshuffled elevators and door colours, as the pack's
-  defaults do, and needs the built-in client (not an external one). Not tried
-  against a real seed.
+  run that again when the apworld's logic changes. It follows
+  the seed's layout: the starting room, where each elevator leads, every
+  door's colour and blast shield (as the port places them, so a shielded door
+  needs the shield's weapon and the lock randomprime leaves under it), the
+  removed Hive Mecha and the lower mines from their far end. Where the pack
+  has the player mark an elevator's destination or a door's shield by hand,
+  the port reads them from the seed. A starting room the pack has no rule for
+  is simply taken as reachable. It needs the built-in client (not an external
+  one). Not tried against a real seed.
 - **DeathLink — done, opt-in.** Set `"death_link": true` in `archipelago.json`
   and a DeathLink bounce from another player kills this one, naming them; this
   client's own deaths are announced once. The client connects with the
