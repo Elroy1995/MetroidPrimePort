@@ -1034,8 +1034,16 @@ void RunFrame() {
         }
         return Finish();
       } else if ((arg == "hide" || arg == "show") && (sCmd.args.size() > 2 || arg == "show")) {
-        const uint32_t id =
-            sCmd.args.size() > 2 ? uint32_t(std::strtoul(sCmd.args[2].c_str(), nullptr, 16)) : 0;
+        uint32_t id = 0;
+        if (sCmd.args.size() > 2) {
+          // 0 means every model, so a mistyped id must not parse as one.
+          char* end = nullptr;
+          const unsigned long long value = std::strtoull(sCmd.args[2].c_str(), &end, 16);
+          if (end == sCmd.args[2].c_str() || *end != '\0' || value == 0 || value > 0xFFFFFFFFull) {
+            return Finish("roomgeo: not a model id");
+          }
+          id = uint32_t(value);
+        }
         Out("%d model(s)", PortRoomGeo::SetHidden(id, arg == "hide"));
       } else {
         return Finish("usage: roomgeo [on|off|overlay | at <x> <y> <z> [margin] | hide <cmdl> | show [cmdl]]");

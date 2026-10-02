@@ -128,6 +128,9 @@ float sTwinStickRightY = 0.f;
 bool sSpringBall = false;
 bool sFastMorph = false;
 bool sInvulnerable = false;
+// MP_GODMODE, for this run only: -1 unset, else 0 or 1. Never saved, and changing the
+// setting ends it.
+int sInvulnerableRun = -1;
 bool sLockOnToggle = false;
 bool sStickyCharge = false;
 bool sSpringFlick = false;
@@ -686,7 +689,7 @@ void EnsureInitialized() {
     sSkipCutscenes = true;
   }
   if (const char* god = std::getenv("MP_GODMODE")) {
-    sInvulnerable = ParseBool(god);
+    sInvulnerableRun = ParseBool(god) ? 1 : 0;
   }
   if (std::getenv("MP_SHOW_DEBUG_UI") != nullptr) {
     sVisible = true;
@@ -1203,12 +1206,13 @@ void SetModsDisabled(const std::string& list) {
 
 bool Invulnerable() {
   EnsureInitialized();
-  return sInvulnerable;
+  return sInvulnerableRun >= 0 ? sInvulnerableRun != 0 : sInvulnerable;
 }
 
 void SetInvulnerable(bool enabled) {
   EnsureInitialized();
   sInvulnerable = enabled;
+  sInvulnerableRun = -1;
   MarkDirty();
 }
 
@@ -3685,7 +3689,7 @@ void DrawCheats() {
     GrantItem(*ps, CPlayerState::kIT_EnergyTanks, 14, 14);
     ps->HealthInfo()->SetHP(ps->CalculateHealth());
   }
-  bool invulnerable = sInvulnerable;
+  bool invulnerable = Invulnerable();
   if (ImGui::Checkbox("Invulnerable", &invulnerable)) {
     SetInvulnerable(invulnerable);
   }

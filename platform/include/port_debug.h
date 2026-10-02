@@ -238,11 +238,11 @@ std::string CardImport(const std::string& path);
 std::string CardExport(const std::string& dest);
 std::string CardImportDolphin();
 std::string CardExportDolphin();
-// Fast Morph, as in Metroid Prime 4: short morph/unmorph transitions that keep
-// momentum (capped at walking speed when unmorphing on the ground).
 // Cheat: the player takes no damage (F1 > Debug > cheats, MP_GODMODE, console `god`).
 bool Invulnerable();
 void SetInvulnerable(bool enabled);
+// Fast Morph, as in Metroid Prime 4: short morph/unmorph transitions that keep
+// momentum (capped at walking speed when unmorphing on the ground).
 bool FastMorph();
 void SetFastMorph(bool enabled);
 // Toggle Lock-On: L latches until pressed again (lock-on, scan, strafe,

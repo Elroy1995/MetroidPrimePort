@@ -1521,7 +1521,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   bool anyFinest = false;
   for (size_t r = 0; r < 5 && r < model.lods.size(); ++r) {
     const ModelLod& range = model.lods[r];
-    for (size_t i = range.indexOffset; i < size_t(range.indexOffset) + range.indexCount; ++i) {
+    for (uint64_t i = range.indexOffset; i < uint64_t(range.indexOffset) + range.indexCount; ++i) {
       if (i < model.lodMeshes.size() && model.lodMeshes[i] < finest.size()) {
         finest[model.lodMeshes[i]] = true;
         anyFinest = true;
