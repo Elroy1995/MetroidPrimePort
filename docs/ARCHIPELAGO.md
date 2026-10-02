@@ -126,7 +126,7 @@ With the built-in tables, the client does what the AP ISO patch would:
   the Elite Quarters, which unlock when the item is taken rather than when
   the Omega Pirate dies. A missile station refills power bombs too.
 - Not ported from randomprime: the fixes for crashes only the console has,
-  the ones for other disc revisions, moved spawn points, the item capacities
+  the ones for other disc revisions, the item capacities
   above the game's own (250 missiles, 8 power bombs, 14 energy tanks), and
   two texts the server never sends: the apworld version on the main menu and
   the list of major item locations in the credits.
