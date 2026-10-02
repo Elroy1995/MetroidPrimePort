@@ -127,6 +127,7 @@ bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
 bool sSpringBall = false;
 bool sFastMorph = false;
+bool sInvulnerable = false;
 bool sLockOnToggle = false;
 bool sStickyCharge = false;
 bool sSpringFlick = false;
@@ -428,6 +429,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sModsDisabled = value;
   } else if (key == "fast_morph") {
     sFastMorph = ParseBool(value);
+  } else if (key == "invulnerable") {
+    sInvulnerable = ParseBool(value);
   } else if (key == "lock_on_toggle") {
     sLockOnToggle = ParseBool(value);
   } else if (key == "sticky_charge") {
@@ -554,6 +557,7 @@ void SaveSettings() {
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
   file << "fast_morph=" << (sFastMorph ? 1 : 0) << '\n';
+  file << "invulnerable=" << (sInvulnerable ? 1 : 0) << '\n';
   file << "lock_on_toggle=" << (sLockOnToggle ? 1 : 0) << '\n';
   file << "sticky_charge=" << (sStickyCharge ? 1 : 0) << '\n';
   file << "spring_ball_flick=" << (sSpringFlick ? 1 : 0) << '\n';
@@ -680,6 +684,9 @@ void EnsureInitialized() {
   // music), so it is no longer a player setting.
   if (std::getenv("MP_SKIP_CUTSCENES") != nullptr) {
     sSkipCutscenes = true;
+  }
+  if (const char* god = std::getenv("MP_GODMODE")) {
+    sInvulnerable = ParseBool(god);
   }
   if (std::getenv("MP_SHOW_DEBUG_UI") != nullptr) {
     sVisible = true;
@@ -1191,6 +1198,17 @@ std::string ModsDisabled() {
 void SetModsDisabled(const std::string& list) {
   EnsureInitialized();
   sModsDisabled = list;
+  MarkDirty();
+}
+
+bool Invulnerable() {
+  EnsureInitialized();
+  return sInvulnerable;
+}
+
+void SetInvulnerable(bool enabled) {
+  EnsureInitialized();
+  sInvulnerable = enabled;
   MarkDirty();
 }
 
@@ -3667,6 +3685,11 @@ void DrawCheats() {
     GrantItem(*ps, CPlayerState::kIT_EnergyTanks, 14, 14);
     ps->HealthInfo()->SetHP(ps->CalculateHealth());
   }
+  bool invulnerable = sInvulnerable;
+  if (ImGui::Checkbox("Invulnerable", &invulnerable)) {
+    SetInvulnerable(invulnerable);
+  }
+  ImGui::TextWrapped("Samus takes no damage from anything. Stays on until unticked.");
 
   ImGui::Separator();
   ImGui::TextUnformatted("Abilities");

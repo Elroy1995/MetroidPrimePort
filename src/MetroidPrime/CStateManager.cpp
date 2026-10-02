@@ -1712,6 +1712,9 @@ bool CStateManager::ApplyLocalDamage(const CVector3f& pos, const CVector3f& dir,
          x8b8_playerState->HasPowerUp(CPlayerState::kIT_PhazonSuit))) {
       return false;
     }
+    if (PortDebug::Invulnerable()) {
+      return false;
+    }
 
     if (gpGameState->GetHardMode()) {
       useDamage *= gpGameState->GetHardModeDamageMultiplier();

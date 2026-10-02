@@ -405,6 +405,7 @@ void CmdHelp() {
   Out("take <item> [n]            remove item capacity (drops a suit)");
   Out("items                      the player's inventory");
   Out("heal                       refill health");
+  Out("god [on|off]               the player takes no damage (no argument: show)");
   Out("press <a+b+...> [frames]   hold pad buttons (a b x y z l r start up down left right;");
   Out("                           sx:<n> sy:<n> cx:<n> cy:<n> also hold a stick axis;");
   Out("                           frames 0 = keep holding until the next press/stick)");
@@ -714,6 +715,18 @@ void CmdHeal(CStateManager& mgr) {
   Finish();
 }
 
+void CmdGod() {
+  if (sCmd.args.size() > 1) {
+    const std::string arg = Lower(sCmd.args[1]);
+    if (arg != "on" && arg != "off") {
+      return Finish("usage: god [on|off]");
+    }
+    PortDebug::SetInvulnerable(arg == "on");
+  }
+  Out(PortDebug::Invulnerable() ? "god on" : "god off");
+  Finish();
+}
+
 bool ResolveWorld(const std::string& arg, uint32_t& id) {
   const auto& worlds = gpMemoryCard->GetMemoryWorlds();
   const std::string want = Lower(arg);
@@ -754,7 +767,7 @@ void CmdWarp(CStateManager& mgr) {
 
 bool IsTickCommand(const std::string& name) {
   static const char* const names[] = {"status", "areas", "objs", "obj", "send", "give",
-                                      "take", "items", "heal", "tp", "face", "look", "warp",
+                                      "take", "items", "heal", "god", "tp", "face", "look", "warp",
                                       "tracker", "enter"};
   for (const char* n : names) {
     if (name == n) {
@@ -785,6 +798,8 @@ void RunTick(CStateManager& mgr) {
     CmdItems(mgr);
   } else if (name == "heal") {
     CmdHeal(mgr);
+  } else if (name == "god") {
+    CmdGod();
   } else if (name == "tp") {
     CmdTp(mgr);
   } else if (name == "face") {

@@ -732,7 +732,9 @@ a temporary directory instead of mounting.
   games also skip the Landing Site intro: Samus starts on top of her ship.
 - F1 > Debug holds the audio switches, the MusyX voice list (collapsed) and the
   cheats: health, items, ammo, area and world teleport. The cheats stay hidden
-  until Show cheats is ticked (`cheats`, off by default).
+  until Show cheats is ticked (`cheats`, off by default). Invulnerable
+  (`invulnerable`, off by default) makes Samus take no damage; it stays on
+  across runs until unticked, and `MP_GODMODE=<0|1>` overrides it for one run.
 - Save states (F1 > States): eight slots in `savestates/` under the pref
   folder (`slot<N>.mpss`). F5 saves to the selected slot and F9 loads it
   (`savestate_hotkeys`, on by default). A state holds the whole game save
@@ -860,7 +862,7 @@ a temporary directory instead of mounting.
   `face <yaw>`, `look <id>`, `objs [filter]`,
   `obj <id>` (AI state, health, body state and animation, connections, whether
   it is frustum-culled),
-  `send <id> <msg>`, `give <item> [n]`, `take <item> [n]`, `items`, `heal`, `press <a+b> [frames]`
+  `send <id> <msg>`, `give <item> [n]`, `take <item> [n]`, `items`, `heal`, `god [on|off]`, `press <a+b> [frames]`
   (`sx:<n>`, `sy:<n>`, `cx:<n>`, `cy:<n>` tokens hold stick axes along with
   the buttons, e.g. `press x+sy:127 30`),
   `stick`/`cstick <x> <y> [frames]` (frames `0` on `press`/`stick`/`cstick`
@@ -875,6 +877,8 @@ a temporary directory instead of mounting.
   title screen or while paused. Pair with `MP_TURBO` for speed.
 - `MP_PBR_PROBE=<off|on|mirror|window>` (or 0-3): the reflection probe PBR mod
   materials reflect, on by default. The console's `probe` changes it live.
+- `MP_GODMODE=<0|1>`: the Invulnerable cheat for this run, whatever the setting
+  says. The console's `god [on|off]` changes the setting itself.
 - `MP_ROOM_GEO=<0|1|overlay>`: whether a mod's `.roomgeo` replaces an area's
   geometry (default 1; `overlay` draws both). Console `roomgeo [on|off|overlay]`,
   which also prints what is loaded and what the last frame streamed.
