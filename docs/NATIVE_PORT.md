@@ -999,6 +999,9 @@ a temporary directory instead of mounting.
   the curve's contrast, so re-import to get the right levels.
   Room geometry is lit by the baked ambient grid per pixel, as a 3D texture,
   and takes no area lights (Remastered has no lightmaps; this grid is its room
+- `MP_PBR_ANISO=<1-16>`: the most anisotropic filtering a PBR mod's native maps
+  take, 2 by default whatever the Anisotropy setting says: higher levels turn a
+  tiled floor into streaks towards the horizon.
   lighting). `MP_ROOM_ENV_VOLUME=0` goes back to the area's lights, as does
   `MP_ROOM_GEO_AREA_LIGHTS=1`. For tuning: `MP_ROOM_ENV_VOLUME_BIAS` (metres off
   the surface a sample is taken, default 0.25) and `MP_ROOM_ENV_VOLUME_SHOW`
