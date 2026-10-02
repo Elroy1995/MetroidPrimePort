@@ -8,6 +8,7 @@
 class CFrustumPlanes;
 class CGameArea;
 class CStateManager;
+class CVector3f;
 
 // A room's static geometry as a list of models and where each stands. A mod supplies one
 // per area as <MREA id>.roomgeo, with the models as ordinary CMDL files; the port draws
@@ -60,5 +61,12 @@ Mode GetMode();
 // Areas with a file, their instances, the distinct models and how many have loaded, and
 // the instances drawn in the last frame.
 void Stats(int& areas, int& instances, int& models, int& loaded, int& drawn);
+
+
+// For finding which model a surface belongs to (the console's `roomgeo at|hide|show`).
+// One line per drawn instance whose box holds the point, give or take the margin.
+std::string At(const CVector3f& point, float margin);
+// Stops or resumes drawing a model, or every model for id 0; how many it matched.
+int SetHidden(uint32_t id, bool hidden);
 
 } // namespace PortRoomGeo

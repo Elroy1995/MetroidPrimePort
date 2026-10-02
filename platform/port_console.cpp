@@ -415,6 +415,7 @@ void CmdHelp() {
   Out("wait <frames>              let frames pass");
   Out("probe [off|on|mirror|window]   the PBR reflection probe, or what PBR surfaces show of it");
   Out("roomgeo [on|off|overlay]  the room geometry mods supply, in place of the area's own or on top of it");
+  Out("roomgeo at <x> <y> <z> [margin] | hide <cmdl> | show [cmdl]   its instances at a point; stop drawing one");
   Out("roomenv [on|off|exposure on|off]  the room environments mods supply; exposure: by room, not by cube");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
   Out("fov <45..90>               first-person vertical FOV, as the Options row does");
@@ -1017,8 +1018,27 @@ void RunFrame() {
         PortRoomGeo::SetMode(arg == "on" ? PortRoomGeo::Mode::Replace
                              : arg == "off" ? PortRoomGeo::Mode::Off
                                             : PortRoomGeo::Mode::Overlay);
+      } else if (arg == "at" && sCmd.args.size() > 4) {
+        const CVector3f point(float(std::atof(sCmd.args[2].c_str())), float(std::atof(sCmd.args[3].c_str())),
+                              float(std::atof(sCmd.args[4].c_str())));
+        const float margin = sCmd.args.size() > 5 ? float(std::atof(sCmd.args[5].c_str())) : 0.f;
+        const std::string list = PortRoomGeo::At(point, margin);
+        // A line at a time: Out() holds 1 KiB, and a point in a big room is in many boxes.
+        for (size_t from = 0; from < list.size();) {
+          const size_t to = list.find('\n', from);
+          Out("%s", list.substr(from, to - from).c_str());
+          from = to + 1;
+        }
+        if (list.empty()) {
+          Out("no instance there");
+        }
+        return Finish();
+      } else if ((arg == "hide" || arg == "show") && (sCmd.args.size() > 2 || arg == "show")) {
+        const uint32_t id =
+            sCmd.args.size() > 2 ? uint32_t(std::strtoul(sCmd.args[2].c_str(), nullptr, 16)) : 0;
+        Out("%d model(s)", PortRoomGeo::SetHidden(id, arg == "hide"));
       } else {
-        return Finish("usage: roomgeo [on|off|overlay]");
+        return Finish("usage: roomgeo [on|off|overlay | at <x> <y> <z> [margin] | hide <cmdl> | show [cmdl]]");
       }
     }
     int areas = 0;

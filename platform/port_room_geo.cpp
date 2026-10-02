@@ -16,18 +16,22 @@
 #include "MetroidPrime/CStateManager.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <string>
 #include <unordered_map>
 
 namespace PortRoomGeo {
 namespace {
 
 struct Model {
+  uint32_t id = 0;
   std::unique_ptr< CModelData > data;
   bool loaded = false;
+  bool hidden = false; // by the console, to find which model a surface belongs to
   CAABox bounds = CAABox::MakeMaxInvertedBox();
 };
 
@@ -85,6 +89,7 @@ void Load(uint32_t mrea, Area& area) {
       if (gpResourceFactory->GetResourceTypeById(static_cast< CAssetId >(instance.model)) == 'CMDL') {
         slot = area.models.size();
         Model& model = area.models.emplace_back();
+        model.id = instance.model;
         model.data.reset(new CModelData(
             CStaticRes(static_cast< CAssetId >(instance.model), CVector3f(1.f, 1.f, 1.f))));
       }
@@ -175,7 +180,7 @@ bool Draw(const CStateManager& mgr, const CGameArea& gameArea, const CFrustumPla
   }
   for (Placed& item : area.items) {
     const Model& model = area.models[item.model];
-    if (!model.loaded) {
+    if (!model.loaded || model.hidden) {
       continue;
     }
     if (!item.bounded) {
@@ -197,6 +202,44 @@ bool Draw(const CStateManager& mgr, const CGameArea& gameArea, const CFrustumPla
 }
 
 bool sReplacingArea = false;
+
+std::string At(const CVector3f& point, float margin) {
+  std::string out;
+  char line[160];
+  for (const auto& [mrea, area] : Areas()) {
+    for (const Placed& item : area.items) {
+      const Model& model = area.models[item.model];
+      if (!item.bounded) {
+        continue;
+      }
+      const CVector3f lo = item.bounds.GetMinPoint();
+      const CVector3f hi = item.bounds.GetMaxPoint();
+      if (point.GetX() < lo.GetX() - margin || point.GetX() > hi.GetX() + margin ||
+          point.GetY() < lo.GetY() - margin || point.GetY() > hi.GetY() + margin ||
+          point.GetZ() < lo.GetZ() - margin || point.GetZ() > hi.GetZ() + margin) {
+        continue;
+      }
+      std::snprintf(line, sizeof(line), "%08X in %08X: (%.1f, %.1f, %.1f) to (%.1f, %.1f, %.1f)%s\n", model.id,
+                    mrea, lo.GetX(), lo.GetY(), lo.GetZ(), hi.GetX(), hi.GetY(), hi.GetZ(),
+                    model.hidden ? " hidden" : "");
+      out += line;
+    }
+  }
+  return out;
+}
+
+int SetHidden(uint32_t id, bool hidden) {
+  int count = 0;
+  for (auto& [mrea, area] : Areas()) {
+    for (Model& model : area.models) {
+      if (id == 0 || model.id == id) {
+        model.hidden = hidden;
+        ++count;
+      }
+    }
+  }
+  return count;
+}
 
 void Reset() { Areas().clear(); }
 
