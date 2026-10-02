@@ -250,6 +250,27 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     } else {
       GXSetPBRAmbient(nullptr, 0.f);
     }
+    if (found && env.volume != 0) {
+      // The volume is in world space, the shader's position and normal in view space.
+      const CVector3f eye = view.GetTranslation();
+      const f32 at[3] = {eye.GetX(), eye.GetY(), eye.GetZ()};
+      f32 rows[6][4];
+      for (int row = 0; row < 3; ++row) {
+        const f32* w = env.worldToVolume + row * 4;
+        const f32* a = env.worldToAxes + row * 3;
+        for (int col = 0; col < 3; ++col) {
+          rows[row][col] = w[0] * viewToWorld[0][col] + w[1] * viewToWorld[1][col] + w[2] * viewToWorld[2][col];
+          rows[3 + row][col] = a[0] * viewToWorld[0][col] + a[1] * viewToWorld[1][col] + a[2] * viewToWorld[2][col];
+        }
+        rows[row][3] = w[0] * at[0] + w[1] * at[1] + w[2] * at[2] + w[3];
+      }
+      rows[3][3] = env.volumeLevel;
+      rows[4][3] = env.volumeBias;
+      rows[5][3] = env.volumeDiagnostic;
+      GXSetPBRVolume(env.volume, rows);
+    } else {
+      GXSetPBRVolume(0, nullptr);
+    }
     PortSetPBRMaterial(surface.GetMaterialIndex());
     GXSetPBR(GX_TRUE);
     ++CCubeMaterial::sPortPBRDraws;

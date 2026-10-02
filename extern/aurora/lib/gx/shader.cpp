@@ -879,13 +879,17 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
 // comes from screen-space derivatives, so no tangent attribute is needed. Maths is done
 // on linearised colours and converted back, since the rest of the pipeline is gamma.
 // Channel 1's lights and a vertex-sourced ambient are not used (vertex ambient falls back
-// to a constant); without a lit channel 0 the surface keeps its TEV result.
+// to a constant). With channel 0 unlit there are no lights to sum and the channel's material
+// colour, which is all an unlit surface shows, is the ambient; the game draws a model that
+// way when no light reaches it, and a room lit by an ambient volume always. A material
+// without channel 0 keeps its TEV result.
 auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& vtxOutAttrs,
               std::string& vtxXfrAttrs, size_t& vtxOutIdx) -> std::string {
   const auto& cc = config.colorChannels[GX_COLOR0];
-  if (!info.lightingEnabled || !info.sampledColorChannels.test(0) || !cc.lightingEnabled) {
+  if (!info.sampledColorChannels.test(0)) {
     return {};
   }
+  const bool lit = info.lightingEnabled && cc.lightingEnabled;
   std::array<int, 4> mapStage{-1, -1, -1, -1};
   for (int i = 0; i < config.tevStageCount; ++i) {
     const auto& stage = config.tevStages[i];
@@ -939,8 +943,9 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
   } else {
     attn = "\n          let attn = 1.0;";
   }
-  const std::string amb = cc.ambSrc == GX_SRC_REG ? "ubuf.cc0_amb.rgb"s : "vec3f(0.2)"s;
-  return fmt::format(R"""(
+  const std::string amb = lit ? (cc.ambSrc == GX_SRC_REG ? "ubuf.cc0_amb.rgb"s : "vec3f(0.2)"s)
+                              : (cc.matSrc == GX_SRC_REG ? "ubuf.cc0_mat.rgb"s : "vec3f(1.0)"s);
+  std::string source = fmt::format(R"""(
     // PBR (GX_AURORA_SET_PBR)
     {{
       let pbr_pi = 3.14159265;
@@ -965,6 +970,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       var pbr_lo = vec3f(0.0);
       var pbr_env = vec3f(0.0);
       var pbr_lsum = vec3f(0.0);
+      // pbr-lights-begin
       for (var i = 0u; i < {4}u; i++) {{
           if ((ubuf.lightState0 & (1u << i)) == 0u) {{ continue; }}
           let light = ubuf.lights[i];
@@ -991,6 +997,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           pbr_env += rad * (env_w * env_w);
           pbr_lsum += rad;
       }}
+      // pbr-lights-end
       // Ambient: diffuse plus the split-sum environment BRDF (Karis' analytic fit) applied
       // to the reflection probe, a cube map whose mips are picked by roughness. The
       // probe's weight is 0 until the game has filled it; the ambient and the stand-in
@@ -1009,7 +1016,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_lod = select({7}.0, ubuf.pbr_cube.y, pbr_hdr > 0.0);
       let pbr_cubed = textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_pd, pbr_rough * pbr_lod).rgb;
       let pbr_cubel = select(pow(max(pbr_cubed, vec3f(0.0)), vec3f(2.2)), pbr_cubed * pbr_hdr, pbr_hdr > 0.0);
-      let pbr_envspec = mix(pbr_amb + pbr_env * 0.35, pbr_cubel, min(ubuf.pbr_probe[0].w, 1.0));
+      var pbr_envspec = mix(pbr_amb + pbr_env * 0.35, pbr_cubel, min(ubuf.pbr_probe[0].w, 1.0));
       // The room cube also shapes the ambient: its blurriest useful mip (z) along the
       // normal says how much of the room's light comes from that side, and w scales that
       // to 1 for the cube's average. The game's ambient keeps the level and the colour.
@@ -1029,6 +1036,37 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           pbr_ambd = select(dot(pbr_amb, vec3f(0.2126, 0.7152, 0.0722)), 1.0, ubuf.pbr_ambient[0].w > 1.5) * max(ubuf.pbr_ambient[0].rgb + ubuf.pbr_ambient[1].rgb * pow(pbr_aq, ubuf.pbr_ambient[2].rgb),
                          vec3f(0.0));
       }}
+      // An ambient volume (GX_AURORA_SET_PBR_VOLUME) is the same lobes, read at this pixel
+      // from the room's grid, a little off the surface so that a wall is lit by the air in
+      // front of it.
+      var pbr_vdiag = vec3f(0.0);
+      if (ubuf.pbr_volume[3].w > 0.0) {{
+          let pbr_vp = vec4f(in.pbr_pos + pbr_n * ubuf.pbr_volume[4].w, 1.0);
+          let pbr_vuv = vec3f(dot(ubuf.pbr_volume[0], pbr_vp), dot(ubuf.pbr_volume[1], pbr_vp),
+                              dot(ubuf.pbr_volume[2], pbr_vp));
+          let pbr_vmean = textureSampleLevel(pbr_vol_mean, pbr_cube_samp, pbr_vuv, 0.0).rgb;
+          let pbr_vlobe = textureSampleLevel(pbr_vol_lobe, pbr_cube_samp, pbr_vuv, 0.0).rgb;
+          let pbr_vr = textureSampleLevel(pbr_vol_r, pbr_cube_samp, pbr_vuv, 0.0);
+          let pbr_vg = textureSampleLevel(pbr_vol_g, pbr_cube_samp, pbr_vuv, 0.0);
+          let pbr_vb = textureSampleLevel(pbr_vol_b, pbr_cube_samp, pbr_vuv, 0.0);
+          let pbr_vn = vec3f(dot(ubuf.pbr_volume[3].xyz, pbr_n), dot(ubuf.pbr_volume[4].xyz, pbr_n),
+                             dot(ubuf.pbr_volume[5].xyz, pbr_n));
+          let pbr_vq = clamp(vec3f(dot(pbr_vn, pbr_vr.xyz * 2.0 - 1.0), dot(pbr_vn, pbr_vg.xyz * 2.0 - 1.0),
+                                   dot(pbr_vn, pbr_vb.xyz * 2.0 - 1.0)) * 0.5 + 0.5, vec3f(0.0), vec3f(1.0));
+          let pbr_vs = vec3f(pbr_vr.a, pbr_vg.a, pbr_vb.a);
+          pbr_ambd = max(pbr_vmean - pbr_vlobe + 2.0 * pbr_vlobe * (1.0 + pbr_vs) * pow(pbr_vq, 1.0 + 2.0 * pbr_vs),
+                         vec3f(0.0)) * ubuf.pbr_volume[3].w;
+          // The same lobes along the reflection stand in for the environment: unlike a cube
+          // for the room, they are dark where this spot is.
+          let pbr_vrn = vec3f(dot(ubuf.pbr_volume[3].xyz, pbr_refl), dot(ubuf.pbr_volume[4].xyz, pbr_refl),
+                              dot(ubuf.pbr_volume[5].xyz, pbr_refl));
+          let pbr_vrq = clamp(vec3f(dot(pbr_vrn, pbr_vr.xyz * 2.0 - 1.0), dot(pbr_vrn, pbr_vg.xyz * 2.0 - 1.0),
+                                    dot(pbr_vrn, pbr_vb.xyz * 2.0 - 1.0)) * 0.5 + 0.5, vec3f(0.0), vec3f(1.0));
+          pbr_envspec = max(pbr_vmean - pbr_vlobe + 2.0 * pbr_vlobe * (1.0 + pbr_vs) * pow(pbr_vrq, 1.0 + 2.0 * pbr_vs),
+                            vec3f(0.0)) * ubuf.pbr_volume[3].w;
+          // Diagnostics (w of row 5): 1 the texture coordinates, 2 the light alone.
+          pbr_vdiag = select(pbr_ambd, pbr_vuv, ubuf.pbr_volume[5].w < 1.5);
+      }}
       pbr_lo += (pbr_ambd * pbr_diff + pbr_envspec * (pbr_f0 * pbr_ab.x + pbr_ab.y)) * pbr_ao;
       // Backlight (GX_AURORA_SET_PBR_MATERIAL): a rim on the edges turned away from the
       // viewer, the surface's own colour times the backlight weight. It is scaled by the
@@ -1042,6 +1080,9 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_out = max(pbr_lo + pbr_emissive, vec3f(0.0));
       let pbr_tm = min(pbr_out, vec3f(0.6)) + 0.4 * (1.0 - exp(-max(pbr_out - 0.6, vec3f(0.0)) / 0.4));
       prev = vec4f(pow(pbr_tm, vec3f(1.0 / 2.2)), prev.a);
+      if (ubuf.pbr_volume[5].w > 0.5) {{
+          prev = vec4f(clamp(pbr_vdiag, vec3f(0.0), vec3f(1.0)), prev.a);
+      }}
       // A weight above 1 is a diagnostic: 2 makes the surface a perfect mirror of the
       // probe, and 3 a window onto it, which must line up with the scene around it.
       if (ubuf.pbr_probe[0].w > 1.5) {{
@@ -1057,6 +1098,13 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     }})""",
                      sampled(0, ""), sampled(1, "vec4f(1.0, 0.6, 0.0, 1.0)"), sampled(3, "vec4f(0.0)"), normal,
                      GX::MaxLights, attn, amb, gfx::probe::MipCount - 1);
+  if (!lit) {
+    // The uniform block has no lights then.
+    const size_t begin = source.find("// pbr-lights-begin");
+    const size_t end = source.find("// pbr-lights-end");
+    source.erase(begin, end - begin);
+  }
+  return source;
 }
 
 absl::flat_hash_set<gfx::ShaderRef> s_seenShaders;
@@ -1723,6 +1771,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     uniBufAttrs += "\n    pbr_backlight: vec4f,";
     uniBufAttrs += "\n    pbr_cube: vec4f,";
     uniBufAttrs += "\n    pbr_ambient: array<vec4f, 6>,";
+    uniBufAttrs += "\n    pbr_volume: array<vec4f, 6>,";
     const auto pbr = pbr_func(config, info, vtxOutAttrs, vtxXfrAttrs, vtxOutIdx);
     if (!pbr.empty()) {
       fragmentFn += pbr;
@@ -1731,6 +1780,11 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
                                  "@group(2) @binding({})\n"
                                  "var pbr_cube_samp: sampler;",
                                  MaxTextures * 2, MaxTextures * 2 + 1);
+      static constexpr std::array<const char*, gfx::probe::VolumeTextures> volumeNames{"mean", "lobe", "r", "g", "b"};
+      for (u32 i = 0; i < gfx::probe::VolumeTextures; ++i) {
+        texBindings += fmt::format("\n@group(2) @binding({})\nvar pbr_vol_{}: texture_3d<f32>;",
+                                   MaxTextures * 2 + 2 + i, volumeNames[i]);
+      }
     }
   }
   if (info.usesPTTexMtx.any()) {

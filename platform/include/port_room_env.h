@@ -117,10 +117,26 @@ struct Selection {
   float ambient[6][3] = {};
   // The ambient is the light itself, at the room's exposure; the game's level stays out.
   bool ambientAbsolute = false;
+  // For GXSetPBRVolume, when the model was announced with SetVolumeHint: the grid as
+  // textures, which the shader reads per pixel in place of the one sample above.
+  uint32_t volume = 0;
+  float worldToVolume[12] = {}; // rows of world -> texture coordinates
+  float worldToAxes[9] = {};    // rows of world direction -> the grid's axes
+  float volumeLevel = 0.f;      // what the baked light is multiplied by
+  float volumeBias = 0.f;       // metres off the surface the sample is taken
+  float volumeDiagnostic = 0.f; // MP_ROOM_ENV_VOLUME_SHOW: 1 texture coordinates, 2 the light
 };
 // The room cube and baked ambient for a model at `pos`; false when no loaded area has
 // either (or MP_ROOM_ENV=0).
 bool Select(const float pos[3], Selection& out);
+// Room geometry is lit by the baked ambient alone, per pixel. It announces the area and
+// the middle of what it draws next, and the following Select answers with that area's
+// grid as a volume (and picks the cube by that point, not the model's origin); Clear
+// when it is done. MP_ROOM_ENV_VOLUME=0 turns volumes off.
+void SetVolumeHint(uint32_t mrea, const float centre[3]);
+void ClearVolumeHint();
+// Whether a model announced for this area would get a volume.
+bool HasVolume(uint32_t mrea);
 // Forgets everything (the mods folder changed).
 void Reset();
 // 0 off, 1 on; the console's `roomenv`.

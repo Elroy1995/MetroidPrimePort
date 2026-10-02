@@ -484,11 +484,15 @@ GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept {
   }
 
   // Using C WGPU types instead of C++ wrappers to avoid destructor overhead
-  std::array<WGPUBindGroupEntry, MaxTextures * 2 + 2> textureEntries{};
+  std::array<WGPUBindGroupEntry, MaxTextures * 2 + 2 + gfx::probe::VolumeTextures> textureEntries{};
   textureEntries[MaxTextures * 2].binding = MaxTextures * 2;
   textureEntries[MaxTextures * 2].textureView = gfx::probe::cube_view(g_gxState.pbrCube).Get();
   textureEntries[MaxTextures * 2 + 1].binding = MaxTextures * 2 + 1;
   textureEntries[MaxTextures * 2 + 1].sampler = gfx::probe::sampler().Get();
+  for (u32 i = 0; i < gfx::probe::VolumeTextures; ++i) {
+    textureEntries[MaxTextures * 2 + 2 + i].binding = MaxTextures * 2 + 2 + i;
+    textureEntries[MaxTextures * 2 + 2 + i].textureView = gfx::probe::volume_view(g_gxState.pbrVolume, i).Get();
+  }
   for (u32 i = 0; i < MaxTextures; ++i) {
     const auto& tex = g_gxState.textures[i];
     WGPUBindGroupEntry& textureEntry = textureEntries[i * 2];
@@ -516,7 +520,7 @@ GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept {
 
 void initialize() noexcept {
   {
-    std::array<wgpu::BindGroupLayoutEntry, MaxTextures * 2 + 2> textureEntries;
+    std::array<wgpu::BindGroupLayoutEntry, MaxTextures * 2 + 2 + gfx::probe::VolumeTextures> textureEntries;
     // The PBR environment probe (GX_AURORA_COPY_PROBE_FACE)
     textureEntries[MaxTextures * 2] = {
         .binding = MaxTextures * 2,
@@ -532,6 +536,18 @@ void initialize() noexcept {
         .visibility = wgpu::ShaderStage::Fragment,
         .sampler = {.type = wgpu::SamplerBindingType::Filtering},
     };
+    // The PBR ambient volume (GX_AURORA_SET_PBR_VOLUME), which shares the probe's sampler
+    for (u32 i = 0; i < gfx::probe::VolumeTextures; ++i) {
+      textureEntries[MaxTextures * 2 + 2 + i] = {
+          .binding = MaxTextures * 2 + 2 + i,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .texture =
+              {
+                  .sampleType = wgpu::TextureSampleType::Float,
+                  .viewDimension = wgpu::TextureViewDimension::e3D,
+              },
+      };
+    }
     for (u32 i = 0; i < MaxTextures; ++i) {
       textureEntries[i * 2] = {
           .binding = i * 2,
@@ -570,7 +586,7 @@ void initialize() noexcept {
     sEmptyTextureView = sEmptyTexture.CreateView();
   }
   {
-    std::array<wgpu::BindGroupEntry, MaxTextures * 2 + 2> entries;
+    std::array<wgpu::BindGroupEntry, MaxTextures * 2 + 2 + gfx::probe::VolumeTextures> entries;
     entries[MaxTextures * 2] = {
         .binding = MaxTextures * 2,
         .textureView = gfx::probe::cube_view(),
@@ -579,6 +595,12 @@ void initialize() noexcept {
         .binding = MaxTextures * 2 + 1,
         .sampler = gfx::probe::sampler(),
     };
+    for (u32 i = 0; i < gfx::probe::VolumeTextures; ++i) {
+      entries[MaxTextures * 2 + 2 + i] = {
+          .binding = MaxTextures * 2 + 2 + i,
+          .textureView = gfx::probe::volume_view(0, i),
+      };
+    }
     for (u32 i = 0; i < MaxTextures; ++i) {
       entries[i * 2] = {
           .binding = i * 2,

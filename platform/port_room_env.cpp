@@ -26,15 +26,25 @@ struct GpuCube {
   uint32_t mipCount = 0;
 };
 
+struct GpuVolume {
+  uint32_t id = 0; // 0: not made yet
+};
+
 struct Area {
   File file;
   std::vector<GpuCube> cubes;
+  std::vector<GpuVolume> volumes; // one a grid
   float exposure = 0.f; // what takes the room's radiance to the display's range; 0: unknown
 };
 
 // Areas in memory; one without a file has an empty File.
 std::unordered_map<uint32_t, Area> sAreas;
 uint32_t sNextCube = 1;
+uint32_t sNextVolume = 1;
+int sVolumes = -1;
+bool sHint = false;
+uint32_t sHintArea = 0;
+float sHintCentre[3];
 int sEnabled = -1;
 int sExposure = -1;
 // Model draws come in runs at one position.
@@ -69,6 +79,147 @@ void Free(Area& area) {
     }
   }
   area.cubes.clear();
+  for (GpuVolume& volume : area.volumes) {
+    if (volume.id != 0) {
+      GXDestroyPBRVolume(volume.id);
+    }
+  }
+  area.volumes.clear();
+}
+
+uint16_t FloatToHalf(float value) {
+  uint32_t bits;
+  std::memcpy(&bits, &value, sizeof(bits));
+  const uint16_t sign = uint16_t((bits >> 16) & 0x8000);
+  const int exponent = int((bits >> 23) & 0xFF) - 127 + 15;
+  const uint32_t mantissa = bits & 0x7FFFFF;
+  if (exponent <= 0) {
+    return exponent < -10 ? sign : uint16_t(sign | ((mantissa | 0x800000) >> (14 - exponent)));
+  }
+  if (exponent >= 31) {
+    return uint16_t(sign | 0x7BFF); // the largest half, for anything past it
+  }
+  return uint16_t(sign | (exponent << 10) | (mantissa >> 13));
+}
+
+bool VolumesEnabled() {
+  if (sVolumes < 0) {
+    const char* const env = std::getenv("MP_ROOM_ENV_VOLUME");
+    sVolumes = env != nullptr && env[0] == '0' ? 0 : 1;
+  }
+  return sVolumes != 0;
+}
+
+// A grid as the textures of GXCreatePBRVolume. The points inside walls are empty, and a
+// surface sits between those and the lit ones, so the texture filter would darken every
+// wall; the empty points take the light of their lit neighbours first, layer by layer.
+void UploadVolume(const File& file, const Grid& grid, GpuVolume& gpu) {
+  constexpr size_t kPoint = 24;
+  constexpr int kLayers = 16;
+  const size_t sx = grid.size[0], sy = grid.size[1], sz = grid.size[2];
+  const size_t count = sx * sy * sz;
+  std::vector<uint8_t> points(file.data.begin() + grid.offset, file.data.begin() + grid.offset + count * kPoint);
+  const auto lit = [&points](size_t index) {
+    const uint8_t* p = points.data() + index * kPoint;
+    // Means are not negative, so any set bit but the sign is light.
+    return ((p[0] | p[2] | p[4]) != 0) || (((p[1] | p[3] | p[5]) & 0x7F) != 0);
+  };
+  std::vector<uint8_t> state(count); // 1: lit, 2: filled in this layer
+  for (size_t i = 0; i < count; ++i) {
+    state[i] = lit(i) ? 1 : 0;
+  }
+  const size_t step[3] = {1, sx, sx * sy};
+  const size_t size[3] = {sx, sy, sz};
+  for (int layer = 0; layer < kLayers; ++layer) {
+    size_t filled = 0;
+    size_t index = 0;
+    for (size_t z = 0; z < sz; ++z) {
+      for (size_t y = 0; y < sy; ++y) {
+        for (size_t x = 0; x < sx; ++x, ++index) {
+          if (state[index] != 0) {
+            continue;
+          }
+          const size_t at[3] = {x, y, z};
+          float halves[6] = {};
+          float bytes[12] = {};
+          int total = 0;
+          for (int axis = 0; axis < 3; ++axis) {
+            for (int side = 0; side < 2; ++side) {
+              if (side == 0 ? at[axis] == 0 : at[axis] + 1 == size[axis]) {
+                continue;
+              }
+              const size_t other = side == 0 ? index - step[axis] : index + step[axis];
+              if (state[other] != 1) {
+                continue;
+              }
+              const uint8_t* p = points.data() + other * kPoint;
+              for (int i = 0; i < 6; ++i) {
+                halves[i] += HalfToFloat(uint16_t(p[i * 2] | (p[i * 2 + 1] << 8)));
+              }
+              for (int i = 0; i < 12; ++i) {
+                bytes[i] += float(p[12 + i]);
+              }
+              ++total;
+            }
+          }
+          if (total == 0) {
+            continue;
+          }
+          uint8_t* p = points.data() + index * kPoint;
+          for (int i = 0; i < 6; ++i) {
+            const uint16_t half = FloatToHalf(halves[i] / float(total));
+            p[i * 2] = uint8_t(half);
+            p[i * 2 + 1] = uint8_t(half >> 8);
+          }
+          for (int i = 0; i < 12; ++i) {
+            p[12 + i] = uint8_t(bytes[i] / float(total) + 0.5f);
+          }
+          state[index] = 2;
+          ++filled;
+        }
+      }
+    }
+    if (filled == 0) {
+      break;
+    }
+    for (uint8_t& value : state) {
+      value = value != 0 ? 1 : 0;
+    }
+  }
+  std::vector<uint8_t> texels(count * 28);
+  uint8_t* mean = texels.data();
+  uint8_t* lobe = mean + count * 8;
+  uint8_t* direction = lobe + count * 8;
+  for (size_t i = 0; i < count; ++i) {
+    const uint8_t* p = points.data() + i * kPoint;
+    std::memcpy(mean + i * 8, p, 6);
+    std::memcpy(lobe + i * 8, p + 6, 6);
+    mean[i * 8 + 7] = lobe[i * 8 + 7] = 0x3C; // alpha 1.0
+    for (int channel = 0; channel < 3; ++channel) {
+      uint8_t* out = direction + (count * channel + i) * 4;
+      std::memcpy(out, p + 15 + channel * 3, 3);
+      out[3] = p[12 + channel];
+    }
+  }
+  gpu.id = sNextVolume++;
+  if (sNextVolume == 0) {
+    sNextVolume = 1;
+  }
+  GXCreatePBRVolume(gpu.id, grid.size[0], grid.size[1], grid.size[2], texels.data(), uint32_t(texels.size()));
+}
+
+// How far outside a grid a point is, in metres; 0 inside.
+float GridDistance(const Grid& grid, const float pos[3]) {
+  const float* m = grid.worldToGrid;
+  const float scale = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+  float sum = 0.f;
+  for (int row = 0; row < 3; ++row) {
+    const float* r = m + row * 4;
+    const float at = r[0] * pos[0] + r[1] * pos[1] + r[2] * pos[2] + r[3];
+    const float out = std::max(std::max(-0.5f - at, at - (float(grid.size[row]) - 0.5f)), 0.f);
+    sum += out * out;
+  }
+  return scale > 1e-12f ? std::sqrt(sum) / scale : 3.4e38f;
 }
 
 // A cube's average luminance, from its last mip (a texel or four a face).
@@ -141,6 +292,7 @@ void Load(uint32_t mrea, Area& area) {
     // Black: nothing to reflect, and no exposure to set by it.
     area.cubes[i].failed = !(area.cubes[i].average > 1e-6f);
   }
+  area.volumes.resize(area.file.grids.size());
   area.exposure = RoomExposure(area);
 }
 
@@ -202,6 +354,34 @@ void SetEnabled(bool enabled) {
   sLastValid = false;
 }
 
+void SetVolumeHint(uint32_t mrea, const float centre[3]) {
+  sHint = true;
+  sHintArea = mrea;
+  std::memcpy(sHintCentre, centre, sizeof(sHintCentre));
+  sLastValid = false;
+}
+
+void ClearVolumeHint() {
+  sHint = false;
+  sLastValid = false;
+}
+
+bool HasVolume(uint32_t mrea) {
+  if (!Enabled() || !VolumesEnabled()) {
+    return false;
+  }
+  const auto found = sAreas.find(mrea);
+  if (found == sAreas.end()) {
+    return false;
+  }
+  for (const Grid& grid : found->second.file.grids) {
+    if (grid.average > 0.f) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void Reset() {
   for (auto& [mrea, area] : sAreas) {
     Free(area);
@@ -232,12 +412,13 @@ void SetLoadedAreas(const uint32_t* mreas, size_t count) {
   }
 }
 
-bool Select(const float pos[3], Selection& out) {
-  if (sLastValid && std::memcmp(pos, sLastPos, sizeof(sLastPos)) == 0) {
+bool Select(const float origin[3], Selection& out) {
+  if (sLastValid && std::memcmp(origin, sLastPos, sizeof(sLastPos)) == 0) {
     out = sLast;
     return sLastFound;
   }
-  std::memcpy(sLastPos, pos, sizeof(sLastPos));
+  std::memcpy(sLastPos, origin, sizeof(sLastPos));
+  const float* const pos = sHint ? sHintCentre : origin;
   sLastValid = true;
   sLastFound = false;
   if (!Enabled()) {
@@ -276,6 +457,56 @@ bool Select(const float pos[3], Selection& out) {
       sLast.params[2] = float(gpu.mipCount > 2 ? gpu.mipCount - 2 : 0);
       sLast.params[3] = ambient > 0.f ? 1.f / (room ? gpu.average * sLast.params[0] : grey) : 0.f;
       std::memcpy(sLast.worldToCube, probe.worldToCube, sizeof(sLast.worldToCube));
+    }
+  }
+  if (sHint && VolumesEnabled()) {
+    static const float volumeGain = EnvFloat("MP_ROOM_ENV_VOLUME_GAIN", 0.6f);
+    static const float volumeBias = EnvFloat("MP_ROOM_ENV_VOLUME_BIAS", 0.25f);
+    const auto found = sAreas.find(sHintArea);
+    if (found != sAreas.end()) {
+      Area& area = found->second;
+      int pick = -1;
+      float nearest = 0.f;
+      for (size_t i = 0; i < area.file.grids.size(); ++i) {
+        const float distance = GridDistance(area.file.grids[i], pos);
+        if (area.file.grids[i].average > 0.f && (pick < 0 || distance < nearest)) {
+          pick = int(i);
+          nearest = distance;
+        }
+      }
+      if (pick >= 0) {
+        const Grid& grid = area.file.grids[pick];
+        GpuVolume& gpu = area.volumes[pick];
+        if (gpu.id == 0) {
+          UploadVolume(area.file, grid, gpu);
+        }
+        const float* m = grid.worldToGrid;
+        const float scale = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+        sLast.volume = gpu.id;
+        for (int row = 0; row < 3; ++row) {
+          // Point i is the middle of texel i.
+          const float size = float(grid.size[row]);
+          for (int col = 0; col < 4; ++col) {
+            sLast.worldToVolume[row * 4 + col] = (m[row * 4 + col] + (col == 3 ? 0.5f : 0.f)) / size;
+          }
+          for (int col = 0; col < 3; ++col) {
+            sLast.worldToAxes[row * 3 + col] = m[row * 4 + col] / scale;
+          }
+        }
+        // The baked light is the level, at the room's exposure; without one, the grid's
+        // average comes out at the key. The grid holds irradiance, and a diffuse surface
+        // sends 1/pi of that back.
+        sLast.volumeLevel = (area.exposure > 0.f ? area.exposure : 0.18f / grid.average) * volumeGain / 3.14159265f;
+        sLast.volumeBias = volumeBias;
+        static const float show = EnvFloat("MP_ROOM_ENV_VOLUME_SHOW", 0.f);
+        sLast.volumeDiagnostic = show;
+        static bool logged = false;
+        if (!logged) {
+          logged = true;
+          PortLog::Write("room env: volume %u %ux%ux%u exposure %g average %g level %g\n", gpu.id, grid.size[0],
+                         grid.size[1], grid.size[2], area.exposure, grid.average, sLast.volumeLevel);
+        }
+      }
     }
   }
   if (ambient > 0.f) {
@@ -318,7 +549,7 @@ bool Select(const float pos[3], Selection& out) {
       }
     }
   }
-  sLastFound = sLast.cube != 0 || sLast.hasAmbient;
+  sLastFound = sLast.cube != 0 || sLast.hasAmbient || sLast.volume != 0;
   out = sLast;
   return sLastFound;
 }

@@ -45,6 +45,16 @@ void GXSetPBRCube(u32 id, const f32 params[4]);
 // directions are not unit length (shorter is more even). The luminance of the GX ambient
 // colour scales the result. Null goes back to the GX ambient alone.
 void GXSetPBRAmbient(const f32 rows[6][3], f32 mode);
+// Aurora extension: ambient volumes (see GX_AURORA_CREATE_PBR_VOLUME). `texels` is, for
+// every point with x fastest and z slowest: all the means (RGBA16Float), then all the lobes
+// (RGBA16Float), then the direction of red, of green and of blue (RGBA8, 0..255 is -1..1
+// along the volume's axes, with that channel's sharpness in alpha); 28 bytes a point.
+void GXCreatePBRVolume(u32 id, u32 sizeX, u32 sizeY, u32 sizeZ, const void* texels, u32 length);
+void GXDestroyPBRVolume(u32 id);
+// Rows 0 to 2 take a view-space position (w: the offset) to the volume's texture
+// coordinates, rows 3 to 5 a view-space normal to the volume's axes. w of row 3 scales the
+// light (0: no volume), w of row 4 is how far along the normal the sample is taken.
+void GXSetPBRVolume(u32 id, const f32 rows[6][4]);
 
 void GXColor4f32(float r, float g, float b, float a);
 

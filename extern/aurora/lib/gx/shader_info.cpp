@@ -357,7 +357,7 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   }
   if (config.pbr) {
     info.usesPbr = true;
-    info.uniformSize += sizeof(Mat3x4<float>) + sizeof(Vec4<float>) * 9;
+    info.uniformSize += sizeof(Mat3x4<float>) + sizeof(Vec4<float>) * 15;
   }
   if (info.usesPTTexMtx.any()) {
     info.uniformSize += sizeof(Mat3x4<float>) * MaxPTTexMtx;
@@ -464,6 +464,9 @@ static void fill_uniform(ByteBuffer& buf, const ShaderInfo& info) noexcept {
     buf.append(g_gxState.pbrBacklight);
     buf.append(g_gxState.pbrCubeParams);
     for (const auto& v : g_gxState.pbrAmbient) {
+      buf.append(v);
+    }
+    for (const auto& v : g_gxState.pbrVolumeRows) {
       buf.append(v);
     }
   }

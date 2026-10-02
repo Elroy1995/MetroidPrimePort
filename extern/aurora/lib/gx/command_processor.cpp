@@ -828,6 +828,39 @@ void handle_aurora(ByteReader& reader) noexcept {
         g_gxState.dirty |= DirtyUniform;
       }
     }
+  } else if (subCmd == GX_AURORA_CREATE_PBR_VOLUME) {
+    const u32 id = reader.read<u32>();
+    const u32 sizeX = reader.read<u32>();
+    const u32 sizeY = reader.read<u32>();
+    const u32 sizeZ = reader.read<u32>();
+    const std::unique_ptr<std::vector<u8>> texels{reinterpret_cast<std::vector<u8>*>(reader.read<u64>())};
+    gfx::probe::create_volume(id, sizeX, sizeY, sizeZ, texels->data(), texels->size());
+    g_gxState.dirty |= DirtyTextures;
+  } else if (subCmd == GX_AURORA_DESTROY_PBR_VOLUME) {
+    gfx::probe::destroy_volume(reader.read<u32>());
+    g_gxState.dirty |= DirtyTextures;
+  } else if (subCmd == GX_AURORA_SET_PBR_VOLUME) {
+    u32 id = reader.read<u32>();
+    std::array<Vec4<float>, 6> rows;
+    for (Vec4<float>& v : rows) {
+      const f32 x = reader.read<f32>();
+      const f32 y = reader.read<f32>();
+      const f32 z = reader.read<f32>();
+      const f32 w = reader.read<f32>();
+      v = {x, y, z, w};
+    }
+    if (id == 0 || !gfx::probe::has_volume(id)) {
+      id = 0;
+      rows = {};
+    }
+    if (g_gxState.pbrVolume != id) {
+      g_gxState.pbrVolume = id;
+      g_gxState.dirty |= DirtyTextures;
+    }
+    if (g_gxState.pbrVolumeRows != rows) {
+      g_gxState.pbrVolumeRows = rows;
+      g_gxState.dirty |= DirtyUniform;
+    }
   } else if (subCmd == GX_AURORA_SET_PBR_MATERIAL) {
     for (Vec4<float>* v : {&g_gxState.pbrEmissive, &g_gxState.pbrBacklight}) {
       const f32 x = reader.read<f32>();

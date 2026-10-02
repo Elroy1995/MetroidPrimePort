@@ -895,6 +895,14 @@ a temporary directory instead of mounting.
   to retail's brightness (the morph ball 113 against retail's 132, from 77),
   but it rests on a constant fitted across rooms with a spread of one stop,
   so it stays opt-in until more rooms are looked at.
+  Room geometry is lit by the baked ambient grid per pixel, as a 3D texture,
+  and takes no area lights (Remastered has no lightmaps; this grid is its room
+  lighting). `MP_ROOM_ENV_VOLUME=0` goes back to the area's lights, as does
+  `MP_ROOM_GEO_AREA_LIGHTS=1`. For tuning: `MP_ROOM_ENV_VOLUME_GAIN` (default
+  0.6, chosen by eye over four rooms; 1 is the room's own exposure and washes
+  out without Remastered's tone curve), `MP_ROOM_ENV_VOLUME_BIAS` (metres off
+  the surface a sample is taken, default 0.25) and `MP_ROOM_ENV_VOLUME_SHOW`
+  (1 draws the texture coordinates, 2 the light alone).
 - `tools/pbr_shots.py`: contact sheets of models under PBR, for comparing mod
   builds. One game per (variant, place), each booted straight into the room
   with `MP_BOOT_WORLD` on its own console port and an Xvfb display, about 10 s

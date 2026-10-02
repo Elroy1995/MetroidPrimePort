@@ -104,4 +104,30 @@ void GXSetPBRAmbient(const f32 rows[6][3], f32 mode) {
     GX_WRITE_F32(rows != nullptr && row == 0 ? mode : 0.f);
   }
 }
+
+void GXCreatePBRVolume(u32 id, u32 sizeX, u32 sizeY, u32 sizeZ, const void* texels, u32 length) {
+  // The processor frees the copy.
+  auto* copy = new std::vector<u8>(static_cast<const u8*>(texels), static_cast<const u8*>(texels) + length);
+  GX_WRITE_AURORA(GX_AURORA_CREATE_PBR_VOLUME);
+  GX_WRITE_U32(id);
+  GX_WRITE_U32(sizeX);
+  GX_WRITE_U32(sizeY);
+  GX_WRITE_U32(sizeZ);
+  GX_WRITE_U64(reinterpret_cast<u64>(copy));
+}
+
+void GXDestroyPBRVolume(u32 id) {
+  GX_WRITE_AURORA(GX_AURORA_DESTROY_PBR_VOLUME);
+  GX_WRITE_U32(id);
+}
+
+void GXSetPBRVolume(u32 id, const f32 rows[6][4]) {
+  GX_WRITE_AURORA(GX_AURORA_SET_PBR_VOLUME);
+  GX_WRITE_U32(rows != nullptr ? id : 0);
+  for (int row = 0; row < 6; ++row) {
+    for (int i = 0; i < 4; ++i) {
+      GX_WRITE_F32(rows != nullptr ? rows[row][i] : 0.f);
+    }
+  }
+}
 }

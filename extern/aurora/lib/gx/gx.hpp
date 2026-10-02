@@ -395,6 +395,8 @@ struct GXState {
   u32 pbrCube = 0; // GX_AURORA_SET_PBR_CUBE
   Vec4<float> pbrCubeParams{0.f, 0.f, 0.f, 0.f}; // see GXSetPBRCube
   std::array<Vec4<float>, 6> pbrAmbient{}; // GX_AURORA_SET_PBR_AMBIENT
+  u32 pbrVolume = 0; // GX_AURORA_SET_PBR_VOLUME
+  std::array<Vec4<float>, 6> pbrVolumeRows{}; // see GXSetPBRVolume
 
   // GX2 polygon offset state
   f32 frontOffset = 0.0f;

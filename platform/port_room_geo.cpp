@@ -5,6 +5,7 @@
 #include "port_gci.h"
 #include "port_log.h"
 #include "port_mods.h"
+#include "port_room_env.h"
 
 #include "Kyoto/CResFactory.hpp"
 #include "Kyoto/Graphics/CModelFlags.hpp"
@@ -41,6 +42,7 @@ struct Placed {
   CAABox bounds = CAABox::MakeMaxInvertedBox();
   bool bounded = false;
   std::unique_ptr< CActorLights > lights;
+  bool areaLit = false; // `lights` holds the area's lights
 };
 
 struct Area {
@@ -178,6 +180,8 @@ bool Draw(const CStateManager& mgr, const CGameArea& gameArea, const CFrustumPla
       return false;
     }
   }
+  static const bool areaLights = std::getenv("MP_ROOM_GEO_AREA_LIGHTS") != nullptr;
+  const bool baked = !areaLights && PortRoomEnv::HasVolume(gameArea.GetAreaAssetId());
   for (Placed& item : area.items) {
     const Model& model = area.models[item.model];
     if (!model.loaded || model.hidden) {
@@ -190,13 +194,29 @@ bool Draw(const CStateManager& mgr, const CGameArea& gameArea, const CFrustumPla
     if (!frustum.BoxInFrustumPlanes(item.bounds)) {
       continue;
     }
-    if (item.lights == nullptr) {
-      item.lights.reset(new CActorLights(8, CVector3f(0.f, 0.f, 0.f), 4, 4));
+    if (item.lights == nullptr || item.areaLit == baked) {
+      // The baked ambient already holds the area's lights, so that set has room for none:
+      // one that expects area lights and has none drops its dynamic lights too. Its
+      // ambient is what a material outside PBR is drawn at.
+      item.lights.reset(new CActorLights(8, CVector3f(0.f, 0.f, 0.f), 4, baked ? 0 : 4));
+      if (baked) {
+        item.lights->SetAmbientColor(CColor::White());
+      }
+      item.areaLit = !baked;
     }
-    item.lights->BuildAreaLightList(mgr, gameArea, item.bounds);
+    if (baked) {
+      const CVector3f centre = item.bounds.GetCenterPoint();
+      const float at[3] = {centre.GetX(), centre.GetY(), centre.GetZ()};
+      PortRoomEnv::SetVolumeHint(gameArea.GetAreaAssetId(), at);
+    } else {
+      item.lights->BuildAreaLightList(mgr, gameArea, item.bounds);
+    }
     item.lights->BuildDynamicLightList(mgr, item.bounds);
     model.data->Render(CModelData::kWM_Normal, item.xf, item.lights.get(), CModelFlags::Normal());
     ++sDrawn;
+  }
+  if (baked) {
+    PortRoomEnv::ClearVolumeHint();
   }
   return GetMode() == Mode::Replace;
 }

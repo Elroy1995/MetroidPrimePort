@@ -26,4 +26,14 @@ void destroy_cube(uint32_t id);
 // The view of a room cube, or the probe's when there is no such cube.
 const wgpu::TextureView& cube_view(uint32_t id);
 bool has_cube(uint32_t id);
+
+// Ambient volumes (GX_AURORA_CREATE_PBR_VOLUME): a room's baked ambient light as five 3D
+// textures (mean, lobe, and the direction and sharpness of red, green and blue), which a
+// PBR draw samples per pixel. `texels` is laid out as GXCreatePBRVolume says.
+constexpr uint32_t VolumeTextures = 5;
+void create_volume(uint32_t id, uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, const uint8_t* texels, size_t length);
+void destroy_volume(uint32_t id);
+bool has_volume(uint32_t id);
+// One texture of a volume, or of an empty one when there is no such volume.
+const wgpu::TextureView& volume_view(uint32_t id, uint32_t index);
 } // namespace aurora::gfx::probe

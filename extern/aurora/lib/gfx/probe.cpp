@@ -20,6 +20,13 @@ struct RoomCube {
   wgpu::TextureView view;
 };
 std::unordered_map<uint32_t, RoomCube> g_roomCubes;
+struct Volume {
+  std::array<wgpu::Texture, VolumeTextures> textures;
+  std::array<wgpu::TextureView, VolumeTextures> views;
+};
+std::unordered_map<uint32_t, Volume> g_volumes;
+wgpu::Texture g_emptyVolume;
+wgpu::TextureView g_emptyVolumeView;
 
 void ensure() {
   if (g_texture) {
@@ -82,6 +89,9 @@ void shutdown() {
     }
   }
   g_roomCubes.clear();
+  g_volumes.clear();
+  g_emptyVolumeView = {};
+  g_emptyVolume = {};
   g_sampler = {};
   g_cubeView = {};
   g_texture = {};
@@ -179,5 +189,64 @@ const wgpu::TextureView& cube_view(uint32_t id) {
     return found->second.view;
   }
   return cube_view();
+}
+
+void create_volume(uint32_t id, uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, const uint8_t* texels,
+                   size_t length) {
+  const size_t points = size_t(sizeX) * sizeY * sizeZ;
+  if (id == 0 || points == 0 || length < points * 28) {
+    return;
+  }
+  Volume volume;
+  const uint8_t* in = texels;
+  for (uint32_t i = 0; i < VolumeTextures; ++i) {
+    const bool half = i < 2;
+    const uint32_t texelSize = half ? 8 : 4;
+    const wgpu::TextureDescriptor textureDescriptor{
+        .label = "PBR ambient volume",
+        .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+        .dimension = wgpu::TextureDimension::e3D,
+        .size = {sizeX, sizeY, sizeZ},
+        .format = half ? wgpu::TextureFormat::RGBA16Float : wgpu::TextureFormat::RGBA8Unorm,
+        .mipLevelCount = 1,
+        .sampleCount = 1,
+    };
+    volume.textures[i] = g_device.CreateTexture(&textureDescriptor);
+    // A slice at a time, through the frame's uploads (see create_cube).
+    for (uint32_t z = 0; z < sizeZ; ++z) {
+      const wgpu::TexelCopyTextureInfo dst{
+          .texture = volume.textures[i],
+          .mipLevel = 0,
+          .origin = {0, 0, z},
+      };
+      queue_texture_upload_data(in, sizeX * texelSize, sizeY, dst, wgpu::Extent3D{sizeX, sizeY, 1});
+      in += size_t(sizeX) * sizeY * texelSize;
+    }
+    volume.views[i] = volume.textures[i].CreateView();
+  }
+  g_volumes[id] = std::move(volume);
+}
+
+void destroy_volume(uint32_t id) { g_volumes.erase(id); }
+
+bool has_volume(uint32_t id) { return g_volumes.find(id) != g_volumes.end(); }
+
+const wgpu::TextureView& volume_view(uint32_t id, uint32_t index) {
+  const auto found = g_volumes.find(id);
+  if (found != g_volumes.end()) {
+    return found->second.views[index % VolumeTextures];
+  }
+  if (!g_emptyVolume) {
+    constexpr wgpu::TextureDescriptor descriptor{
+        .label = "Empty PBR ambient volume",
+        .usage = wgpu::TextureUsage::TextureBinding,
+        .dimension = wgpu::TextureDimension::e3D,
+        .size = {1, 1, 1},
+        .format = wgpu::TextureFormat::RGBA8Unorm,
+    };
+    g_emptyVolume = g_device.CreateTexture(&descriptor);
+    g_emptyVolumeView = g_emptyVolume.CreateView();
+  }
+  return g_emptyVolumeView;
 }
 } // namespace aurora::gfx::probe

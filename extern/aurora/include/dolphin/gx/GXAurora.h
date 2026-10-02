@@ -163,6 +163,18 @@ extern "C" {
  */
 #define GX_AURORA_SET_PBR_AMBIENT 0x004A
 
+/**
+ * Port extension: ambient volumes, a room's baked ambient light as 3D textures, which a
+ * PBR draw samples at every pixel instead of taking one value for the whole model. CREATE
+ * takes an id, the three sizes and a pointer to a heap block the command owns (see
+ * GXCreatePBRVolume); DESTROY takes the id. SET selects the volume of the following PBR
+ * draws and takes six vectors of four floats (see GXSetPBRVolume); id 0, or a fourth w of
+ * 0, goes back to GX_AURORA_SET_PBR_AMBIENT.
+ */
+#define GX_AURORA_CREATE_PBR_VOLUME 0x004B
+#define GX_AURORA_DESTROY_PBR_VOLUME 0x004C
+#define GX_AURORA_SET_PBR_VOLUME 0x004D
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 
