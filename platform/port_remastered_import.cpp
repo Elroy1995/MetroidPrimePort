@@ -23,6 +23,7 @@
 #include "port_remastered_convert.h"
 #include "port_remastered_font.h"
 #include "port_remastered_hud.h"
+#include "port_remastered_map.h"
 #include "port_remastered_movie.h"
 #include "port_remastered_nsp.h"
 #include "port_remastered_pak.h"
@@ -54,6 +55,9 @@ constexpr uint32_t kMLVL = 0x4D4C564C;
 constexpr uint32_t kMREA = 0x4D524541;
 constexpr uint32_t kFONT = 0x464F4E54;
 constexpr uint32_t kGUIF = 0x47554946;
+constexpr uint32_t kCMAP = 0x434D4150;
+constexpr uint32_t kMAPA = 0x4D415041;
+constexpr uint32_t kMAPW = 0x4D415057;
 constexpr uint32_t kFRME = 0x46524D45;
 constexpr uint32_t kFMV0 = 0x464D5630;
 
@@ -65,6 +69,7 @@ constexpr const char* kGeometryFolder = "roomgeo";
 constexpr const char* kFontFolder = "font";
 constexpr const char* kFontName = "deface.sdfont";
 constexpr const char* kHudFolder = "hud";
+constexpr const char* kMapFolder = "map";
 // The disc's own folder: a mod's file there is opened in place of the disc's.
 constexpr const char* kMovieFolder = "Video";
 // Largest edge of a room geometry texture: there are thousands of them.
@@ -162,7 +167,7 @@ bool WantsMovies(MovieFormat& format) {
 
 // --- The retail disc ----------------------------------------------------------
 
-// The CMDL, CSKR, TXTR, MLVL, MREA and FRME resources of the unmodded disc, and every id on it.
+// The CMDL, CSKR, TXTR, MLVL, MREA, FRME, MAPA and MAPW resources of the unmodded disc, and every id on it.
 class Retail {
 public:
   ~Retail() {
@@ -203,7 +208,7 @@ public:
       for (const PortMods::PakResource& res : table.resources) {
         m_ids.insert(res.id);
         if (res.type == kCMDL || res.type == kCSKR || res.type == kTXTR || res.type == kMLVL || res.type == kMREA ||
-            res.type == kFRME) {
+            res.type == kFRME || res.type == kMAPA || res.type == kMAPW) {
           m_resources.emplace(Key(res.type, res.id), Where{entry, res.offset, res.size, res.compressed != 0});
         }
       }
@@ -322,6 +327,9 @@ public:
           m_models.emplace(assets[a].id, Where{m_paks.size(), a});
         } else if (type == kTXTR) {
           m_textures.emplace(assets[a].id, Where{m_paks.size(), a});
+          for (const std::string& name : assets[a].names) {
+            m_textureNames.emplace(FrameKey(name), Where{m_paks.size(), a});
+          }
         } else if (type == kFONT) {
           m_fonts.emplace(assets[a].id, Where{m_paks.size(), a});
         } else if (type == kFMV0) {
@@ -329,6 +337,10 @@ public:
         } else if (type == kGUIF) {
           for (const std::string& name : assets[a].names) {
             m_frames.emplace(FrameKey(name), Where{m_paks.size(), a});
+          }
+        } else if (type == kCMAP) {
+          for (const std::string& name : assets[a].names) {
+            m_maps.emplace(FrameKey(name), Where{m_paks.size(), a});
           }
         }
       }
@@ -366,6 +378,28 @@ public:
   bool ReadFrame(const std::string& name, std::vector<uint8_t>& out, std::string& error) const {
     const auto found = m_frames.find(FrameKey(name));
     if (found == m_frames.end()) {
+      error = "not in the image";
+      return false;
+    }
+    const Pak& pak = *m_paks[found->second.pak];
+    return pak.ReadAsset(pak.Assets()[found->second.asset], out, error);
+  }
+
+  // A texture by its asset name ("TXTR_IconS"), as ReadFrame finds a frame.
+  bool ReadTextureNamed(const std::string& name, std::vector<uint8_t>& out, std::string& error) const {
+    const auto found = m_textureNames.find(FrameKey(name));
+    if (found == m_textureNames.end()) {
+      error = "not in the image";
+      return false;
+    }
+    const Pak& pak = *m_paks[found->second.pak];
+    return pak.ReadAsset(pak.Assets()[found->second.asset], out, error);
+  }
+
+  // A world's map by its asset name ("CMAP_IceLevel"), as ReadFrame finds a frame.
+  bool ReadMap(const std::string& name, std::vector<uint8_t>& out, std::string& error) const {
+    const auto found = m_maps.find(FrameKey(name));
+    if (found == m_maps.end()) {
       error = "not in the image";
       return false;
     }
@@ -447,6 +481,8 @@ private:
   Index m_textures;
   Index m_fonts;
   std::unordered_map<std::string, Where> m_frames;  // GUIF, by FrameKey
+  std::unordered_map<std::string, Where> m_textureNames;  // the named TXTR, by FrameKey
+  std::unordered_map<std::string, Where> m_maps;  // CMAP, by FrameKey
   std::unordered_map<std::string, Where> m_movies;  // FMV0, by IdToString
 };
 
@@ -911,6 +947,54 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     }
     if (hudFrames == 0) {
       fs::remove_all(hudFolder, ec);
+    }
+  }
+  // Remastered's map icons, where the game looks for the disc's, and the rooms
+  // whose map it reshaped.
+  if (WantsHud() && !sCancel) {
+    const fs::path mapFolder = staging / kMapFolder;
+    fs::create_directories(mapFolder, ec);
+    ConvertIO io = makeIO(0, mapFolder);
+    int icons = 0;
+    for (const MapIcon& icon : MapIcons()) {
+      std::vector<uint8_t> raw;
+      TxtrImage decoded;
+      std::string iconError;
+      if (!remastered.ReadTextureNamed(icon.name, raw, iconError) ||
+          !DecodeTxtr(raw.data(), raw.size(), decoded, iconError)) {
+        AddLine(std::string(icon.name) + ": " + iconError);
+        continue;
+      }
+      Image image;
+      image.width = int(decoded.width);
+      image.height = int(decoded.height);
+      image.rgba = std::move(decoded.rgba);
+      char name[32];
+      std::snprintf(name, sizeof(name), "%08X.TXTR", icon.id);
+      const std::vector<uint8_t> txtr = EncodeMapIcon(image);
+      if (txtr.empty() || !io.write(name, txtr)) {
+        AddLine(std::string(icon.name) + ": cannot write");
+        continue;
+      }
+      ++icons;
+    }
+    MapIO mapIO;
+    mapIO.retail = io.retail;
+    mapIO.write = io.write;
+    mapIO.log = [](const std::string& line) { AddLine(line); };
+    for (const MapWorld& world : MapWorlds()) {
+      if (sCancel) {
+        break;
+      }
+      std::vector<uint8_t> raw;
+      std::string mapError;
+      if (!remastered.ReadMap(world.name, raw, mapError) ||
+          !WriteWorldMapAreas(world.mlvl, raw.data(), raw.size(), mapIO, icons, mapError)) {
+        AddLine(std::string(world.name) + ": " + mapError);
+      }
+    }
+    if (icons == 0) {
+      fs::remove_all(mapFolder, ec);
     }
   }
   // Remastered's menu movies.

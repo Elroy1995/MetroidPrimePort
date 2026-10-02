@@ -580,8 +580,16 @@ missile and threat bars, a `.hudbars`. `MP_REMASTERED_HUD=0` leaves the HUD
 out. The map screen comes too, with one difference: Remastered lays it out for
 a wider view and shows fewer prompts, so its legend, area name and hint are
 set from Remastered on the disc's plane, and the prompts it lacks keep the
-disc's places. Experimental: the pause and message screens are still the
-disc's, as are the map's rooms, icons and compass.
+disc's places. The map's icons come as well, into `map/`: the save, missile
+and elevator stations replace the disc's textures, and the six arrows of a
+door between floors, which the disc draws with one tinted texture, get
+Remastered's own under ids the port looks for (`port_map_icons.h`). So do the
+rooms: Remastered's map of a world (`CMAP`) names no room of the disc, so its
+areas are paired with the disc's by place and size, and the few it reshaped
+(14 over the seven worlds) are written as `<id>.MAPA` with the disc's doors
+and markers; the rest keep the disc's map. Experimental: the pause and message
+screens are still the disc's, as is the map's compass, which the disc does not
+have.
 
 The menu movies come along too, into the mod's `Video` folder under the disc's
 names: the title, the file select and its transitions, and four of the attract

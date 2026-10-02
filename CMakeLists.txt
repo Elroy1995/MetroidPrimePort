@@ -130,6 +130,7 @@ set(MP_PORT_SOURCES
     platform/port_hud_bars_file.cpp
     platform/port_remastered_font.cpp
     platform/port_remastered_hud.cpp
+    platform/port_remastered_map.cpp
     platform/port_remastered_movie.cpp
     platform/port_room_env.cpp
     platform/port_room_env_file.cpp
