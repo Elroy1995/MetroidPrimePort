@@ -92,15 +92,15 @@ bool DecodeTxtr(const uint8_t* data, size_t size, TxtrImage& out, std::string& e
 
 // A cube map kept in high dynamic range, which is what Remastered's reflection
 // probes are: BC6H, six faces, a mip chain already filtered by roughness.
-struct TxtrCubeHdr {
+struct TxtrCubeBc6h {
   uint32_t size = 0;      // edge of a face of the top mip
-  uint32_t mipCount = 0;  // mips decoded, down to 1x1 at most
-  // mips[mip * 6 + face]: RGBA half floats, alpha 1, rows in stored order.
-  // Faces are in the file's order (+X -X +Y -Y +Z -Z).
-  std::vector<std::vector<uint16_t>> mips;
+  uint32_t mipCount = 0;  // mips read, down to 1x1 at most
+  bool isSigned = false;
+  // mips[mip * 6 + face]: BC6H blocks, rows in stored order.
+  std::vector<std::vector<uint8_t>> mips;
 };
-
-// Decodes every face and mip of a BC6H cube map. Anything else fails.
-bool DecodeTxtrCubeHdr(const uint8_t* data, size_t size, TxtrCubeHdr& out, std::string& error);
+bool ReadTxtrCubeBc6h(const uint8_t* data, size_t size, TxtrCubeBc6h& out, std::string& error);
+// Decodes one face of BC6H blocks (`texels` on a side) into RGBA half floats, alpha 1.
+void DecodeBc6hFace(const uint8_t* blocks, uint32_t texels, bool isSigned, uint16_t* rgba);
 
 }  // namespace PortRemastered

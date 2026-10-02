@@ -1,6 +1,7 @@
 #include "command_processor.hpp"
 
 #include "../gfx/depth_peek.hpp"
+#include "../gfx/probe.hpp"
 #include "../gfx/recording.hpp"
 #include "../internal.hpp"
 #include "dolphin/gd/GDGeometry.h"
@@ -17,6 +18,7 @@
 #include <cmath>
 #include <cstdint>
 #include <span>
+#include <memory>
 #include <vector>
 
 namespace aurora::gx::fifo {
@@ -783,6 +785,35 @@ void handle_aurora(ByteReader& reader) noexcept {
     }
     if (g_gxState.pbrProbe != mtx) {
       g_gxState.pbrProbe = mtx;
+      g_gxState.dirty |= DirtyUniform;
+    }
+  } else if (subCmd == GX_AURORA_CREATE_PBR_CUBE) {
+    const u32 id = reader.read<u32>();
+    const u32 size = reader.read<u32>();
+    const u32 mipCount = reader.read<u32>();
+    const std::unique_ptr<std::vector<u8>> texels{reinterpret_cast<std::vector<u8>*>(reader.read<u64>())};
+    gfx::probe::create_cube(id, size, mipCount, texels->data(), texels->size());
+    g_gxState.dirty |= DirtyTextures;
+  } else if (subCmd == GX_AURORA_DESTROY_PBR_CUBE) {
+    gfx::probe::destroy_cube(reader.read<u32>());
+    g_gxState.dirty |= DirtyTextures;
+  } else if (subCmd == GX_AURORA_SET_PBR_CUBE) {
+    u32 id = reader.read<u32>();
+    Vec4<float> value;
+    for (int i = 0; i < 4; ++i) {
+      value[i] = reader.read<f32>();
+    }
+    if (id == 0 || !gfx::probe::has_cube(id)) {
+      // No such cube: the probe, which is not HDR.
+      id = 0;
+      value = {};
+    }
+    if (g_gxState.pbrCube != id) {
+      g_gxState.pbrCube = id;
+      g_gxState.dirty |= DirtyTextures;
+    }
+    if (g_gxState.pbrCubeParams != value) {
+      g_gxState.pbrCubeParams = value;
       g_gxState.dirty |= DirtyUniform;
     }
   } else if (subCmd == GX_AURORA_SET_PBR_MATERIAL) {

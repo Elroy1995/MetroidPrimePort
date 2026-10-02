@@ -144,6 +144,17 @@ extern "C" {
  */
 #define GX_AURORA_SET_PBR_MATERIAL 0x0046
 
+/**
+ * Port extension: room cubes, prefiltered HDR cube maps for the PBR path to reflect in
+ * place of the probe. CREATE takes an id (not 0), the edge, the mip count and a pointer
+ * to a heap block the command owns (see GXCreatePBRCube); DESTROY takes the id. SET
+ * selects the cube of the following PBR draws and takes four floats (see GXSetPBRCube);
+ * id 0 goes back to the probe.
+ */
+#define GX_AURORA_CREATE_PBR_CUBE 0x0047
+#define GX_AURORA_DESTROY_PBR_CUBE 0x0048
+#define GX_AURORA_SET_PBR_CUBE 0x0049
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

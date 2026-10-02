@@ -225,6 +225,11 @@ def run_game(args, variant, mod, place, world, mrea, state=None):
             cells.append((label, path[-1].split()[-1]))
 
         shot("scene")
+        # the bare scene at each yaw, which is what `window` has to line up with
+        for yaw in args.yaw:
+            if yaw is not None:
+                con.cmd("face %s" % yaw)
+                shot("scene yaw %s" % yaw)
         con.cmd("viewmodel light 1")
         for model in args.model:
             ok, _, err = con.try_cmd("viewmodel " + model)

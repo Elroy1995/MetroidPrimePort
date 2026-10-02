@@ -11,6 +11,7 @@
 #include "dolphin/gx/GXVert.h"
 #ifdef TARGET_PC
 #include <dolphin/gx/GXExtra.h>
+#include "port_room_env.h"
 #endif
 
 static bool sDrawingOccluders = false;
@@ -202,12 +203,38 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     // The probe is in world space with Y and Z swapped (world Z-up to cube Y-up), and the
     // shader's reflection vector is in view space: right, up, -forward.
     const CTransform4f& view = CGraphics::GetViewMatrix();
-    const f32 viewToProbe[3][3] = {
+    const f32 viewToWorld[3][3] = {
         {view.Get00(), view.Get02(), -view.Get01()},
-        {view.Get20(), view.Get22(), -view.Get21()},
         {view.Get10(), view.Get12(), -view.Get11()},
+        {view.Get20(), view.Get22(), -view.Get21()},
     };
-    GXSetPBRProbe(viewToProbe, CCubeMaterial::sPortPBRProbeWeight);
+    // A room environment from a mod has a cube for where the model stands, which replaces
+    // the live probe; it needs no captures, so only `probe off` turns it off.
+    const CVector3f origin = CGraphics::GetModelMatrix().GetTranslation();
+    const float pos[3] = {origin.GetX(), origin.GetY(), origin.GetZ()};
+    PortRoomEnv::Selection env;
+    const int mode = CCubeMaterial::sPortPBRProbeMode;
+    if (mode != 0 && PortRoomEnv::Select(pos, env)) {
+      f32 viewToCube[3][3];
+      for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+          viewToCube[row][col] = env.worldToCube[row * 3] * viewToWorld[0][col] +
+                                 env.worldToCube[row * 3 + 1] * viewToWorld[1][col] +
+                                 env.worldToCube[row * 3 + 2] * viewToWorld[2][col];
+        }
+      }
+      GXSetPBRProbe(viewToCube, mode > 1 ? static_cast< float >(mode) : 1.f);
+      GXSetPBRCube(env.cube, env.params);
+    } else {
+      const f32 viewToProbe[3][3] = {
+          {viewToWorld[0][0], viewToWorld[0][1], viewToWorld[0][2]},
+          {viewToWorld[2][0], viewToWorld[2][1], viewToWorld[2][2]},
+          {viewToWorld[1][0], viewToWorld[1][1], viewToWorld[1][2]},
+      };
+      static const f32 kNoCube[4] = {0.f, 0.f, 0.f, 0.f};
+      GXSetPBRProbe(viewToProbe, CCubeMaterial::sPortPBRProbeWeight);
+      GXSetPBRCube(0, kNoCube);
+    }
     PortSetPBRMaterial(surface.GetMaterialIndex());
     GXSetPBR(GX_TRUE);
     ++CCubeMaterial::sPortPBRDraws;

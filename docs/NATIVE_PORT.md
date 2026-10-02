@@ -407,6 +407,13 @@ skipped. Inside a mod:
   later mod's TXTR without a `.dds` drops an earlier mod's `.dds` for that id.
   On a GPU without BC support (most phones) the TXTR is drawn instead. The log
   and the Mods panel count them (`mods: <n> native texture(s)`).
+- a file named `<MREA id, 8 hex digits>.roomenv`, anywhere in the mod, is that
+  area's lighting environment for PBR materials: reflection probes, each a box
+  of the world with a prefiltered HDR cube map (BC6H) of what surrounds it. A
+  PBR model reflects the cube of the smallest box it stands in (else the
+  nearest), in place of the port's live probe, exposed so the cube's average
+  is middle grey. Files load and unload with their areas, and a cube is decoded
+  on first use. The layout is in `platform/include/port_room_env.h`.
 - a PBR material (flag bit 14) may end in a 28-byte record: six big-endian floats
   (emissive multiplier rgb, backlight weight rgb) and the tag `PBRM`, inside the
   material's own span in the offset table. The multiplier scales the emissive map;
@@ -831,6 +838,11 @@ a temporary directory instead of mounting.
   title screen or while paused. Pair with `MP_TURBO` for speed.
 - `MP_PBR_PROBE=<off|on|mirror|window>` (or 0-3): the reflection probe PBR mod
   materials reflect, on by default. The console's `probe` changes it live.
+- `MP_ROOM_ENV=0`: ignore the mods' `.roomenv` files (console `roomenv
+  [on|off]`, which also counts what is loaded). For tuning:
+  `MP_ROOM_ENV_GAIN` (exposure, default 1), `MP_ROOM_ENV_LOD` (the mip a
+  roughness of 1 reflects, default 5) and `MP_ROOM_ENV_AMBIENT=0` (leave the
+  ambient light undirected).
 - `tools/pbr_shots.py`: contact sheets of models under PBR, for comparing mod
   builds. One game per (variant, place), each booted straight into the room
   with `MP_BOOT_WORLD` on its own console port and an Xvfb display, about 10 s

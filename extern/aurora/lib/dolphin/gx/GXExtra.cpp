@@ -2,6 +2,8 @@
 #include "__gx.h"
 #include "dolphin/gx/GXAurora.h"
 
+#include <vector>
+
 extern "C" {
 void GXDestroyTexObj(GXTexObj* obj_) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
@@ -67,6 +69,29 @@ void GXSetPBRMaterial(const f32 emissive[3], const f32 backlight[3]) {
     GX_WRITE_F32(v[1]);
     GX_WRITE_F32(v[2]);
     GX_WRITE_F32(0.f);
+  }
+}
+
+void GXCreatePBRCube(u32 id, u32 size, u32 mipCount, const void* texels, u32 length) {
+  // The processor frees the copy.
+  auto* copy = new std::vector<u8>(static_cast<const u8*>(texels), static_cast<const u8*>(texels) + length);
+  GX_WRITE_AURORA(GX_AURORA_CREATE_PBR_CUBE);
+  GX_WRITE_U32(id);
+  GX_WRITE_U32(size);
+  GX_WRITE_U32(mipCount);
+  GX_WRITE_U64(reinterpret_cast<u64>(copy));
+}
+
+void GXDestroyPBRCube(u32 id) {
+  GX_WRITE_AURORA(GX_AURORA_DESTROY_PBR_CUBE);
+  GX_WRITE_U32(id);
+}
+
+void GXSetPBRCube(u32 id, const f32 params[4]) {
+  GX_WRITE_AURORA(GX_AURORA_SET_PBR_CUBE);
+  GX_WRITE_U32(id);
+  for (int i = 0; i < 4; ++i) {
+    GX_WRITE_F32(params[i]);
   }
 }
 }

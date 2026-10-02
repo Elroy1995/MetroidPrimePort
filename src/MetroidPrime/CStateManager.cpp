@@ -6,6 +6,7 @@
 #include "port_hold_toggle.h"
 #include "port_livesplit.h"
 #include "port_log.h"
+#include "port_room_env.h"
 #include "port_savestate.h"
 #include "port_skip_cutscenes.h"
 #include "port_viewmodel.h"
@@ -2585,6 +2586,16 @@ void CStateManager::PortCaptureProbeFace() const {
         env == nullptr ? 1 : env[0] == '0' ? 0 : env[0] == 'm' ? 2 : env[0] == 'w' ? 3 : 1;
   }
   const bool enabled = CCubeMaterial::sPortPBRProbeMode != 0;
+  // The room environments of the areas in memory (port_room_env.h).
+  uint mreas[32];
+  size_t mreaCount = 0;
+  for (int i = 0; i < x850_world->GetNumAreas() && mreaCount < 32; ++i) {
+    const CGameArea& area = *x850_world->GetArea(TAreaId(i));
+    if (area.IsLoaded()) {
+      mreas[mreaCount++] = area.GetAreaAssetId();
+    }
+  }
+  PortRoomEnv::SetLoadedAreas(mreas, mreaCount);
   static uint lastDraws = 0;
   static int face = 0;
   static int filled = 0;

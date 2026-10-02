@@ -2810,8 +2810,8 @@ bool DecodeTxtr(const uint8_t* data, size_t size, TxtrImage& out, std::string& e
                       error);
 }
 
-bool DecodeTxtrCubeHdr(const uint8_t* data, size_t size, TxtrCubeHdr& out, std::string& error) {
-  out = TxtrCubeHdr{};
+bool ReadTxtrCubeBc6h(const uint8_t* data, size_t size, TxtrCubeBc6h& out, std::string& error) {
+  out = TxtrCubeBc6h{};
   if (data == nullptr || size == 0) {
     error = "remastered txtr: no data";
     return false;
@@ -2843,18 +2843,17 @@ bool DecodeTxtrCubeHdr(const uint8_t* data, size_t size, TxtrCubeHdr& out, std::
   while (mipCount < head.mipSizes.size() && (head.width >> mipCount) != 0) {
     ++mipCount;
   }
-  const bool isSigned = head.format == kTxtrFormatBc6hSfloat;
   const size_t bytesPerBlock = 16;
   const uint32_t blockHeightMip0 = BlockHeightMip0(DivRoundUp(size_t(head.width), 4));
 
   out.size = head.width;
   out.mipCount = mipCount;
+  out.isSigned = head.format == kTxtrFormatBc6hSfloat;
   out.mips.resize(size_t(mipCount) * 6);
 
   // tegra_swizzle's surface layout: each layer holds its whole mip chain, and
   // a layer starts on a multiple of the block of GOBs the top mip uses.
   size_t srcOffset = 0;
-  std::vector<uint8_t> untiled;
   for (uint32_t layer = 0; layer < 6; ++layer) {
     for (uint32_t mip = 0; mip < head.mipSizes.size(); ++mip) {
       const uint32_t texels = std::max(head.width >> mip, 1u);
@@ -2866,25 +2865,10 @@ bool DecodeTxtrCubeHdr(const uint8_t* data, size_t size, TxtrCubeHdr& out, std::
         return false;
       }
       if (mip < mipCount) {
+        std::vector<uint8_t>& untiled = out.mips[size_t(mip) * 6 + layer];
         untiled.assign(blocks * blocks * bytesPerBlock, 0);
         DeswizzleMip(blocks, blocks, 1, mipBlockHeight, 1, bytesPerBlock, surface.data(), srcOffset,
                      untiled.data());
-        std::vector<uint16_t>& texelsOut = out.mips[size_t(mip) * 6 + layer];
-        texelsOut.assign(size_t(texels) * texels * 4, 0x3C00);  // alpha is 1.0
-        for (size_t by = 0; by < blocks; ++by) {
-          for (size_t bx = 0; bx < blocks; ++bx) {
-            uint16_t half[4 * 4 * 3] = {};
-            DecodeBc6h(untiled.data() + (by * blocks + bx) * bytesPerBlock, half, isSigned);
-            for (size_t y = 0; y < 4 && by * 4 + y < texels; ++y) {
-              for (size_t x = 0; x < 4 && bx * 4 + x < texels; ++x) {
-                uint16_t* p = texelsOut.data() + ((by * 4 + y) * texels + bx * 4 + x) * 4;
-                p[0] = half[(y * 4 + x) * 3 + 0];
-                p[1] = half[(y * 4 + x) * 3 + 1];
-                p[2] = half[(y * 4 + x) * 3 + 2];
-              }
-            }
-          }
-        }
       }
       srcOffset += swizzled;
     }
@@ -2897,6 +2881,25 @@ bool DecodeTxtrCubeHdr(const uint8_t* data, size_t size, TxtrCubeHdr& out, std::
     srcOffset = DivRoundUp(srcOffset, unit) * unit;
   }
   return true;
+}
+
+void DecodeBc6hFace(const uint8_t* blocks, uint32_t texels, bool isSigned, uint16_t* rgba) {
+  const size_t perSide = DivRoundUp(size_t(texels), 4);
+  for (size_t by = 0; by < perSide; ++by) {
+    for (size_t bx = 0; bx < perSide; ++bx) {
+      uint16_t half[4 * 4 * 3] = {};
+      DecodeBc6h(blocks + (by * perSide + bx) * 16, half, isSigned);
+      for (size_t y = 0; y < 4 && by * 4 + y < texels; ++y) {
+        for (size_t x = 0; x < 4 && bx * 4 + x < texels; ++x) {
+          uint16_t* p = rgba + ((by * 4 + y) * texels + bx * 4 + x) * 4;
+          p[0] = half[(y * 4 + x) * 3 + 0];
+          p[1] = half[(y * 4 + x) * 3 + 1];
+          p[2] = half[(y * 4 + x) * 3 + 2];
+          p[3] = 0x3C00;  // 1.0
+        }
+      }
+    }
+  }
 }
 
 }  // namespace PortRemastered

@@ -1003,9 +1003,24 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_amb = pow(max({6}, vec3f(0.0)), vec3f(2.2));
       let pbr_pd = ubuf.pbr_probe[0].xyz * pbr_refl.x + ubuf.pbr_probe[1].xyz * pbr_refl.y +
                    ubuf.pbr_probe[2].xyz * pbr_refl.z;
-      let pbr_cubed = textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_pd, pbr_rough * {7}.0).rgb;
-      let pbr_envspec = mix(pbr_amb + pbr_env * 0.35, pow(pbr_cubed, vec3f(2.2)), min(ubuf.pbr_probe[0].w, 1.0));
-      pbr_lo += (pbr_amb * pbr_diff + pbr_envspec * (pbr_f0 * pbr_ab.x + pbr_ab.y)) * pbr_ao;
+      // A room cube (GX_AURORA_SET_PBR_CUBE) is linear HDR: x is its exposure, y the mip
+      // a roughness of 1 samples. The probe is the display-referred scene, x is 0 then.
+      let pbr_hdr = ubuf.pbr_cube.x;
+      let pbr_lod = select({7}.0, ubuf.pbr_cube.y, pbr_hdr > 0.0);
+      let pbr_cubed = textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_pd, pbr_rough * pbr_lod).rgb;
+      let pbr_cubel = select(pow(max(pbr_cubed, vec3f(0.0)), vec3f(2.2)), pbr_cubed * pbr_hdr, pbr_hdr > 0.0);
+      let pbr_envspec = mix(pbr_amb + pbr_env * 0.35, pbr_cubel, min(ubuf.pbr_probe[0].w, 1.0));
+      // The room cube also shapes the ambient: its blurriest useful mip (z) along the
+      // normal says how much of the room's light comes from that side, and w scales that
+      // to 1 for the cube's average. The game's ambient keeps the level and the colour.
+      var pbr_ambd = pbr_amb;
+      if (pbr_hdr > 0.0 && ubuf.pbr_cube.w > 0.0) {{
+          let pbr_nd = ubuf.pbr_probe[0].xyz * pbr_n.x + ubuf.pbr_probe[1].xyz * pbr_n.y +
+                       ubuf.pbr_probe[2].xyz * pbr_n.z;
+          let pbr_irr = textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_nd, ubuf.pbr_cube.z).rgb;
+          pbr_ambd = pbr_amb * clamp(dot(pbr_irr, vec3f(0.2126, 0.7152, 0.0722)) * pbr_hdr * ubuf.pbr_cube.w, 0.35, 2.5);
+      }}
+      pbr_lo += (pbr_ambd * pbr_diff + pbr_envspec * (pbr_f0 * pbr_ab.x + pbr_ab.y)) * pbr_ao;
       // Backlight (GX_AURORA_SET_PBR_MATERIAL): a rim on the edges turned away from the
       // viewer, the surface's own colour times the backlight weight. It is scaled by the
       // light that reaches the surface from any side, so it stays a lighting term and goes
@@ -1013,7 +1028,11 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_rim = 1.0 - pbr_nv;
       pbr_lo += max(ubuf.pbr_backlight.rgb, vec3f(0.0)) * pbr_base * min(pbr_amb + pbr_lsum, vec3f(1.0)) *
                 (pbr_rim * pbr_rim * pbr_ao);
-      prev = vec4f(pow(clamp(pbr_lo + pbr_emissive, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), prev.a);
+      // Highlights roll off into white instead of clipping: unchanged up to 0.6, and the
+      // rest of the range (a room cube's lamps are many times brighter than 1) approaches 1.
+      let pbr_out = max(pbr_lo + pbr_emissive, vec3f(0.0));
+      let pbr_tm = min(pbr_out, vec3f(0.6)) + 0.4 * (1.0 - exp(-max(pbr_out - 0.6, vec3f(0.0)) / 0.4));
+      prev = vec4f(pow(pbr_tm, vec3f(1.0 / 2.2)), prev.a);
       // A weight above 1 is a diagnostic: 2 makes the surface a perfect mirror of the
       // probe, and 3 a window onto it, which must line up with the scene around it.
       if (ubuf.pbr_probe[0].w > 1.5) {{
@@ -1022,7 +1041,9 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
               pbr_dd = -(ubuf.pbr_probe[0].xyz * pbr_v.x + ubuf.pbr_probe[1].xyz * pbr_v.y +
                          ubuf.pbr_probe[2].xyz * pbr_v.z);
           }}
-          prev = vec4f(textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_dd, 0.0).rgb, prev.a);
+          let pbr_diag = textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_dd, 0.0).rgb;
+          prev = vec4f(select(pbr_diag, pow(clamp(pbr_diag * pbr_hdr, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)),
+                              pbr_hdr > 0.0), prev.a);
       }}
     }})""",
                      sampled(0, ""), sampled(1, "vec4f(1.0, 0.6, 0.0, 1.0)"), sampled(3, "vec4f(0.0)"), normal,
@@ -1691,6 +1712,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     uniBufAttrs += "\n    pbr_probe: mat3x4f,";
     uniBufAttrs += "\n    pbr_emissive: vec4f,";
     uniBufAttrs += "\n    pbr_backlight: vec4f,";
+    uniBufAttrs += "\n    pbr_cube: vec4f,";
     const auto pbr = pbr_func(config, info, vtxOutAttrs, vtxXfrAttrs, vtxOutIdx);
     if (!pbr.empty()) {
       fragmentFn += pbr;

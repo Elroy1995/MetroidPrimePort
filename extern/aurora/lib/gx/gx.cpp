@@ -486,7 +486,7 @@ GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept {
   // Using C WGPU types instead of C++ wrappers to avoid destructor overhead
   std::array<WGPUBindGroupEntry, MaxTextures * 2 + 2> textureEntries{};
   textureEntries[MaxTextures * 2].binding = MaxTextures * 2;
-  textureEntries[MaxTextures * 2].textureView = gfx::probe::cube_view().Get();
+  textureEntries[MaxTextures * 2].textureView = gfx::probe::cube_view(g_gxState.pbrCube).Get();
   textureEntries[MaxTextures * 2 + 1].binding = MaxTextures * 2 + 1;
   textureEntries[MaxTextures * 2 + 1].sampler = gfx::probe::sampler().Get();
   for (u32 i = 0; i < MaxTextures; ++i) {

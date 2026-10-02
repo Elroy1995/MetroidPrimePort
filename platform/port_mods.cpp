@@ -6,6 +6,7 @@
 
 #include "port_debug.h"
 #include "port_log.h"
+#include "port_room_env.h"
 
 #include <aurora/dvd.h>
 #include <dolphin/gx.h>
@@ -36,6 +37,8 @@ std::vector<std::string> sOverlayNames;
 
 // <id>.dds files, and the textures (by owner) currently drawn from one.
 std::unordered_map<uint32_t, std::string> sNativeTextures;
+// <MREA id>.roomenv files, by area.
+std::unordered_map<uint32_t, std::string> sRoomEnvs;
 struct BoundTexture {
   aurora::texture::ReplacementRegistration registration;
   uint32_t id = 0;
@@ -285,6 +288,11 @@ void UnbindTexture(const void* owner) {
   }
 }
 
+std::string RoomEnvPath(uint32_t mrea) {
+  const auto found = sRoomEnvs.find(mrea);
+  return found != sRoomEnvs.end() ? found->second : std::string();
+}
+
 size_t NativeTextureCount() { return sNativeTextures.size(); }
 size_t NativeTexturesBound() { return sBoundTextures.size(); }
 
@@ -299,6 +307,7 @@ void BeginReload() {
 
 void FinishReload() {
   Initialize();
+  PortRoomEnv::Reset();
   // A texture whose image is gone keeps its stub until the game loads it again.
   for (const auto& [owner, id] : sRebind) {
     BindTexture(owner, id);
@@ -309,6 +318,7 @@ void FinishReload() {
 void Initialize() {
   sStatus = {};
   sNativeTextures.clear();
+  sRoomEnvs.clear();
   sStatus.folder = Folder();
   sStatus.active = PortDebug::ModsEnabled();
   if (sStatus.folder.empty()) {
@@ -366,6 +376,10 @@ void Initialize() {
       uint32_t id = 0;
       if (ParseNativeTextureName(name, id)) {
         native[id] = PathString(file);
+        continue;
+      }
+      if (PortRoomEnv::ParseFileName(name, id)) {
+        sRoomEnvs[id] = PathString(file);
         continue;
       }
       if (ParseLooseName(name, type, id)) {

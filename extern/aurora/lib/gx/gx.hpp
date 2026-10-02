@@ -392,6 +392,8 @@ struct GXState {
   Mat3x4<float> pbrProbe; // GX_AURORA_SET_PBR_PROBE
   Vec4<float> pbrEmissive{1.f, 1.f, 1.f, 0.f}; // GX_AURORA_SET_PBR_MATERIAL
   Vec4<float> pbrBacklight{0.f, 0.f, 0.f, 0.f};
+  u32 pbrCube = 0; // GX_AURORA_SET_PBR_CUBE
+  Vec4<float> pbrCubeParams{0.f, 0.f, 0.f, 0.f}; // see GXSetPBRCube
 
   // GX2 polygon offset state
   f32 frontOffset = 0.0f;

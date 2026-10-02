@@ -170,6 +170,8 @@ void UnbindTexture(const void* owner);
 // How many .dds files the mods supply, and how many are bound now.
 size_t NativeTextureCount();
 size_t NativeTexturesBound();
+// The <MREA id>.roomenv a mod supplies for an area (port_room_env.h); empty when none.
+std::string RoomEnvPath(uint32_t mrea);
 
 // Folder names the settings disable, '/'-separated (no folder name has one).
 std::vector<std::string> SplitDisabled(const std::string& list);

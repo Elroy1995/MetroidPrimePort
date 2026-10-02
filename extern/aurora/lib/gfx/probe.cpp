@@ -4,6 +4,7 @@
 #include "../webgpu/gpu.hpp"
 
 #include <array>
+#include <unordered_map>
 
 namespace aurora::gfx::probe {
 using webgpu::g_device;
@@ -14,6 +15,11 @@ wgpu::Texture g_texture;
 wgpu::TextureView g_cubeView;
 wgpu::Sampler g_sampler;
 std::array<std::array<TextureHandle, MipCount>, FaceCount> g_faces;
+struct RoomCube {
+  wgpu::Texture texture;
+  wgpu::TextureView view;
+};
+std::unordered_map<uint32_t, RoomCube> g_roomCubes;
 
 void ensure() {
   if (g_texture) {
@@ -75,6 +81,7 @@ void shutdown() {
       mip.reset();
     }
   }
+  g_roomCubes.clear();
   g_sampler = {};
   g_cubeView = {};
   g_texture = {};
@@ -108,5 +115,71 @@ void encode_mips(const wgpu::CommandEncoder& cmd, uint32_t face, Range uvRange) 
                                  .sampleFilter = tex_copy_conv::SampleFilter::Linear,
                              });
   }
+}
+
+void create_cube(uint32_t id, uint32_t size, uint32_t mipCount, const uint8_t* texels, size_t length) {
+  constexpr auto format = wgpu::TextureFormat::RGBA16Float;
+  constexpr uint32_t texelSize = 8;
+  size_t needed = 0;
+  for (uint32_t m = 0; m < mipCount; ++m) {
+    const size_t edge = std::max(size >> m, 1u);
+    needed += edge * edge * texelSize * FaceCount;
+  }
+  if (id == 0 || size == 0 || mipCount == 0 || length < needed) {
+    return;
+  }
+  const wgpu::TextureDescriptor textureDescriptor{
+      .label = "PBR room cube",
+      .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+      .dimension = wgpu::TextureDimension::e2D,
+      .size = {size, size, FaceCount},
+      .format = format,
+      .mipLevelCount = mipCount,
+      .sampleCount = 1,
+  };
+  RoomCube cube;
+  cube.texture = g_device.CreateTexture(&textureDescriptor);
+  const uint8_t* in = texels;
+  for (uint32_t f = 0; f < FaceCount; ++f) {
+    for (uint32_t m = 0; m < mipCount; ++m) {
+      const uint32_t edge = std::max(size >> m, 1u);
+      const wgpu::TexelCopyTextureInfo dst{
+          .texture = cube.texture,
+          .mipLevel = m,
+          .origin = {0, 0, f},
+      };
+      const wgpu::TexelCopyBufferLayout layout{
+          .bytesPerRow = edge * texelSize,
+          .rowsPerImage = edge,
+      };
+      const wgpu::Extent3D extent{edge, edge, 1};
+      const size_t bytes = size_t(edge) * edge * texelSize;
+      webgpu::g_queue.WriteTexture(&dst, in, bytes, &layout, &extent);
+      in += bytes;
+    }
+  }
+  const wgpu::TextureViewDescriptor cubeDescriptor{
+      .label = "PBR room cube view",
+      .format = format,
+      .dimension = wgpu::TextureViewDimension::Cube,
+      .baseMipLevel = 0,
+      .mipLevelCount = mipCount,
+      .baseArrayLayer = 0,
+      .arrayLayerCount = FaceCount,
+  };
+  cube.view = cube.texture.CreateView(&cubeDescriptor);
+  g_roomCubes[id] = std::move(cube);
+}
+
+void destroy_cube(uint32_t id) { g_roomCubes.erase(id); }
+
+bool has_cube(uint32_t id) { return g_roomCubes.find(id) != g_roomCubes.end(); }
+
+const wgpu::TextureView& cube_view(uint32_t id) {
+  const auto found = g_roomCubes.find(id);
+  if (found != g_roomCubes.end()) {
+    return found->second.view;
+  }
+  return cube_view();
 }
 } // namespace aurora::gfx::probe

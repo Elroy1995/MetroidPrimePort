@@ -9,6 +9,7 @@
 #include "port_discord.h"
 #include "port_livesplit.h"
 #include "port_remastered_import.h"
+#include "port_room_env.h"
 #include "port_smoke.h"
 #include "port_mods.h"
 #include "port_savestate.h"
@@ -410,6 +411,7 @@ void CmdHelp() {
   Out("shot                       take a screenshot and print its path");
   Out("wait <frames>              let frames pass");
   Out("probe [off|on|mirror|window]   the PBR reflection probe, or what PBR surfaces show of it");
+  Out("roomenv [on|off]           the room environments mods supply (reflection cubes per area)");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
   Out("fov <45..90>               first-person vertical FOV, as the Options row does");
   Out("msaa <1|4>, aniso <1..16>  anti-aliasing and anisotropic filtering, applied next frame");
@@ -969,6 +971,21 @@ void RunFrame() {
       CCubeMaterial::sPortPBRProbeMode = mode;
     }
     Out("probe %s weight %.0f", ProbeModeName(), CCubeMaterial::sPortPBRProbeWeight);
+    Finish();
+  } else if (name == "roomenv") {
+    if (sCmd.args.size() > 1) {
+      const std::string arg = Lower(sCmd.args[1]);
+      if (arg != "on" && arg != "off") {
+        return Finish("usage: roomenv [on|off]");
+      }
+      PortRoomEnv::SetEnabled(arg == "on");
+    }
+    int areas = 0;
+    int probes = 0;
+    int cubes = 0;
+    PortRoomEnv::Stats(areas, probes, cubes);
+    Out("roomenv %s: %d area(s), %d probe(s), %d cube(s) loaded", PortRoomEnv::Enabled() ? "on" : "off", areas, probes,
+        cubes);
     Finish();
   } else if (name == "viewmodel") {
     const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";
