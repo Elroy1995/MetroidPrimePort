@@ -58,6 +58,33 @@ jobs:
       - name: Test FIFO regressions
         run: ./build-win/extern/aurora/tests/gx_fifo_tests.exe --gtest_brief=1
 
+      # The Remastered import decodes that game's H.264 movies with ffmpeg, run
+      # as a separate program, and Windows has none of its own. The package
+      # carries a small LGPL build made here from the official source: the
+      # H.264 decoder and the JPEG encoder, nothing else. Rebuilt only when
+      # the script changes.
+      - uses: actions/cache@v4
+        id: ffmpeg
+        with:
+          path: ffmpeg-min/out
+          key: ffmpeg-min-${{ hashFiles('tools/build_ffmpeg_min.sh') }}
+
+      - uses: msys2/setup-msys2@v2
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        with:
+          msystem: MINGW64
+          install: make diffutils tar xz curl mingw-w64-x86_64-gcc mingw-w64-x86_64-nasm
+
+      # Linked statically and on Win32 threads, so the program needs no
+      # MinGW runtime DLL beside it.
+      - name: Build ffmpeg
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: |
+          bash tools/build_ffmpeg_min.sh ffmpeg-min --disable-pthreads --enable-w32threads --extra-ldflags=-static
+          mkdir -p ffmpeg-min/out
+          cp ffmpeg-min/ffmpeg.exe ffmpeg-min/COPYING.LGPLv2.1 ffmpeg-min/ffmpeg-build.txt ffmpeg-min/out/
+
       - name: Package
         shell: pwsh
         run: |
@@ -91,6 +118,11 @@ jobs:
           Copy-Item extern/aurora/LICENSE dist/licenses/aurora.txt
           Copy-Item extern/musyx/LICENSE dist/licenses/musyx.txt
           Copy-Item docs/NATIVE_PORT.md dist/README.md
+          # ffmpeg is its own program under the LGPL: its licence, and where
+          # its source and build line are, go with it.
+          Copy-Item ffmpeg-min/out/ffmpeg.exe dist/
+          Copy-Item ffmpeg-min/out/COPYING.LGPLv2.1 dist/licenses/ffmpeg-LGPL-2.1.txt
+          Copy-Item ffmpeg-min/out/ffmpeg-build.txt dist/licenses/ffmpeg.txt
           # Keep notices supplied by the fetched runtime packages too.
           Get-ChildItem build-win/_deps -Recurse -File -Include LICENSE*,COPYING*,NOTICE* |
             ForEach-Object {
@@ -112,6 +144,11 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          # The bundled ffmpeg must start the same way, and be the build the
+          # movie import needs.
+          $decoders = & ./dist/ffmpeg.exe -hide_banner -decoders
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged ffmpeg did not start' }
+          if (-not ($decoders | Select-String -Pattern '\bh264\b')) { throw 'Packaged ffmpeg has no H.264 decoder' }
           # With no disc the game opens a file dialog, which nobody answers
           # here: it used to hold the job for its whole five minute timeout.
           $env:MP_NO_DISC_DIALOG = "1"

@@ -590,6 +590,8 @@ below.
 
 The decoding is done by **ffmpeg**, run as a separate program: `MP_FFMPEG` if
 set, else an `ffmpeg` next to the game's executable, else the one on the path.
+The Windows package has one next to the executable; on Linux install it from
+your distribution.
 Without one the import finishes without the movies and says so; install ffmpeg
 and use "Import movies" in the same panel (or `--import-remastered-movies
 <nsp> [keys]`), which adds only the movies to the mod already there.
