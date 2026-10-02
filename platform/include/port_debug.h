@@ -225,6 +225,18 @@ void SetTwinStickRightY(float y);
 // Morph Ball Bombs are held. A connected Archipelago seed overrides it.
 bool SpringBall();
 void SetSpringBall(bool enabled);
+// Spring Ball also on the jump button (a tap, with the Boost Ball), on by default.
+bool SpringBallJump();
+void SetSpringBallJump(bool enabled);
+// The beam shift's bindings (PortControls::ShiftHeld): slots 0 and 1 are keys
+// or mouse buttons (scancode or PAD_KEY_MOUSE_*), slot 2 a controller button
+// (SDL gamepad button or PAD_NATIVE_BUTTON_TRIGGER_*); -1 for none.
+int ShiftBinding(int slot);
+void SetShiftBinding(int slot, int code);
+// What mouse button `button` (0 left, 1 middle, 2 right, 3 X1, 4 X2) does under
+// mouse aim: a PortInputMap::EMouseAction.
+int MouseAction(int button);
+void SetMouseAction(int button, int action);
 // Speedrun support: an on-screen in-game time (the play time the save shows)
 // and the LiveSplit Server client (port_livesplit.h), which connects to
 // "host:port" while enabled.
@@ -320,8 +332,8 @@ const int kCrosshairSizeDefault = 50;
 int CrosshairSize();
 void SetCrosshairSize(int percent);
 unsigned MouseWeaponButtons(unsigned held);
-// Outside mouse gameplay (morph ball, text boxes, menus) the left button is a
-// plain A press; returns SDL_BUTTON_LMASK while it should be held.
+// Outside mouse gameplay (morph ball, text boxes, menus) the buttons bound to A
+// or B still press them; returns the held buttons (SDL masks) that may count.
 unsigned MouseMenuButtons(unsigned held, bool focused);
 // Real-mouse button state (SDL_BUTTON_*MASK), fed from the event loop. Touch-
 // and pen-synthesised mouse buttons are left out; see PortMouse::HeldButtons.

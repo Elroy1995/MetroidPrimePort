@@ -727,6 +727,19 @@ a temporary directory instead of mounting.
   to 0.2 s before landing still counts. It reads the gyro aim's source but works
   with gyro aim off. The phone's gyro is turned to the screen's orientation, so
   pitch and yaw stay right in landscape.
+  **Spring Ball on the jump button too** (`spring_ball_jump`, on by default, so
+  only Spring Ball itself has to be turned on) also springs on a tap of jump (B)
+  in morph ball. With the Boost Ball, B also charges a boost, so a tap shorter
+  than the boost's minimum charge springs on release and a longer hold boosts,
+  never both; without it the spring is on the press. A B held from before the
+  ball formed has to be let go first.
+- Beam shift (Controls tab): while it is held, the D-pad picks beams the way the
+  C-stick does, and visors stay on the plain D-pad, so both are reachable without
+  a C-stick. It has two key slots (`shift_key`, `shift_key_alt`; default left
+  shift, which already did this under twin stick), a pad slot (`shift_pad`, a
+  button or trigger, default none, because Aurora maps LB on many pads to L), and
+  it can go on a mouse button. Twin stick keeps its own modifier (L, LB or left
+  shift) as well.
 - Fast Morph (Input tab and pause Options > Controller, persisted as
   `fast_morph`, off by default): morph ball transitions in the style of Metroid
   Prime 4. Morphing takes 0.2 s instead of 1 s and unmorphing is instant; both
@@ -747,7 +760,8 @@ a temporary directory instead of mounting.
   "Keyboard & mouse" assigns a key or mouse button to each pad button and stick
   axis; "Controller" assigns a physical controller button or axis. Bindings are
   saved by Aurora next to the other controller data, with buttons to clear the
-  keyboard bindings and restore the controller defaults.
+  keyboard bindings and restore the controller defaults. The beam shift and the
+  mouse buttons are rows here too (port settings, not Aurora's).
 - `MP_HUD_WIDE=1` (Render tab, persisted as `hud_wide`): widescreen HUD. The
   aspect-matched in-game HUD frames keep each element's shape but move it away
   from the screen centre, so edge elements (scan panels, energy bar, map) reach
@@ -896,14 +910,19 @@ a temporary directory instead of mounting.
   up by default; `MP_MOUSE_INVERT_X=1` and `MP_MOUSE_INVERT_Y=1` invert either axis.
   SDL and the compositor own pointer locking; capture is released outside
   playable first person (menus, cinematics, morph ball, and scripted input locks).
-- In mouse mode, **left-click fires / holds a charge / releases a charged shot**,
-  **right-click holds lock-on**, and **middle-click fires missiles**. These feed
-  the normal PAD/gun input path, preserving charge timing and weapon cooldowns.
-  Existing keyboard/controller weapon bindings are also available; saved mapping
-  files are not rewritten. `MP_DISABLE_MOUSE_BUTTONS=1` opts out of these aliases.
-  Outside playable first person (morph ball, text boxes, menus) left-click is a
-  plain A press, so it lays bombs and advances text; like the weapon buttons it
-  only counts after the button has been seen released.
+- In mouse mode the five mouse buttons act as pad buttons, set in the Controls
+  tab's "Mouse buttons" list (`mouse_left`, `mouse_middle`, `mouse_right`,
+  `mouse_x1`, `mouse_x2`: none, a pad button, a D-pad direction or the beam
+  shift). By default **left-click fires / holds a charge / releases a charged
+  shot** (A), **right-click holds lock-on** (L) and **middle-click fires
+  missiles** (Y); the side buttons are unset. "Restore keyboard defaults"
+  restores them too. They feed the normal PAD/gun input path, preserving charge
+  timing and weapon cooldowns, and L/R also press the analog trigger fully.
+  Keyboard/controller bindings still work alongside them.
+  `MP_DISABLE_MOUSE_BUTTONS=1` opts out. Outside playable first person (morph
+  ball, text boxes, menus) only the buttons set to A or B count, so the left
+  button still lays bombs and advances text. Every mouse button only counts
+  after it has been seen released.
 - Outside lock-on, A/D (the left-stick lateral axis) strafe in mouse mode rather
   than applying the console's turning torque. Movement uses the current mouse
   heading and the game's acceleration, friction, surface restraints and collision

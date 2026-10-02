@@ -3,6 +3,7 @@
 
 #include "port_controls.h"
 #include "port_debug.h"
+#include "port_input_map.h"
 
 #include "MetroidPrime/CControlMapper.hpp"
 #include "MetroidPrime/Tweaks/CTweakPlayerControl.hpp"
@@ -139,7 +140,12 @@ const SMouseCode kMouseCodes[] = {
     {SDL_BUTTON_X2, PAD_KEY_MOUSE_X2},
 };
 
-enum class ECapture { kNone, kKeyButton, kKeyAxis, kPadButton, kPadAxis };
+// kShiftKey / kShiftPad are the beam shift's key slots and pad input, kept in
+// port_settings.ini rather than Aurora's mappings (their index is unused).
+enum class ECapture { kNone, kKeyButton, kKeyAxis, kPadButton, kPadAxis, kShiftKey, kShiftPad };
+
+// The beam shift's pad slot in PortDebug::ShiftBinding.
+constexpr int kShiftPadSlot = 2;
 
 // One physical input: a key or mouse button (the negative PAD_KEY_MOUSE_*
 // codes), a controller button, or one direction of a controller axis. An
@@ -265,8 +271,9 @@ bool NewInput(SInput& out) {
   int count = 0;
   const bool* keys = SDL_GetKeyboardState(&count);
   bool found = false;
-  const bool wantKeys =
-      sCapture.target == ECapture::kKeyButton || sCapture.target == ECapture::kKeyAxis;
+  const bool wantKeys = sCapture.target == ECapture::kKeyButton || sCapture.target == ECapture::kKeyAxis ||
+                        sCapture.target == ECapture::kShiftKey;
+  const bool wantPadButtons = sCapture.target == ECapture::kPadButton || sCapture.target == ECapture::kShiftPad;
   for (int i = 0; i < count && i < SDL_SCANCODE_COUNT; ++i) {
     sCapture.heldKeys[i] = sCapture.heldKeys[i] && keys[i];
     // Esc is reported for every capture, since it cancels.
@@ -293,7 +300,7 @@ bool NewInput(SInput& out) {
     const bool held = SDL_GetGamepadButton(pad, static_cast< SDL_GamepadButton >(i));
     sCapture.heldPadButtons[i] = sCapture.heldPadButtons[i] && held;
     // An axis row can be driven by a button too.
-    if ((sCapture.target == ECapture::kPadButton || sCapture.target == ECapture::kPadAxis) && !found && held &&
+    if ((wantPadButtons || sCapture.target == ECapture::kPadAxis) && !found && held &&
         !sCapture.heldPadButtons[i]) {
       out = {SInput::kPadButton, i, AXIS_SIGN_POSITIVE};
       found = true;
@@ -305,8 +312,7 @@ bool NewInput(SInput& out) {
       const bool pulled = AxisPulled(pad, i, sign);
       sCapture.heldPadAxes[i][s] = sCapture.heldPadAxes[i][s] && pulled;
       // A button row takes an analog trigger, but not a stick.
-      const bool wanted = sCapture.target == ECapture::kPadAxis ||
-                          (sCapture.target == ECapture::kPadButton && IsTrigger(i));
+      const bool wanted = sCapture.target == ECapture::kPadAxis || (wantPadButtons && IsTrigger(i));
       if (wanted && !found && pulled && !sCapture.heldPadAxes[i][s]) {
         out = {SInput::kPadAxis, i, sign};
         found = true;
@@ -365,9 +371,36 @@ void BindRow(ECapture kind, int index, int slot, const SInput& input) {
     PADSetAxisMapping(kControlPort, mapping);
     break;
   }
+  case ECapture::kShiftKey:
+    PortDebug::SetShiftBinding(slot, input.kind == SInput::kKey ? input.code : PAD_KEY_INVALID);
+    break;
+  case ECapture::kShiftPad: {
+    // Stored as Aurora's native button codes, a trigger as its click code.
+    s32 code = -1;
+    if (input.kind == SInput::kPadButton && input.code >= 0) {
+      code = input.code;
+    } else if (input.kind == SInput::kPadAxis && IsTrigger(input.code)) {
+      code = static_cast< s32 >(input.code == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ? PAD_NATIVE_BUTTON_TRIGGER_LEFT
+                                                                            : PAD_NATIVE_BUTTON_TRIGGER_RIGHT);
+    }
+    PortDebug::SetShiftBinding(kShiftPadSlot, code);
+    break;
+  }
   case ECapture::kNone:
     break;
   }
+}
+
+SInput ShiftPadInput() {
+  const s32 code = PortDebug::ShiftBinding(kShiftPadSlot);
+  if (code == static_cast< s32 >(PAD_NATIVE_BUTTON_TRIGGER_LEFT) ||
+      code == static_cast< s32 >(PAD_NATIVE_BUTTON_TRIGGER_RIGHT)) {
+    return {SInput::kPadAxis,
+            code == static_cast< s32 >(PAD_NATIVE_BUTTON_TRIGGER_LEFT) ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER
+                                                                      : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
+            AXIS_SIGN_POSITIVE};
+  }
+  return {SInput::kPadButton, code < 0 ? -1 : code, AXIS_SIGN_POSITIVE};
 }
 
 s32 KeyForPadButton(const PADKeyButtonBinding* list, u32 count, PADButton button);
@@ -409,6 +442,10 @@ SInput RowInput(ECapture kind, int index, int slot) {
     }
     return {SInput::kPadAxis, -1, AXIS_SIGN_POSITIVE};
   }
+  case ECapture::kShiftKey:
+    return {SInput::kKey, PortDebug::ShiftBinding(slot), AXIS_SIGN_POSITIVE};
+  case ECapture::kShiftPad:
+    return ShiftPadInput();
   case ECapture::kNone:
     break;
   }
@@ -539,8 +576,11 @@ void PollCapture() {
     }
   }
   sCapture.bound = input;
-  if (FindConflict(sCapture.target, sCapture.index, input, sCapture.otherKind, sCapture.otherIndex,
-                   sCapture.otherSlot)) {
+  // The beam shift may share an input with a pad button on purpose (L under
+  // twin-stick, say), so it never asks; its row says what else the input does.
+  const bool shift = sCapture.target == ECapture::kShiftKey || sCapture.target == ECapture::kShiftPad;
+  if (!shift && FindConflict(sCapture.target, sCapture.index, input, sCapture.otherKind, sCapture.otherIndex,
+                             sCapture.otherSlot)) {
     sCapture.conflict = true;
     return;
   }
@@ -814,6 +854,29 @@ void DrawDeadZones(PADDeadZones& zones) {
   }
 }
 
+constexpr const char* kShiftLabel = "Beam shift (hold + D-pad)";
+
+void ShiftTooltip() {
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled)) {
+    ImGui::SetTooltip("While held, the D-pad picks beams instead of switching visors:\n"
+                      "each direction gives the beam that direction on the C-stick does.\n"
+                      "Under Twin Stick Aim, L, LB and left shift do it too.");
+  }
+}
+
+// Says when the beam shift's input also drives a pad button: holding it then
+// presses both, which is fine for some (L under twin-stick) and not others.
+void ShiftOverlapNote(ECapture kind, int slot) {
+  const SInput input = RowInput(kind, 0, slot);
+  ECapture otherKind = ECapture::kNone;
+  int otherIndex = 0;
+  int otherSlot = 0;
+  if (input.code != -1 && FindConflict(kind, 0, input, otherKind, otherIndex, otherSlot)) {
+    ImGui::TextDisabled("  %s is also %s.", InputName(input).c_str(),
+                        RowLabel(otherKind, otherIndex, otherSlot).c_str());
+  }
+}
+
 } // namespace
 
 namespace PortControls {
@@ -844,6 +907,17 @@ void ApplyDefaultKeyBindings(unsigned port) {
   for (const PADKeyAxisBinding& binding : axes) {
     PADSetKeyAxisBindingSlot(port, 1, {PAD_KEY_INVALID, binding.padAxis, 1});
   }
+}
+
+bool ShiftHeld() {
+  for (int slot = 0; slot < PAD_KEY_SLOT_COUNT; ++slot) {
+    const SInput key = RowInput(ECapture::kShiftKey, 0, slot);
+    if (key.code != PAD_KEY_INVALID && InputHeld(key)) {
+      return true;
+    }
+  }
+  const SInput pad = ShiftPadInput();
+  return pad.code != -1 && InputHeld(pad);
 }
 
 bool Capturing() {
@@ -889,8 +963,8 @@ void DrawTab() {
   }
 
   if (sCapture.target != ECapture::kNone && !sCapture.settling && !sCapture.conflict) {
-    const bool keys =
-        sCapture.target == ECapture::kKeyButton || sCapture.target == ECapture::kKeyAxis;
+    const bool keys = sCapture.target == ECapture::kKeyButton || sCapture.target == ECapture::kKeyAxis ||
+                      sCapture.target == ECapture::kShiftKey;
     const Uint64 elapsed = SDL_GetTicks() - sCapture.startMs;
     const unsigned left =
         static_cast< unsigned >((kCaptureTimeoutMs - std::min(elapsed, kCaptureTimeoutMs) + 999) / 1000);
@@ -913,6 +987,14 @@ void DrawTab() {
   if (ImGui::Button("Restore keyboard defaults")) {
     ApplyDefaultKeyBindings(kControlPort);
     PADSerializeMappings();
+    PortDebug::SetShiftBinding(0, SDL_SCANCODE_LSHIFT);
+    PortDebug::SetShiftBinding(1, PAD_KEY_INVALID);
+    for (int i = 0; i < PortInputMap::kMouseButtonCount; ++i) {
+      PortDebug::SetMouseAction(i, PortInputMap::DefaultMouseAction(i));
+    }
+  }
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+    ImGui::SetTooltip("Keys, mouse buttons and the beam shift key.");
   }
 
   std::string buttonLabels[std::size(kControlPadButtons)];
@@ -951,6 +1033,44 @@ void DrawTab() {
     for (int i = 0; i < PAD_AXIS_COUNT; ++i) {
       ImGui::PushID(100 + i);
       KeyRow(ECapture::kKeyAxis, i, axisLabels[i], slotX, bindWidth);
+      ImGui::PopID();
+    }
+    ImGui::PushID(150);
+    KeyRow(ECapture::kShiftKey, 0, kShiftLabel, slotX, bindWidth);
+    ImGui::PopID();
+    ShiftTooltip();
+    for (int slot = 0; slot < PAD_KEY_SLOT_COUNT; ++slot) {
+      ShiftOverlapNote(ECapture::kShiftKey, slot);
+    }
+
+    ImGui::SeparatorText("Mouse buttons");
+    ImGui::TextDisabled("Under mouse aim; out of it only A and B are pressed (bombs, menus).");
+    // The combo's entries follow PortInputMap::EMouseAction: none, the pad
+    // buttons in kControlPadButtons order, then the beam shift.
+    std::string actionLabels[PortInputMap::kMA_Count];
+    actionLabels[PortInputMap::kMA_None] = "None";
+    for (size_t i = 0; i < std::size(kControlPadButtons); ++i) {
+      actionLabels[i + 1] = buttonLabels[i];
+    }
+    actionLabels[PortInputMap::kMA_Shift] = kShiftLabel;
+    static const char* const kMouseNames[PortInputMap::kMouseButtonCount] = {"Left", "Middle", "Right", "X1 (back)",
+                                                                             "X2 (forward)"};
+    for (int button = 0; button < PortInputMap::kMouseButtonCount; ++button) {
+      ImGui::PushID(160 + button);
+      const float rowX = ImGui::GetCursorPosX();
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextUnformatted(kMouseNames[button]);
+      ImGui::SameLine(rowX + slotX[0]);
+      ImGui::SetNextItemWidth(std::max(bindWidth * 2.f, labelWidth));
+      const int current = PortDebug::MouseAction(button);
+      if (ImGui::BeginCombo("##action", actionLabels[current].c_str())) {
+        for (int action = 0; action < PortInputMap::kMA_Count; ++action) {
+          if (ImGui::Selectable(actionLabels[action].c_str(), action == current)) {
+            PortDebug::SetMouseAction(button, action);
+          }
+        }
+        ImGui::EndCombo();
+      }
       ImGui::PopID();
     }
   }
@@ -1014,6 +1134,17 @@ void DrawTab() {
         padRow(ECapture::kPadAxis, i, axisLabels[i]);
         ImGui::PopID();
       }
+      ImGui::PushID(400);
+      padRow(ECapture::kShiftPad, 0, kShiftLabel);
+      ShiftTooltip();
+      ImGui::SameLine(0.f, style.ItemInnerSpacing.x);
+      ImGui::BeginDisabled(ShiftPadInput().code == -1);
+      if (ImGui::Button("x")) {
+        BindRow(ECapture::kShiftPad, 0, 0, SInput{});
+      }
+      ImGui::EndDisabled();
+      ImGui::PopID();
+      ShiftOverlapNote(ECapture::kShiftPad, 0);
       if (PADDeadZones* zones = PADGetDeadZones(kControlPort)) {
         DrawDeadZones(*zones);
       }

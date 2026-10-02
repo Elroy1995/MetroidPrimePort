@@ -23,6 +23,7 @@
 #include "port_savestate.h"
 #include "port_skip_cutscenes.h"
 #include "port_mouse.h"
+#include "port_input_map.h"
 #include "port_textures.h"
 #include "port_build_info.h"
 #if defined(__ANDROID__)
@@ -137,6 +138,7 @@ bool sMouseAim = false;
 bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
 bool sSpringBall = false;
+bool sSpringBallJump = true;
 bool sFastMorph = false;
 bool sInvulnerable = false;
 // MP_GODMODE, for this run only: -1 unset, else 0 or 1. Never saved, and changing the
@@ -172,6 +174,15 @@ bool sMouseGameplayActive = false;
 bool sMouseInvertX = false;
 bool sMouseInvertY = false;
 bool sMouseButtons = true;
+// What each mouse button does under mouse aim (PortInputMap::EMouseAction).
+int sMouseActions[PortInputMap::kMouseButtonCount] = {
+    PortInputMap::DefaultMouseAction(0), PortInputMap::DefaultMouseAction(1),
+    PortInputMap::DefaultMouseAction(2), PortInputMap::DefaultMouseAction(3),
+    PortInputMap::DefaultMouseAction(4)};
+// The beam shift: two keys or mouse buttons (scancode or PAD_KEY_MOUSE_*) and
+// a controller button (an SDL gamepad button or PAD_NATIVE_BUTTON_TRIGGER_*),
+// -1 for none.
+int sShiftBindings[3] = {SDL_SCANCODE_LSHIFT, -1, -1};
 bool sMouseCrosshair = true;
 int sCrosshairSize = PortDebug::kCrosshairSizeDefault;
 PortMouse::AimState sMouseAimState;
@@ -272,6 +283,16 @@ std::string SettingsFilePath() {
 
 bool ParseBool(const std::string& value) {
   return value == "1" || value == "true" || value == "on" || value == "yes";
+}
+
+// The mouse button a settings key such as "mouse_left" names, or -1.
+int MouseButtonSetting(const std::string& key) {
+  for (int i = 0; i < PortInputMap::kMouseButtonCount; ++i) {
+    if (key == PortInputMap::MouseButtonKey(i)) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 std::string Trim(const std::string& text) {
@@ -412,6 +433,21 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "spring_ball") {
     sSpringBall = ParseBool(value);
+  } else if (key == "spring_ball_jump") {
+    sSpringBallJump = ParseBool(value);
+  } else if (key == "shift_key" || key == "shift_key_alt" || key == "shift_pad") {
+    const int slot = key == "shift_key" ? 0 : key == "shift_key_alt" ? 1 : 2;
+    // A number, or the value is ignored (atoi would read junk as scancode 0).
+    char* end = nullptr;
+    const long code = std::strtol(value.c_str(), &end, 10);
+    if (end != value.c_str() && *end == '\0') {
+      sShiftBindings[slot] = static_cast< int >(code);
+    }
+  } else if (MouseButtonSetting(key) >= 0) {
+    const int action = PortInputMap::MouseActionFromName(value.c_str());
+    if (action >= 0) {
+      sMouseActions[MouseButtonSetting(key)] = action;
+    }
   } else if (key == "speedrun_timer") {
     sSpeedrunTimer = ParseBool(value);
   } else if (key == "livesplit") {
@@ -561,6 +597,10 @@ void SaveSettings() {
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
+  file << "spring_ball_jump=" << (sSpringBallJump ? 1 : 0) << '\n';
+  file << "shift_key=" << sShiftBindings[0] << '\n';
+  file << "shift_key_alt=" << sShiftBindings[1] << '\n';
+  file << "shift_pad=" << sShiftBindings[2] << '\n';
   file << "fast_morph=" << (sFastMorph ? 1 : 0) << '\n';
   file << "invulnerable=" << (sInvulnerable ? 1 : 0) << '\n';
   file << "lock_on_toggle=" << (sLockOnToggle ? 1 : 0) << '\n';
@@ -574,6 +614,10 @@ void SaveSettings() {
   file << "mouse_invert_x=" << (sMouseInvertX ? 1 : 0) << '\n';
   file << "mouse_invert_y=" << (sMouseInvertY ? 1 : 0) << '\n';
   file << "mouse_buttons=" << (sMouseButtons ? 1 : 0) << '\n';
+  for (int i = 0; i < PortInputMap::kMouseButtonCount; ++i) {
+    file << PortInputMap::MouseButtonKey(i) << '=' << PortInputMap::MouseActionInfo(sMouseActions[i]).name
+         << '\n';
+  }
   file << "mouse_crosshair=" << (sMouseCrosshair ? 1 : 0) << '\n';
   file << "crosshair_size=" << sCrosshairSize << '\n';
   file << "mouse_sensitivity=" << sMouseSensitivity << '\n';
@@ -1144,6 +1188,47 @@ void SetSpringBall(bool enabled) {
   MarkDirty();
 }
 
+bool SpringBallJump() {
+  EnsureInitialized();
+  return sSpringBallJump;
+}
+
+void SetSpringBallJump(bool enabled) {
+  EnsureInitialized();
+  sSpringBallJump = enabled;
+  MarkDirty();
+}
+
+int ShiftBinding(int slot) {
+  EnsureInitialized();
+  return slot >= 0 && slot < 3 ? sShiftBindings[slot] : -1;
+}
+
+void SetShiftBinding(int slot, int code) {
+  EnsureInitialized();
+  if (slot >= 0 && slot < 3) {
+    sShiftBindings[slot] = code;
+    MarkDirty();
+  }
+}
+
+int MouseAction(int button) {
+  EnsureInitialized();
+  return button >= 0 && button < PortInputMap::kMouseButtonCount ? sMouseActions[button]
+                                                                  : PortInputMap::kMA_None;
+}
+
+void SetMouseAction(int button, int action) {
+  EnsureInitialized();
+  if (button >= 0 && button < PortInputMap::kMouseButtonCount && action >= 0 &&
+      action < PortInputMap::kMA_Count) {
+    sMouseActions[button] = action;
+    // A button held as it changes must not start the new action mid-press.
+    sMouseButtonGate.Reset();
+    MarkDirty();
+  }
+}
+
 bool SpeedrunTimer() {
   EnsureInitialized();
   return sSpeedrunTimer;
@@ -1592,8 +1677,7 @@ unsigned MouseWeaponButtons(unsigned held) {
 unsigned MouseMenuButtons(unsigned held, bool focused) {
   return sMouseMenuGate.Poll(MouseAim() && MouseButtons() && !MouseGameplayActive() &&
                                  !Visible() && focused,
-                             held) &
-         SDL_BUTTON_LMASK;
+                             held);
 }
 void NoteMouseButton(bool synthetic, unsigned mask, bool down) {
   sMouseHeldButtons.Note(synthetic, mask, down);
@@ -3438,6 +3522,14 @@ void DrawInputTab() {
     SetSpringBall(springBall);
   }
   ImGui::EndDisabled();
+  bool springJump = sSpringBallJump;
+  if (ImGui::Checkbox("Spring Ball on the jump button too", &springJump)) {
+    SetSpringBallJump(springJump);
+  }
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+    ImGui::SetTooltip("Jump in morph ball springs, once Spring Ball is unlocked. With the\n"
+                      "Boost Ball, a tap springs and a hold charges a boost.");
+  }
   if (springRule >= 0) {
     ImGui::TextWrapped("Set by the connected Archipelago seed: %s.",
                        springRule == 0   ? "off"
@@ -3508,7 +3600,7 @@ void DrawInputTab() {
     SetCrosshairSize(crosshairSize);
   }
   ImGui::TextUnformatted("Crosshair size applies under mouse aim and twin stick.");
-  ImGui::TextUnformatted("Left: fire/charge   Right: lock-on   Middle: missile");
+  ImGui::TextUnformatted("Mouse buttons are set in Controls > Keyboard & mouse.");
   ImGui::TextUnformatted("Existing keyboard/controller weapon bindings also work.");
   if (ImGui::SliderFloat("Sensitivity", &sMouseSensitivity, 0.0005f, 0.02f, "%.4f rad/px",
                          ImGuiSliderFlags_Logarithmic)) {
