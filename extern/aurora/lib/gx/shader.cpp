@@ -1020,6 +1020,14 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           let pbr_irr = textureSampleLevel(pbr_cube, pbr_cube_samp, pbr_nd, ubuf.pbr_cube.z).rgb;
           pbr_ambd = pbr_amb * clamp(dot(pbr_irr, vec3f(0.2126, 0.7152, 0.0722)) * pbr_hdr * ubuf.pbr_cube.w, 0.35, 2.5);
       }}
+      // Baked ambient (GX_AURORA_SET_PBR_AMBIENT) replaces all of that: a lobe per colour
+      // channel around the direction most of that channel's light comes from.
+      if (ubuf.pbr_ambient[0].w > 0.0) {{
+          let pbr_aq = clamp(vec3f(dot(pbr_n, ubuf.pbr_ambient[3].xyz), dot(pbr_n, ubuf.pbr_ambient[4].xyz),
+                                   dot(pbr_n, ubuf.pbr_ambient[5].xyz)) * 0.5 + 0.5, vec3f(0.0), vec3f(1.0));
+          pbr_ambd = dot(pbr_amb, vec3f(0.2126, 0.7152, 0.0722)) * max(ubuf.pbr_ambient[0].rgb + ubuf.pbr_ambient[1].rgb * pow(pbr_aq, ubuf.pbr_ambient[2].rgb),
+                         vec3f(0.0));
+      }}
       pbr_lo += (pbr_ambd * pbr_diff + pbr_envspec * (pbr_f0 * pbr_ab.x + pbr_ab.y)) * pbr_ao;
       // Backlight (GX_AURORA_SET_PBR_MATERIAL): a rim on the edges turned away from the
       // viewer, the surface's own colour times the backlight weight. It is scaled by the
@@ -1713,6 +1721,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     uniBufAttrs += "\n    pbr_emissive: vec4f,";
     uniBufAttrs += "\n    pbr_backlight: vec4f,";
     uniBufAttrs += "\n    pbr_cube: vec4f,";
+    uniBufAttrs += "\n    pbr_ambient: array<vec4f, 6>,";
     const auto pbr = pbr_func(config, info, vtxOutAttrs, vtxXfrAttrs, vtxOutIdx);
     if (!pbr.empty()) {
       fragmentFn += pbr;

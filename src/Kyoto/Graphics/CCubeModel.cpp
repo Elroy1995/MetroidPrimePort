@@ -214,7 +214,8 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     const float pos[3] = {origin.GetX(), origin.GetY(), origin.GetZ()};
     PortRoomEnv::Selection env;
     const int mode = CCubeMaterial::sPortPBRProbeMode;
-    if (mode != 0 && PortRoomEnv::Select(pos, env)) {
+    const bool found = PortRoomEnv::Select(pos, env);
+    if (mode != 0 && found && env.cube != 0) {
       f32 viewToCube[3][3];
       for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 3; ++col) {
@@ -234,6 +235,20 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
       static const f32 kNoCube[4] = {0.f, 0.f, 0.f, 0.f};
       GXSetPBRProbe(viewToProbe, CCubeMaterial::sPortPBRProbeWeight);
       GXSetPBRCube(0, kNoCube);
+    }
+    if (found && env.hasAmbient) {
+      // The baked ambient's directions are in world space, the shader's normal in view space.
+      f32 rows[6][3];
+      memcpy(rows, env.ambient, sizeof(rows));
+      for (int row = 3; row < 6; ++row) {
+        for (int col = 0; col < 3; ++col) {
+          rows[row][col] = env.ambient[row][0] * viewToWorld[0][col] + env.ambient[row][1] * viewToWorld[1][col] +
+                           env.ambient[row][2] * viewToWorld[2][col];
+        }
+      }
+      GXSetPBRAmbient(rows);
+    } else {
+      GXSetPBRAmbient(nullptr);
     }
     PortSetPBRMaterial(surface.GetMaterialIndex());
     GXSetPBR(GX_TRUE);

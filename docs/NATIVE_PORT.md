@@ -412,7 +412,11 @@ skipped. Inside a mod:
   of the world with a prefiltered HDR cube map (BC6H) of what surrounds it. A
   PBR model reflects the cube of the smallest box it stands in (else the
   nearest), in place of the port's live probe, exposed so the cube's average
-  is middle grey. Files load and unload with their areas, and a cube is decoded
+  is middle grey. A file may also hold baked ambient light: a grid of points
+  through the room, each with the light arriving there and the direction most
+  of it comes from, per colour. A PBR model standing in a grid takes the
+  colour and direction of its ambient light from the points around its origin;
+  the game's ambient colour only sets how bright it is. Files load and unload with their areas, and a cube is decoded
   on first use. The layout is in `platform/include/port_room_env.h`.
 - a PBR material (flag bit 14) may end in a 28-byte record: six big-endian floats
   (emissive multiplier rgb, backlight weight rgb) and the tag `PBRM`, inside the
@@ -841,8 +845,8 @@ a temporary directory instead of mounting.
 - `MP_ROOM_ENV=0`: ignore the mods' `.roomenv` files (console `roomenv
   [on|off]`, which also counts what is loaded). For tuning:
   `MP_ROOM_ENV_GAIN` (exposure, default 1), `MP_ROOM_ENV_LOD` (the mip a
-  roughness of 1 reflects, default 5) and `MP_ROOM_ENV_AMBIENT=0` (leave the
-  ambient light undirected).
+  roughness of 1 reflects, default 5) and `MP_ROOM_ENV_AMBIENT` (scale of the
+  baked ambient light, default 1; 0 keeps the game's ambient colour).
 - `tools/pbr_shots.py`: contact sheets of models under PBR, for comparing mod
   builds. One game per (variant, place), each booted straight into the room
   with `MP_BOOT_WORLD` on its own console port and an Xvfb display, about 10 s

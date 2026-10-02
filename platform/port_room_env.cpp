@@ -1,5 +1,5 @@
 // Room environments at run time: which areas have one, their cubes on the GPU, and the
-// cube for a model. See port_room_env.h.
+// cube and ambient for a model. See port_room_env.h.
 #include "port_room_env.h"
 
 #include "port_gci.h"
@@ -184,6 +184,11 @@ bool Select(const float pos[3], Selection& out) {
   if (!Enabled()) {
     return false;
   }
+  static const float gain = EnvFloat("MP_ROOM_ENV_GAIN", 1.f);
+  static const float lod = EnvFloat("MP_ROOM_ENV_LOD", 5.f);
+  static const float ambient = EnvFloat("MP_ROOM_ENV_AMBIENT", 1.f);
+  const float grey = 0.18f * gain;
+  sLast = {};
   Area* bestArea = nullptr;
   Pick best;
   for (auto& [mrea, area] : sAreas) {
@@ -193,41 +198,69 @@ bool Select(const float pos[3], Selection& out) {
       bestArea = &area;
     }
   }
-  if (bestArea == nullptr) {
-    return false;
+  if (bestArea != nullptr) {
+    const Probe& probe = bestArea->file.probes[best.probe];
+    GpuCube& gpu = bestArea->cubes[probe.cube];
+    if (gpu.id == 0 && !gpu.failed) {
+      Upload(bestArea->file, bestArea->file.cubes[probe.cube], gpu);
+    }
+    if (gpu.id != 0) {
+      // The cube is exposed so that its average direction is middle grey, which is what
+      // Remastered's auto exposure aims for (its Tonemap's key is 0.18 too); the lamps in
+      // it then come out many times brighter than white, as they should.
+      sLast.cube = gpu.id;
+      sLast.params[0] = grey / gpu.average;
+      sLast.params[1] = std::min(lod, float(gpu.mipCount - 1));
+      sLast.params[2] = float(gpu.mipCount > 2 ? gpu.mipCount - 2 : 0);
+      sLast.params[3] = ambient > 0.f ? 1.f / grey : 0.f;
+      std::memcpy(sLast.worldToCube, probe.worldToCube, sizeof(sLast.worldToCube));
+    }
   }
-  const Probe& probe = bestArea->file.probes[best.probe];
-  GpuCube& gpu = bestArea->cubes[probe.cube];
-  if (gpu.id == 0 && !gpu.failed) {
-    Upload(bestArea->file, bestArea->file.cubes[probe.cube], gpu);
+  if (ambient > 0.f) {
+    // A model's origin is often on the floor, where the grid has no point for it, so the
+    // spot a metre up counts too.
+    const float above[3] = {pos[0], pos[1], pos[2] + 1.f};
+    Ambient sample;
+    float average = 0.f;
+    for (const float* spot : {pos, above}) {
+      for (auto& [mrea, area] : sAreas) {
+        for (const Grid& grid : area.file.grids) {
+          if (!sLast.hasAmbient && grid.average > 0.f && SampleGrid(area.file, grid, spot, sample)) {
+            sLast.hasAmbient = true;
+            average = grid.average;
+          }
+        }
+      }
+    }
+    if (sLast.hasAmbient) {
+      // The grid gives the light's colour and direction; how bright it is stays the game's
+      // ambient, which the shader multiplies in. The baked levels are HDR that Remastered
+      // exposes by what is on screen (one room spans 0.0001 to 100), and the world around
+      // the model is still lit the retail way. Of the level only this is kept: a spot
+      // darker or brighter than its room is, within a factor of two.
+      const float luminance = 0.2126f * sample.mean[0] + 0.7152f * sample.mean[1] + 0.0722f * sample.mean[2];
+      const float level = std::min(std::max(std::sqrt(luminance / average), 0.5f), 2.f);
+      const float exposure = luminance > 0.f ? level / luminance * ambient : 0.f;
+      for (int i = 0; i < 3; ++i) {
+        sLast.ambient[0][i] = (sample.mean[i] - sample.lobe[i]) * exposure;
+        sLast.ambient[1][i] = 2.f * sample.lobe[i] * (1.f + sample.sharpness[i]) * exposure;
+        sLast.ambient[2][i] = 1.f + 2.f * sample.sharpness[i];
+        std::memcpy(sLast.ambient[3 + i], sample.direction[i], sizeof(sample.direction[i]));
+      }
+    }
   }
-  if (gpu.id == 0) {
-    return false;
-  }
-  // The cube is exposed so that its average direction is middle grey, which is what
-  // Remastered's auto exposure aims for (its Tonemap's key is 0.18 too); the lamps in it
-  // then come out many times brighter than white, as they should.
-  static const float gain = EnvFloat("MP_ROOM_ENV_GAIN", 1.f);
-  static const float lod = EnvFloat("MP_ROOM_ENV_LOD", 5.f);
-  static const float ambient = EnvFloat("MP_ROOM_ENV_AMBIENT", 1.f);
-  const float grey = 0.18f * gain;
-  sLast.cube = gpu.id;
-  sLast.params[0] = grey / gpu.average;
-  sLast.params[1] = std::min(lod, float(gpu.mipCount - 1));
-  sLast.params[2] = float(gpu.mipCount > 2 ? gpu.mipCount - 2 : 0);
-  sLast.params[3] = ambient > 0.f ? 1.f / grey : 0.f;
-  std::memcpy(sLast.worldToCube, probe.worldToCube, sizeof(sLast.worldToCube));
-  sLastFound = true;
+  sLastFound = sLast.cube != 0 || sLast.hasAmbient;
   out = sLast;
-  return true;
+  return sLastFound;
 }
 
-void Stats(int& areas, int& probes, int& cubes) {
-  areas = probes = cubes = 0;
+void Stats(int& areas, int& probes, int& cubes, int& grids) {
+  areas = probes = cubes = grids = 0;
   for (const auto& [mrea, area] : sAreas) {
-    if (!area.file.probes.empty()) {
+    if (!area.file.probes.empty() || !area.file.grids.empty()) {
       ++areas;
       probes += int(area.file.probes.size());
+      grids += int(area.file.grids.size());
     }
     for (const GpuCube& cube : area.cubes) {
       cubes += cube.id != 0 ? 1 : 0;

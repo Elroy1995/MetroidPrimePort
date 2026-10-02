@@ -39,6 +39,12 @@ void GXDestroyPBRCube(u32 id);
 // the normal, and the scale that takes that sample to 1 for an average direction (0 = the
 // ambient is left alone). Id 0, or one never created, selects the probe.
 void GXSetPBRCube(u32 id, const f32 params[4]);
+// Aurora extension: baked ambient light as a function of the normal n (view space), per
+// colour channel c: base[c] + lobe[c] * pow(clamp(0.5 + 0.5 * dot(n, dir[c]), 0, 1), power[c]).
+// The rows are base, lobe, power, then the direction of red, green and blue; the
+// directions are not unit length (shorter is more even). The luminance of the GX ambient
+// colour scales the result. Null goes back to the GX ambient alone.
+void GXSetPBRAmbient(const f32 rows[6][3]);
 
 void GXColor4f32(float r, float g, float b, float a);
 

@@ -8,12 +8,16 @@ namespace PortRoomEnv {
 namespace {
 
 constexpr uint32_t kMagic = 0x5645504D; // 'MPEV'
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 2;
 constexpr size_t kHeaderSize = 32;
 constexpr size_t kProbeSize = 100;
 constexpr size_t kCubeHeaderSize = 16;
 constexpr uint32_t kMaxProbes = 4096;
 constexpr uint32_t kMaxCubeSize = 1024;
+constexpr size_t kGridHeaderSize = 60;
+constexpr size_t kPointSize = 24;
+constexpr uint32_t kMaxGrids = 64;
+constexpr uint32_t kMaxGridSize = 1024;
 
 uint32_t Get32(const uint8_t* p) {
   return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
@@ -24,6 +28,20 @@ float GetFloat(const uint8_t* p) {
   float value;
   std::memcpy(&value, &bits, sizeof(value));
   return value;
+}
+
+float GetHalf(const uint8_t* p) {
+  const uint32_t h = uint32_t(p[0]) | (uint32_t(p[1]) << 8);
+  const int exponent = int((h >> 10) & 0x1F);
+  const int mantissa = int(h & 0x3FF);
+  // An infinity is clamped; a NaN or a negative is no light.
+  if ((h & 0x8000) != 0 || (exponent == 31 && mantissa != 0)) {
+    return 0.f;
+  }
+  if (exponent == 31) {
+    return 65504.f;
+  }
+  return exponent == 0 ? std::ldexp(float(mantissa), -24) : std::ldexp(float(mantissa | 0x400), exponent - 25);
 }
 
 int HexDigit(char c) {
@@ -74,7 +92,8 @@ bool Parse(std::vector<uint8_t>&& data, File& out, std::string& error) {
     error = "not a room environment";
     return false;
   }
-  if (Get32(data.data() + 4) != kVersion) {
+  const uint32_t version = Get32(data.data() + 4);
+  if (version == 0 || version > kVersion) {
     error = "unknown version " + std::to_string(Get32(data.data() + 4));
     return false;
   }
@@ -136,6 +155,63 @@ bool Parse(std::vector<uint8_t>&& data, File& out, std::string& error) {
     }
     at = cube.offset + cube.length;
   }
+  if (version >= 2) {
+    if (data.size() - at < 4) {
+      error = "cut short";
+      return false;
+    }
+    const uint32_t grids = Get32(data.data() + at);
+    at += 4;
+    if (grids > kMaxGrids) {
+      error = "too many grids";
+      return false;
+    }
+    out.grids.resize(grids);
+    for (Grid& grid : out.grids) {
+      if (data.size() - at < kGridHeaderSize) {
+        error = "cut short";
+        return false;
+      }
+      const uint8_t* p = data.data() + at;
+      for (int i = 0; i < 12; ++i) {
+        grid.worldToGrid[i] = GetFloat(p + i * 4);
+        if (!std::isfinite(grid.worldToGrid[i])) {
+          error = "a grid is not finite";
+          return false;
+        }
+      }
+      size_t points = 1;
+      for (int i = 0; i < 3; ++i) {
+        grid.size[i] = Get32(p + 48 + i * 4);
+        if (grid.size[i] == 0 || grid.size[i] > kMaxGridSize) {
+          error = "bad grid size";
+          return false;
+        }
+        points *= grid.size[i];
+      }
+      grid.offset = at + kGridHeaderSize;
+      if ((data.size() - grid.offset) / kPointSize < points) {
+        error = "cut short";
+        return false;
+      }
+      double sum = 0.0;
+      size_t filled = 0;
+      // A sample of the points is enough for an average, and a big room has millions.
+      const size_t step = points / 32768 + 1;
+      for (size_t i = 0; i < points; i += step) {
+        const uint8_t* point = data.data() + grid.offset + i * kPointSize;
+        const double luminance = 0.2126 * GetHalf(point) + 0.7152 * GetHalf(point + 2) + 0.0722 * GetHalf(point + 4);
+        if (luminance > 0.0) {
+          sum += std::log(luminance);
+          ++filled;
+        }
+      }
+      // The geometric mean: a room's points span five decades, and the arithmetic mean is
+      // only its few brightest.
+      grid.average = filled != 0 ? float(std::exp(sum / double(filled))) : 0.f;
+      at = grid.offset + points * kPointSize;
+    }
+  }
   out.data = std::move(data);
   return true;
 }
@@ -168,6 +244,76 @@ Pick PickProbe(const File& file, const float pos[3]) {
     }
   }
   return best;
+}
+
+bool SampleGrid(const File& file, const Grid& grid, const float pos[3], Ambient& out) {
+  const float* m = grid.worldToGrid;
+  float at[3];
+  int cell[3];
+  for (int row = 0; row < 3; ++row) {
+    const float* r = m + row * 4;
+    at[row] = r[0] * pos[0] + r[1] * pos[1] + r[2] * pos[2] + r[3];
+    // A point's light reaches half a cell past the edge, no further.
+    if (!(at[row] >= -0.5f && at[row] <= float(grid.size[row]) - 0.5f)) {
+      return false;
+    }
+    cell[row] = int(std::floor(at[row]));
+    at[row] -= float(cell[row]);
+  }
+  // mean, lobe, sharpness, then the three directions along the grid's axes
+  float sum[18] = {};
+  float total = 0.f;
+  for (int corner = 0; corner < 8; ++corner) {
+    float weight = 1.f;
+    size_t index = 0;
+    bool outside = false;
+    for (int axis = 2; axis >= 0; --axis) {
+      const int high = (corner >> axis) & 1;
+      const int i = cell[axis] + high;
+      weight *= high != 0 ? at[axis] : 1.f - at[axis];
+      outside = outside || i < 0 || i >= int(grid.size[axis]);
+      index = index * grid.size[axis] + size_t(outside ? 0 : i);
+    }
+    if (outside || weight <= 0.f) {
+      continue;
+    }
+    const uint8_t* p = file.data.data() + grid.offset + index * kPointSize;
+    const float mean[3] = {GetHalf(p), GetHalf(p + 2), GetHalf(p + 4)};
+    if (mean[0] + mean[1] + mean[2] <= 0.f) {
+      continue;
+    }
+    for (int i = 0; i < 3; ++i) {
+      sum[i] += weight * mean[i];
+      sum[3 + i] += weight * GetHalf(p + 6 + i * 2);
+      sum[6 + i] += weight * float(p[12 + i]) / 255.f;
+    }
+    for (int i = 0; i < 9; ++i) {
+      sum[9 + i] += weight * (float(p[15 + i]) / 127.5f - 1.f);
+    }
+    total += weight;
+  }
+  if (total < 0.02f) {
+    return false;
+  }
+  for (float& value : sum) {
+    value /= total;
+  }
+  // The grid's axes are the world's turned and scaled alike, so a direction goes back
+  // through the transpose.
+  const float scale = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+  if (!(scale > 1e-12f)) {
+    return false;
+  }
+  for (int i = 0; i < 3; ++i) {
+    out.mean[i] = sum[i];
+    out.lobe[i] = sum[3 + i];
+    out.sharpness[i] = sum[6 + i];
+    const float* d = sum + 9 + i * 3;
+    for (int axis = 0; axis < 3; ++axis) {
+      out.direction[i][axis] = (m[axis] * d[0] + m[4 + axis] * d[1] + m[8 + axis] * d[2]) / scale;
+    }
+  }
+  return true;
 }
 
 } // namespace PortRoomEnv

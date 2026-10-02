@@ -155,6 +155,13 @@ extern "C" {
 #define GX_AURORA_DESTROY_PBR_CUBE 0x0048
 #define GX_AURORA_SET_PBR_CUBE 0x0049
 
+/**
+ * Port extension: the baked ambient light of the following PBR draws, which the
+ * luminance of the GX ambient colour then scales. Six vectors of four floats (see GXSetPBRAmbient); a first w of 0
+ * goes back to the GX ambient. Stays in effect until changed.
+ */
+#define GX_AURORA_SET_PBR_AMBIENT 0x004A
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

@@ -55,9 +55,9 @@ void PutCube(std::vector<uint8_t>& out, uint32_t size, uint32_t mips, uint8_t fi
   out.insert(out.end(), bytes, fill);
 }
 
-std::vector<uint8_t> MakeFile() {
+std::vector<uint8_t> MakeFile(uint32_t version = 1) {
   std::vector<uint8_t> out = {'M', 'P', 'E', 'V'};
-  Put32(out, 1);
+  Put32(out, version);
   PutFloat(out, 4.f);
   PutFloat(out, 0.18f);
   PutFloat(out, 0.6f);
@@ -70,6 +70,92 @@ std::vector<uint8_t> MakeFile() {
   PutCube(out, 8, 4, 0x11);
   PutCube(out, 4, 3, 0x22);
   return out;
+}
+
+// A grid point: grey light `level` (1.0 as a half is 0x3C00), with red arriving from +x of
+// the grid, green from +y and blue from +z.
+void PutPoint(std::vector<uint8_t>& out, uint16_t level) {
+  for (int i = 0; i < 3; ++i) {
+    out.push_back(uint8_t(level));
+    out.push_back(uint8_t(level >> 8));
+  }
+  for (int i = 0; i < 3; ++i) {
+    out.push_back(0x00);
+    out.push_back(0x38); // 0.5
+  }
+  out.insert(out.end(), {255, 0, 51});
+  for (int channel = 0; channel < 3; ++channel) {
+    for (int axis = 0; axis < 3; ++axis) {
+      out.push_back(channel == axis ? 255 : 128);
+    }
+  }
+}
+
+// Version 2: the same, then a 3 x 2 x 2 grid of 2 m cells whose point (0, 0, 0) is at world
+// (10, 20, 30), with grid x along world y, y along world -x and z along world z. The
+// points of the grid's x = 2 are empty, and those of x = 1 twice as bright as x = 0.
+std::vector<uint8_t> MakeGridFile() {
+  std::vector<uint8_t> out = MakeFile(2);
+  Put32(out, 1);
+  const float rows[12] = {0.f, 0.5f, 0.f, -10.f, -0.5f, 0.f, 0.f, 5.f, 0.f, 0.f, 0.5f, -15.f};
+  for (float value : rows) {
+    PutFloat(out, value);
+  }
+  Put32(out, 3);
+  Put32(out, 2);
+  Put32(out, 2);
+  for (int i = 0; i < 12; ++i) {
+    PutPoint(out, i % 3 == 0 ? 0x3C00 : i % 3 == 1 ? 0x4000 : 0);
+  }
+  return out;
+}
+
+bool Near(float a, float b) { return a > b - 0.01f && a < b + 0.01f; }
+
+void TestGrid() {
+  PortRoomEnv::File file;
+  std::string error;
+  const std::vector<uint8_t> good = MakeGridFile();
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(good), file, error), "grid: parse");
+  Check(file.grids.size() == 1 && file.probes.size() == 3, "grid: counts");
+  if (file.grids.size() != 1) {
+    return;
+  }
+  const PortRoomEnv::Grid& grid = file.grids[0];
+  Check(grid.size[0] == 3 && grid.size[1] == 2 && grid.size[2] == 2 && Near(grid.average, 1.414f), "grid: header");
+  const size_t before = good.size() - 12 * 24 - 64;
+  for (size_t length = before; length < good.size(); ++length) {
+    Check(!PortRoomEnv::Parse(std::vector<uint8_t>(good.begin(), good.begin() + length), file, error), "grid: cut short");
+  }
+  std::vector<uint8_t> bad = good;
+  bad[before + 4 + 48] = 0;
+  Check(!PortRoomEnv::Parse(std::vector<uint8_t>(bad), file, error), "grid: size");
+  bad = good;
+  bad[before] = 200;
+  Check(!PortRoomEnv::Parse(std::vector<uint8_t>(bad), file, error), "grid: count");
+  Check(PortRoomEnv::Parse(MakeFile(), file, error) && file.grids.empty(), "grid: version 1 has none");
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(good), file, error), "grid: parse again");
+
+  PortRoomEnv::Ambient a;
+  const float atPoint[3] = {10.f, 20.f, 30.f};
+  Check(PortRoomEnv::SampleGrid(file, file.grids[0], atPoint, a), "grid: at a point");
+  Check(Near(a.mean[0], 1.f) && Near(a.lobe[1], 0.5f) && Near(a.sharpness[0], 1.f) && Near(a.sharpness[1], 0.f) &&
+            Near(a.sharpness[2], 0.2f),
+        "grid: the point's values");
+  // Red comes from grid +x, which is world +y; green from grid +y, world -x.
+  Check(Near(a.direction[0][0], 0.f) && Near(a.direction[0][1], 1.f) && Near(a.direction[0][2], 0.f), "grid: red's direction");
+  Check(Near(a.direction[1][0], -1.f) && Near(a.direction[1][1], 0.f), "grid: green's direction");
+  Check(Near(a.direction[2][2], 1.f), "grid: blue's direction");
+  const float halfway[3] = {9.f, 21.f, 31.f}; // grid (0.5, 0.5, 0.5)
+  Check(PortRoomEnv::SampleGrid(file, file.grids[0], halfway, a) && Near(a.mean[0], 1.5f), "grid: between points");
+  const float byEmpty[3] = {10.f, 23.5f, 30.f}; // grid x 1.75: the empty point does not darken it
+  Check(PortRoomEnv::SampleGrid(file, file.grids[0], byEmpty, a) && Near(a.mean[0], 2.f), "grid: next to an empty point");
+  const float inEmpty[3] = {10.f, 24.f, 30.f};
+  Check(!PortRoomEnv::SampleGrid(file, file.grids[0], inEmpty, a), "grid: an empty point");
+  const float edge[3] = {10.f, 19.5f, 29.5f}; // a quarter cell outside two faces
+  Check(PortRoomEnv::SampleGrid(file, file.grids[0], edge, a) && Near(a.mean[0], 1.f), "grid: just outside");
+  const float outside[3] = {10.f, 18.f, 30.f};
+  Check(!PortRoomEnv::SampleGrid(file, file.grids[0], outside, a), "grid: outside");
 }
 
 void TestNames() {
@@ -99,7 +185,7 @@ void TestParse() {
     Check(!PortRoomEnv::Parse(std::vector<uint8_t>(good.begin(), good.begin() + length), file, error), "parse: cut short");
   }
   std::vector<uint8_t> bad = good;
-  bad[4] = 2;
+  bad[4] = 3;
   Check(!PortRoomEnv::Parse(std::vector<uint8_t>(bad), file, error), "parse: version");
   bad = good;
   bad[32 + 88] = 2;
@@ -146,6 +232,7 @@ int main() {
   TestNames();
   TestParse();
   TestPick();
+  TestGrid();
   if (sFailures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", sFailures);
     return 1;

@@ -94,4 +94,14 @@ void GXSetPBRCube(u32 id, const f32 params[4]) {
     GX_WRITE_F32(params[i]);
   }
 }
+
+void GXSetPBRAmbient(const f32 rows[6][3]) {
+  GX_WRITE_AURORA(GX_AURORA_SET_PBR_AMBIENT);
+  for (int row = 0; row < 6; ++row) {
+    for (int i = 0; i < 3; ++i) {
+      GX_WRITE_F32(rows != nullptr ? rows[row][i] : 0.f);
+    }
+    GX_WRITE_F32(rows != nullptr && row == 0 ? 1.f : 0.f);
+  }
+}
 }

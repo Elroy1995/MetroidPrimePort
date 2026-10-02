@@ -983,9 +983,10 @@ void RunFrame() {
     int areas = 0;
     int probes = 0;
     int cubes = 0;
-    PortRoomEnv::Stats(areas, probes, cubes);
-    Out("roomenv %s: %d area(s), %d probe(s), %d cube(s) loaded", PortRoomEnv::Enabled() ? "on" : "off", areas, probes,
-        cubes);
+    int grids = 0;
+    PortRoomEnv::Stats(areas, probes, cubes, grids);
+    Out("roomenv %s: %d area(s), %d probe(s), %d cube(s) loaded, %d ambient grid(s)",
+        PortRoomEnv::Enabled() ? "on" : "off", areas, probes, cubes, grids);
     Finish();
   } else if (name == "viewmodel") {
     const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";
