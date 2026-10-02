@@ -1132,6 +1132,135 @@ int main() {
     PortApWorld::Parse(fewerData, reread);
     Check(reread.requiredArtifacts == 5 && reread.finalBosses == 2,
           "slot_data carries the temple's rules");
+
+    // Doors: nothing changes without a mapping.
+    const uint32_t kArboretum = 0x18AB6106u;
+    Check(PortApWorld::Doors(PortApWorld::Layout(), kArboretum).empty(),
+          "a seed without door mappings changes no door");
+    PortJson::Value doorData;
+    Check(PortJson::Parse(R"({"door_color_randomization":1,"door_color_mapping":{
+        "Chozo Ruins":{"area":"Chozo Ruins","type_mapping":{"Blue":"Ice Beam","Wave Beam":"Bomb"}},
+        "Tallon Overworld":{"area":"Tallon Overworld","type_mapping":{"Blue":"Power Beam Only"}}}})",
+                          doorData, offset, &reason),
+          "the door colour fixture parses");
+    PortApWorld::Layout colours;
+    PortApWorld::Parse(doorData, colours);
+    Check(colours.hasDoorColors && colours.doorColorRandomization && !colours.hasShields &&
+              colours.doorColors["Chozo Ruins"]["Blue"] == "Ice Beam",
+          "slot_data carries the door colours");
+    Check(PortJson::Parse(PortApWorld::Text(colours), saved, offset, &reason),
+          "the saved door colours are JSON");
+    PortApWorld::Parse(saved, reread);
+    Check(reread == colours, "the saved door colours read back the same");
+    // Main Plaza: five blue doors take the area's colour, and the missile door
+    // stays a plain door under its shield.
+    std::vector< PortApWorld::DoorChange > doors = PortApWorld::Doors(colours, 0xD5CDB809u);
+    Check(doors.size() == 6 && doors[0].doorId == 0x0002001Bu && doors[0].type == "Ice Beam" &&
+              doors[0].shield.empty() && doors[0].pair >= 0 && doors[0].forces[0] != 0,
+          "a blue door takes its area's colour");
+    Check(doors.size() == 6 && doors[2].dock == 2 && doors[2].type == "Blue" &&
+              doors[2].shield == "Missile",
+          "a door under a blast shield stays blue");
+    doors = PortApWorld::Doors(colours, 0xB2701146u);
+    Check(doors.size() == 5 && doors[0].type == "Power Beam Only",
+          "each area has its own colours");
+
+    Check(PortJson::Parse(R"({"blast_shield_mapping":{"Chozo Ruins":{"area":"Chozo Ruins",
+        "type_mapping":{"Arboretum":{"0":"Power Bomb","1":"Disabled"}}}}})",
+                          doorData, offset, &reason),
+          "the blast shield fixture parses");
+    PortApWorld::Layout shielded;
+    PortApWorld::Parse(doorData, shielded);
+    Check(shielded.hasShields && !shielded.hasDoorColors && !shielded.doorColorRandomization &&
+              shielded.shields["Chozo Ruins"]["Arboretum"][1] == "Disabled",
+          "slot_data carries the blast shields");
+    Check(PortJson::Parse(PortApWorld::Text(shielded), saved, offset, &reason),
+          "the saved blast shields are JSON");
+    PortApWorld::Parse(saved, reread);
+    Check(reread == shielded, "the saved blast shields read back the same");
+    doors = PortApWorld::Doors(shielded, kArboretum);
+    Check(doors.size() == 3 && doors[0].type == "Blue" && doors[0].shield == "Power Bomb",
+          "a seed's blast shield sits on a blue door");
+    Check(doors.size() == 3 && doors[1].type == "Disabled" && doors[1].shield.empty(),
+          "a locked door is a disabled door without a shield");
+    Check(doors.size() == 3 && doors[2].type == "Blue" && doors[2].shield == "None",
+          "the disc's blast shields go when the seed has its own");
+    // The other side of the Power Bomb door gets the shield too.
+    bool mirrored = false;
+    for (const PortApWorld::DoorChange& other : PortApWorld::Doors(shielded, 0x3D238FCDu))
+      mirrored = mirrored || (other.pair == doors[0].index && other.shield == "Power Bomb");
+    Check(mirrored, "a blast shield is on both sides of its door");
+
+    // The script patch for a recoloured door: both of its forces and shields
+    // are rewritten, and nothing is when the room isn't the disc's.
+    doors = PortApWorld::Doors(colours, 0xD5CDB809u);
+    std::vector< PortSkipCutscenes::ScriptObject > objects;
+    auto object = [&](uint32_t id, uint8_t type, size_t size) {
+      PortSkipCutscenes::ScriptObject o;
+      o.type = type;
+      o.id = id;
+      o.props.assign(4 + 2 + size, 0);
+      o.props[4] = 'x';
+      objects.push_back(o);
+    };
+    int forceCount = 0, actorCount = 0;
+    if (!doors.empty()) {
+      for (int k = 0; k < 2; ++k) {
+        if (doors[0].forces[k] != 0)
+          object(doors[0].forces[k], 0x1A, 180), ++forceCount;
+        if (doors[0].shieldActors[k] != 0)
+          object(doors[0].shieldActors[k], 0x00, 300), ++actorCount;
+      }
+      doors.resize(1);
+    }
+    std::vector< uint8_t > doorOps = PortApWorld::DoorOps(doors, objects, nullptr);
+    // An edit is 9 bytes of header and 4 a run: 116 + 12 for a force, 4 for a shield.
+    Check(forceCount > 0 && actorCount > 0 &&
+              doorOps.size() == size_t(forceCount) * (9 + 4 + 116 + 4 + 12) +
+                                    size_t(actorCount) * (9 + 4 + 4),
+          "a recoloured door rewrites its forces and shields");
+    // Ice Beam: the second weapon opens it, the other beams bounce off.
+    Check(doorOps.size() > 32 && doorOps[0] == 2 && doorOps[9 + 4 + 4 + 3] == 2 &&
+              doorOps[9 + 4 + 8 + 3] == 1 && doorOps[9 + 4 + 12 + 3] == 2,
+          "an ice door takes only the Ice Beam");
+    if (!objects.empty())
+      objects[0].props.resize(40);
+    Check(PortApWorld::DoorOps(doors, objects, nullptr).empty(),
+          "a door whose objects aren't the disc's is left alone");
+
+    // A locked door says so when scanned.
+    doors = PortApWorld::Doors(shielded, kArboretum);
+    objects.clear();
+    std::string scanned;
+    if (doors.size() == 3) {
+      doors.erase(doors.begin());
+      doors.resize(1);
+      doors[0].forces[0] = doors[0].forces[1] = 0;
+      doors[0].shieldActors[0] = doors[0].shieldActors[1] = 0;
+      object(doors[0].doorId, 0x03, 127 + 4 + 44);
+      PortSkipCutscenes::ScriptObject& door = objects[0];
+      door.props[3] = 14;
+      door.props[6 + 52 + 3] = 14;
+      door.props[6 + 123 + 3] = 1;
+    }
+    doorOps = PortApWorld::DoorOps(doors, objects, [&](const std::string& text) {
+      scanned = text;
+      return 0xD00D0001u;
+    });
+    Check(scanned == "This door cannot be opened." && doorOps.size() == 9 + 4 + 4 &&
+              doorOps[9 + 1] == 127 && doorOps[9 + 4] == 0xD0 && doorOps[9 + 7] == 0x01,
+          "a locked door gets its scan");
+
+    // The map shows a door's new colour, and a shield as a shield.
+    std::vector< PortApWorld::MapDoor > mapDoors = PortApWorld::MapDoors(colours, 0xFC184334u);
+    Check(mapDoors.size() == 6 && mapDoors[0].doorId == 0x0002001Bu && mapDoors[0].type == 2 &&
+              mapDoors[2].type == 1,
+          "the map follows the door colours");
+    Check(PortApWorld::MapDoors(PortApWorld::Layout(), 0xFC184334u).empty() &&
+              PortApWorld::MapDoors(colours, 0x12345678u).empty(),
+          "a map without changed doors is left alone");
+    Check(PortApWorld::IsDoorDependency(0x59649E9Du) && !PortApWorld::IsDoorDependency(0x12345678u),
+          "the door shields can be loaded from another world");
   }
 
   std::filesystem::remove_all(testDir);

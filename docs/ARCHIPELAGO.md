@@ -88,9 +88,15 @@ With the built-in tables, the client does what the AP ISO patch would:
   right after the stones light up, and without Metroid Prime it leads to the
   credits, which is the goal. The mission text in the temple still asks for
   twelve.
+- Doors follow `door_color_randomization` and `locked_door_count`: a door's
+  shield, the weapon that opens it and its map icon come from the seed, with
+  the types the game does not have (Missile, Power Beam Only, Bomb) drawn as
+  randomprime draws them. A locked door has a dark rim, opens to nothing and
+  says so when scanned. Like the start room, this needs the built-in client
+  and a seed that has connected before the room is loaded.
 - Seed options the port does not implement are named once on connect as
-  `Seed option not supported: ...`: door colour and blast shield
-  randomisation, locked doors, Hive Mecha removal, backwards Lower Mines,
+  `Seed option not supported: ...`: blast shield randomisation, Hive Mecha
+  removal, backwards Lower Mines,
   Flaahgra power bombs, removed X-Ray or Thermal requirements, and a changed
   energy tank capacity.
   Such a seed can expect a door the game does not have.

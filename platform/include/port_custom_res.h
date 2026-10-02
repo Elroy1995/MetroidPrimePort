@@ -29,6 +29,17 @@ enum : uint32_t {
   kXrayAncs = 0xDEAF000E,
   kCombatCmdl = 0xDEAF000F,
   kCombatAncs = 0xDEAF0010,
+  // Door shields and their textures for Archipelago's door types (ids of
+  // the port's own: no seed names them).
+  kDoorPowerHolorimTxtr = 0xDEAF0100,
+  kDoorBombHolorimTxtr = 0xDEAF0101,
+  kDoorBombPatternTxtr = 0xDEAF0102,
+  kDoorBombColorTxtr = 0xDEAF0103,
+  kDoorPowerCmdl = 0xDEAF0110, // each followed by its vertical twin
+  kDoorBombCmdl = 0xDEAF0112,
+  kDoorMissileCmdl = 0xDEAF0114,
+  kDoorDisabledCmdl = 0xDEAF0116,
+  kDoorPlasmaVerticalCmdl = 0xDEAF0118,
 };
 
 inline bool IsCustomId(uint32_t id) { return (id & 0xFFFF0000u) == 0xDEAF0000u; }

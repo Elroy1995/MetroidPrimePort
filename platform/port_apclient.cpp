@@ -4,6 +4,7 @@
 
 #include "port_ap_metroidprime.h"
 #include "port_ap_protocol.h"
+#include "port_custom_res.h"
 #include "port_randomizer.h"
 #include "port_skip_cutscenes.h"
 #include "port_ws.h"
@@ -1681,6 +1682,40 @@ bool TempleOps(std::vector< uint8_t >& ops) {
       return false;
     ops = PortApWorld::TempleOps(layout);
     return !ops.empty();
+  } catch (...) {
+    return false;
+  }
+}
+
+bool DoorOps(uint32_t mrea, const uint8_t* scly, size_t size, std::vector< uint8_t >& ops) {
+  try {
+    PortApWorld::Layout layout;
+    if (!SeedLayout(layout))
+      return false;
+    const std::vector< PortApWorld::DoorChange > doors = PortApWorld::Doors(layout, mrea);
+    std::vector< PortSkipCutscenes::ScriptObject > objects;
+    if (doors.empty() || !PortSkipCutscenes::ScanObjects(scly, size, objects))
+      return false;
+    ops = PortApWorld::DoorOps(doors, objects, [](const std::string& text) {
+      // One scan per text: the key only has to tell the door types apart.
+      return PortCustomRes::TextScan(0xD0020000ull << 32 | std::hash< std::string >()(text),
+                                     text);
+    });
+    return !ops.empty();
+  } catch (...) {
+    return false;
+  }
+}
+
+bool MapDoors(uint32_t mapa, std::vector< std::pair< uint32_t, int > >& doors) {
+  try {
+    doors.clear();
+    PortApWorld::Layout layout;
+    if (!SeedLayout(layout))
+      return false;
+    for (const PortApWorld::MapDoor& door : PortApWorld::MapDoors(layout, mapa))
+      doors.emplace_back(door.doorId, door.type);
+    return !doors.empty();
   } catch (...) {
     return false;
   }

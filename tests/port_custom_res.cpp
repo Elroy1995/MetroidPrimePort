@@ -124,7 +124,11 @@ int main() {
     Check(Find(kThermalCmdl, disc) == nullptr && Find(kThermalCmdl, disc) == nullptr &&
               reads == readsBefore + 1,
           "a missing disc source fails once and stays failed");
-    Check(Find(0xDEAF0100, disc) == nullptr && Find(0x12345678, disc) == nullptr,
+    const Resource* holorim = Find(kDoorPowerHolorimTxtr, disc);
+    Check(holorim != nullptr && holorim->type == 0x54585452 && !holorim->data.empty() &&
+              Find(kDoorBombColorTxtr, disc) != nullptr,
+          "the door shield textures build");
+    Check(Find(0xDEAF0F00, disc) == nullptr && Find(0x12345678, disc) == nullptr,
           "unknown and non-custom ids have no resource");
 
     // Scan text: a SCAN and STRG pair per distinct text.

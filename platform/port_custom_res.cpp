@@ -22,6 +22,8 @@ constexpr uint32_t kGravitySuitCmdl = 0x95946E41; // Node1_11.CMDL
 constexpr uint32_t kGravitySuitAncs = 0x27A97006; // Node1_11.ANCS
 constexpr uint32_t kVisorCmdl = 0x61DAB956;       // Node1_39_1.CMDL
 constexpr uint32_t kVisorAncs = 0x9F0C908A;       // Node1_39_1.ANCS
+constexpr uint32_t kBlueShieldCmdl = 0x0734977A; // blueShield_v1.CMDL
+constexpr uint32_t kBlueShieldVerticalCmdl = 0x18D0AEE6;
 
 uint32_t Get32(const std::vector<uint8_t>& data, size_t at) {
   return (uint32_t(data[at]) << 24) | (uint32_t(data[at + 1]) << 16) |
@@ -117,6 +119,41 @@ bool Build(uint32_t id, const DiscReader& read, Resource& out) {
     out.type = kTXTR;
     out.data = Embedded(kPhazonSuitTxtr2Data);
     return true;
+  case kDoorPowerHolorimTxtr:
+    out.type = kTXTR;
+    out.data = Embedded(kDoorPowerHolorimData);
+    return true;
+  case kDoorBombHolorimTxtr:
+    out.type = kTXTR;
+    out.data = Embedded(kDoorBombHolorimData);
+    return true;
+  case kDoorBombPatternTxtr:
+    out.type = kTXTR;
+    out.data = Embedded(kDoorBombPatternData);
+    return true;
+  case kDoorBombColorTxtr:
+    out.type = kTXTR;
+    out.data = Embedded(kDoorBombColorData);
+    return true;
+  // randomprime's create_custom_door_cmdl: the blue shield with another rim.
+  case kDoorPowerCmdl:
+    return discModel(kBlueShieldCmdl, {{0, kDoorPowerHolorimTxtr}});
+  case kDoorPowerCmdl + 1:
+    return discModel(kBlueShieldVerticalCmdl, {{0, kDoorPowerHolorimTxtr}});
+  case kDoorBombCmdl:
+    return discModel(kBlueShieldCmdl, {{0, kDoorBombHolorimTxtr}});
+  case kDoorBombCmdl + 1:
+    return discModel(kBlueShieldVerticalCmdl, {{0, kDoorBombHolorimTxtr}});
+  case kDoorMissileCmdl:
+    return discModel(kBlueShieldCmdl, {{0, 0x459582C1}});
+  case kDoorMissileCmdl + 1:
+    return discModel(kBlueShieldVerticalCmdl, {{0, 0x459582C1}});
+  case kDoorDisabledCmdl:
+    return discModel(kBlueShieldCmdl, {{0, 0x717AABCE}});
+  case kDoorDisabledCmdl + 1:
+    return discModel(kBlueShieldVerticalCmdl, {{0, 0x717AABCE}});
+  case kDoorPlasmaVerticalCmdl:
+    return discModel(kBlueShieldVerticalCmdl, {{0, 0x61A6945B}});
   case kNothingCmdl:
     return discModel(kMetroidCmdl, {{0, kNothingTxtr}, {1, kNothingTxtr}, {2, kNothingTxtr},
                                     {3, kNothingTxtr}, {4, kNothingTxtr}, {5, kNothingTxtr},
@@ -200,7 +237,7 @@ const Resource* Find(uint32_t id, const DiscReader& read) {
   if (!Build(id, read, *resource)) {
     // Unknown ids fail quietly (a randomprime disc's other custom assets are
     // found in its PAKs before this is asked); a known one means an odd disc.
-    if (id <= kCombatAncs)
+    if (id <= kCombatAncs || (id >= kDoorPowerHolorimTxtr && id <= kDoorPlasmaVerticalCmdl))
       PortLog::Write("custom resource %08X: disc source missing or unexpected\n", id);
     resource.reset();
   }
