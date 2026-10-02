@@ -57,7 +57,18 @@ const char* const kAnchor[][2] = {
 };
 const char* const kAlias[][2] = {
     {"group_energytank", "group_energytank0"},
+    // The map screen's "key / legend" prompt and the pane the game slides it on.
+    {"textpane_yicon", "textpane_togglelegend"},
+    {"basewidget_ybuttonpane", "basewidget_togglelegendpane"},
 };
+
+// The map screen. Remastered words its prompts as one line and keeps the
+// world map's off screen; the disc's code fills these three itself, so they
+// stay the disc's.
+constexpr uint32_t kMapScreen = 0x97FF54DE;
+constexpr double kPi = 3.14159265358979323846;
+const char* const kMapPrompt = "textpane_togglelegend";
+const char* const kMapDiscOnly[] = {"textpane_instructions", "textpane_right", "textpane_right1"};
 
 std::string Lower(std::string s) {
   for (char& c : s) {
@@ -272,6 +283,7 @@ void Pad32(Blob& out) { out.resize((out.size() + 31) & ~size_t(31)); }
 // Offsets into a text pane's type data.
 constexpr size_t kTextPaneSize = 74;
 constexpr size_t kTextPaneExtent = 66;
+constexpr size_t kTextPaneJustify = 26;
 constexpr size_t kModelSize = 12;
 
 struct Widget {
@@ -826,6 +838,7 @@ const std::vector<HudFrame>& HudFrames() {
   static const std::vector<HudFrame> frames = {
       {"FRME_CombatHud", 0xB10E1DCD}, {"FRME_ScanHud", 0xE47CD0DC}, {"FRME_ThermalHud", 0x143ACA19},
       {"FRME_XRayHudNew", 0x6493BB4F}, {"FRME_BallHud", 0xBF687554}, {"FRME_BaseHud", 0x2F972D0C},
+      {"FRME_MapScreen", 0x97FF54DE},
   };
   return frames;
 }
@@ -929,6 +942,71 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
       camera = int(i);
     }
   }
+  // The map screen's panes slide off screen by distances in the game's code,
+  // measured on the plane the disc's frame is drawn on. Remastered sets some
+  // widgets far behind that plane, so they are brought onto it, along the
+  // line of sight: the picture is the same and a slide moves it as far as
+  // its neighbours. The disc's own widgets keep their place on screen under
+  // the new camera.
+  const bool map = retailFrame == kMapScreen && camera >= 0;
+  double keep = 1.0;
+  if (map) {
+    const Mat eye = remWorld(size_t(camera));
+    const RemWidget& g = rem[size_t(camera)];
+    for (const Widget& w : disc) {
+      if (w.type == Tag('C', 'A', 'M', 'R') && w.typeData.size() >= 8 && Get32(w.typeData, 0) == 0 &&
+          g.projection == 0) {
+        const double was = -w.world.m[1][3] * std::tan(double(GetFloat(w.typeData, 4)) * kPi / 360.0);
+        const double now = -eye.m[1][3] * std::tan(double(g.camera[0]) * kPi / 360.0);
+        if (was > 1e-6 && now > 1e-6) {
+          keep = now / was;
+        }
+      }
+    }
+  }
+  auto meshBox = [&](size_t i, double* lo, double* hi) {
+    Part part;
+    if (rem[i].meshes.empty() || !MeshPart(model, rem[i].meshes[0], part) || part.positions.empty()) {
+      return false;
+    }
+    for (int c = 0; c < 3; ++c) {
+      lo[c] = hi[c] = part.positions[0][size_t(c)];
+      for (const auto& p : part.positions) {
+        lo[c] = std::min(lo[c], double(p[size_t(c)]));
+        hi[c] = std::max(hi[c], double(p[size_t(c)]));
+      }
+    }
+    return true;
+  };
+  auto place = [&](size_t i) {
+    Mat w = remWorld(i);
+    if (!map) {
+      return w;
+    }
+    const Mat eye = remWorld(size_t(camera));
+    // A model is where its mesh is, which may be far from its origin.
+    double at[3] = {0.0, 0.0, 0.0};
+    double lo[3], hi[3];
+    if (rem[i].type == kModel && meshBox(i, lo, hi)) {
+      for (int c = 0; c < 3; ++c) {
+        at[c] = 0.5 * (lo[c] + hi[c]);
+      }
+    }
+    const double depth = w.m[1][0] * at[0] + w.m[1][1] * at[1] + w.m[1][2] * at[2] + w.m[1][3] - eye.m[1][3];
+    // A panel goes a little behind the text it is a ground for: a frame draws
+    // back to front.
+    const double plane = -eye.m[1][3] + (rem[i].type == kModel ? 1.0 : 0.0);
+    if (depth <= 1e-6 || plane <= 1e-6) {
+      return w;
+    }
+    const double t = plane / depth;
+    Mat s = Identity();
+    for (int c = 0; c < 3; ++c) {
+      s.m[c][c] = t;
+      s.m[c][3] = eye.m[c][3] * (1.0 - t);
+    }
+    return Mul(s, w);
+  };
   std::vector<Widget> out;
   for (Widget w : disc) {
     std::string name = Lower(w.name);
@@ -937,7 +1015,63 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
         name = alias[1];
       }
     }
-    const auto found = remByName.find(name);
+    auto found = remByName.find(name);
+    if (map && found != remByName.end() &&
+        std::any_of(std::begin(kMapDiscOnly), std::end(kMapDiscOnly), [&](const char* n) { return name == n; })) {
+      newName[Lower(rem[found->second].name)] = w.name;
+      found = remByName.end();
+    }
+    if (map && found != remByName.end() && name == kMapPrompt && w.typeData.size() >= kTextPaneSize) {
+      // The legend's prompt: the disc's line of text, which is wider than
+      // the box Remastered has for its own, set from that box's left edge.
+      Mat s = Identity();
+      s.m[0][0] = s.m[2][2] = keep;
+      w.world = Mul(s, w.world);
+      const Mat there = place(found->second);
+      double lo[3], hi[3];
+      if (meshBox(found->second, lo, hi)) {
+        const double half = 0.5 * double(GetFloat(w.typeData, 0)) * AxisLength(w.world, 0);
+        const double halfThere = 0.5 * (hi[0] - lo[0]) * AxisLength(there, 0);
+        double from[3], to[3];
+        for (int c = 0; c < 3; ++c) {
+          from[c] = w.world.m[c][3];
+          to[c] = there.m[c][3];
+          for (int k = 0; k < 3; ++k) {
+            from[c] += w.world.m[c][k] * double(GetFloat(w.typeData, 8 + size_t(k) * 4));
+            to[c] += there.m[c][k] * 0.5 * (lo[k] + hi[k]);
+          }
+        }
+        double left = to[0] - halfThere;
+        // No further right than the legend above it: the disc's line is
+        // longer than Remastered's and would run under the Exit prompt.
+        const auto legend = remByName.find("textpane_maplegend");
+        double llo[3], lhi[3];
+        if (legend != remByName.end() && meshBox(legend->second, llo, lhi)) {
+          const Mat lm = place(legend->second);
+          double centre = lm.m[0][3];
+          for (int k = 0; k < 3; ++k) {
+            centre += lm.m[0][k] * 0.5 * (llo[k] + lhi[k]);
+          }
+          left = std::min(left, centre - 0.5 * (lhi[0] - llo[0]) * AxisLength(lm, 0));
+        }
+        w.world.m[0][3] += left - (from[0] - half);
+        // From the left, where the disc centres the line on its box and lets
+        // it run over both edges; the box grows to the right to hold it.
+        Set32(w.typeData, kTextPaneJustify, 0);
+        const float wide = GetFloat(w.typeData, 0);
+        SetFloat(w.typeData, 0, wide * 1.5f);
+        SetFloat(w.typeData, 8, GetFloat(w.typeData, 8) + wide * 0.25f);
+        SetFloat(w.typeData, kTextPaneExtent, std::nearbyint(GetFloat(w.typeData, kTextPaneExtent) * 1.5f));
+        w.world.m[1][3] += to[1] - from[1];
+        w.world.m[2][3] += to[2] - from[2];
+      }
+      newName[Lower(rem[found->second].name)] = w.name;
+      found = remByName.end();
+    } else if (found == remByName.end() && map && w.type == Tag('T', 'X', 'P', 'N')) {
+      Mat s = Identity();
+      s.m[0][0] = s.m[2][2] = keep;
+      w.world = Mul(s, w.world);
+    }
     if (found != remByName.end()) {
       w.guif = int(found->second);
       newName[Lower(rem[found->second].name)] = w.name;
@@ -948,7 +1082,7 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
       case Tag('M', 'E', 'T', 'R'):
       case Tag('M', 'O', 'D', 'L'):
       case Tag('T', 'X', 'P', 'N'):
-        w.world = remWorld(found->second);
+        w.world = place(found->second);
         break;
       default:
         break;
@@ -998,8 +1132,16 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
     if (g.parent == 0 || parent == remByIndex.end()) {
       continue;
     }
-    if (rem[parent->second].type == kTextPane) {
-      continue;  // shown with its text pane's string; nothing here drives it
+    // What a text pane holds is shown with its string, and nothing here
+    // drives it. The map legend's panel is the exception: it is drawn before
+    // the legend, under the pane that slides both.
+    size_t over = parent->second;
+    if (rem[over].type == kTextPane) {
+      const auto pane = remByIndex.find(rem[over].parent);
+      if (!map || g.type != kModel || pane == remByIndex.end()) {
+        continue;
+      }
+      over = pane->second;
     }
     if (newName.count(name) != 0 || g.variant > 1 || EndsWith(name, "_jp") || EndsWith(name, "_ck") ||
         std::any_of(std::begin(kSkip), std::end(kSkip), [&](const char* skip) { return name == skip; })) {
@@ -1012,7 +1154,7 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
     if (g.type == kModel && g.color[3] == 0.0f) {
       continue;  // a damage flash: the game's code for it is not the disc's
     }
-    const auto under = newName.find(Lower(rem[parent->second].name));
+    const auto under = newName.find(Lower(rem[over].name));
     if (under == newName.end()) {
       log("no parent for " + g.name);
       continue;
@@ -1026,7 +1168,7 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
     w.flags[2] = g.flags[1];
     std::memcpy(w.color, g.color, sizeof(w.color));
     w.draw = g.draw;
-    w.world = remWorld(i);
+    w.world = place(i);
     std::memcpy(w.tail, pattern.tail, sizeof(w.tail));
     w.guif = int(i);
     w.added = true;
@@ -1038,6 +1180,15 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
       if (out[k].name == w.parent || out[k].parent == w.parent) {
         at = k + 1;
         break;
+      }
+    }
+    if (map && g.type == kModel && rem[over].type != kHeadWidget) {
+      // A pane's panel goes behind the text of the pane.
+      for (size_t k = 0; k < out.size(); ++k) {
+        if (out[k].name == w.parent) {
+          at = k + 1;
+          break;
+        }
       }
     }
     out.insert(out.begin() + long(at), std::move(w));

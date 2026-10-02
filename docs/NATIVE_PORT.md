@@ -577,7 +577,11 @@ there, and the models and pictures Remastered added are placed under their
 parents. Each frame is written as `<id>.FRME` with its models (`.CMDL`), its
 pictures (a small `.TXTR` and, above 64 px, a `.dds`) and, for the energy,
 missile and threat bars, a `.hudbars`. `MP_REMASTERED_HUD=0` leaves the HUD
-out. Experimental: the pause, map and message screens are still the disc's.
+out. The map screen comes too, with one difference: Remastered lays it out for
+a wider view and shows fewer prompts, so its legend, area name and hint are
+set from Remastered on the disc's plane, and the prompts it lacks keep the
+disc's places. Experimental: the pause and message screens are still the
+disc's, as are the map's rooms, icons and compass.
 
 The menu movies come along too, into the mod's `Video` folder under the disc's
 names: the title, the file select and its transitions, and four of the attract
