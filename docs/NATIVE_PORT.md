@@ -557,12 +557,14 @@ baked ambient grid. A grid of more than about a million points is stored at
 half resolution, which keeps every file under 25 MB. A world that can't be
 read is reported and skipped; the models are installed all the same.
 
-With `MP_REMASTERED_GEOMETRY=all` (or a comma-separated list of room names)
-the import also writes the rooms' static geometry: every model a room places,
+With "Room geometry too" ticked in the panel (it is by default; there is no
+such box on Android), or `MP_REMASTERED_GEOMETRY=all` (or a comma-separated
+list of room names, or `none`) for the command line and the console, the
+import also writes the rooms' static geometry: every model a room places,
 converted as above with textures capped at 1024 px, and a `.roomgeo` per
-area, in the mod's `roomgeo` folder. Experimental and off by default: the
-full set is 7675 models and 4.4 GB, the rooms have no baked lighting, and
-blended materials are drawn opaque.
+area, in the mod's `roomgeo` folder. Experimental: the full set is about
+8,500 models and brings the mod from 1 GB to 6.5 GB, and the game has to be
+restarted to draw it.
 
 The import also writes Remastered's typeface as `font/deface.sdfont` (see above): the
 FONT asset with the most characters, its first face.

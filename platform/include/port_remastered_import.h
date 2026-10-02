@@ -46,6 +46,9 @@ bool StartImport(const std::string& nspPath, const std::string& keysPath, int th
 // import made: for a player who had no ffmpeg then. Same state and cancelling;
 // false when one is running or there is no such mod.
 bool StartMovieImport(const std::string& nspPath, const std::string& keysPath);
+// Whether the next import also converts the rooms themselves (five times the
+// size and twice the time). MP_REMASTERED_GEOMETRY, when set, decides instead.
+void SetImportGeometry(bool on);
 ImportState ImportStatus();
 // Asks the running import to stop; it ends at the next model.
 void CancelImport();

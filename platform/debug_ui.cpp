@@ -2811,6 +2811,14 @@ void DrawRemasteredImport() {
   if (ImGui::Button("Browse...##remastered-keys")) {
     OpenRemasteredDialog(1);
   }
+  // A phone has neither the storage nor the memory for the rooms.
+  static bool sGeometry = true;
+  ImGui::Checkbox("Room geometry too##remastered", &sGeometry);
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    ImGui::SetTooltip("Also converts the rooms themselves, not only the models in them. About 6.5 GB in place of "
+                      "1 GB, and twice as long. Restart the game afterwards.");
+  }
+  PortRemastered::SetImportGeometry(sGeometry);
 #endif
   ImGui::EndDisabled();
   if (state.running) {

@@ -61,14 +61,20 @@ constexpr const char* kMovieFolder = "Video";
 constexpr int kGeometryTexture = 1024;
 
 // The rooms whose geometry is imported, from MP_REMASTERED_GEOMETRY: "all", or
-// room names (any part of one) separated by commas. None without it, the
-// port's drawing of room geometry being unfinished.
+// room names (any part of one) separated by commas, or "none". Without it,
+// what SetImportGeometry() last said: none, the port's drawing of room
+// geometry being unfinished.
+std::atomic<bool> sGeometry{false};
+
 bool WantsGeometry(const std::string& room) {
   const char* env = std::getenv("MP_REMASTERED_GEOMETRY");
   if (env == nullptr || env[0] == '\0') {
-    return false;
+    return sGeometry.load();
   }
   const std::string list = env;
+  if (list == "none") {
+    return false;
+  }
   if (list == "all") {
     return true;
   }
@@ -997,6 +1003,8 @@ bool StartImport(const std::string& nspPath, const std::string& keysPath, int th
   sThread = std::thread(Run, nspPath, keysPath, threads, staging);
   return true;
 }
+
+void SetImportGeometry(bool on) { sGeometry = on; }
 
 ImportState ImportStatus() {
   std::lock_guard<std::mutex> lock(sStateMutex);
