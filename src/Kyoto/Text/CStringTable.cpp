@@ -8,7 +8,12 @@
 #endif
 
 #ifdef TARGET_PC
+#include "port_apclient.h"
+#include "port_custom_res.h"
 #include "port_hints.h"
+
+#include <string>
+#include <vector>
 #endif
 
 #include <rstl/pair.hpp>
@@ -129,6 +134,15 @@ void CStringTable::PortSetString(int idx, const unsigned short* text, int length
   mNativeStrings[idx] = native;
 }
 
+void CStringTable::PortSetCount(int count) {
+  mNativeStrings.clear();
+  mNativeStrings.reserve(count);
+  for (int i = 0; i < count; ++i) {
+    mNativeStrings.push_back(rstl::vector< wchar_t >(1, L'\0'));
+  }
+  x0_stringCount = count;
+}
+
 void CStringTable::PortWatch(uint strgId) {
   mPortWatchedId = strgId;
   PortRefreshWatched();
@@ -155,6 +169,17 @@ const CFactoryFnReturn FStringTableFactory(const SObjectTag& tag, CInputStream& 
   // and a randomized pickup's scan what it holds.
   if (PortHints::IsWatched(tag.GetId())) {
     table->PortWatch(tag.GetId());
+  }
+  // An Archipelago seed's elevator texts and temple objective.
+  std::vector< std::string > seedStrings;
+  if (PortAp::SeedStrings(tag.GetId(), seedStrings)) {
+    table->PortSetCount(static_cast< int >(seedStrings.size()));
+    for (size_t i = 0; i < seedStrings.size(); ++i) {
+      const std::u16string text = PortCustomRes::Utf16(seedStrings[i]);
+      table->PortSetString(static_cast< int >(i),
+                           reinterpret_cast< const unsigned short* >(text.data()),
+                           static_cast< int >(text.size()));
+    }
   }
   return table;
 #else

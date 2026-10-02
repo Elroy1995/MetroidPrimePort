@@ -59,12 +59,16 @@ def elevators(path):
     text = text[text.index("decl_elevators! {"):text.index("macro_rules! decl_spawn_rooms")]
     out = []
     for m in re.finditer(
-            r'pak_name: "([^"]+)",\s*name: "[^"]*",(?:[ \t]*// "([^"\n]+)"?[^\n]*)?\s*mlvl: 0x([0-9a-fA-F]+),'
-            r'\s*mrea: 0x([0-9a-fA-F]+),\s*mrea_idx: \d+,\s*scly_id: 0x([0-9a-fA-F]+)', text):
-        if m.group(2) is None:
+            r'pak_name: "([^"]+)",\s*name: "([^"]*)",(?:[ \t]*// "([^"\n]+)"?[^\n]*)?\s*mlvl: 0x([0-9a-fA-F]+),'
+            r'\s*mrea: 0x([0-9a-fA-F]+),\s*mrea_idx: \d+,\s*scly_id: 0x([0-9a-fA-F]+),'
+            r'\s*room_id: 0x[0-9a-fA-F]+,\s*room_strg: 0x([0-9a-fA-F]+),'
+            r'\s*hologram_strg: 0x([0-9a-fA-F]+),\s*control_strg: 0x([0-9a-fA-F]+)', text):
+        if m.group(3) is None:
             continue  # the Crater's and the frigate's: not in any mapping
-        out.append((m.group(1).lower(), m.group(2), int(m.group(3), 16), int(m.group(4), 16),
-                    int(m.group(5), 16)))
+        # randomprime's own name for the room, its two lines split by a NUL.
+        shown = m.group(2).replace("\\0", "\\n")
+        out.append((m.group(1).lower(), m.group(3), int(m.group(4), 16), int(m.group(5), 16),
+                    int(m.group(6), 16), shown, [int(m.group(i), 16) for i in (7, 8, 9)]))
     return out
 
 
@@ -217,15 +221,17 @@ def main():
         for name, mrea, mapa in by_pak[pak]:
             lines.append('    {%d, 0x%08X, 0x%08X, 0x%08X, "%s"},' % (index, mlvl, mrea, mapa, name))
             count += 1
-    lines += ["};", "", "// The apworld's name, area index, MLVL, MREA, WorldTransporter id.",
+    lines += ["};", "", "// The apworld's name, area index, MLVL, MREA, WorldTransporter id,",
+              "// randomprime's name, and the STRGs of the room's scan, hologram and",
+              "// control messages.",
               "const Elevator kElevators[] = {"]
     found = elevators(os.path.join(src, "src", "elevators.rs"))
-    names = [name for _, name, _, _, _ in found]
-    for pak, name, mlvl, mrea, scly in found:
+    names = [entry[1] for entry in found]
+    for pak, name, mlvl, mrea, scly, shown, strgs in found:
         if names.count(name) > 1:
             name = "%s: %s" % (area_of[pak], name)
-        lines.append('    {"%s", %d, 0x%08X, 0x%08X, 0x%08X},' % (
-            name, [p for p, _, _ in PAKS].index(pak), mlvl, mrea, scly))
+        lines.append('    {"%s", %d, 0x%08X, 0x%08X, 0x%08X, "%s",\n     {0x%08X, 0x%08X, 0x%08X}},' % (
+            name, [p for p, _, _ in PAKS].index(pak), mlvl, mrea, scly, shown, *strgs))
     lines.append("};")
     doors = door_lines(src, apworld, by_pak)
     lines += doors

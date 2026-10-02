@@ -1695,6 +1695,15 @@ bool WarpToStart(uint32_t& world, uint32_t& area) {
   }
 }
 
+bool SeedStrings(uint32_t strg, std::vector< std::string >& out) {
+  try {
+    PortApWorld::Layout layout;
+    return SeedLayout(layout) && PortApWorld::Strings(layout, strg, out);
+  } catch (...) {
+    return false;
+  }
+}
+
 bool SeedGivesStartItems() {
   try {
     PortApWorld::Layout layout;

@@ -81,6 +81,13 @@ bool StartRoom(const Layout& layout, Place& out);
 bool TeleporterDestination(const Layout& layout, uint32_t mlvl, uint32_t editorId,
                            const Place& retail, Place& out);
 
+// The strings the seed gives the string table `strg`, in place of the disc's
+// (UTF-8, in the game's text markup): an elevator room's scan, hologram and
+// control messages name where it leads (randomprime's patch_elevators), and
+// the Temple Security Station's objective says what the seed asks for (the
+// apworld's get_strg). False for any other table.
+bool Strings(const Layout& layout, uint32_t strg, std::vector< std::string >& out);
+
 // The seed has no Meta Ridley fight: the temple opens its portal as soon as
 // the artifacts are counted.
 bool SkipsRidley(const Layout& layout);

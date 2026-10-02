@@ -1118,7 +1118,27 @@ int main() {
     Check(!PortApWorld::TeleporterDestination(layout, 0x39F2DE28u, 0x00100001u, crater, dest),
           "with both bosses the temple portal is the disc's");
 
-    // The temple's script: untouched for 12 artifacts and both bosses.
+    // The texts: "Transport to Chozo Ruins West" leads to the Root Cave elevator.
+    std::vector< std::string > strings;
+    Check(PortApWorld::Strings(layout, 0x9EE2172Au, strings) && strings.size() == 1 &&
+              strings[0] == "Transport to Tallon Overworld West\n(Root Cave)",
+          "an elevator room's scan names where it leads");
+    Check(PortApWorld::Strings(layout, 0x04685AE9u, strings) && strings.size() == 1 &&
+              strings[0] == "Access to &main-color=#FF3333;Tallon Overworld West (Root Cave) "
+                            "&main-color=#89D6FF;granted. Please step into the hologram.",
+          "its hologram message too, on one line");
+    Check(PortApWorld::Strings(layout, 0x73A833EBu, strings) && strings.size() == 1 &&
+              strings[0] == "Transport to &main-color=#FF3333;Tallon Overworld West (Root Cave)"
+                            "&main-color=#89D6FF; active.",
+          "and its control message");
+    Check(!PortApWorld::Strings(layout, 0x12345678u, strings), "other tables are the disc's");
+    Check(PortApWorld::Strings(layout, 0xB389B6D6u, strings) && strings.size() == 3 &&
+              strings[2] == "Current Mission: Retrieve " +
+                                std::to_string(layout.requiredArtifacts) + " Chozo Artifact" +
+                                (layout.requiredArtifacts != 1 ? "s" : "") +
+                                "\nDefeat Meta Ridley\nDefeat Metroid Prime",
+          "the temple's objective says what the seed asks for");
+
     Check(PortApWorld::TempleOps(layout).empty() && !PortApWorld::SkipsRidley(layout),
           "a retail temple needs no patch");
     layout.requiredArtifacts = 5;

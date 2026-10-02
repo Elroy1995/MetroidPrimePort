@@ -166,6 +166,11 @@ bool NewGameStart(uint32_t& world, uint32_t& area);
 // world's first). False without a seed layout.
 bool WarpToStart(uint32_t& world, uint32_t& area);
 
+// The strings the seed gives the string table `strg` in place of the disc's
+// (UTF-8): elevator texts and the temple's objective. False for any other
+// table, and without a seed layout.
+bool SeedStrings(uint32_t strg, std::vector< std::string >& out);
+
 // The seed's layout is known, so the server hands out everything Samus starts
 // with (the starting beam, the Scan Visor unless shuffled, the start room's
 // loadout) and a spawn point gives only the Combat Visor and Power Suit.

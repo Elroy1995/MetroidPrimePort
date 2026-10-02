@@ -29,6 +29,8 @@ struct Elevator {
   uint32_t mlvl;
   uint32_t mrea;
   uint32_t editorId;
+  const char* shown;
+  uint32_t strgs[3];
 };
 
 struct Door {
@@ -397,6 +399,49 @@ bool TeleporterDestination(const Layout& layout, uint32_t mlvl, uint32_t editorI
     out.mlvl = target->mlvl;
     out.mrea = target->mrea;
     return out.mlvl != retail.mlvl || out.mrea != retail.mrea;
+  }
+  return false;
+}
+
+bool Strings(const Layout& layout, uint32_t strg, std::vector< std::string >& out) {
+  // The Temple Security Station's objective scan (the apworld's get_strg).
+  if (strg == 0xB389B6D6) {
+    std::string objective = "Current Mission: Retrieve " + std::to_string(layout.requiredArtifacts) +
+                            " Chozo Artifact" + (layout.requiredArtifacts != 1 ? "s" : "");
+    if (layout.finalBosses == 0 || layout.finalBosses == 1)
+      objective += "\nDefeat Meta Ridley";
+    if (layout.finalBosses == 0 || layout.finalBosses == 2)
+      objective += "\nDefeat Metroid Prime";
+    out = {"Objective data decoded\n", "Mission Objectives", objective};
+    return true;
+  }
+  for (const Elevator& elevator : kElevators) {
+    int kind = 0;
+    while (kind < 3 && elevator.strgs[kind] != strg)
+      ++kind;
+    if (kind == 3)
+      continue;
+    const auto area = layout.elevators.find(kAreas[elevator.area]);
+    if (area == layout.elevators.end())
+      return false;
+    const auto entry = area->second.find(elevator.name);
+    if (entry == area->second.end())
+      return false;
+    const Elevator* target = FindElevator(entry->second);
+    if (target == nullptr)
+      return false;
+    // The room's scan keeps the name's two lines; the messages have it on one.
+    std::string name = target->shown;
+    if (kind != 0)
+      std::replace(name.begin(), name.end(), '\n', ' ');
+    if (kind == 0)
+      out = {"Transport to " + name};
+    else if (kind == 1)
+      out = {"Access to &main-color=#FF3333;" + name +
+             " &main-color=#89D6FF;granted. Please step into the hologram."};
+    else
+      out = {"Transport to &main-color=#FF3333;" + name + "&main-color=#89D6FF; active."};
+    return true;
   }
   return false;
 }
