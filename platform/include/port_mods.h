@@ -172,6 +172,11 @@ size_t NativeTextureCount();
 size_t NativeTexturesBound();
 // The <MREA id>.roomenv a mod supplies for an area (port_room_env.h); empty when none.
 std::string RoomEnvPath(uint32_t mrea);
+// The <MREA id>.roomgeo a mod supplies for an area (port_room_geo.h); empty when none.
+std::string RoomGeoPath(uint32_t mrea);
+// Whether any mod folder holds room geometry. Reads the disk, and needs no Initialize:
+// the frame buffers are sized from it before there is a renderer.
+bool HasRoomGeometry();
 
 // Folder names the settings disable, '/'-separated (no folder name has one).
 std::vector<std::string> SplitDisabled(const std::string& list);

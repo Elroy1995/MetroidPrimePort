@@ -33,6 +33,11 @@ namespace PortRemastered {
 
 struct ConvertOptions {
   uint32_t retail = 0;  // CMDL id the model replaces
+  // The model replaces nothing (a piece of room geometry): `retail` is only the
+  // id it is written under, and every surface gets one opaque lit PBR material.
+  // Surfaces with no base map are dropped, having no retail material to keep.
+  bool standalone = false;
+  int nativeMax = 0;  // largest edge of a native .dds, 0 for the converter's own
   // gc = orient * remastered + offset. The default is Remastered's y-up frame
   // onto the GameCube's z-up one.
   double orient[3][3] = {{-1.0, 0.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 1.0, 0.0}};
@@ -66,6 +71,10 @@ struct ConvertIO {
   // The top mip of a Remastered texture as RGBA8. The id is in a pak's byte
   // order (what IdToString prints), not the order a model stores it in.
   std::function<bool(const ModelUuid& id, Image& out, std::string& error)> texture;
+  // Optional, for converters that run side by side into one folder: asked once
+  // for each PBR map a converter is about to write, by the id it will have;
+  // false when another converter has taken it, and this one then only names it.
+  std::function<bool(uint32_t id)> claim;
   // Stores one output file: "<ID>.CMDL", "<ID>.CSKR", "<ID>.TXTR", "<ID>.dds".
   std::function<bool(const std::string& name, const std::vector<uint8_t>& data)> write;
   std::function<void(const std::string& line)> log;  // optional

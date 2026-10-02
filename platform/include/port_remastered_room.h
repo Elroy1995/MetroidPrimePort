@@ -16,6 +16,7 @@
 // port_remastered_convert.h: the retail resources come through RoomIO, the
 // Remastered ones from the paks the caller opened.
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -29,8 +30,17 @@ struct RoomIO {
   // A retail (GameCube) resource by FourCC type ('MLVL', 'MREA') and id, from
   // the unmodded disc, in the decompressed form the game's own loader sees.
   std::function<bool(uint32_t type, uint32_t id, std::vector<uint8_t>& out)> retail;
-  // Stores one output file, "<MREA id as 8 upper case hex>.roomenv".
+  // Stores one output file, "<MREA id as 8 upper case hex>.roomenv" or ".roomgeo".
   std::function<bool(const std::string& name, const std::vector<uint8_t>& data)> write;
+  // Optional; with it each room's static geometry is written too, as
+  // "<MREA id>.roomgeo" (read by port_room_geo.h). Converts one Remastered model,
+  // named by its id in a pak's byte order, into a GameCube CMDL and gives that
+  // CMDL's id; false leaves the model out. It is asked once per model and room,
+  // so the caller remembers what it has converted. These files are not counted
+  // in `written`.
+  std::function<bool(const std::array<uint8_t, 16>& model, uint32_t& cmdl)> model;
+  // Optional: the rooms (by pak name) to write geometry for; all of them without.
+  std::function<bool(const std::string& room)> wantsGeometry;
   std::function<void(const std::string& line)> log;  // optional
   std::function<bool()> cancelled;                   // optional; asked before each room
 };

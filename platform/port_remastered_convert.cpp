@@ -899,7 +899,7 @@ struct Converter::State {
       alpha = k == kNormal ? "rgba" : "none";
       cap = kPbrMax[k];
       if (src) {
-        ncap = kPbrNative[k];
+        ncap = opt.nativeMax > 0 ? std::min(kPbrNative[k], opt.nativeMax) : kPbrNative[k];
         cap = std::min(cap, kPbrStub[k]);
       }
     } else if (alpha == "full") {
@@ -925,6 +925,10 @@ struct Converter::State {
     }
     owner[tid] = tag;
     ids[tag] = tid;
+    // A PBR map's id is its tag's alone, so whoever wrote it wrote the same file.
+    if (k >= 0 && io.claim && !io.claim(tid)) {
+      return tid;
+    }
     const std::string name = Hex8(tid);
     if (!src) {
       const unsigned long rgb = std::strtoul(tag.substr(6, 6).c_str(), nullptr, 16);
@@ -1467,10 +1471,24 @@ void SurfaceHeader(Blob& s, const double* centre, uint32_t mat, size_t dlSize, u
 
 void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   Retail retail;
-  if (!io.retail(FourCC('C', 'M', 'D', 'L'), opt.retail, retail.data)) {
-    throw Fail{"retail model " + Hex8(opt.retail) + " is not on the disc"};
+  if (opt.standalone) {
+    // What retail's own opaque lit world materials carry (measured over every
+    // retail CMDL: flags 0x1083 and one channel word 0x3001 are the common case).
+    retail.nmat = 1;
+    retail.flags = 0x4;  // the packed texcoord section is there, empty
+    RetailMaterial lit;
+    lit.flags = 0x1083;
+    lit.vtx = 0xF;  // position and normal; the texcoord slots follow the model
+    lit.blendSrc = 1;
+    lit.blendDst = 0;
+    lit.chans = {0x3001};
+    retail.mats.push_back(lit);
+  } else {
+    if (!io.retail(FourCC('C', 'M', 'D', 'L'), opt.retail, retail.data)) {
+      throw Fail{"retail model " + Hex8(opt.retail) + " is not on the disc"};
+    }
+    retail.Parse();
   }
-  retail.Parse();
 
   const double (*M)[3] = opt.orient;
   const double det = M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
@@ -1495,7 +1513,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     for (const std::string& s : opt.skip) {
       skip = skip || name.find(s) != std::string::npos;
     }
-    if (skip) {
+    if (skip || (opt.standalone && !mats[mesh.material].maps[kBase].has)) {
       continue;
     }
     Buffer& b = buffers[mesh.vertexBuffer];
@@ -1570,6 +1588,10 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     }
   }
   for (Prim& p : prims) {
+    if (opt.standalone) {
+      p.rmat = 0;
+      continue;
+    }
     if (opt.material >= 0) {
       if (size_t(opt.material) >= retail.mats.size()) {
         throw Fail{"the forced retail material does not exist"};
@@ -1637,6 +1659,12 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     n += b.n;
     maxuv = std::max(maxuv, b.uv.size() - 1);
     skinned = skinned && b.skinned;
+  }
+  if (opt.standalone) {
+    // A texcoord slot for every set, so each map keeps the one it was made on.
+    for (size_t k = 0; k <= std::min<size_t>(maxuv, 7); ++k) {
+      retail.mats[0].vtx |= 3u << (8 + 2 * k);
+    }
   }
   std::vector<double> P, N;
   P.reserve(n * 3);
@@ -2283,7 +2311,7 @@ Converter::Converter(ConvertIO io) : m_state(new State) { m_state->io = std::mov
 Converter::~Converter() { delete m_state; }
 
 bool Converter::Convert(const Model& model, const ConvertOptions& options, std::string& error) {
-  if (!m_state->io.retail || !m_state->io.texture || !m_state->io.write) {
+  if ((!m_state->io.retail && !options.standalone) || !m_state->io.texture || !m_state->io.write) {
     error = "the converter has no way to read or write";
     return false;
   }

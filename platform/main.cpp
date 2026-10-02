@@ -21,6 +21,7 @@
 #include "port_build_info.h"
 #include "port_log.h"
 #include "port_mods.h"
+#include "port_room_geo.h"
 #include "port_importers.h"
 #include "port_remastered_import.h"
 
@@ -470,13 +471,30 @@ int main(int argc, char** argv) {
     // CGameAllocator heap, so a very heavy mod model stops running it out of room.
     // Unset, 0 or anything below the default keeps 24 MB; capped at 1 GB so the
     // byte count stays in AuroraConfig's u32. It costs host memory, not GPU memory.
+    //
+    // A mod with room geometry draws several times what the game's own rooms do, so
+    // with one installed the arena starts at kRoomGeoMem1MB and a frame's buffers at
+    // kRoomGeoFrameBuffers times their size. MP_FRAME_BUFFERS=<n> sets that scale itself.
+    const unsigned long kRoomGeoMem1MB = 256;
+    const unsigned long kRoomGeoFrameBuffers = 12;
+    const bool roomGeometry = PortMods::HasRoomGeometry();
     uint32_t mem1Size = MEM1_DEFAULT_SIZE;
-    if (const char* e = std::getenv("MP_MEM1_MB")) {
-        const unsigned long mb = std::strtoul(e, nullptr, 10);
+    {
+        const char* e = std::getenv("MP_MEM1_MB");
+        const unsigned long mb = e != nullptr ? std::strtoul(e, nullptr, 10) : roomGeometry ? kRoomGeoMem1MB : 0;
         if (mb > MEM1_DEFAULT_SIZE / (1024 * 1024)) {
             mem1Size = static_cast<uint32_t>(std::min(mb, 1024UL) * 1024 * 1024);
-            PortLog::Write("port: MEM1 arena raised to %u MB (MP_MEM1_MB)\n", mem1Size / (1024 * 1024));
+            PortLog::Write("port: MEM1 arena raised to %u MB (%s)\n", mem1Size / (1024 * 1024),
+                           e != nullptr ? "MP_MEM1_MB" : "room geometry");
         }
+    }
+    uint32_t frameBufferScale = roomGeometry ? kRoomGeoFrameBuffers : 1;
+    if (const char* e = std::getenv("MP_FRAME_BUFFERS")) {
+        frameBufferScale = static_cast<uint32_t>(std::clamp(std::strtoul(e, nullptr, 10), 1UL, 16UL));
+    }
+    if (frameBufferScale > 1) {
+        PortLog::Write("port: frame buffers at %ux (%s)\n", frameBufferScale,
+                       std::getenv("MP_FRAME_BUFFERS") != nullptr ? "MP_FRAME_BUFFERS" : "room geometry");
     }
     AuroraConfig config = {
         .appName = "Metroid Prime",
@@ -492,6 +510,7 @@ int main(int argc, char** argv) {
         .windowHeight = 480,
         .mem1Size = mem1Size,
         .mem2Size = ARAM_DEFAULT_SIZE,
+        .frameBufferScale = frameBufferScale,
     };
 #if !defined(__ANDROID__)
     // The window icon, for a bare binary that no desktop entry describes.
@@ -545,6 +564,11 @@ int main(int argc, char** argv) {
         }
     }
     aurora_initialize(argc, argv, &config);
+    // From what the device gave, which can be less than was asked for.
+    if (aurora_get_frame_buffer_scale() != frameBufferScale) {
+        PortLog::Write("port: frame buffers at %ux, all this device allows\n", aurora_get_frame_buffer_scale());
+    }
+    PortRoomGeo::SetBuffersReady(aurora_get_frame_buffer_scale() > 1);
     // Apply the persisted render scale. Vsync is applied on the first drawn
     // frame (once the swapchain surface exists) so it uses real capabilities.
     VISetFrameBufferScale(PortDebug::RenderScale());

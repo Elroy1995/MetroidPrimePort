@@ -29,6 +29,8 @@ typedef struct {
 } AuroraStats;
 
 const AuroraStats* aurora_get_stats();
+// The AuroraConfig::frameBufferScale in use: the device may allow less than was asked for.
+uint32_t aurora_get_frame_buffer_scale();
 float aurora_get_fps();
 
 void aurora_enable_vsync(bool enabled);

@@ -35,6 +35,7 @@ constexpr uint32_t kTonemap = 0xddea916d;
 constexpr uint32_t kReflectionProbe = 0x27807e39;
 constexpr uint32_t kAutoExposureHint = 0x98694074;
 constexpr uint32_t kDoorMP1 = 0x564a1641;
+constexpr uint32_t kModCon = 0x451740eb;
 
 // Property ids.
 constexpr uint32_t kPropRoomId = 0x30a4d63d;
@@ -44,6 +45,7 @@ constexpr uint32_t kPropTonemap[4] = {0x44a2e298, 0x34bb937d, 0x49ee7747, 0x2951
 constexpr uint32_t kPropHintMin = 0x682f8a1f;
 constexpr uint32_t kPropHintMax = 0x839d334c;
 constexpr uint32_t kPropHintMode = 0x590d6843;
+constexpr uint32_t kPropModConMcon = 0xa8e2ba93;
 
 constexpr size_t kMaxChunks = 1u << 20;
 constexpr size_t kMaxVolumeFloats = size_t(1) << 28;
@@ -621,6 +623,8 @@ private:
   void Exposure(const RoomData& r, float out[2]) const;
   bool Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>& check, std::vector<uint8_t>& out,
             std::string& note) const;
+  // The room's static geometry (its ModCon components), as "<MREA id>.roomgeo".
+  void WriteGeometry(const RoomData& r, uint32_t mrea);
   std::string WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
                         const float tonemap[4], int& written, std::string& matched);
 
@@ -1095,6 +1099,148 @@ bool Writer::Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>&
   return true;
 }
 
+// An MCON's instances: instance i draws models[index[i]] at transforms[i], twelve
+// floats that are the rows of a 3x4 matrix in the room's own frame.
+struct Mcon {
+  std::vector<Id16> models;  // in a pak's byte order
+  std::vector<uint16_t> index;
+  const uint8_t* transforms = nullptr;
+};
+
+bool ReadMcon(const std::vector<uint8_t>& d, Mcon& out) {
+  if (d.size() < 32 || Be32(&d[0]) != Tag("RFRM") || Le64(&d[4]) > d.size() - 32) {
+    return false;
+  }
+  const size_t end = 32 + size_t(Le64(&d[4]));
+  for (size_t o = 32; o + 24 <= end && Be32(&d[o]) != Tag("PEEK");) {
+    const uint64_t size = Le64(&d[o + 4]);
+    const size_t start = o + 24;
+    if (size > end - start) {
+      return false;
+    }
+    if (Be32(&d[o]) == Tag("MCVD")) {
+      size_t p = start;
+      const size_t stop = start + size_t(size);
+      // A counted vector of `width` byte items; null when it runs past the chunk.
+      auto vec = [&](size_t width, size_t& count) -> const uint8_t* {
+        if (stop - p < 4) {
+          return nullptr;
+        }
+        count = Le32(&d[p]);
+        p += 4;
+        if (count > (stop - p) / width) {
+          return nullptr;
+        }
+        const uint8_t* at = d.data() + p;
+        p += count * width;
+        return at;
+      };
+      size_t models = 0, other = 0, transforms = 0, indices = 0;
+      const uint8_t* m = vec(16, models);
+      // Then ids, colours, the instance transforms, object transforms and a byte each.
+      if (m == nullptr || vec(16, other) == nullptr || vec(16, other) == nullptr) {
+        return false;
+      }
+      out.transforms = vec(48, transforms);
+      if (out.transforms == nullptr || vec(64, other) == nullptr || vec(1, other) == nullptr) {
+        return false;
+      }
+      const uint8_t* ix = vec(2, indices);
+      if (ix == nullptr || indices != transforms) {
+        return false;
+      }
+      for (size_t i = 0; i < models; ++i) {
+        out.models.push_back(SwapUuid(m + 16 * i));
+      }
+      for (size_t i = 0; i < indices; ++i) {
+        out.index.push_back(Le16(ix + 2 * i));
+      }
+      return true;
+    }
+    o = start + size_t(size);
+  }
+  return false;
+}
+
+void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
+  if (!m_io.model || (m_io.wantsGeometry && !m_io.wantsGeometry(r.name))) {
+    return;
+  }
+  // kR2G as a signed permutation: gc[i] = kSign[i] * remastered[kAxis[i]].
+  static const int kAxis[3] = {0, 2, 1};
+  static const double kSign[3] = {-1, 1, 1};
+  const RoomPak home{r.name, r.pak};
+  std::vector<uint8_t> body;
+  uint32_t count = 0;
+  size_t dropped = 0;
+  for (const Component* c : r.room.Of(kModCon)) {
+    const auto f = r.room.Flat(*c);
+    const auto prop = f.find(kPropModConMcon);
+    std::vector<uint8_t> data;
+    Mcon mcon;
+    if (prop == f.end() || prop->second.size < 16 ||
+        !FindResource(r.room.Bytes(prop->second), Tag("MCON"), home, data, nullptr, nullptr)) {
+      continue;
+    }
+    if (!ReadMcon(data, mcon)) {
+      Log("  " + r.name + ": unreadable MCON");
+      continue;
+    }
+    // The instances are relative to the component's entity. Every one in the game is
+    // unrotated but for a 2 degree turn, and unscaled, so only its position is applied.
+    Vec3 pos{}, rot{}, scale{};
+    if (!r.room.Xform(*c, pos, rot, scale)) {
+      pos = {};
+    }
+    std::vector<int> state(mcon.models.size(), 0);  // 1 converted, 2 not
+    std::vector<uint32_t> ids(mcon.models.size(), 0);
+    for (size_t i = 0; i < mcon.index.size(); ++i) {
+      const size_t model = mcon.index[i];
+      if (model >= mcon.models.size()) {
+        ++dropped;
+        continue;
+      }
+      if (state[model] == 0) {
+        if (m_io.cancelled && m_io.cancelled()) {
+          return;
+        }
+        state[model] = m_io.model(mcon.models[model], ids[model]) ? 1 : 2;
+      }
+      if (state[model] != 1) {
+        ++dropped;
+        continue;
+      }
+      const uint8_t* t = mcon.transforms + 48 * i;
+      PutLe32(body, ids[model]);
+      for (int row = 0; row < 3; ++row) {
+        const uint8_t* from = t + 16 * kAxis[row];
+        for (int col = 0; col < 3; ++col) {
+          PutFloat(body, kSign[row] * kSign[col] * double(LeFloat(from + 4 * kAxis[col])));
+        }
+        PutFloat(body, kSign[row] * (double(LeFloat(from + 12)) + pos[size_t(kAxis[row])]));
+      }
+      ++count;
+    }
+  }
+  if (count == 0) {
+    return;
+  }
+  std::vector<uint8_t> out;
+  PutLe32(out, 0x4752504D);  // 'MPRG'
+  PutLe32(out, 1);
+  PutLe32(out, count);
+  out.insert(out.end(), body.begin(), body.end());
+  char file[32];
+  std::snprintf(file, sizeof file, "%08X.roomgeo", mrea);
+  if (!m_io.write || !m_io.write(file, out)) {
+    Log("  " + r.name + ": could not write " + file);
+    return;
+  }
+  char line[96];
+  std::snprintf(line, sizeof line, "  %s: %u instances, %zu dropped", r.name.c_str(), count, dropped);
+  Log(line);
+}
+
 std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
                               const float tonemap[4], int& written, std::string& matched) {
   matched.clear();
@@ -1107,6 +1253,7 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
     std::snprintf(head, sizeof head, "%s: no area matches (best %08X, %.1f m)", r.name.c_str(), m.mrea, m.err);
     return head;
   }
+  WriteGeometry(r, m.mrea);
   const std::vector<Vec3>& gdoors = m.area->doors;
   double rot[3][3], trans[3];
   for (int i = 0; i < 3; ++i) {

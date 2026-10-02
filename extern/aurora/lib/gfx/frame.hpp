@@ -9,8 +9,6 @@ namespace aurora::gfx::detail {
 
 inline constexpr size_t FrameSlotCount = 2;
 inline constexpr size_t StagingBufferCount = FrameSlotCount + 3;
-inline constexpr uint64_t StagingBufferSize = UniformBufferSize + VertexBufferSize + IndexBufferSize +
-                                              StorageBufferSize + (UseTextureBuffer ? TextureUploadSize : 0);
 
 const wgpu::Buffer& staging_buffer(size_t slot);
 

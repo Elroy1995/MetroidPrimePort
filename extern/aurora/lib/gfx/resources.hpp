@@ -10,6 +10,20 @@ inline constexpr uint64_t IndexBufferSize = 2097152;    // 2 MiB
 inline constexpr uint64_t StorageBufferSize = 8388608;  // 8 MiB
 inline constexpr uint64_t TextureUploadSize = 25165824; // 24 MiB
 
+// What a frame can hold of each kind of data. The constants above are the sizes at
+// AuroraConfig::frameBufferScale 1; initialize() fixes the sizes in use for the run.
+struct FrameBufferSizes {
+  uint64_t vertex = VertexBufferSize;
+  uint64_t uniform = UniformBufferSize;
+  uint64_t index = IndexBufferSize;
+  uint64_t storage = StorageBufferSize;
+
+  uint64_t staging() const noexcept {
+    return vertex + uniform + index + storage + (UseTextureBuffer ? TextureUploadSize : 0);
+  }
+};
+const FrameBufferSizes& frame_buffer_sizes() noexcept;
+
 namespace detail {
 struct Resources {
   wgpu::Buffer vertexBuffer;

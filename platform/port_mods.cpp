@@ -7,6 +7,7 @@
 #include "port_debug.h"
 #include "port_log.h"
 #include "port_room_env.h"
+#include "port_room_geo.h"
 
 #include <aurora/dvd.h>
 #include <dolphin/gx.h>
@@ -39,6 +40,7 @@ std::vector<std::string> sOverlayNames;
 std::unordered_map<uint32_t, std::string> sNativeTextures;
 // <MREA id>.roomenv files, by area.
 std::unordered_map<uint32_t, std::string> sRoomEnvs;
+std::unordered_map<uint32_t, std::string> sRoomGeos;
 struct BoundTexture {
   aurora::texture::ReplacementRegistration registration;
   uint32_t id = 0;
@@ -232,6 +234,22 @@ std::string Folder() {
   return dir;
 }
 
+bool HasRoomGeometry() {
+  const std::string dir = Folder();
+  if (dir.empty()) {
+    return false;
+  }
+  std::error_code ec;
+  for (fs::recursive_directory_iterator it(PathFromString(dir), fs::directory_options::skip_permission_denied, ec), end;
+       !ec && it != end; it.increment(ec)) {
+    uint32_t id = 0;
+    if (PortRoomGeo::ParseFileName(PathString(it->path().filename()), id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 const Status& CurrentStatus() { return sStatus; }
 
 // Every .pak on the disc, as (entryNum, path).
@@ -293,10 +311,17 @@ std::string RoomEnvPath(uint32_t mrea) {
   return found != sRoomEnvs.end() ? found->second : std::string();
 }
 
+std::string RoomGeoPath(uint32_t mrea) {
+  const auto found = sRoomGeos.find(mrea);
+  return found != sRoomGeos.end() ? found->second : std::string();
+}
+
 size_t NativeTextureCount() { return sNativeTextures.size(); }
 size_t NativeTexturesBound() { return sBoundTextures.size(); }
 
 void BeginReload() {
+  // Its models go while the pool they came from is still there.
+  PortRoomGeo::Reset();
   sRebind.clear();
   for (const auto& [owner, bound] : sBoundTextures) {
     aurora::texture::unregister_replacement(bound.registration);
@@ -319,6 +344,7 @@ void Initialize() {
   sStatus = {};
   sNativeTextures.clear();
   sRoomEnvs.clear();
+  sRoomGeos.clear();
   sStatus.folder = Folder();
   sStatus.active = PortDebug::ModsEnabled();
   if (sStatus.folder.empty()) {
@@ -380,6 +406,10 @@ void Initialize() {
       }
       if (PortRoomEnv::ParseFileName(name, id)) {
         sRoomEnvs[id] = PathString(file);
+        continue;
+      }
+      if (PortRoomGeo::ParseFileName(name, id)) {
+        sRoomGeos[id] = PathString(file);
         continue;
       }
       if (ParseLooseName(name, type, id)) {

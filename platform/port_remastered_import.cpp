@@ -43,6 +43,31 @@ constexpr const char* kStagingName = ".remastered-models.importing";
 // Written last, so a staging folder without it is an import that was cut short.
 constexpr const char* kMarkerName = "import-complete";
 constexpr const char* kRoomFolder = "roomenv";
+constexpr const char* kGeometryFolder = "roomgeo";
+// Largest edge of a room geometry texture: there are thousands of them.
+constexpr int kGeometryTexture = 1024;
+
+// The rooms whose geometry is imported, from MP_REMASTERED_GEOMETRY: "all", or
+// room names (any part of one) separated by commas. None without it, the
+// port's drawing of room geometry being unfinished.
+bool WantsGeometry(const std::string& room) {
+  const char* env = std::getenv("MP_REMASTERED_GEOMETRY");
+  if (env == nullptr || env[0] == '\0') {
+    return false;
+  }
+  const std::string list = env;
+  if (list == "all") {
+    return true;
+  }
+  for (size_t at = 0; at <= list.size();) {
+    const size_t comma = std::min(list.find(',', at), list.size());
+    if (comma > at && room.find(list.substr(at, comma - at)) != std::string::npos) {
+      return true;
+    }
+    at = comma + 1;
+  }
+  return false;
+}
 
 std::mutex sStateMutex;
 ImportState sState;
@@ -374,7 +399,10 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
   }
   std::atomic<size_t> next{0};
   std::atomic<int> converted{0};
-  auto work = [&](int worker) {
+  // Ids the import has given out: no two resources of it share one, whatever their types.
+  std::mutex takenMutex;
+  std::unordered_set<uint32_t> taken;
+  auto makeIO = [&](int worker, const fs::path& folder) {
     ConvertIO io;
     io.retail = [&](uint32_t type, uint32_t id, std::vector<uint8_t>& out) { return retail.Read(type, id, out); };
     io.retailId = [&](uint32_t id) { return retail.HasId(id); };
@@ -392,9 +420,13 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     };
     // Workers can meet the same texture at once; each writes its own temporary
     // file and the rename decides, the content being the same either way.
-    io.write = [&, worker](const std::string& name, const std::vector<uint8_t>& data) {
-      const fs::path path = staging / PathFromString(name);
-      const fs::path tmp = staging / PathFromString(name + ".tmp" + std::to_string(worker));
+    io.write = [&, worker, folder](const std::string& name, const std::vector<uint8_t>& data) {
+      {
+        std::lock_guard<std::mutex> lock(takenMutex);
+        taken.insert(uint32_t(std::strtoul(name.substr(0, 8).c_str(), nullptr, 16)));
+      }
+      const fs::path path = folder / PathFromString(name);
+      const fs::path tmp = folder / PathFromString(name + ".tmp" + std::to_string(worker));
       {
         std::ofstream file(tmp, std::ios::binary);
         file.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
@@ -406,7 +438,10 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
       fs::rename(tmp, path, renameError);
       return !renameError;
     };
-    Converter converter(std::move(io));
+    return io;
+  };
+  auto work = [&](int worker) {
+    Converter converter(makeIO(worker, staging));
     for (size_t i = next++; i < count && !sCancel; i = next++) {
       const TableEntry& entry = table[i];
       ModelUuid id;
@@ -456,10 +491,40 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
   SetMessage("Writing the room environments");
   const fs::path roomFolder = staging / kRoomFolder;
   fs::create_directories(roomFolder, ec);
+  fs::create_directories(staging / kGeometryFolder, ec);
   const std::vector<RoomPak> allPaks = remastered.AllPaks();
   const std::vector<RoomWorld>& worlds = RoomWorlds();
   std::atomic<size_t> nextWorld{0};
   std::atomic<int> roomFiles{0};
+  // A room's geometry names its models; they are given ids here and converted
+  // afterwards, on every thread. A model that then fails leaves its id naming
+  // nothing, which the port skips.
+  const fs::path geometryFolder = staging / kGeometryFolder;
+  struct GeometryModel {
+    ModelUuid uuid;
+    uint32_t id;
+  };
+  std::vector<GeometryModel> geometry;
+  std::unordered_map<ModelUuid, uint32_t, PakIdHash> geometryIds;
+  auto geometryId = [&](const ModelUuid& uuid, uint32_t& id) {
+    std::lock_guard<std::mutex> lock(takenMutex);
+    const auto known = geometryIds.find(uuid);
+    if (known != geometryIds.end()) {
+      id = known->second;
+      return true;
+    }
+    id = 0x811C9DC5u;  // FNV-1a
+    for (const uint8_t byte : uuid) {
+      id = (id ^ byte) * 0x01000193u;
+    }
+    while (id == 0 || id == 0xFFFFFFFFu || retail.HasId(id) || taken.count(id) != 0) {
+      ++id;
+    }
+    taken.insert(id);
+    geometryIds.emplace(uuid, id);
+    geometry.push_back({uuid, id});
+    return true;
+  };
   auto roomWork = [&] {
     for (size_t i = nextWorld++; i < worlds.size() && !sCancel; i = nextWorld++) {
       RoomPak master;
@@ -468,10 +533,13 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
       RoomIO io;
       io.retail = [&](uint32_t type, uint32_t id, std::vector<uint8_t>& out) { return retail.Read(type, id, out); };
       io.write = [&](const std::string& name, const std::vector<uint8_t>& data) {
-        std::ofstream file(roomFolder / PathFromString(name), std::ios::binary);
+        const bool isGeometry = name.size() > 8 && name.compare(name.size() - 8, 8, ".roomgeo") == 0;
+        std::ofstream file((isGeometry ? geometryFolder : roomFolder) / PathFromString(name), std::ios::binary);
         file.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
         return bool(file);
       };
+      io.model = geometryId;
+      io.wantsGeometry = WantsGeometry;
       io.cancelled = [] { return sCancel.load(); };
       int written = 0;
       std::string worldError;
@@ -493,6 +561,61 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     fail("Cancelled.");
     return;
   }
+
+  std::atomic<int> geometryDone{0};
+  if (!geometry.empty()) {
+    std::unordered_set<uint32_t> modelIds;
+    for (const GeometryModel& g : geometry) {
+      modelIds.insert(g.id);
+    }
+    std::atomic<size_t> nextModel{0};
+    std::atomic<int> seen{0};
+    std::mutex claimMutex;
+    std::unordered_set<uint32_t> claimed;
+    auto geometryWork = [&](int worker) {
+      ConvertIO io = makeIO(worker, geometryFolder);
+      // A texture never takes a geometry model's id either.
+      io.retailId = [&](uint32_t id) { return retail.HasId(id) || modelIds.count(id) != 0; };
+      io.claim = [&](uint32_t id) {
+        std::lock_guard<std::mutex> lock(claimMutex);
+        return claimed.insert(id).second;
+      };
+      Converter converter(std::move(io));
+      for (size_t i = nextModel++; i < geometry.size() && !sCancel; i = nextModel++) {
+        ConvertOptions options;
+        options.retail = geometry[i].id;
+        options.standalone = true;
+        options.nativeMax = kGeometryTexture;
+        std::string modelError;
+        std::vector<uint8_t> raw;
+        Model model;
+        if (remastered.ReadModel(geometry[i].uuid, raw, modelError) &&
+            ParseModel(raw.data(), raw.size(), model, modelError) && converter.Convert(model, options, modelError)) {
+          ++geometryDone;
+        } else {
+          char name[16];
+          std::snprintf(name, sizeof(name), "%08X", geometry[i].id);
+          AddLine(std::string("room model ") + name + ": " + modelError);
+        }
+        SetMessage("Converting room models (" + std::to_string(++seen) + "/" + std::to_string(geometry.size()) + ")");
+      }
+    };
+    workers.clear();
+    for (int i = 1; i < threads; ++i) {
+      workers.emplace_back(geometryWork, i);
+    }
+    geometryWork(0);
+    for (std::thread& worker : workers) {
+      worker.join();
+    }
+    if (sCancel) {
+      fail("Cancelled.");
+      return;
+    }
+  }
+  if (geometry.empty()) {
+    fs::remove(geometryFolder, ec);
+  }
   {
     std::ofstream marker(staging / kMarkerName);
     if (!marker) {
@@ -506,6 +629,9 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     message += ", " + std::to_string(failed) + " failed";
   }
   message += ", " + std::to_string(roomFiles.load()) + " room environments";
+  if (!geometry.empty()) {
+    message += ", " + std::to_string(geometryDone.load()) + " of " + std::to_string(geometry.size()) + " room models";
+  }
   Finish(true, message + ".");
 }
 

@@ -116,6 +116,13 @@ typedef struct {
    * This can be set to 0 to disable allocating this region.
    */
   uint32_t mem2Size;
+
+  /*
+   * Multiplies what one frame can hold of vertex, index and array data (5, 2 and 8 MiB at 1),
+   * and doubles the 24 MiB of uniforms when above 1. 0 means 1. A frame that outgrows
+   * its buffers aborts, so raise this for content denser than the original game's.
+   */
+  uint32_t frameBufferScale;
 } AuroraConfig;
 
 typedef struct {

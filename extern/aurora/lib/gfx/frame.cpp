@@ -48,6 +48,7 @@ enum class BufferMapState {
   Mapped,
 };
 
+FrameBufferSizes g_bufferSizes;
 std::array<wgpu::Buffer, StagingBufferCount> g_stagingBuffers;
 std::array<std::atomic<BufferMapState>, StagingBufferCount> g_mappingStates;
 uint32_t g_frameIndex = UINT32_MAX;
@@ -222,7 +223,7 @@ void map_staging_buffer(size_t slot, bool releaseSlotOnCompletion = false) {
   }
 
   g_stagingBuffers[slot].MapAsync(
-      wgpu::MapMode::Write, 0, StagingBufferSize, wgpu::CallbackMode::AllowSpontaneous,
+      wgpu::MapMode::Write, 0, g_bufferSizes.staging(), wgpu::CallbackMode::AllowSpontaneous,
       [slot, releaseSlotOnCompletion](wgpu::MapAsyncStatus status, wgpu::StringView message) {
         if (status == wgpu::MapAsyncStatus::CallbackCancelled || status == wgpu::MapAsyncStatus::Aborted) {
           Log.warn("Buffer mapping {}: {}", magic_enum::enum_name(status), message);
@@ -241,6 +242,8 @@ void map_staging_buffer(size_t slot, bool releaseSlotOnCompletion = false) {
       });
 }
 } // namespace
+
+const FrameBufferSizes& frame_buffer_sizes() noexcept { return g_bufferSizes; }
 
 namespace detail {
 
@@ -399,6 +402,29 @@ void initialize() {
   // For uniform & storage buffer offset alignments
   g_device.GetLimits(&g_resources.limits);
 
+  // The vertex and array buffers are bound whole as storage, and one staging buffer holds
+  // a frame of everything, so the scale stops where the device does.
+  {
+    const uint64_t maxBinding = g_resources.limits.maxStorageBufferBindingSize;
+    const uint64_t maxBuffer = g_resources.limits.maxBufferSize;
+    uint32_t scale = std::max<uint32_t>(g_config.frameBufferScale, 1);
+    for (;; --scale) {
+      g_bufferSizes = {
+          .vertex = VertexBufferSize * scale,
+          .uniform = scale > 1 ? UniformBufferSize * 2 : UniformBufferSize,
+          .index = IndexBufferSize * scale,
+          .storage = StorageBufferSize * scale,
+      };
+      if (scale == 1 || (g_bufferSizes.vertex <= maxBinding && g_bufferSizes.storage <= maxBinding &&
+                         g_bufferSizes.staging() <= maxBuffer)) {
+        break;
+      }
+    }
+    if (scale != std::max<uint32_t>(g_config.frameBufferScale, 1)) {
+      Log.warn("Frame buffer scale {} is beyond this device, using {}", g_config.frameBufferScale, scale);
+    }
+  }
+
   const auto createBuffer = [](wgpu::Buffer& out, wgpu::BufferUsage usage, uint64_t size, const char* label) {
     if (size <= 0) {
       return;
@@ -410,18 +436,18 @@ void initialize() {
     };
     out = g_device.CreateBuffer(&descriptor);
   };
-  createBuffer(g_resources.uniformBuffer, wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst, UniformBufferSize,
+  createBuffer(g_resources.uniformBuffer, wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst, g_bufferSizes.uniform,
                "Shared Uniform Buffer");
   createBuffer(g_resources.vertexBuffer,
-               wgpu::BufferUsage::Storage | wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst, VertexBufferSize,
+               wgpu::BufferUsage::Storage | wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst, g_bufferSizes.vertex,
                "Shared Vertex Buffer");
-  createBuffer(g_resources.indexBuffer, wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst, IndexBufferSize,
+  createBuffer(g_resources.indexBuffer, wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst, g_bufferSizes.index,
                "Shared Index Buffer");
-  createBuffer(g_resources.storageBuffer, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst, StorageBufferSize,
+  createBuffer(g_resources.storageBuffer, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst, g_bufferSizes.storage,
                "Shared Storage Buffer");
   for (size_t i = 0; i < g_stagingBuffers.size(); ++i) {
     const auto label = fmt::format("Staging Buffer {}", i);
-    createBuffer(g_stagingBuffers[i], wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc, StagingBufferSize,
+    createBuffer(g_stagingBuffers[i], wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc, g_bufferSizes.staging(),
                  label.c_str());
   }
   for (auto& state : g_mappingStates) {
@@ -638,10 +664,10 @@ bool begin_frame() {
     buf = ByteBuffer{static_cast<u8*>(stagingBuf.GetMappedRange(bufferOffset, size)), static_cast<size_t>(size)};
     bufferOffset += size;
   };
-  mapBuffer(frame.verts, VertexBufferSize);
-  mapBuffer(frame.uniforms, UniformBufferSize);
-  mapBuffer(frame.indices, IndexBufferSize);
-  mapBuffer(frame.storage, StorageBufferSize);
+  mapBuffer(frame.verts, g_bufferSizes.vertex);
+  mapBuffer(frame.uniforms, g_bufferSizes.uniform);
+  mapBuffer(frame.indices, g_bufferSizes.index);
+  mapBuffer(frame.storage, g_bufferSizes.storage);
   if constexpr (UseTextureBuffer) {
     mapBuffer(frame.textureUpload, TextureUploadSize);
   }
@@ -737,4 +763,8 @@ float calculate_fps() noexcept {
 } // namespace aurora::gfx
 
 const AuroraStats* aurora_get_stats() { return &aurora::gfx::detail::resources().stats; }
+
+uint32_t aurora_get_frame_buffer_scale() {
+  return static_cast<uint32_t>(aurora::gfx::frame_buffer_sizes().vertex / aurora::gfx::VertexBufferSize);
+}
 float aurora_get_fps() { return aurora::gfx::calculate_fps(); }

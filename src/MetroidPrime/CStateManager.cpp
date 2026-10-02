@@ -7,6 +7,7 @@
 #include "port_livesplit.h"
 #include "port_log.h"
 #include "port_room_env.h"
+#include "port_room_geo.h"
 #include "port_savestate.h"
 #include "port_skip_cutscenes.h"
 #include "port_viewmodel.h"
@@ -2596,6 +2597,7 @@ void CStateManager::PortCaptureProbeFace() const {
     }
   }
   PortRoomEnv::SetLoadedAreas(mreas, mreaCount);
+  PortRoomGeo::SetLoadedAreas(mreas, mreaCount);
   static uint lastDraws = 0;
   static int face = 0;
   static int filled = 0;
@@ -2738,12 +2740,22 @@ void CStateManager::DrawWorld() const {
   gpRender->SetThermal(thermal, gpTweakGui->GetThermalVisorLevel(),
                        gpTweakGui->GetThermalVisorColor());
   gpRender->SetThermalColdScale(xf28_thermColdScale2 + xf24_thermColdScale1);
+#ifdef TARGET_PC
+  bool portRoomGeo[10] = {};
+#endif
   for (int i = areas.size() - 1; i >= 0; --i) {
     const CGameArea& area = *areas[i];
     SetupFogForArea(area);
     const TAreaId id = area.GetId();
     gpRender->EnablePVS(&visibility[i], id.Value());
     gpRender->SetWorldLightFadeLevel(area.GetPostConstructed()->x1128_worldLightingLevel);
+#ifdef TARGET_PC
+    // A mod's room geometry stands in for the area's own (port_room_geo.h).
+    portRoomGeo[i] = !thermal && visor != CPlayerState::kPV_XRay && PortRoomGeo::Draw(*this, area, frustum);
+    if (portRoomGeo[i]) {
+      continue;
+    }
+#endif
     gpRender->DrawUnsortedGeometry(id.Value(), mask, targetMask);
   }
 
@@ -2827,7 +2839,14 @@ void CStateManager::DrawWorld() const {
     }
 #endif
     gpRender->EnablePVS(&set, area.GetId().Value());
+#ifdef TARGET_PC
+    // The actors still go through the buckets; only the area's own surfaces stay out.
+    PortRoomGeo::sReplacingArea = portRoomGeo[i];
+#endif
     gpRender->DrawSortedGeometry(area.GetId().Value(), mask, targetMask);
+#ifdef TARGET_PC
+    PortRoomGeo::sReplacingArea = false;
+#endif
   }
 
   x880_envFxManager->Render(*this);

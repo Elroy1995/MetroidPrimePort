@@ -322,12 +322,6 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
   }
 }
 
-constexpr uint64_t VertexStagingOffset = 0;
-constexpr uint64_t UniformStagingOffset = VertexStagingOffset + VertexBufferSize;
-constexpr uint64_t IndexStagingOffset = UniformStagingOffset + UniformBufferSize;
-constexpr uint64_t StorageStagingOffset = IndexStagingOffset + IndexBufferSize;
-constexpr uint64_t TextureUploadStagingOffset = StorageStagingOffset + StorageBufferSize;
-
 constexpr uint32_t align_down_copy_offset(uint32_t value) noexcept { return value & ~3u; }
 
 void copy_staging_buffer_range(wgpu::CommandEncoder& cmd, const FramePacket& frame, uint32_t& copied,
@@ -361,6 +355,12 @@ void copy_staging_to_high_water(wgpu::CommandEncoder& cmd, FramePacket& frame, c
   const webgpu::gpu_prof::Zone zone{cmd, "Staging copies"};
   const auto& highWater = op.highWater;
   auto& res = resources();
+  const auto& sizes = frame_buffer_sizes();
+  const uint64_t VertexStagingOffset = 0;
+  const uint64_t UniformStagingOffset = VertexStagingOffset + sizes.vertex;
+  const uint64_t IndexStagingOffset = UniformStagingOffset + sizes.uniform;
+  const uint64_t StorageStagingOffset = IndexStagingOffset + sizes.index;
+  const uint64_t TextureUploadStagingOffset = StorageStagingOffset + sizes.storage;
   copy_staging_buffer_range(cmd, frame, frame.copied.verts, highWater.verts, VertexStagingOffset, res.vertexBuffer);
   copy_staging_buffer_range(cmd, frame, frame.copied.uniforms, highWater.uniforms, UniformStagingOffset,
                             res.uniformBuffer);

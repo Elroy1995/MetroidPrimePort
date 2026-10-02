@@ -888,10 +888,15 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         .maxTextureArrayLayers = supportedLimits.maxTextureArrayLayers == 0 ? WGPU_LIMIT_U32_UNDEFINED
                                                                             : supportedLimits.maxTextureArrayLayers,
         .maxStorageBuffersPerShaderStage = 2,
+        .maxStorageBufferBindingSize = supportedLimits.maxStorageBufferBindingSize == 0
+                                           ? WGPU_LIMIT_U64_UNDEFINED
+                                           : supportedLimits.maxStorageBufferBindingSize,
         .minUniformBufferOffsetAlignment =
             supportedLimits.minUniformBufferOffsetAlignment < 64 ? 64 : supportedLimits.minUniformBufferOffsetAlignment,
         .minStorageBufferOffsetAlignment =
             supportedLimits.minStorageBufferOffsetAlignment < 16 ? 16 : supportedLimits.minStorageBufferOffsetAlignment,
+        .maxBufferSize =
+            supportedLimits.maxBufferSize == 0 ? WGPU_LIMIT_U64_UNDEFINED : supportedLimits.maxBufferSize,
         .maxImmediateSize = sizeof(gx::DrawImmediateData),
     };
     Log.info(

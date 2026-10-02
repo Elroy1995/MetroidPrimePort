@@ -423,6 +423,17 @@ skipped. Inside a mod:
   keep their level relative to it and the baked ambient is used at its own
   brightness, without the game's. Off by default (see below). Files load and unload with their areas, and a cube is decoded
   on first use. The layout is in `platform/include/port_room_env.h`.
+- a file named `<MREA id, 8 hex digits>.roomgeo`, anywhere in the mod, is that
+  area's static geometry: a list of models, each with the transform that
+  places it in the area, drawn in place of the area's own surfaces (its
+  actors, doors and pickups are drawn as before). Little-endian: the tag
+  `MPRG`, a version (1), a count, then per instance a CMDL id and a 3x4
+  matrix, 52 bytes. The models are ordinary CMDLs of the mod and are loaded
+  with the area. The Thermal and X-Ray visors draw the retail area. A game
+  started with such a mod installed takes a 256 MB arena and frame buffers 12
+  times the usual size (see `MP_FRAME_BUFFERS`), since these rooms are many
+  times retail's vertex count; a mod loaded into a running game without them
+  is not drawn until the next start.
 - a PBR material (flag bit 14) may end in a 28-byte record: six big-endian floats
   (emissive multiplier rgb, backlight weight rgb) and the tag `PBRM`, inside the
   material's own span in the offset table. The multiplier scales the emissive map;
@@ -496,6 +507,13 @@ its doors, and takes the room's reflection probes, their HDR cubes and its
 baked ambient grid. A grid of more than about a million points is stored at
 half resolution, which keeps every file under 25 MB. A world that can't be
 read is reported and skipped; the models are installed all the same.
+
+With `MP_REMASTERED_GEOMETRY=all` (or a comma-separated list of room names)
+the import also writes the rooms' static geometry: every model a room places,
+converted as above with textures capped at 1024 px, and a `.roomgeo` per
+area, in the mod's `roomgeo` folder. Experimental and off by default: the
+full set is 7675 models and 4.4 GB, the rooms have no baked lighting, and
+blended materials are drawn opaque.
 
 Measured on the development machine: 342 models and 275 room environments, 44
 seconds on 16 threads, 2.3 GB of memory at the peak, 1.1 GB on disk (half of it
@@ -850,13 +868,19 @@ a temporary directory instead of mounting.
   gyro rates in rad/s), `shot` (prints the bmp path), `present
   <0..1|cycle|tick|off>`, `hold <0|1>` (stop ticking), `step [ticks]` (run
   that many ticks while held), `interp [actor|pose|particle|all <0|1>]`,
-  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `crosshair <25..100>`, `reveal <0|1>`, `pickups <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `viewmodel <cmdl> [dist] [yaw] [pitch] | off | status | light <0|1>` (draws any model, retail or a mod's, in front of the camera with the arm cannon hidden; dist 0 fits its bounds; `light 1` swaps the flat white ambient for a key light, which PBR mod materials need to shade), `probe [off|on|mirror|window]` (the PBR reflection probe, live: `mirror` and `window` show the probe itself on PBR materials, as a reflection and looked straight through; no argument prints the mode), `remastered [start <image.nsp> [key file] | cancel]` (the Remastered model import and its progress), `mods [reload]` (what is loaded; `reload` reads the mods folder again), `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
+  `aspect <4:3|16:9|window>`, `fov <45..90>`, `msaa <1|4>`, `aniso <1..16>`, `hudscale <50..100>`, `helmet <0|1>`, `visorfx <0|1>`, `crosshair <25..100>`, `reveal <0|1>`, `pickups <0|1>`, `tracker`, `state list | last | save [n] | load [n] | undo | slot <n>`, `viewmodel <cmdl> [dist] [yaw] [pitch] | off | status | light <0|1>` (draws any model, retail or a mod's, in front of the camera with the arm cannon hidden; dist 0 fits its bounds; `light 1` swaps the flat white ambient for a key light, which PBR mod materials need to shade), `probe [off|on|mirror|window]` (the PBR reflection probe, live: `mirror` and `window` show the probe itself on PBR materials, as a reflection and looked straight through; no argument prints the mode), `remastered [start <image.nsp> [key file] | cancel]` (the Remastered model import and its progress), `mods [reload]` (what is loaded; `reload` reads the mods folder again), `roomgeo [on|off|overlay]` (a mod's room geometry: in place of the retail area, off, or drawn over it; no argument prints what is loaded and drawn), `timer <0|1>`, `igt <seconds>`, `livesplit <0|1> | addr <host:port> | send <command> | status`, `discord <0|1> | id <application id> | status`, `gci list | import <path> | export <dir or .raw> | dolphin import|export`, `ap [connect <server> <slot> [password] | disconnect | recent | resume <n> | say <text> | chat]`, `wait <frames>`, `quit`; `help` lists them. Ids are hex editor ids, `u<n>`
   unique ids or exact debug names. Every reply ends with `=> ok` or
   `=> err: <why>`, and the client exits 1 if any command failed. Game commands
   run inside the state manager tick, so they fail with "not ticking" on the
   title screen or while paused. Pair with `MP_TURBO` for speed.
 - `MP_PBR_PROBE=<off|on|mirror|window>` (or 0-3): the reflection probe PBR mod
   materials reflect, on by default. The console's `probe` changes it live.
+- `MP_ROOM_GEO=<0|1|overlay>`: whether a mod's `.roomgeo` replaces an area's
+  geometry (default 1; `overlay` draws both). Console `roomgeo [on|off|overlay]`,
+  which also prints what is loaded and what the last frame streamed.
+  `MP_FRAME_BUFFERS=<1..16>` scales the buffers a frame's vertices, arrays and
+  uniforms are streamed through (1 = 5 + 8 + 24 MiB); it is 12 when a mod has
+  room geometry. A frame that outgrows them aborts with a buffer overflow.
 - `MP_ROOM_ENV=0`: ignore the mods' `.roomenv` files (console `roomenv
   [on|off]`, which also counts what is loaded). For tuning:
   `MP_ROOM_ENV_GAIN` (exposure, default 1), `MP_ROOM_ENV_LOD` (the mip a

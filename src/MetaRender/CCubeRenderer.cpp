@@ -53,6 +53,10 @@
 #include <type_traits>
 #include <vector>
 
+#ifdef TARGET_PC
+#include "port_room_geo.h"
+#endif
+
 CCubeRenderer* CCubeRenderer::sRenderer = nullptr;
 static CModelFlags skNormalFlag = CModelFlags::Normal();
 static CModelFlags skNormalFlagNoUpdate = CModelFlags::Normal().DepthCompareUpdate(true, false);
@@ -800,6 +804,11 @@ void CCubeRenderer::DrawSortedGeometry(int areaIdx, uint mask, uint targetMask) 
       areaListItem = &item;
     }
 
+#ifdef TARGET_PC
+    if (PortRoomGeo::sReplacingArea) {
+      continue;
+    }
+#endif
     rstl::vector< rstl::auto_ptr< CCubeModel > >& models = *item.GetModelList();
     for (AUTO(modelIt, models.begin()); modelIt != models.end(); ++modelIt) {
       CCubeModel& model = **modelIt;
