@@ -38,6 +38,7 @@
 #include "port_remastered_txtr.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -2879,6 +2880,92 @@ bool ReadTxtrCubeBc6h(const uint8_t* data, size_t size, TxtrCubeBc6h& out, std::
     }
     const size_t unit = size_t(gobHeight) * kGobSizeBytes;
     srcOffset = DivRoundUp(srcOffset, unit) * unit;
+  }
+  return true;
+}
+
+namespace {
+
+// Half to float, with an infinity clamped to the largest finite half like the reference tool does.
+float HalfBitsToFloat(uint16_t h) {
+  const int e = (h >> 10) & 31, m = h & 1023;
+  const float sign = (h & 0x8000) ? -1.f : 1.f;
+  if (e == 0) {
+    return sign * std::ldexp(float(m), -24);
+  }
+  if (e == 31) {
+    return sign * 65504.f;
+  }
+  return sign * std::ldexp(float(m + 1024), e - 25);
+}
+
+}  // namespace
+
+bool DecodeVolumeFloat(const uint8_t* compressed, size_t compressedSize, size_t surfaceSize, uint32_t format,
+                       uint32_t width, uint32_t height, uint32_t depth, std::vector<float>& rgba,
+                       std::string& error) {
+  rgba.clear();
+  const bool bc6h = format == kTxtrFormatBc6hUfloat || format == kTxtrFormatBc6hSfloat;
+  if (!bc6h && format != kTxtrFormatBc1Unorm) {
+    error = "remastered txtr: a volume of " + std::string(FormatName(format)) + " is not supported";
+    return false;
+  }
+  if (width == 0 || height == 0 || depth == 0 || width % 4 != 0 || height % 4 != 0 || width > 1024 ||
+      height > 1024 || depth > 256 || size_t(width) * height * depth > (size_t(1) << 24) || surfaceSize > 0x40000000u) {
+    error = "remastered txtr: a volume of " + std::to_string(width) + "x" + std::to_string(height) + "x" +
+            std::to_string(depth);
+    return false;
+  }
+  std::vector<uint8_t> surface(surfaceSize);
+  if (!DecompressInto(compressed, compressedSize, surface.data(), surfaceSize, error)) {
+    return false;
+  }
+  const size_t bytesPerBlock = bc6h ? 16 : 8;
+  const size_t bw = width / 4, bh = height / 4, rowBytes = bw * bytesPerBlock, wg = DivRoundUp(rowBytes, 64);
+  const size_t blockDepth = BlockDepth(depth);
+  // Untile into plain rows of blocks, a byte at a time: the volumes are small.
+  const size_t bhg = BlockHeightMip0(bh), blk = 512 * bhg * blockDepth;
+  std::vector<uint8_t> linear(rowBytes * bh * depth);
+  for (size_t z = 0; z < depth; ++z) {
+    for (size_t y = 0; y < bh; ++y) {
+      for (size_t x = 0; x < rowBytes; ++x) {
+        const size_t a = (z / blockDepth) * DivRoundUp(bh, 8 * bhg) * blk * wg + (z & (blockDepth - 1)) * 512 * bhg +
+                         (y / (8 * bhg)) * blk * wg + (x / 64) * blk + ((y % (8 * bhg)) / 8) * 512 + GobOffset(x, y);
+        if (a >= surface.size()) {
+          error = "remastered txtr: the volume's surface is short";
+          return false;
+        }
+        linear[(z * bh + y) * rowBytes + x] = surface[a];
+      }
+    }
+  }
+  rgba.assign(size_t(width) * height * depth * 4, 0.f);
+  for (size_t z = 0; z < depth; ++z) {
+    for (size_t y = 0; y < bh; ++y) {
+      for (size_t x = 0; x < bw; ++x) {
+        const uint8_t* src = &linear[(z * bh + y) * rowBytes + x * bytesPerBlock];
+        uint16_t half[48] = {};
+        uint8_t color[64] = {};
+        if (bc6h) {
+          DecodeBc6h(src, half, format == kTxtrFormatBc6hSfloat);
+        } else {
+          DecodeColorBlock(src, color, false);
+        }
+        for (int i = 0; i < 16; ++i) {
+          float* p = &rgba[((z * height + y * 4 + i / 4) * width + x * 4 + i % 4) * 4];
+          if (bc6h) {
+            p[0] = HalfBitsToFloat(half[i * 3]);
+            p[1] = HalfBitsToFloat(half[i * 3 + 1]);
+            p[2] = HalfBitsToFloat(half[i * 3 + 2]);
+            p[3] = 1.f;
+          } else {
+            for (int k = 0; k < 4; ++k) {
+              p[k] = color[i * 4 + k] / 255.f;
+            }
+          }
+        }
+      }
+    }
   }
   return true;
 }

@@ -22,6 +22,7 @@
 #include "port_remastered_convert.h"
 #include "port_remastered_nsp.h"
 #include "port_remastered_pak.h"
+#include "port_remastered_room.h"
 #include "port_remastered_table.h"
 #include "port_remastered_txtr.h"
 #include "port_ws.h"
@@ -35,10 +36,13 @@ constexpr uint32_t kCMDL = 0x434D444C;
 constexpr uint32_t kSMDL = 0x534D444C;
 constexpr uint32_t kCSKR = 0x43534B52;
 constexpr uint32_t kTXTR = 0x54585452;
+constexpr uint32_t kMLVL = 0x4D4C564C;
+constexpr uint32_t kMREA = 0x4D524541;
 
 constexpr const char* kStagingName = ".remastered-models.importing";
 // Written last, so a staging folder without it is an import that was cut short.
 constexpr const char* kMarkerName = "import-complete";
+constexpr const char* kRoomFolder = "roomenv";
 
 std::mutex sStateMutex;
 ImportState sState;
@@ -71,7 +75,7 @@ void Finish(bool ok, const std::string& message) {
 
 // --- The retail disc ----------------------------------------------------------
 
-// The CMDL, CSKR and TXTR resources of the unmodded disc, and every id on it.
+// The CMDL, CSKR, TXTR, MLVL and MREA resources of the unmodded disc, and every id on it.
 class Retail {
 public:
   ~Retail() {
@@ -111,7 +115,7 @@ public:
       }
       for (const PortMods::PakResource& res : table.resources) {
         m_ids.insert(res.id);
-        if (res.type == kCMDL || res.type == kCSKR || res.type == kTXTR) {
+        if (res.type == kCMDL || res.type == kCSKR || res.type == kTXTR || res.type == kMLVL || res.type == kMREA) {
           m_resources.emplace(Key(res.type, res.id), Where{entry, res.offset, res.size, res.compressed != 0});
         }
       }
@@ -233,6 +237,7 @@ public:
         }
       }
       m_paks.push_back(std::move(pak));
+      m_paths.push_back(file->path);
     }
     if (m_models.empty()) {
       error = "no models in this image; is it Metroid Prime Remastered?";
@@ -246,6 +251,32 @@ public:
   }
   bool ReadTexture(const ModelUuid& id, std::vector<uint8_t>& out, std::string& error) const {
     return Read(m_textures, id, out, error);
+  }
+
+  // The paks of one world directory ("Intro_Master") as the room writer takes
+  // them, and every pak of the image for the assets rooms share.
+  void World(const std::string& dir, RoomPak& master, std::vector<RoomPak>& rooms) const {
+    const std::string folder = "/!" + dir + "/";
+    for (size_t i = 0; i < m_paks.size(); ++i) {
+      const std::string& path = m_paths[i];
+      const size_t at = path.find(folder);
+      if (at == std::string::npos) {
+        continue;
+      }
+      const std::string name = path.substr(at + folder.size(), path.size() - at - folder.size() - 4);
+      if (name == "!" + dir) {
+        master = RoomPak{dir, m_paks[i].get()};
+      } else if (name.find('/') == std::string::npos) {
+        rooms.push_back(RoomPak{name, m_paks[i].get()});
+      }
+    }
+  }
+  std::vector<RoomPak> AllPaks() const {
+    std::vector<RoomPak> all;
+    for (size_t i = 0; i < m_paks.size(); ++i) {
+      all.push_back(RoomPak{m_paths[i], m_paks[i].get()});
+    }
+    return all;
   }
 
 private:
@@ -269,6 +300,7 @@ private:
   // Nsp::Read is for one thread at a time.
   mutable std::mutex m_mutex;
   std::vector<std::unique_ptr<Pak>> m_paks;
+  std::vector<std::string> m_paths;  // of m_paks, in the image
   Index m_models;
   Index m_textures;
 };
@@ -418,6 +450,49 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     fail("No model could be converted.");
     return;
   }
+
+  // The rooms' reflection cubes and baked ambient light, a file per area. A
+  // world that cannot be read costs its rooms their environment, not the import.
+  SetMessage("Writing the room environments");
+  const fs::path roomFolder = staging / kRoomFolder;
+  fs::create_directories(roomFolder, ec);
+  const std::vector<RoomPak> allPaks = remastered.AllPaks();
+  const std::vector<RoomWorld>& worlds = RoomWorlds();
+  std::atomic<size_t> nextWorld{0};
+  std::atomic<int> roomFiles{0};
+  auto roomWork = [&] {
+    for (size_t i = nextWorld++; i < worlds.size() && !sCancel; i = nextWorld++) {
+      RoomPak master;
+      std::vector<RoomPak> rooms;
+      remastered.World(worlds[i].dir, master, rooms);
+      RoomIO io;
+      io.retail = [&](uint32_t type, uint32_t id, std::vector<uint8_t>& out) { return retail.Read(type, id, out); };
+      io.write = [&](const std::string& name, const std::vector<uint8_t>& data) {
+        std::ofstream file(roomFolder / PathFromString(name), std::ios::binary);
+        file.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
+        return bool(file);
+      };
+      io.cancelled = [] { return sCancel.load(); };
+      int written = 0;
+      std::string worldError;
+      if (!WriteWorldRoomEnvs(worlds[i].mlvl, master, rooms, allPaks, io, written, worldError) && !sCancel) {
+        AddLine(std::string(worlds[i].dir) + ": " + worldError);
+      }
+      roomFiles += written;
+    }
+  };
+  workers.clear();
+  for (int i = 1; i < threads; ++i) {
+    workers.emplace_back(roomWork);
+  }
+  roomWork();
+  for (std::thread& worker : workers) {
+    worker.join();
+  }
+  if (sCancel) {
+    fail("Cancelled.");
+    return;
+  }
   {
     std::ofstream marker(staging / kMarkerName);
     if (!marker) {
@@ -430,6 +505,7 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
   if (failed != 0) {
     message += ", " + std::to_string(failed) + " failed";
   }
+  message += ", " + std::to_string(roomFiles.load()) + " room environments";
   Finish(true, message + ".");
 }
 

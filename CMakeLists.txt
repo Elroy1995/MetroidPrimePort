@@ -127,6 +127,7 @@ set(MP_PORT_SOURCES
     platform/port_remastered_table.cpp
     platform/port_remastered_convert.cpp
     platform/port_remastered_import.cpp
+    platform/port_remastered_room.cpp
     platform/port_custom_res.cpp
     platform/port_hints.cpp
     platform/port_ws.cpp

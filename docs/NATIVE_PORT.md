@@ -482,9 +482,19 @@ from `MP_DISC`, the remembered path, or a copy beside the executable).
 The port reads the image itself (`platform/port_remastered_nsp.cpp`, `_pak`,
 `_txtr`, `_cmdl`), and `_convert` writes a CMDL (plus CSKR for skinned models)
 over each retail model listed in `_table`, with its PBR maps as native `.dds`
-textures. Measured on the development machine: 342 models, 26 seconds on 16
-threads, 540 MB. Texture ids are a CRC of the Remastered texture's id and its
-role, so a map shared by several models is written once. Desktop only.
+textures. Texture ids are a CRC of the Remastered texture's id and its
+role, so a map shared by several models is written once.
+
+After the models, `_room` writes a `.roomenv` (above) for every area into the
+mod's `roomenv` folder: it matches each Remastered room to the retail area by
+its doors, and takes the room's reflection probes, their HDR cubes and its
+baked ambient grid. A grid of more than about a million points is stored at
+half resolution, which keeps every file under 25 MB. A world that can't be
+read is reported and skipped; the models are installed all the same.
+
+Measured on the development machine: 342 models and 275 room environments, 44
+seconds on 16 threads, 2.3 GB of memory at the peak, 1.1 GB on disk (half of it
+the room environments). Desktop only.
 
 ### Platforms
 

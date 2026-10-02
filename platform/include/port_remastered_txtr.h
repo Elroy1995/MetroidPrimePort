@@ -100,6 +100,14 @@ struct TxtrCubeBc6h {
   std::vector<std::vector<uint8_t>> mips;
 };
 bool ReadTxtrCubeBc6h(const uint8_t* data, size_t size, TxtrCubeBc6h& out, std::string& error);
+// A 3D texture as float RGBA, for the baked light grids (LTPB). `compressed` is
+// one buffer of the surface (`surfaceSize` bytes once decompressed, block linear
+// with the volume's depth tiled in), `format` BC6H or BC1. Fills `rgba` with
+// width * height * depth * 4 floats, z slowest, x fastest. BC6H values are
+// clamped to the half float range, BC1 comes out as 0..1.
+bool DecodeVolumeFloat(const uint8_t* compressed, size_t compressedSize, size_t surfaceSize, uint32_t format,
+                       uint32_t width, uint32_t height, uint32_t depth, std::vector<float>& rgba,
+                       std::string& error);
 // Decodes one face of BC6H blocks (`texels` on a side) into RGBA half floats, alpha 1.
 void DecodeBc6hFace(const uint8_t* blocks, uint32_t texels, bool isSigned, uint16_t* rgba);
 
