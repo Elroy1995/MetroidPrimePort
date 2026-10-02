@@ -2251,8 +2251,14 @@ void CFrontEndUI::Draw() const {
       const uint vidHeight = xcc_curMoviePtr->GetHeight();
       // Signed arithmetic: the video is narrower than a widescreen viewport, so
       // an unsigned subtraction would underflow and throw the quad off-screen.
+#ifdef TARGET_PC
+      int centerX;
+      int centerY;
+      xcc_curMoviePtr->PortGetMargins(vpWidth, vpHeight, centerX, centerY);
+#else
       const int centerX = (static_cast< int >(vidWidth) - vpWidth) / 2;
       const int centerY = (static_cast< int >(vidHeight) - vpHeight) / 2;
+#endif
       int vl = vpLeft - centerX;
       int vr = vpLeft + vpWidth + centerX;
       int vb = vpTop + vpHeight + centerY;
