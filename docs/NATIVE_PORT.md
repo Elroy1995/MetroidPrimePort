@@ -408,6 +408,15 @@ skipped. Inside a mod:
   later mod's TXTR without a `.dds` drops an earlier mod's `.dds` for that id.
   On a GPU without BC support (most phones) the TXTR is drawn instead. The log
   and the Mods panel count them (`mods: <n> native texture(s)`).
+- a file named `<name>.sdfont`, anywhere in the mod, is a distance-field font
+  (each texel holds how far it is from the glyph's edge), which stays sharp at
+  any resolution. The port draws its glyphs in place of the disc's bitmap ones
+  for the Deface fonts (HUD, menus, scans, logbook), fitted to the disc's
+  capital H; the layout is still the disc's (advances, kerning, line breaks),
+  so text sits where it did. From a character the file lacks, the rest of
+  that run of text is drawn from the disc. The last mod with one wins,
+  `MP_HD_FONT=0` turns it off, and the layout is in
+  `platform/include/port_hd_font.h`.
 - a file named `<MREA id, 8 hex digits>.roomenv`, anywhere in the mod, is that
   area's lighting environment for PBR materials: reflection probes, each a box
   of the world with a prefiltered HDR cube map (BC6H) of what surrounds it. A
@@ -534,6 +543,9 @@ converted as above with textures capped at 1024 px, and a `.roomgeo` per
 area, in the mod's `roomgeo` folder. Experimental and off by default: the
 full set is 7675 models and 4.4 GB, the rooms have no baked lighting, and
 blended materials are drawn opaque.
+
+The import also writes Remastered's typeface as `font/deface.sdfont` (see above): the
+FONT asset with the most characters, its first face.
 
 Measured on the development machine: 342 models and 275 room environments, 44
 seconds on 16 threads, 2.3 GB of memory at the peak, 1.1 GB on disk (half of it

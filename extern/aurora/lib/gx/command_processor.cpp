@@ -772,6 +772,12 @@ void handle_aurora(ByteReader& reader) noexcept {
       g_gxState.pbr = pbr;
       g_gxState.dirty |= DirtyPipeline;
     }
+  } else if (subCmd == GX_AURORA_SET_SDF) {
+    const u8 sdf = reader.read<u8>();
+    if (g_gxState.sdf != sdf) {
+      g_gxState.sdf = sdf;
+      g_gxState.dirty |= DirtyPipeline;
+    }
   } else if (subCmd == GX_AURORA_COPY_PROBE_FACE) {
     copy_probe_face(reader.read<u8>());
   } else if (subCmd == GX_AURORA_SET_PBR_PROBE) {

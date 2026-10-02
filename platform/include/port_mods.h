@@ -170,6 +170,8 @@ void UnbindTexture(const void* owner);
 // How many .dds files the mods supply, and how many are bound now.
 size_t NativeTextureCount();
 size_t NativeTexturesBound();
+// The .sdfont a mod supplies (port_hd_font.h), the last mod's when several do; empty when none.
+std::string FontPath();
 // The <MREA id>.roomenv a mod supplies for an area (port_room_env.h); empty when none.
 std::string RoomEnvPath(uint32_t mrea);
 // The <MREA id>.roomgeo a mod supplies for an area (port_room_geo.h); empty when none.

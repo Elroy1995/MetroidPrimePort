@@ -1907,6 +1907,16 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     fragmentFnPre +=
         fmt::format("\n    var sampled{0} = textureSampleBias(tex{1}, tex{1}_samp, {2}, ubuf.tex{1}_size_bias.z);", i,
                     underlying(stage.texMapId), uvIn);
+    if (config.sdf != 0) {
+      // GX_AURORA_SET_SDF: the sample is a distance, made coverage a screen pixel wide.
+      fragmentFnPre += fmt::format("\n    {{"
+                                   "\n        let sdf_d = sampled{0}.r;"
+                                   "\n        let sdf_w = max(fwidth(sdf_d), 0.0001);"
+                                   "\n        sampled{0} = vec4f(vec3f(clamp((sdf_d - 0.5) / sdf_w + 0.5, 0.0, 1.0)),"
+                                   "\n            clamp((sdf_d - {1:.6f}) / sdf_w + 0.5, 0.0, 1.0));"
+                                   "\n    }}",
+                                   i, float(config.sdf) / 255.f);
+    }
   }
   if (config.pbr) {
     uniBufAttrs += "\n    pbr_probe: mat3x4f,";

@@ -46,6 +46,11 @@ void GXSetPBR(GXBool enable) {
   GX_WRITE_U8(enable ? 1 : 0);
 }
 
+void GXSetSDF(u8 edge) {
+  GX_WRITE_AURORA(GX_AURORA_SET_SDF);
+  GX_WRITE_U8(edge);
+}
+
 void GXCopyProbeFace(u32 face) {
   GX_WRITE_AURORA(GX_AURORA_COPY_PROBE_FACE);
   GX_WRITE_U8(static_cast<u8>(face));

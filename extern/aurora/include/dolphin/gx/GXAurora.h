@@ -186,6 +186,13 @@ extern "C" {
  */
 #define GX_AURORA_SET_PBR_TONE 0x004E
 
+// Distance-field texturing for the following draws: every texture sample is read as
+// a signed distance (red, edge at 0.5) and becomes coverage, one screen pixel wide:
+// rgb = inside the shape, a = inside the shape grown out to `edge`.
+// Payload:
+//   u8 edge (distance of the outer edge x 255; 128 = the shape itself, 0 = off)
+#define GX_AURORA_SET_SDF 0x004F
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

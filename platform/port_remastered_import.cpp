@@ -20,6 +20,7 @@
 #include "port_mods.h"
 #include "port_remastered_cmdl.h"
 #include "port_remastered_convert.h"
+#include "port_remastered_font.h"
 #include "port_remastered_nsp.h"
 #include "port_remastered_pak.h"
 #include "port_remastered_room.h"
@@ -38,12 +39,15 @@ constexpr uint32_t kCSKR = 0x43534B52;
 constexpr uint32_t kTXTR = 0x54585452;
 constexpr uint32_t kMLVL = 0x4D4C564C;
 constexpr uint32_t kMREA = 0x4D524541;
+constexpr uint32_t kFONT = 0x464F4E54;
 
 constexpr const char* kStagingName = ".remastered-models.importing";
 // Written last, so a staging folder without it is an import that was cut short.
 constexpr const char* kMarkerName = "import-complete";
 constexpr const char* kRoomFolder = "roomenv";
 constexpr const char* kGeometryFolder = "roomgeo";
+constexpr const char* kFontFolder = "font";
+constexpr const char* kFontName = "deface.sdfont";
 // Largest edge of a room geometry texture: there are thousands of them.
 constexpr int kGeometryTexture = 1024;
 
@@ -97,6 +101,7 @@ void Finish(bool ok, const std::string& message) {
   sState.cancelled = !ok && sCancel.load();
   sState.message = message;
 }
+
 
 // --- The retail disc ----------------------------------------------------------
 
@@ -259,6 +264,8 @@ public:
           m_models.emplace(assets[a].id, Where{m_paks.size(), a});
         } else if (type == kTXTR) {
           m_textures.emplace(assets[a].id, Where{m_paks.size(), a});
+        } else if (type == kFONT) {
+          m_fonts.emplace(assets[a].id, Where{m_paks.size(), a});
         }
       }
       m_paks.push_back(std::move(pak));
@@ -277,6 +284,20 @@ public:
   bool ReadTexture(const ModelUuid& id, std::vector<uint8_t>& out, std::string& error) const {
     return Read(m_textures, id, out, error);
   }
+
+  // The FONT assets, in id order. There are several, with different sets of characters.
+  std::vector<ModelUuid> Fonts() const {
+    std::vector<ModelUuid> ids;
+    for (const auto& [id, where] : m_fonts) {
+      ids.push_back(id);
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
+  }
+  bool ReadFont(const ModelUuid& id, std::vector<uint8_t>& out, std::string& error) const {
+    return Read(m_fonts, id, out, error);
+  }
+
 
   // The paks of one world directory ("Intro_Master") as the room writer takes
   // them, and every pak of the image for the assets rooms share.
@@ -328,6 +349,7 @@ private:
   std::vector<std::string> m_paths;  // of m_paks, in the image
   Index m_models;
   Index m_textures;
+  Index m_fonts;
 };
 
 // --- The import ------------------------------------------------------------------
@@ -619,6 +641,46 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
   if (geometry.empty()) {
     fs::remove(geometryFolder, ec);
   }
+
+  // Remastered's typeface, which the port draws the disc's text with.
+  bool fontWritten = false;
+  {
+    std::vector<uint8_t> raw;
+    std::vector<uint8_t> out;
+    ModelUuid atlas{};
+    PortHdFont::Font font;
+    TxtrImage image;
+    std::string fontError = "not in the image";
+    // The one with the most characters, so that every language's text is covered.
+    for (const ModelUuid& id : remastered.Fonts()) {
+      ModelUuid candidateAtlas{};
+      PortHdFont::Font candidate;
+      std::string candidateError;
+      if (!remastered.ReadFont(id, raw, candidateError) ||
+          !ParseFont(raw.data(), raw.size(), candidateAtlas, candidate, candidateError)) {
+        fontError = candidateError;
+      } else if (candidate.glyphs.size() > font.glyphs.size()) {
+        font = std::move(candidate);
+        atlas = candidateAtlas;
+      }
+    }
+    if (font.glyphs.empty() || !remastered.ReadTexture(atlas, raw, fontError) ||
+        !DecodeTxtr(raw.data(), raw.size(), image, fontError)) {
+      AddLine("font: " + fontError);
+    } else if (!SetFontAtlas(font, image.width, image.height, image.rgba.data(), image.rgba.size()) ||
+               !PortHdFont::WriteFont(font, out)) {
+      AddLine("font: its texture is not usable");
+    } else {
+      const fs::path fontFolder = staging / kFontFolder;
+      fs::create_directories(fontFolder, ec);
+      std::ofstream file(fontFolder / kFontName, std::ios::binary);
+      file.write(reinterpret_cast<const char*>(out.data()), std::streamsize(out.size()));
+      fontWritten = bool(file);
+      if (!fontWritten) {
+        AddLine("font: cannot write");
+      }
+    }
+  }
   {
     std::ofstream marker(staging / kMarkerName);
     if (!marker) {
@@ -634,6 +696,9 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
   message += ", " + std::to_string(roomFiles.load()) + " room environments";
   if (!geometry.empty()) {
     message += ", " + std::to_string(geometryDone.load()) + " of " + std::to_string(geometry.size()) + " room models";
+  }
+  if (fontWritten) {
+    message += ", the font";
   }
   Finish(true, message + ".");
 }

@@ -389,6 +389,7 @@ struct GXState {
   u8 numTevStages = 0;
   u8 numTexGens = 0;
   bool pbr = false; // GX_AURORA_SET_PBR
+  u8 sdf = 0; // GX_AURORA_SET_SDF
   Mat3x4<float> pbrProbe; // GX_AURORA_SET_PBR_PROBE
   Vec4<float> pbrEmissive{1.f, 1.f, 1.f, 0.f}; // GX_AURORA_SET_PBR_MATERIAL
   Vec4<float> pbrBacklight{0.f, 0.f, 0.f, 0.f};
@@ -515,6 +516,8 @@ struct ShaderConfig {
   u8 fogRangeEnabled : 1 = false;
   u8 pad1 : 5 = 0;
   u8 pbr = 0; // GX_AURORA_SET_PBR
+  u8 sdf = 0; // GX_AURORA_SET_SDF
+  std::array<u8, 3> pad2{};
   std::array<AttrConfig, MaxVtxAttr> attrs;
   std::array<TevSwap, MaxTevSwap> tevSwapTable;
   std::array<TevStage, MaxTevStages> tevStages;
