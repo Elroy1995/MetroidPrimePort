@@ -675,13 +675,11 @@ int main(int argc, char** argv) {
         aurora_shutdown();
         return 1;
     }
-#if !defined(__ANDROID__)
     // A Remastered import finished in the last session becomes the mod now,
     // before anything has a file of the old one open.
     if (PortRemastered::ApplyPendingImport()) {
         PortLog::Write("metroid_prime_port: installed the imported Remastered models\n");
     }
-#endif
     PortMods::Initialize();
 
     // Prime the window/event state so the game's first aurora_begin_frame can
@@ -696,10 +694,8 @@ int main(int argc, char** argv) {
     }
 
     AIPortShutdown();
-#if !defined(__ANDROID__)
     // An import still running reads the disc.
     PortRemastered::StopImport();
-#endif
     aurora_dvd_close();
     aurora_shutdown();
     return result;

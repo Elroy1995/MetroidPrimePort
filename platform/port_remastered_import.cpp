@@ -1027,6 +1027,8 @@ bool ApplyPendingImport() {
   fs::remove_all(target, ec);
   fs::rename(staging, target, ec);
   if (ec) {
+    std::fprintf(stderr, "metroid_prime_port: could not move the imported mod to %s: %s\n",
+                 target.string().c_str(), ec.message().c_str());
     return false;
   }
   fs::remove(target / kMarkerName, ec);

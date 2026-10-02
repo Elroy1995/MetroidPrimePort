@@ -4,9 +4,7 @@
 #include "port_gci.h"
 #include "port_paths.h"
 #include "port_mods.h"
-#if !defined(__ANDROID__)
 #include "port_remastered_import.h"
-#endif
 #include "port_tracker.h"
 
 #include "Kyoto/CResFactory.hpp"
@@ -227,9 +225,7 @@ bool DoModReload(CStateManager& mgr) {
 
 void ReloadModFiles() {
   PortMods::BeginReload();
-#if !defined(__ANDROID__)
   PortRemastered::ApplyPendingImport();
-#endif
   PortMods::FinishReload();
 }
 

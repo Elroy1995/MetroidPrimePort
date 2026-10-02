@@ -2742,6 +2742,15 @@ std::string RemasteredPickName(const std::string& uri) {
 }
 #endif
 
+// What the last "Reload mods" came to: it waits for a game to start when none
+// is loaded, and is refused where the game can't be saved.
+void DrawModReloadMessage() {
+  const std::string message = PortSaveState::LastMessage();
+  if (message.find("mods") != std::string::npos || message.find("Mods") != std::string::npos) {
+    ImGui::TextWrapped("%s", message.c_str());
+  }
+}
+
 void DrawRemasteredImport() {
   static char sImage[1024] = "";
   static char sKeys[1024] = "";
@@ -2842,6 +2851,7 @@ void DrawRemasteredImport() {
       }
       ImGui::SameLine();
       ImGui::TextDisabled("or restart the game");
+      DrawModReloadMessage();
     } else if (state.finished && state.cancelled) {
       ImGui::TextDisabled("The import was cancelled.");
     } else if (state.finished) {
@@ -2958,6 +2968,7 @@ void DrawMods() {
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip("Reads the mods folder again and reloads the room, as a save state does.");
   }
+  DrawModReloadMessage();
   for (const std::string& message : status.messages) {
     ImGui::TextColored(ImVec4(1.f, 0.5f, 0.3f, 1.f), "%s", message.c_str());
   }
