@@ -37,6 +37,7 @@
 
 #include "port_remastered_txtr.h"
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -774,10 +775,10 @@ uint16_t FinishUnquantize(int32_t value, bool isSigned) {
   return uint16_t(sign | uint32_t(scaled));
 }
 
-// BC6H: 16 bytes to sixteen RGB texels of half precision, which the caller
-// reduces to 8 bits. Every mode stores its endpoints in its own bit layout, so
+// BC6H: 16 bytes to sixteen RGB texels of half precision. The 8 bit image
+// reduces them; the HDR cube reader keeps them as they are. Every mode stores its endpoints in its own bit layout, so
 // the mode decode is mostly a long list of bit field reads in a fixed order.
-void DecodeBc6h(const uint8_t* src, uint8_t* dst, bool isSigned) {
+void DecodeBc6h(const uint8_t* src, uint16_t* dst, bool isSigned) {
   const uint32_t weight3[8] = {0, 9, 18, 27, 37, 46, 55, 64};
   const uint32_t weight4[16] = {0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64};
 
@@ -881,7 +882,7 @@ void DecodeBc6h(const uint8_t* src, uint8_t* dst, bool isSigned) {
       g[2] |= int32_t(stream.ReadBits(4));
       g[1] |= int32_t(stream.ReadBits(5));
       g[0] |= int32_t(stream.ReadBit()) << 10;
-      g[3] |= int32_t(stream.ReadBit());
+      g[3] |= int32_t(stream.ReadBits(4));
       b[1] |= int32_t(stream.ReadBits(4));
       b[0] |= int32_t(stream.ReadBit()) << 10;
       b[3] |= int32_t(stream.ReadBit()) << 1;
@@ -903,17 +904,17 @@ void DecodeBc6h(const uint8_t* src, uint8_t* dst, bool isSigned) {
       r[0] |= int32_t(stream.ReadBit()) << 10;
       b[2] |= int32_t(stream.ReadBit()) << 4;
       g[2] |= int32_t(stream.ReadBits(4));
-      g[1] |= int32_t(stream.ReadBits(5));
+      g[1] |= int32_t(stream.ReadBits(4));
       g[0] |= int32_t(stream.ReadBit()) << 10;
       b[3] |= int32_t(stream.ReadBit());
       g[3] |= int32_t(stream.ReadBits(4));
-      b[1] |= int32_t(stream.ReadBits(4));
+      b[1] |= int32_t(stream.ReadBits(5));
       b[0] |= int32_t(stream.ReadBit()) << 10;
-      b[2] |= int32_t(stream.ReadBit());
+      b[2] |= int32_t(stream.ReadBits(4));
       r[2] |= int32_t(stream.ReadBits(4));
       b[3] |= int32_t(stream.ReadBit()) << 1;
       b[3] |= int32_t(stream.ReadBit()) << 2;
-      r[3] |= int32_t(stream.ReadBits(5));
+      r[3] |= int32_t(stream.ReadBits(4));
       b[3] |= int32_t(stream.ReadBit()) << 4;
       b[3] |= int32_t(stream.ReadBit()) << 3;
       partition = stream.ReadBits(5);
@@ -929,7 +930,7 @@ void DecodeBc6h(const uint8_t* src, uint8_t* dst, bool isSigned) {
       r[1] |= int32_t(stream.ReadBits(5));
       g[3] |= int32_t(stream.ReadBit()) << 4;
       g[2] |= int32_t(stream.ReadBits(4));
-      g[1] |= int32_t(stream.ReadBits(4));
+      g[1] |= int32_t(stream.ReadBits(5));
       b[3] |= int32_t(stream.ReadBit());
       g[3] |= int32_t(stream.ReadBits(4));
       b[1] |= int32_t(stream.ReadBits(5));
@@ -957,7 +958,7 @@ void DecodeBc6h(const uint8_t* src, uint8_t* dst, bool isSigned) {
       g[1] |= int32_t(stream.ReadBits(5));
       b[3] |= int32_t(stream.ReadBit());
       g[3] |= int32_t(stream.ReadBits(4));
-      b[1] |= int32_t(stream.ReadBits(4));
+      b[1] |= int32_t(stream.ReadBits(5));
       b[3] |= int32_t(stream.ReadBit()) << 1;
       b[2] |= int32_t(stream.ReadBits(4));
       r[2] |= int32_t(stream.ReadBits(6));
@@ -984,8 +985,8 @@ void DecodeBc6h(const uint8_t* src, uint8_t* dst, bool isSigned) {
       b[3] |= int32_t(stream.ReadBit()) << 1;
       b[2] |= int32_t(stream.ReadBits(4));
       r[2] |= int32_t(stream.ReadBits(5));
-      r[3] |= int32_t(stream.ReadBits(5));
       b[3] |= int32_t(stream.ReadBit()) << 2;
+      r[3] |= int32_t(stream.ReadBits(5));
       b[3] |= int32_t(stream.ReadBit()) << 3;
       partition = stream.ReadBits(5);
       mode = 7;
@@ -1009,8 +1010,8 @@ void DecodeBc6h(const uint8_t* src, uint8_t* dst, bool isSigned) {
       b[1] |= int32_t(stream.ReadBits(6));
       b[2] |= int32_t(stream.ReadBits(4));
       r[2] |= int32_t(stream.ReadBits(5));
-      r[3] |= int32_t(stream.ReadBits(5));
       b[3] |= int32_t(stream.ReadBit()) << 2;
+      r[3] |= int32_t(stream.ReadBits(5));
       b[3] |= int32_t(stream.ReadBit()) << 3;
       partition = stream.ReadBits(5);
       mode = 8;
@@ -1028,13 +1029,14 @@ void DecodeBc6h(const uint8_t* src, uint8_t* dst, bool isSigned) {
       g[2] |= int32_t(stream.ReadBit()) << 4;
       b[0] |= int32_t(stream.ReadBits(6));
       g[3] |= int32_t(stream.ReadBit()) << 5;
+      b[3] |= int32_t(stream.ReadBit()) << 3;
       b[3] |= int32_t(stream.ReadBit()) << 5;
       b[3] |= int32_t(stream.ReadBit()) << 4;
       r[1] |= int32_t(stream.ReadBits(6));
       g[2] |= int32_t(stream.ReadBits(4));
-      g[1] |= int32_t(stream.ReadBits(5));
+      g[1] |= int32_t(stream.ReadBits(6));
       g[3] |= int32_t(stream.ReadBits(4));
-      b[1] |= int32_t(stream.ReadBits(5));
+      b[1] |= int32_t(stream.ReadBits(6));
       b[2] |= int32_t(stream.ReadBits(4));
       r[2] |= int32_t(stream.ReadBits(6));
       r[3] |= int32_t(stream.ReadBits(6));
@@ -1140,14 +1142,14 @@ void DecodeBc6h(const uint8_t* src, uint8_t* dst, bool isSigned) {
       const uint32_t weight = weights[stream.ReadBits(indexBits)];
       const uint32_t endpoint = set * 2;
       dst[(i * 4 + j) * 3 + 0] =
-          uint8_t(FinishUnquantize(InterpolateInt(r[endpoint], r[endpoint + 1], int32_t(weight)),
-                                   isSigned) >> 8);
+          (FinishUnquantize(InterpolateInt(r[endpoint], r[endpoint + 1], int32_t(weight)),
+                                   isSigned));
       dst[(i * 4 + j) * 3 + 1] =
-          uint8_t(FinishUnquantize(InterpolateInt(g[endpoint], g[endpoint + 1], int32_t(weight)),
-                                   isSigned) >> 8);
+          (FinishUnquantize(InterpolateInt(g[endpoint], g[endpoint + 1], int32_t(weight)),
+                                   isSigned));
       dst[(i * 4 + j) * 3 + 2] =
-          uint8_t(FinishUnquantize(InterpolateInt(b[endpoint], b[endpoint + 1], int32_t(weight)),
-                                   isSigned) >> 8);
+          (FinishUnquantize(InterpolateInt(b[endpoint], b[endpoint + 1], int32_t(weight)),
+                                   isSigned));
     }
   }
 }
@@ -2685,12 +2687,12 @@ bool DecodeBlocks(uint32_t format, uint32_t width, uint32_t height, const uint8_
           case kTxtrFormatBc6hSfloat: {
             // Three half float channels, reduced to 8 bits by taking their high
             // byte, which is the usual 16 to 8 bit rule.
-            uint8_t half[4 * 4 * 3] = {};
+            uint16_t half[4 * 4 * 3] = {};
             DecodeBc6h(src, half, format == kTxtrFormatBc6hSfloat);
             for (size_t i = 0; i < 16; ++i) {
-              decoded[i * 4 + 0] = half[i * 3 + 0];
-              decoded[i * 4 + 1] = half[i * 3 + 1];
-              decoded[i * 4 + 2] = half[i * 3 + 2];
+              decoded[i * 4 + 0] = uint8_t(half[i * 3 + 0] >> 8);
+              decoded[i * 4 + 1] = uint8_t(half[i * 3 + 1] >> 8);
+              decoded[i * 4 + 2] = uint8_t(half[i * 3 + 2] >> 8);
               decoded[i * 4 + 3] = 255;
             }
             break;
@@ -2806,6 +2808,95 @@ bool DecodeTxtr(const uint8_t* data, size_t size, TxtrImage& out, std::string& e
   out.rgba.assign(size_t(head.width) * head.height * 4, 0);
   return DecodeBlocks(head.format, head.width, head.height, untiled.data(), out.rgba.data(),
                       error);
+}
+
+bool DecodeTxtrCubeHdr(const uint8_t* data, size_t size, TxtrCubeHdr& out, std::string& error) {
+  out = TxtrCubeHdr{};
+  if (data == nullptr || size == 0) {
+    error = "remastered txtr: no data";
+    return false;
+  }
+  TextureHeader head;
+  if (!ReadHeader(data, size, head, error)) {
+    return false;
+  }
+  if (head.kind != 3 || head.layers != 6 || head.width != head.height || head.width == 0 ||
+      head.width > 4096 || head.mipSizes.empty()) {
+    error = "remastered txtr: not a cube map";
+    return false;
+  }
+  if (head.format != kTxtrFormatBc6hUfloat && head.format != kTxtrFormatBc6hSfloat) {
+    error = "remastered txtr: the cube is " + std::string(FormatName(head.format)) + ", not BC6H";
+    return false;
+  }
+  Meta meta;
+  if (!ReadMeta(data, size, meta, error)) {
+    return false;
+  }
+  std::vector<uint8_t> surface;
+  if (!BuildSurface(data, size, meta, surface, error)) {
+    return false;
+  }
+
+  // The mip chain stops where the file's does, or at 1x1.
+  uint32_t mipCount = 0;
+  while (mipCount < head.mipSizes.size() && (head.width >> mipCount) != 0) {
+    ++mipCount;
+  }
+  const bool isSigned = head.format == kTxtrFormatBc6hSfloat;
+  const size_t bytesPerBlock = 16;
+  const uint32_t blockHeightMip0 = BlockHeightMip0(DivRoundUp(size_t(head.width), 4));
+
+  out.size = head.width;
+  out.mipCount = mipCount;
+  out.mips.resize(size_t(mipCount) * 6);
+
+  // tegra_swizzle's surface layout: each layer holds its whole mip chain, and
+  // a layer starts on a multiple of the block of GOBs the top mip uses.
+  size_t srcOffset = 0;
+  std::vector<uint8_t> untiled;
+  for (uint32_t layer = 0; layer < 6; ++layer) {
+    for (uint32_t mip = 0; mip < head.mipSizes.size(); ++mip) {
+      const uint32_t texels = std::max(head.width >> mip, 1u);
+      const size_t blocks = DivRoundUp(size_t(texels), 4);
+      const uint32_t mipBlockHeight = MipBlockHeight(blocks, blockHeightMip0);
+      const size_t swizzled = SwizzledMipSize(blocks, blocks, 1, mipBlockHeight, bytesPerBlock);
+      if (swizzled > surface.size() || srcOffset > surface.size() - swizzled) {
+        error = "remastered txtr: the cube's surface is short";
+        return false;
+      }
+      if (mip < mipCount) {
+        untiled.assign(blocks * blocks * bytesPerBlock, 0);
+        DeswizzleMip(blocks, blocks, 1, mipBlockHeight, 1, bytesPerBlock, surface.data(), srcOffset,
+                     untiled.data());
+        std::vector<uint16_t>& texelsOut = out.mips[size_t(mip) * 6 + layer];
+        texelsOut.assign(size_t(texels) * texels * 4, 0x3C00);  // alpha is 1.0
+        for (size_t by = 0; by < blocks; ++by) {
+          for (size_t bx = 0; bx < blocks; ++bx) {
+            uint16_t half[4 * 4 * 3] = {};
+            DecodeBc6h(untiled.data() + (by * blocks + bx) * bytesPerBlock, half, isSigned);
+            for (size_t y = 0; y < 4 && by * 4 + y < texels; ++y) {
+              for (size_t x = 0; x < 4 && bx * 4 + x < texels; ++x) {
+                uint16_t* p = texelsOut.data() + ((by * 4 + y) * texels + bx * 4 + x) * 4;
+                p[0] = half[(y * 4 + x) * 3 + 0];
+                p[1] = half[(y * 4 + x) * 3 + 1];
+                p[2] = half[(y * 4 + x) * 3 + 2];
+              }
+            }
+          }
+        }
+      }
+      srcOffset += swizzled;
+    }
+    // align_layer_size, with the block height shrunk to fit the top mip.
+    uint32_t gobHeight = blockHeightMip0;
+    while (head.width <= (gobHeight / 2) * 8 && gobHeight > 1) {
+      gobHeight /= 2;
+    }
+    const size_t unit = size_t(gobHeight) * kGobSizeBytes;
+    srcOffset = DivRoundUp(srcOffset, unit) * unit;
+  }
+  return true;
 }
 
 }  // namespace PortRemastered
