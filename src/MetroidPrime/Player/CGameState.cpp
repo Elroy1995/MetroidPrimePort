@@ -216,10 +216,12 @@ void CWorldState::SetDesiredAreaAssetId(CAssetId id) { x10_desiredAreaAssetId = 
 rstl::ncrc_ptr< CScriptLayerManager >& CWorldState::GetLayerState() { return x14_layerState; }
 
 #ifdef TARGET_PC
-// Marks the Archipelago trailer after the retail save data ("APX2"; "APIX"
-// before the checked locations were kept). The unused tail of a retail save is
-// zero, so it cannot match by accident.
-static const uint kPortApMagic = 0x41505832;
+// Marks the Archipelago trailer after the retail save data ("APX3"; "APX2"
+// before the broken blast shields were kept, "APIX" before the checked
+// locations were). The unused tail of a retail save is zero, so it cannot
+// match by accident.
+static const uint kPortApMagic = 0x41505833;
+static const uint kPortApMagicV2 = 0x41505832;
 static const uint kPortApMagicV1 = 0x41504958;
 #endif
 
@@ -237,8 +239,10 @@ CGameState::CGameState() : x0_(static_cast< uchar >(0))
   xpc_apProgress.recorded = true;
   xpc_apProgress.identity = 0;
   xpc_apProgress.appliedIndex = 0;
-  for (int i = 0; i < 4; ++i)
+  for (int i = 0; i < 4; ++i) {
     xpc_apProgress.checked[i] = 0;
+    xpc_apProgress.shields[i] = 0;
+  }
   xpc_apProgress.reconciled = false;
 #endif
   if (gpMemoryCard != nullptr)
@@ -282,13 +286,16 @@ CGameState::CGameState(CInputStream& in, int saveIdx) : x0_(static_cast< uchar >
   }
 #ifdef TARGET_PC
   {
-    // The first trailer had no checked locations.
+    // The first trailer had no checked locations, the second no shields.
     const uint magic = in.ReadBits(32);
-    xpc_apProgress.recorded = magic == kPortApMagic || magic == kPortApMagicV1;
+    const bool hasChecked = magic == kPortApMagic || magic == kPortApMagicV2;
+    xpc_apProgress.recorded = hasChecked || magic == kPortApMagicV1;
     xpc_apProgress.identity = xpc_apProgress.recorded ? in.ReadBits(32) : 0;
     xpc_apProgress.appliedIndex = xpc_apProgress.recorded ? in.ReadBits(32) : 0;
     for (int i = 0; i < 4; ++i)
-      xpc_apProgress.checked[i] = magic == kPortApMagic ? in.ReadBits(32) : 0;
+      xpc_apProgress.checked[i] = hasChecked ? in.ReadBits(32) : 0;
+    for (int i = 0; i < 4; ++i)
+      xpc_apProgress.shields[i] = magic == kPortApMagic ? in.ReadBits(32) : 0;
   }
   xpc_apProgress.reconciled = false;
 #endif
@@ -377,6 +384,8 @@ void CGameState::PutTo(COutputStream& out) {
     out.WriteBits(xpc_apProgress.appliedIndex, 32);
     for (int i = 0; i < 4; ++i)
       out.WriteBits(xpc_apProgress.checked[i], 32);
+    for (int i = 0; i < 4; ++i)
+      out.WriteBits(xpc_apProgress.shields[i], 32);
   }
 #endif
 }

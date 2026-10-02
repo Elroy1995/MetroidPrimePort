@@ -5,6 +5,7 @@
 #include "port_custom_res.h"
 #include "port_json.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -457,7 +458,7 @@ std::vector< uint8_t > TempleOps(const Layout& layout) {
   return ops;
 }
 
-std::vector< DoorChange > Doors(const Layout& layout, uint32_t mrea) {
+std::vector< DoorChange > Doors(const Layout& layout, uint32_t mrea, const uint32_t* broken) {
   std::vector< DoorChange > out;
   if (!layout.hasDoorColors && !layout.hasShields)
     return out;
@@ -466,7 +467,17 @@ std::vector< DoorChange > Doors(const Layout& layout, uint32_t mrea) {
                                              "Wave Beam",  "Blue", "Power Beam Only", "Blue",
                                              "Disabled",   "Blue"};
   const int kDisabled = NameIndex(kShields, "Disabled");
+  const int kNoShield = NameIndex(kShields, "None");
   const Resolved resolved = Resolve(layout);
+  auto shielded = [&](int door) {
+    return resolved.shield[door] >= 0 && resolved.shield[door] != kDisabled &&
+           resolved.shield[door] != kNoShield;
+  };
+  // The door that stands for both sides of a shielded doorway.
+  auto owner = [&](int door) {
+    const int pair = PairedDoor(door);
+    return pair >= 0 && pair < door && shielded(pair) ? pair : door;
+  };
   for (int i = 0; i < kDoorCount; ++i) {
     const Door& d = kDoors[i];
     const Room& room = kRooms[d.room];
@@ -487,6 +498,20 @@ std::vector< DoorChange > Doors(const Layout& layout, uint32_t mrea) {
       change.type = kUnderShield[resolved.shield[i]];
       if (resolved.shield[i] != kDisabled)
         change.shield = kShields[resolved.shield[i]];
+      change.replacesShield = change.shield != "Missile";
+      if (shielded(i)) {
+        const int first = owner(i);
+        change.shieldBit = 0;
+        for (int j = 0; j < first; ++j)
+          if (shielded(j) && owner(j) == j)
+            ++change.shieldBit;
+        if (broken != nullptr && change.shieldBit < kShieldBits &&
+            ((broken[change.shieldBit / 32] >> (change.shieldBit % 32)) & 1) != 0) {
+          change.shield.clear();
+          if (change.type == "Bomb" || change.type == "Power Beam Only")
+            change.type = "Blue";
+        }
+      }
     }
     if (change.type.empty() && change.shield.empty())
       continue;
@@ -642,7 +667,216 @@ size_t NameEnd(const std::vector< uint8_t >& props) {
 // name): a DamageableTrigger's weaknesses and its three textures, an Actor's
 // model, and in a Door the animation set, the light parameters' count, the
 // scan and, from the end, the orbit position.
-enum { kActorType = 0x00, kDoorType = 0x03, kDamageableTriggerType = 0x1A };
+enum {
+  kActorType = 0x00,
+  kDoorType = 0x03,
+  kTriggerType = 0x04,
+  kTimerType = 0x05,
+  kSoundType = 0x09,
+  kRelayType = 0x15,
+  kDamageableTriggerType = 0x1A,
+  kPointOfInterestType = 0x42,
+  kStreamedAudioType = 0x61,
+  kCameraShakerType = 0x89,
+};
+// Script states and messages.
+enum { kClosedState = 2, kMaxReachedState = 7, kZeroState = 9, kDeadState = 14 };
+enum {
+  kActivateMsg = 1,
+  kDeactivateMsg = 4,
+  kDecrementMsg = 5,
+  kIncrementMsg = 7,
+  kOpenMsg = 9,
+  kSetToZeroMsg = 13,
+  kActionMsg = 19,
+  kPlayMsg = 20,
+};
+
+constexpr uint32_t kMissileShieldCmdl = 0xEFDFFB8C;
+constexpr uint32_t kHatchAnimSet = 0xF57DD484;
+
+struct ShieldType {
+  const char* name;
+  uint32_t cmdl;
+  bool canOrbit;
+  const char* scan;
+};
+
+#define PORT_AP_RED(text) "&push;&main-color=#D91818;" text "&pop;"
+#define PORT_AP_ADVANCED(what)                                                                     \
+  "There is an Advanced Blast Shield on the door blocking access. Analysis indicates that the "    \
+  "Blast Shield is reinforced with " PORT_AP_RED(what) ", rendering it invulnerable to most "      \
+  "weapons."
+#define PORT_AP_ELEMENTAL(how)                                                                     \
+  "There is an Elemental Blast Shield on the door blocking access. Analysis indicates that the "   \
+  "Blast Shield is invulnerable to standard Beam fire. " how " may damage it."
+// randomprime's scan texts (door_meta.rs); the missile shield's is the port's.
+const ShieldType kShieldTypes[] = {
+    {"Missile", kMissileShieldCmdl, true,
+     "There is a Blast Shield on the door blocking access. Analysis indicates that the Blast "
+     "Shield is invulnerable to most weapons. " "A " PORT_AP_RED("Missile") " may damage it."},
+    {"Bomb", PortCustomRes::ShieldCmdl(PortCustomRes::kShieldBomb), false,
+     "There is a Blast Shield on the door blocking access. Analysis indicates that the Blast "
+     "Shield is reinforced with " PORT_AP_RED("Sandstone") ", rendering it invulnerable to most "
+     "weapons."},
+    {"Charge Beam", PortCustomRes::ShieldCmdl(PortCustomRes::kShieldCharge), true,
+     "This Blast Shield can be destroyed with a " PORT_AP_RED("Concussive Blast") "."},
+    {"Flamethrower", PortCustomRes::ShieldCmdl(PortCustomRes::kShieldFlamethrower), true,
+     PORT_AP_ELEMENTAL("Continuous exposure to " PORT_AP_RED("Extreme Heat"))},
+    {"Ice Spreader", PortCustomRes::ShieldCmdl(PortCustomRes::kShieldIceSpreader), true,
+     PORT_AP_ELEMENTAL("A concussive blast augmented with " PORT_AP_RED("Extreme Cold"))},
+    {"Wavebuster", PortCustomRes::ShieldCmdl(PortCustomRes::kShieldWavebuster), true,
+     PORT_AP_ELEMENTAL("Continuous exposure to " PORT_AP_RED("Extreme Amperage"))},
+    {"Power Bomb", PortCustomRes::ShieldCmdl(PortCustomRes::kShieldPowerBomb), false,
+     PORT_AP_ADVANCED("Bendezium")},
+    {"Super Missile", PortCustomRes::ShieldCmdl(PortCustomRes::kShieldSuperMissile), true,
+     PORT_AP_ADVANCED("Cordite")},
+};
+#undef PORT_AP_ADVANCED
+#undef PORT_AP_ELEMENTAL
+#undef PORT_AP_RED
+
+const ShieldType* FindShieldType(const std::string& name) {
+  for (const ShieldType& type : kShieldTypes)
+    if (name == type.name)
+      return &type;
+  return nullptr;
+}
+
+// A script object's properties, as the loaders read them.
+struct Props {
+  std::vector< uint8_t > data;
+  Props(uint32_t count, const char* name) {
+    U32(count);
+    Str(name);
+  }
+  Props& U32(uint32_t v) {
+    for (int shift = 24; shift >= 0; shift -= 8)
+      data.push_back(uint8_t(v >> shift));
+    return *this;
+  }
+  Props& F(float v) {
+    uint32_t bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    return U32(bits);
+  }
+  Props& Vec(float x, float y, float z) { return F(x).F(y).F(z); }
+  Props& Vec(const float* v) { return Vec(v[0], v[1], v[2]); }
+  Props& B(bool v) {
+    data.push_back(v ? 1 : 0);
+    return *this;
+  }
+  Props& Str(const char* text) {
+    data.insert(data.end(), text, text + std::strlen(text) + 1);
+    return *this;
+  }
+  Props& Raw(const std::vector< uint8_t >& bytes) {
+    data.insert(data.end(), bytes.begin(), bytes.end());
+    return *this;
+  }
+  Props& Health() { return U32(2).F(1.f).F(1.f); }
+  Props& Visor() { return U32(3).B(false).B(true).U32(15); }
+};
+
+// Where a blast shield goes on a door, from the position of the door's own
+// shield actor (randomprime's measured offsets). False for a door that
+// faces no way it knows.
+struct ShieldPlace {
+  float position[3];
+  float rotation[3];
+  float scale[3];
+  float trigger[3];
+  float triggerSize[3];
+};
+
+bool PlaceShield(const DoorChange& door, const float* at, const float* actorRotation,
+                 ShieldPlace& out) {
+  auto set = [](float* v, float x, float y, float z) {
+    v[0] = x;
+    v[1] = y;
+    v[2] = z;
+  };
+  const float* r = door.rotation;
+  float offset[3];
+  if (door.vertical) {
+    set(out.scale, 1.1776f, 1.8f, 1.8f);
+    set(out.triggerSize, 5.f, 5.f, 0.875f);
+    if (r[0] > -90.f && r[0] < 90.f) { // in a ceiling
+      set(offset, 0.016708f, -2.141243f, 0.40522f);
+      set(out.rotation, 0.f, -90.f, -90.f);
+    } else if (r[0] < -90.f && r[0] > -270.f) { // in a floor
+      set(offset, -0.0112f, -2.140015f, -0.371151f);
+      set(out.rotation, -90.f, 90.f, 0.f);
+    } else {
+      return false;
+    }
+    for (int k = 0; k < 3; ++k)
+      out.position[k] = at[k] + offset[k];
+    set(out.trigger, out.position[0], out.position[1] + 2.f,
+        out.position[2] + (out.rotation[0] == 0.f ? -1.f : 1.f));
+    return true;
+  }
+
+  set(out.scale, 1.f, 1.5f, 1.5f);
+  set(out.rotation, r[0], r[1], r[2]);
+  const bool west = (r[2] >= 135.f && r[2] < 225.f) || (r[2] < -135.f && r[2] > -225.f);
+  // The tilted doors of Biotech Research Area 1 and the Hive Totem first.
+  if (r[0] >= 11.f && r[0] < 13.f)
+    set(offset, 0.374077f, -0.406525f, -1.762893f);
+  else if (r[0] >= -13.f && r[0] < -11.f)
+    set(offset, 0.374184f, 0.392502f, -1.763191f);
+  else if (r[1] >= 8.f && r[1] < 9.f) {
+    set(offset, -0.00595f, 0.383209f, -1.801748f);
+    set(out.rotation, actorRotation[0], actorRotation[1], actorRotation[2]);
+  } else if (r[0] >= 8.f && r[0] < 9.f)
+    set(offset, -0.406285f, -0.27829f, -1.780129f);
+  else if (r[0] >= -9.f && r[0] < -7.f)
+    set(offset, 0.392498f, -0.27829f, -1.780126f);
+  else if (r[2] >= 45.f && r[2] < 135.f)
+    set(offset, -0.00595f, 0.383209f, -1.801748f);
+  else if (west)
+    set(offset, -0.383225f, 0.f, -1.80175f);
+  else if (r[2] >= -135.f && r[2] < -45.f)
+    set(offset, -0.00769f, -0.383224f, -1.801752f);
+  else if (r[2] >= -45.f && r[2] < 45.f)
+    set(offset, 0.392517f, 0.f, -1.801746f);
+  else
+    return false;
+  for (int k = 0; k < 3; ++k)
+    out.position[k] = at[k] + offset[k];
+
+  // The trigger stands a unit in front of the shield, and two up.
+  float step[3] = {0.f, 0.f, 2.f};
+  bool alongY = true;
+  if (r[0] >= -15.f && r[0] < -10.f)
+    set(step, -0.35f, -1.f, 2.f);
+  else if (r[0] >= 10.f && r[0] < 15.f)
+    set(step, -0.35f, 1.f, 2.f);
+  else if (r[0] >= 8.f && r[0] < 9.f) {
+    set(step, 1.f, 0.35f, 2.f);
+    alongY = false;
+  } else if (r[0] >= -9.f && r[0] < -7.f) {
+    set(step, -1.f, 0.35f, 2.f);
+    alongY = false;
+  } else if (r[2] >= 45.f && r[2] < 135.f)
+    step[1] = -1.f;
+  else if (west) {
+    step[0] = 1.f;
+    alongY = false;
+  } else if (r[2] >= -135.f && r[2] < -45.f)
+    step[1] = 1.f;
+  else {
+    step[0] = -1.f;
+    alongY = false;
+  }
+  for (int k = 0; k < 3; ++k)
+    out.trigger[k] = out.position[k] + step[k];
+  if (alongY)
+    set(out.triggerSize, 5.f, 0.875f, 4.f);
+  else
+    set(out.triggerSize, 0.875f, 5.f, 4.f);
+  return true;
+}
 enum {
   kForceVulnerability = 36,
   kForceTextures = 156,
@@ -660,7 +894,7 @@ enum {
 
 std::vector< uint8_t > DoorOps(const std::vector< DoorChange >& doors,
                                const std::vector< PortSkipCutscenes::ScriptObject >& objects,
-                               const ScanMaker& scan) {
+                               const ScanMaker& scan, std::vector< PlacedShield >* placed) {
   std::vector< uint8_t > ops;
   auto u16 = [&](uint32_t v) {
     ops.push_back(uint8_t(v >> 8));
@@ -704,6 +938,223 @@ std::vector< uint8_t > DoorOps(const std::vector< DoorChange >& doors,
     return nullptr;
   };
 
+  struct Conn {
+    uint32_t state, msg, target;
+  };
+  auto push = [&](uint8_t type, uint32_t id, const std::vector< Conn >& conns,
+                  const Props& props) {
+    ops.push_back(5);
+    ops.push_back(0); // layer
+    ops.push_back(type);
+    u32(id);
+    u16(static_cast< uint32_t >(conns.size()));
+    for (const Conn& c : conns) {
+      u32(c.state);
+      u32(c.msg);
+      u32(c.target);
+    }
+    u32(static_cast< uint32_t >(props.data.size()));
+    ops.insert(ops.end(), props.data.begin(), props.data.end());
+  };
+  auto connect = [&](uint32_t sender, const Conn& c) {
+    ops.push_back(4);
+    u32(sender);
+    u32(c.state);
+    u32(c.msg);
+    u32(c.target);
+  };
+  // New objects take instance numbers past the room's, and past the ones
+  // other patches hand out.
+  uint32_t nextInstance = 0x7000;
+  for (const PortSkipCutscenes::ScriptObject& o : objects)
+    nextInstance = std::max(nextInstance, (o.id & 0xFFFF) + 1);
+
+  // The disc's missile shield on a door and its scan point (randomprime's
+  // patch_remove_blast_shield: within 5 units of the doorway on every axis).
+  const uint32_t kDiscShieldScan = 0x05F56F9D;
+  auto discShield = [&](const PortSkipCutscenes::ScriptObject& doorObject,
+                        std::vector< uint32_t >* ids) {
+    const size_t doorStart = NameEnd(doorObject.props);
+    bool found = false;
+    for (const PortSkipCutscenes::ScriptObject& o : objects) {
+      const size_t start = NameEnd(o.props);
+      if (start == 0)
+        continue;
+      bool shield = false;
+      if (o.type == kActorType && o.props.size() >= start + kActorModel + 4)
+        shield = Read32(o.props, start + kActorModel) == kMissileShieldCmdl;
+      else if (o.type == kPointOfInterestType && o.props.size() >= start + 33)
+        shield = Read32(o.props, start + 29) == kDiscShieldScan;
+      if (!shield)
+        continue;
+      bool close = true;
+      for (int k = 0; k < 3; ++k) {
+        const float d = ReadFloat(o.props, start + 4 * k) - ReadFloat(doorObject.props, doorStart + 4 * k);
+        close = close && d > -5.f && d < 5.f;
+      }
+      if (!close)
+        continue;
+      found = found || o.type == kActorType;
+      if (ids != nullptr)
+        ids->push_back(o.id);
+    }
+    return found;
+  };
+  auto removeDiscShield = [&](const DoorChange& door) {
+    const PortSkipCutscenes::ScriptObject* object = find(door.doorId, kDoorType, 12);
+    std::vector< uint32_t > ids;
+    if (object == nullptr || !discShield(*object, &ids))
+      return;
+    for (uint32_t id : ids) {
+      ops.push_back(6);
+      u32(id);
+    }
+  };
+
+  // The shield over `door`, and everything that goes with it.
+  auto addShield = [&](const DoorChange& door) {
+    const ShieldType* shield = FindShieldType(door.shield);
+    const PortSkipCutscenes::ScriptObject* object = find(door.doorId, kDoorType, kDoorAnimSet + 4);
+    if (shield == nullptr || object == nullptr || door.doorId == 0x002C0186 ||
+        nextInstance + 8 > 0xFFFF)
+      return;
+    if (Read32(object->props, NameEnd(object->props) + kDoorAnimSet) == kHatchAnimSet)
+      return;
+    // Main Plaza's door to the Plaza Access ledge has its shield elsewhere.
+    const uint32_t anchorId =
+        door.mrea == 0xD5CDB809 && door.dock == 4 ? 0x00020004 : door.shieldActors[0];
+    const PortSkipCutscenes::ScriptObject* anchor = find(anchorId, kActorType, 24);
+    if (anchor == nullptr)
+      return;
+    float at[3], actorRotation[3];
+    const size_t anchorStart = NameEnd(anchor->props);
+    for (int k = 0; k < 3; ++k) {
+      at[k] = ReadFloat(anchor->props, anchorStart + 4 * k);
+      actorRotation[k] = ReadFloat(anchor->props, anchorStart + 12 + 4 * k);
+    }
+    ShieldPlace place;
+    if (!PlaceShield(door, at, actorRotation, place))
+      return;
+    // A missile shield where the disc has one: the disc's serves.
+    if (!door.replacesShield && discShield(*object, nullptr))
+      return;
+
+    const uint32_t base = (door.doorId & 0x03FF0000) | nextInstance;
+    nextInstance += 8;
+    const uint32_t actorId = base, triggerId = base + 1, poiId = base + 2, relayId = base + 3,
+                   soundId = base + 4, musicId = base + 5, shakerId = base + 6,
+                   timerId = base + 7;
+    const uint32_t scanId = scan ? scan(shield->scan) : 0;
+    const uint32_t kNone = 0xFFFFFFFF;
+
+    Props actor(24, "Blast Shield");
+    actor.Vec(place.position).Vec(place.rotation).Vec(place.scale);
+    actor.Vec(0.f, 0.f, 0.f).Vec(0.f, 0.f, 0.f).F(1.f).F(0.f).Health();
+    actor.Raw(Vulnerability(door.shield)).U32(shield->cmdl);
+    actor.U32(kNone).U32(0).U32(kNone); // no animation
+    // ActorParameters: lights, scan, visor models, visibility.
+    actor.U32(14);
+    actor.U32(14).B(true).F(1.f).U32(0).F(1.f).F(20.f).F(1.f).F(1.f).F(1.f).F(1.f);
+    actor.B(true).U32(1).U32(1).Vec(0.f, 0.f, 0.f).U32(4).U32(4).B(false).U32(0);
+    actor.U32(1).U32(kNone);
+    actor.U32(kNone).U32(kNone).U32(kNone).U32(kNone);
+    actor.B(true).F(1.f).F(1.f).Visor().B(false).B(false).B(false).F(1.f);
+    // looping, immovable, not solid, no camera passthrough, active
+    actor.B(true).B(true).B(false).B(false).B(true).U32(0).F(1.f);
+    actor.B(false).B(false).B(false).B(false);
+    push(kActorType, actorId, {}, actor);
+
+    Props trigger(12, "Blast Shield Trigger");
+    trigger.Vec(place.trigger).Vec(place.triggerSize).Health();
+    trigger.Raw(Vulnerability(door.shield)).U32(0).U32(kNone).U32(kNone).U32(kNone);
+    trigger.B(shield->canOrbit).B(true).Visor();
+    push(kDamageableTriggerType, triggerId, {{kDeadState, kSetToZeroMsg, relayId}}, trigger);
+
+    if (scanId != 0) {
+      Props poi(6, "Blast Shield Scan");
+      poi.Vec(place.trigger[0], place.trigger[1], place.trigger[2] + 0.5f).Vec(0.f, 0.f, 0.f);
+      poi.B(true).U32(1).U32(scanId).F(0.f);
+      push(kPointOfInterestType, poiId, {}, poi);
+    }
+
+    // What breaking the shield does: it goes with a bang, and the door, no
+    // longer protected, opens as if shot.
+    std::vector< Conn > broke{{kZeroState, kDeactivateMsg, actorId},
+                              {kZeroState, kPlayMsg, soundId},
+                              {kZeroState, kPlayMsg, musicId},
+                              {kZeroState, kDeactivateMsg, triggerId},
+                              {kZeroState, kActionMsg, shakerId},
+                              {kZeroState, kDeactivateMsg, poiId},
+                              {kZeroState, kDeactivateMsg, timerId}};
+    // The door's own trigger that opens it on approach; a door without power
+    // has it switched on by the room instead.
+    uint32_t openTrigger = 0;
+    for (const PortSkipCutscenes::ScriptObject& o : objects) {
+      if (o.type != kTriggerType)
+        continue;
+      for (const PortSkipCutscenes::ScriptObject::Connection& c : o.connections)
+        if (c.message == kOpenMsg && c.target == door.doorId)
+          openTrigger = o.id;
+    }
+    static const uint32_t kUnpowered[] = {0x001E000B, 0x0020000D, 0x000F01D1, 0x001B0088,
+                                          0x0028005C};
+    const bool powered =
+        openTrigger != 0 && std::find(std::begin(kUnpowered), std::end(kUnpowered),
+                                      openTrigger & 0x03FFFFFF) == std::end(kUnpowered);
+    std::vector< Conn > guard; // the door's force field takes no damage
+    for (int k = 0; k < 2; ++k) {
+      if (door.forces[k] == 0)
+        continue;
+      guard.push_back({kZeroState, kIncrementMsg, door.forces[k]});
+      broke.push_back({kZeroState, kDecrementMsg, door.forces[k]});
+      if (powered)
+        broke.push_back({kZeroState, kDeactivateMsg, door.forces[k]});
+      connect(door.doorId, {kMaxReachedState, kDecrementMsg, door.forces[k]});
+    }
+    if (powered) {
+      for (int k = 0; k < 2; ++k)
+        if (door.shieldActors[k] != 0)
+          broke.push_back({kZeroState, kDeactivateMsg, door.shieldActors[k]});
+      broke.push_back({kZeroState, kActivateMsg, openTrigger});
+      broke.push_back({kZeroState, kSetToZeroMsg, door.doorId});
+    }
+    push(kRelayType, relayId, broke, Props(2, "Blast Shield Broken").B(true));
+    push(kTimerType, timerId, guard,
+         Props(6, "Blast Shield Guard").F(0.1f).F(0.f).B(false).B(true).B(true));
+
+    Props sound(20, "Blast Shield Explosion");
+    sound.Vec(place.position).Vec(0.f, 0.f, 0.f).U32(3621).B(true).F(100.f).F(0.2f).F(0.f);
+    sound.U32(20).U32(127).U32(127).U32(64);
+    sound.B(false).B(false).B(false).B(false).B(true).B(false).B(false).U32(0);
+    push(kSoundType, soundId, {}, sound);
+
+    Props music(9, "Blast Shield Jingle");
+    music.B(true).Str("/audio/evt_x_event_00.dsp").B(false).F(0.f).F(0.f).U32(92).U32(1).B(true);
+    push(kStreamedAudioType, musicId, {}, music);
+
+    Props shaker(8, "Blast Shield Shake");
+    shaker.Vec(place.position).B(true).U32(1).B(false).F(0.5f).F(10.f);
+    auto point = [&](bool flag, float attack, float sustain, float duration, float magnitude) {
+      shaker.U32(1).B(flag).F(attack).F(sustain).F(duration).F(magnitude);
+    };
+    shaker.U32(1).B(true);
+    point(false, 0.1f, 0.f, 0.4f, 0.2f);
+    point(false, 0.1f, 0.f, 0.2f, 2.f);
+    shaker.U32(1).B(false);
+    point(true, 0.f, 0.f, 0.f, 0.f);
+    point(true, 0.f, 0.f, 0.f, 0.f);
+    shaker.U32(1).B(true);
+    point(false, 0.2f, 0.f, 0.3f, 0.2f);
+    point(false, 0.f, 0.f, 0.3f, 2.f);
+    push(kCameraShakerType, shakerId, {}, shaker);
+
+    // Opened from the other side, the shield is gone from this one too.
+    for (uint32_t target : {actorId, triggerId, poiId, timerId})
+      connect(door.doorId, {kMaxReachedState, kDeactivateMsg, target});
+    if (placed != nullptr)
+      placed->push_back({triggerId, door.shieldBit});
+  };
+
   for (const DoorChange& door : doors) {
     const DoorType* type = FindDoorType(door.type);
     if (type == nullptr)
@@ -727,6 +1178,11 @@ std::vector< uint8_t > DoorOps(const std::vector< DoorChange >& doors,
              {{kActorModel, bytes({door.vertical ? type->cmdlVertical : type->cmdl})}});
     }
 
+    if (door.replacesShield)
+      removeDiscShield(door);
+    if (!door.shield.empty())
+      addShield(door);
+
     // The scan sits on the door itself, which a blast shield would cover.
     const PortSkipCutscenes::ScriptObject* object =
         find(door.doorId, kDoorType, kDoorScan + 4 + kDoorTail13 + 1);
@@ -744,7 +1200,7 @@ std::vector< uint8_t > DoorOps(const std::vector< DoorChange >& doors,
     std::vector< Run > runs{{kDoorScan, bytes({id})}};
     // Vertical and morph ball doors are looked at from the side they face.
     const float pitch = ReadFloat(props, start + kDoorRotation);
-    const bool hatch = Read32(props, start + kDoorAnimSet) == 0xF57DD484;
+    const bool hatch = Read32(props, start + kDoorAnimSet) == kHatchAnimSet;
     float height = 0.f;
     if (hatch && pitch > -90.f && pitch < 90.f)
       height = -2.5f;
@@ -770,6 +1226,8 @@ bool IsDoorDependency(uint32_t id) {
       0x88ED4593, 0xAB031EA9, 0xF6870C9F, 0x61A6945B, 0x459582C1, 0x717AABCE,
       0x8A7F3683, 0x1D588B22, 0xF68DF7F1, 0xBE4CD99D, 0xFC095F6C, 0x8344BEC8,
       0x544A9892, 0xCFA9DFF3,
+      // the missile blast shield and its textures
+      kMissileShieldCmdl, 0x5B97098E, 0x5C7B215C, 0x6E09EA6B, 0xFA0C2AE8, 0xFDE0023A,
   };
   for (uint32_t known : kIds)
     if (known == id)
@@ -777,12 +1235,12 @@ bool IsDoorDependency(uint32_t id) {
   return false;
 }
 
-std::vector< MapDoor > MapDoors(const Layout& layout, uint32_t mapa) {
+std::vector< MapDoor > MapDoors(const Layout& layout, uint32_t mapa, const uint32_t* broken) {
   std::vector< MapDoor > out;
   for (const Room& room : kRooms) {
     if (room.mapa != mapa)
       continue;
-    for (const DoorChange& door : Doors(layout, room.mrea)) {
+    for (const DoorChange& door : Doors(layout, room.mrea, broken)) {
       const DoorType* type = FindDoorType(door.type);
       if (type == nullptr)
         continue;

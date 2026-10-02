@@ -356,6 +356,8 @@ int CheckedBit(const MetroidPrime::Location* location) {
 void ClearChecked(CGameState::ApProgress& progress) {
   for (uint& word : progress.checked)
     word = 0;
+  for (uint& word : progress.shields)
+    word = 0;
 }
 
 // Hands the session the checks the game records but the session has not:
@@ -1687,20 +1689,99 @@ bool TempleOps(std::vector< uint8_t >& ops) {
   }
 }
 
+// The blast shields placed in each loaded room, watched by Poll. Rooms are
+// patched on the loading thread.
+std::mutex& PlacedShieldsMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+std::map< uint32_t, std::vector< PortApWorld::PlacedShield > >& PlacedShields() {
+  static std::map< uint32_t, std::vector< PortApWorld::PlacedShield > > shields;
+  return shields;
+}
+
+// The shields this game has broken, null outside a game.
+const uint32_t* BrokenShields(uint32_t (&copy)[4]) {
+  if (gpGameState == nullptr)
+    return nullptr;
+  for (int i = 0; i < 4; ++i)
+    copy[i] = gpGameState->PortApProgress().shields[i];
+  return copy;
+}
+
+// A shield whose trigger went inactive was broken (or its door was opened
+// from behind): remember it, so the room comes back without it.
+void WatchShields(CStateManager& mgr, CGameState::ApProgress& progress) {
+  std::lock_guard< std::mutex > lock(PlacedShieldsMutex());
+  std::vector< int > broken;
+  for (auto& room : PlacedShields()) {
+    auto& shields = room.second;
+    for (size_t i = 0; i < shields.size();) {
+      const TUniqueId uid = mgr.GetIdForScript(TEditorId(shields[i].trigger));
+      const CEntity* entity = uid == kInvalidUniqueId ? nullptr : mgr.GetObjectById(uid);
+      // The id is one DoorOps made up, so whatever answers to it is the trigger.
+      if (entity == nullptr || entity->GetActive()) {
+        ++i;
+        continue;
+      }
+      const int bit = shields[i].bit;
+      if (bit >= 0 && bit < PortApWorld::kShieldBits)
+        progress.shields[bit / 32] |= 1u << (bit % 32);
+      shields.erase(shields.begin() + i);
+      broken.push_back(bit);
+    }
+  }
+  // The same doorway's shield in the room behind it goes too, quietly: its
+  // relay does the unlocking, with the sound, music and shake switched off.
+  for (auto& room : PlacedShields()) {
+    auto& shields = room.second;
+    for (size_t i = 0; i < shields.size();) {
+      if (std::find(broken.begin(), broken.end(), shields[i].bit) == broken.end()) {
+        ++i;
+        continue;
+      }
+      const uint32_t trigger = shields[i].trigger;
+      auto send = [&](uint32_t id, EScriptObjectMessage msg) {
+        const TUniqueId uid = mgr.GetIdForScript(TEditorId(id));
+        if (uid != kInvalidUniqueId)
+          mgr.SendScriptMsgAlways(uid, kInvalidUniqueId, msg);
+      };
+      for (uint32_t id = trigger + 3; id <= trigger + 5; ++id)
+        send(id, kSM_Deactivate);
+      send(trigger + 2, kSM_SetToZero);
+      shields.erase(shields.begin() + i);
+    }
+  }
+}
+
 bool DoorOps(uint32_t mrea, const uint8_t* scly, size_t size, std::vector< uint8_t >& ops) {
   try {
+    {
+      std::lock_guard< std::mutex > lock(PlacedShieldsMutex());
+      PlacedShields().erase(mrea);
+    }
     PortApWorld::Layout layout;
     if (!SeedLayout(layout))
       return false;
-    const std::vector< PortApWorld::DoorChange > doors = PortApWorld::Doors(layout, mrea);
+    uint32_t broken[4];
+    const std::vector< PortApWorld::DoorChange > doors =
+        PortApWorld::Doors(layout, mrea, BrokenShields(broken));
     std::vector< PortSkipCutscenes::ScriptObject > objects;
     if (doors.empty() || !PortSkipCutscenes::ScanObjects(scly, size, objects))
       return false;
-    ops = PortApWorld::DoorOps(doors, objects, [](const std::string& text) {
-      // One scan per text: the key only has to tell the door types apart.
-      return PortCustomRes::TextScan(0xD0020000ull << 32 | std::hash< std::string >()(text),
-                                     text);
-    });
+    std::vector< PortApWorld::PlacedShield > placed;
+    ops = PortApWorld::DoorOps(
+        doors, objects,
+        [](const std::string& text) {
+          // One scan per text: the key only has to tell the door types apart.
+          return PortCustomRes::TextScan(0xD0020000ull << 32 | std::hash< std::string >()(text),
+                                         text);
+        },
+        &placed);
+    if (!placed.empty()) {
+      std::lock_guard< std::mutex > lock(PlacedShieldsMutex());
+      PlacedShields()[mrea] = std::move(placed);
+    }
     return !ops.empty();
   } catch (...) {
     return false;
@@ -1713,7 +1794,9 @@ bool MapDoors(uint32_t mapa, std::vector< std::pair< uint32_t, int > >& doors) {
     PortApWorld::Layout layout;
     if (!SeedLayout(layout))
       return false;
-    for (const PortApWorld::MapDoor& door : PortApWorld::MapDoors(layout, mapa))
+    uint32_t broken[4];
+    for (const PortApWorld::MapDoor& door :
+         PortApWorld::MapDoors(layout, mapa, BrokenShields(broken)))
       doors.emplace_back(door.doorId, door.type);
     return !doors.empty();
   } catch (...) {
@@ -1907,6 +1990,7 @@ void Poll(CStateManager& mgr) {
         player->HealthInfo()->SetHP(player->CalculateHealth());
     }
     ApplyBuiltinWorld(runtime, mgr, *player);
+    WatchShields(mgr, progress);
 
     // DeathLink, inbound. A bounce the server sent is applied by clearing the
     // alive flag, which is what the world's own client does and what drives

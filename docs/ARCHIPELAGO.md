@@ -94,8 +94,19 @@ With the built-in tables, the client does what the AP ISO patch would:
   randomprime draws them. A locked door has a dark rim, opens to nothing and
   says so when scanned. Like the start room, this needs the built-in client
   and a seed that has connected before the room is loaded.
+- Blast shields (`blast_shield_randomization`, and the shields of
+  `blast_shield_mapping`) are placed where randomprime places them: a shield
+  over the door that only its weapon breaks (Missile, Bomb, Charge Beam,
+  Flamethrower, Ice Spreader, Wavebuster, Power Bomb, Super Missile), with a
+  scan that names it. Breaking one opens the door, and the save remembers
+  it, so the shield is gone from both sides for good. A missile shield the
+  disc has on such a door is removed, unless the seed asks for a missile
+  shield there. Morph ball doors get none, and Main Plaza's locked door to
+  the Vault ledge gets none either (randomprime's two-way door is not
+  ported). The models are the disc's missile shield with its glow and metal
+  tinted per weapon, so they are not randomprime's painted ones.
 - Seed options the port does not implement are named once on connect as
-  `Seed option not supported: ...`: blast shield randomisation, Hive Mecha
+  `Seed option not supported: ...`: Hive Mecha
   removal, backwards Lower Mines,
   Flaahgra power bombs, removed X-Ray or Thermal requirements, and a changed
   energy tank capacity.

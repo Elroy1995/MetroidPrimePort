@@ -3,6 +3,7 @@
 
 #include "port_randomizer.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -1227,6 +1228,80 @@ int main() {
       objects[0].props.resize(40);
     Check(PortApWorld::DoorOps(doors, objects, nullptr).empty(),
           "a door whose objects aren't the disc's is left alone");
+
+    // A blast shield: its objects are pushed, its trigger reported, and once
+    // broken it is gone from both sides.
+    doors = PortApWorld::Doors(shielded, kArboretum);
+    objects.clear();
+    std::vector< PortApWorld::PlacedShield > placed;
+    if (doors.size() == 3) {
+      doors.resize(1);
+      for (int k = 0; k < 2; ++k) {
+        if (doors[0].forces[k] != 0)
+          object(doors[0].forces[k], 0x1A, 180);
+        if (doors[0].shieldActors[k] != 0)
+          object(doors[0].shieldActors[k], 0x00, 300);
+      }
+      object(doors[0].doorId, 0x03, 127 + 4 + 44);
+    }
+    int scans = 0;
+    doorOps = PortApWorld::DoorOps(
+        doors, objects,
+        [&](const std::string& text) {
+          scans += text.find("Bendezium") != std::string::npos;
+          return 0xD00D0002u;
+        },
+        &placed);
+    Check(doors.size() == 1 && doors[0].shieldBit == 0 && placed.size() == 1 &&
+              placed[0].bit == 0 && (placed[0].trigger & 0xFFFF) == 0x7001 &&
+              (placed[0].trigger >> 16) == (doors[0].doorId >> 16) && scans == 1,
+          "a blast shield is placed over its door and its trigger reported");
+    // The disc's own missile shield on that door makes way for the seed's,
+    // and serves when the seed asks for a missile shield there.
+    std::vector< PortSkipCutscenes::ScriptObject > disc = objects;
+    {
+      PortSkipCutscenes::ScriptObject o;
+      o.type = 0x00;
+      o.id = 0x00027F00;
+      o.props.assign(6 + 300, 0);
+      o.props[4] = 'x';
+      o.props[6 + 196] = 0xEF, o.props[6 + 197] = 0xDF, o.props[6 + 198] = 0xFB,
+      o.props[6 + 199] = 0x8C;
+      disc.push_back(o);
+    }
+    placed.clear();
+    const std::vector< uint8_t > replaced = PortApWorld::DoorOps(doors, disc, nullptr, &placed);
+    const uint8_t removal[5] = {6, 0x00, 0x02, 0x7F, 0x00};
+    Check(placed.size() == 1 && doors.size() == 1 && doors[0].replacesShield &&
+              std::search(replaced.begin(), replaced.end(), removal, removal + 5) !=
+                  replaced.end(),
+          "the disc's missile shield makes way for the seed's");
+    if (!doors.empty()) {
+      std::vector< PortApWorld::DoorChange > missile = doors;
+      missile[0].shield = "Missile";
+      missile[0].replacesShield = false;
+      placed.clear();
+      const std::vector< uint8_t > kept = PortApWorld::DoorOps(missile, disc, nullptr, &placed);
+      Check(placed.empty() &&
+                std::search(kept.begin(), kept.end(), removal, removal + 5) == kept.end(),
+            "the disc's missile shield serves where the seed wants one");
+    }
+    std::vector< PortSkipCutscenes::ScriptObject > hatch = objects;
+    if (!hatch.empty()) {
+      std::vector< uint8_t >& props = hatch.back().props;
+      props[6 + 36] = 0xF5, props[6 + 37] = 0x7D, props[6 + 38] = 0xD4, props[6 + 39] = 0x84;
+    }
+    placed.clear();
+    PortApWorld::DoorOps(doors, hatch, nullptr, &placed);
+    Check(placed.empty(), "a morph ball door gets no blast shield");
+    const uint32_t brokenShields[4] = {1, 0, 0, 0};
+    doors = PortApWorld::Doors(shielded, kArboretum, brokenShields);
+    bool gone = doors.size() == 3 && doors[0].shield.empty() && doors[0].type == "Blue" &&
+                doors[0].shieldBit == 0 && doors[1].shieldBit < 0 && doors[2].shieldBit < 0;
+    for (const PortApWorld::DoorChange& other :
+         PortApWorld::Doors(shielded, 0x3D238FCDu, brokenShields))
+      gone = gone && other.shield != "Power Bomb";
+    Check(gone, "a broken blast shield is gone from both sides of its door");
 
     // A locked door says so when scanned.
     doors = PortApWorld::Doors(shielded, kArboretum);

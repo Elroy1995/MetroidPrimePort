@@ -419,7 +419,6 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
     const char* text;
   };
   static const Unsupported kUnsupported[] = {
-      {"blast_shield_randomization", 0, "blast shield randomization"},
       {"remove_hive_mecha", 0, "Hive Mecha removal"},
       {"backwards_lower_mines", 0, "backwards Lower Mines"},
       {"flaahgra_power_bombs", 0, "Flaahgra power bombs"},

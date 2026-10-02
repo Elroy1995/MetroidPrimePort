@@ -94,6 +94,12 @@ struct DoorChange {
   // The blast shield over it: empty for none said, "None" to remove the
   // disc's, else its type ("Missile", "Power Bomb", "Charge Beam"...).
   std::string shield;
+  // Which bit remembers that the shield was broken, -1 without a shield. A
+  // door and the same door from the next room share one; stable for a seed.
+  int shieldBit = -1;
+  // The seed decides this door's blast shield, so the disc's own goes (also
+  // once the seed's shield was broken, when `shield` is empty).
+  bool replacesShield = false;
   // The door lies flat (in a floor or ceiling).
   bool vertical = false;
   // The Door object, its rotation, its damageable triggers and shield actors.
@@ -105,7 +111,12 @@ struct DoorChange {
 
 // The doors of area `mrea` that the seed changes; docks without a door object
 // are left out (randomprime can't patch those either).
-std::vector< DoorChange > Doors(const Layout& layout, uint32_t mrea);
+// `broken` is kShieldBits bits of shields already broken: such a door has no
+// shield and, as with randomprime's PrimaryBlastShield door mode, the plain
+// colour of the door that was under it.
+enum { kShieldBits = 128 };
+std::vector< DoorChange > Doors(const Layout& layout, uint32_t mrea,
+                                const uint32_t* broken = nullptr);
 
 // The script patch (PortSkipCutscenes::ApplyOps) that gives a room's doors
 // their types, as randomprime's patch_door does: the door's force field
@@ -113,10 +124,25 @@ std::vector< DoorChange > Doors(const Layout& layout, uint32_t mrea);
 // a type the game doesn't have gets a scan saying what opens it (`scan` makes
 // one from a text and may be empty). `objects` is the room's script; a door
 // whose objects aren't what the disc has is left alone. Empty for no change.
+//
+// A door with a blast shield also gets, as randomprime's
+// patch_add_blast_shield places them: the shield's model, a damageable
+// trigger over it that only the shield's weapon hurts, a scan point, and what
+// plays when it breaks. Until then the door's own force field takes no
+// damage; breaking the shield opens the door. `placed` receives, per shield,
+// the trigger's editor id and the door's shieldBit: the trigger going
+// inactive is how a broken shield is noticed. Morph ball doors get none. The
+// disc's own missile shield on such a door is removed, as randomprime does,
+// unless the seed asks for a missile shield there.
 using ScanMaker = std::function< uint32_t(const std::string& text) >;
+struct PlacedShield {
+  uint32_t trigger = 0;
+  int bit = -1;
+};
 std::vector< uint8_t > DoorOps(const std::vector< DoorChange >& doors,
                                const std::vector< PortSkipCutscenes::ScriptObject >& objects,
-                               const ScanMaker& scan);
+                               const ScanMaker& scan,
+                               std::vector< PlacedShield >* placed = nullptr);
 
 // Whether a door type needs this resource. Like a pickup's, it may sit in
 // another world's PAK (plasma doors exist in four worlds only).
@@ -128,7 +154,8 @@ struct MapDoor {
   uint32_t doorId = 0;
   int type = 0;
 };
-std::vector< MapDoor > MapDoors(const Layout& layout, uint32_t mapa);
+std::vector< MapDoor > MapDoors(const Layout& layout, uint32_t mapa,
+                                const uint32_t* broken = nullptr);
 
 } // namespace PortApWorld
 
