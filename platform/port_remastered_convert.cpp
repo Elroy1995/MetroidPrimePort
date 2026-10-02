@@ -565,6 +565,7 @@ struct RemMaterial {
   MapRef maps[kMaps];
   double emissive = 1.0;   // Remastered's emissive strength
   double backlight = 0.0;  // and its backlight strength
+  bool cutout = false;     // the base map's alpha cuts holes: leaves, grates
 };
 
 struct Buffer {
@@ -896,7 +897,8 @@ struct Converter::State {
     if (k >= 0) {
       // The albedo is what shows and can be CMPR; AO/roughness/metal would
       // blotch and the normals would tilt, so the normal map stays RGBA8.
-      alpha = k == kNormal ? "rgba" : "none";
+      // A cutout's base is the exception: its alpha is the shape.
+      alpha = k == kNormal ? "rgba" : k == kBase && alpha == "punch" ? "punch" : "none";
       cap = kPbrMax[k];
       if (src) {
         ncap = opt.nativeMax > 0 ? std::min(kPbrNative[k], opt.nativeMax) : kPbrNative[k];
@@ -944,7 +946,7 @@ struct Converter::State {
         img.rgba[i * 4 + 3] = 255;
       }
     }
-    if (isBase && FlatBase(img)) {
+    if (isBase && alpha != "punch" && FlatBase(img)) {
       // On the TEV path the retail texture is kept, which beats writing a flat
       // grey over a textured model. On the PBR path a flat albedo is fine: the
       // normal and MR maps carry the surface, so the material gets a solid base.
@@ -994,7 +996,7 @@ struct Converter::State {
     if (ncap) {
       const int w = std::max(8, std::min(ncap, NextPow2(img.width)));
       const int h = std::max(8, std::min(ncap, NextPow2(img.height)));
-      if (k == kBase) {
+      if (k == kBase && alpha != "punch") {
         for (size_t i = 0; i < count; ++i) {
           img.rgba[i * 4 + 3] = 255;  // alpha "none", as the stub's CMPR
         }
@@ -1028,9 +1030,15 @@ namespace {
 
 // Which of a Remastered material's parameters feed the four maps, and its two
 // strengths. Later parameters replace earlier ones, as in the reference.
+// The bit of a Remastered material's feature word that its alpha-tested
+// materials carry (ground leaves, grates, foliage) and its opaque ones do not.
+// Found by surveying every room model; the word is otherwise undocumented.
+constexpr uint32_t kCutoutFlag = 0x20;
+
 RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   RemMaterial out;
   out.name = mat.name;
+  out.cutout = (mat.unk1 & kCutoutFlag) != 0;
   auto set = [&](int k, const ModelTextureRef& t) {
     if (!t.hasUsage) {
       return;
@@ -1483,6 +1491,9 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     lit.blendDst = 0;
     lit.chans = {0x3001};
     retail.mats.push_back(lit);
+    // And the same with retail's alpha test, for a Remastered cutout.
+    lit.flags |= 0x20;
+    retail.mats.push_back(lit);
   } else {
     if (!io.retail(FourCC('C', 'M', 'D', 'L'), opt.retail, retail.data)) {
       throw Fail{"retail model " + Hex8(opt.retail) + " is not on the disc"};
@@ -1589,7 +1600,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   }
   for (Prim& p : prims) {
     if (opt.standalone) {
-      p.rmat = 0;
+      p.rmat = mats[p.mat].cutout ? 1 : 0;
       continue;
     }
     if (opt.material >= 0) {
@@ -1662,8 +1673,10 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   }
   if (opt.standalone) {
     // A texcoord slot for every set, so each map keeps the one it was made on.
-    for (size_t k = 0; k <= std::min<size_t>(maxuv, 7); ++k) {
-      retail.mats[0].vtx |= 3u << (8 + 2 * k);
+    for (RetailMaterial& m : retail.mats) {
+      for (size_t k = 0; k <= std::min<size_t>(maxuv, 7); ++k) {
+        m.vtx |= 3u << (8 + 2 * k);
+      }
     }
   }
   std::vector<double> P, N;
@@ -1783,12 +1796,16 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     }
     // PBR needs a base map and an opaque retail material: blended effects keep
     // their TEV.
-    const bool usePbr = opt.pbr && rt[kBase].has && !IsFx(pm) && Get("pbr:base", rt, "", opt).has_value();
+    // Only a room's own material asks for a cutout: a retail material's alpha
+    // test says nothing about what the Remastered map's alpha holds.
+    const char* const baseAlpha = opt.standalone && rem.cutout ? "punch" : "";
+    const bool usePbr =
+        opt.pbr && rt[kBase].has && !IsFx(pm) && Get("pbr:base", rt, baseAlpha, opt).has_value();
     if (usePbr) {
       ++pbr;
       uint32_t tids[kMaps];
       for (int k = 0; k < kMaps; ++k) {
-        tids[k] = *Get(std::string("pbr:") + kMapName[k], rt, "", opt);
+        tids[k] = *Get(std::string("pbr:") + kMapName[k], rt, k == kBase ? baseAlpha : "", opt);
       }
       // Each map keeps the texcoord set it was authored on. The descriptor
       // fixes how many texcoord attributes exist, and a coord past it cannot be
