@@ -1678,6 +1678,23 @@ bool NewGameStart(uint32_t& world, uint32_t& area) {
   }
 }
 
+bool WarpToStart(uint32_t& world, uint32_t& area) {
+  try {
+    PortApWorld::Layout layout;
+    if (!SeedLayout(layout))
+      return false;
+    // A start room the tables don't have is the Landing Site, as for a new game.
+    PortApWorld::Place place;
+    place.mlvl = MetroidPrime::kTallonWorld;
+    PortApWorld::StartRoom(layout, place);
+    world = place.mlvl;
+    area = place.mrea;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 bool SeedGivesStartItems() {
   try {
     PortApWorld::Layout layout;

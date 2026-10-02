@@ -127,9 +127,11 @@ With the built-in tables, the client does what the AP ISO patch would:
   the Omega Pirate dies. A missile station refills power bombs too.
 - Not ported from randomprime: the fixes for crashes only the console has,
   the ones for other disc revisions, moved spawn points, the item capacities
-  above the game's own (250 missiles, 8 power bombs, 14 energy tanks), the
-  warp to the start room from a save station, and the renamed elevator and
-  temple texts.
+  above the game's own (250 missiles, 8 power bombs, 14 energy tanks), and
+  the renamed elevator and temple texts.
+- Warp to start: at a save station, hold L and R while answering No and the
+  game takes you to the seed's starting room. It happens at once, without
+  randomprime's three-second message, and the save prompt doesn't mention it.
 - A start room the port's tables don't have is named once on connect as
   `Seed option not supported: ...`.
 - Spring Ball (C-stick up in morph ball) follows the seed's `spring_ball`: with

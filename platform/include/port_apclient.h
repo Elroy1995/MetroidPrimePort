@@ -161,6 +161,11 @@ void OnInventoryReset();
 // layout is known (seeds skip the frigate). `area` is 0 for the world's first.
 bool NewGameStart(uint32_t& world, uint32_t& area);
 
+// Where declining a save station with L and R held leads: the seed's starting
+// room, as every randomprime seed of the apworld allows (`area` is 0 for the
+// world's first). False without a seed layout.
+bool WarpToStart(uint32_t& world, uint32_t& area);
+
 // The seed's layout is known, so the server hands out everything Samus starts
 // with (the starting beam, the Scan Visor unless shuffled, the start room's
 // loadout) and a spawn point gives only the Combat Visor and Power Suit.
