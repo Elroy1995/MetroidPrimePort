@@ -172,6 +172,15 @@ bool SeedGivesStartItems();
 bool TeleporterDestination(uint32_t world, uint32_t editorId, uint32_t& destWorld,
                            uint32_t& destArea);
 
+// The seed's changes to the Artifact Temple's script (fewer artifacts needed,
+// no Meta Ridley fight) as an op list for PortSkipCutscenes::ApplyOps. False
+// when the temple is the retail one.
+bool TempleOps(std::vector< uint8_t >& ops);
+
+// How many artifacts open the Artifact Temple: the seed's required_artifacts,
+// 12 otherwise.
+int RequiredArtifacts();
+
 // The connected seed wants heat to hurt through every suit but the Varia Suit
 // (the AP world's non_varia_heat_damage, on by default). False when AP is off.
 bool VariaOnlyHeatProtection();

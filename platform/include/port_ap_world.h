@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace PortJson {
 class Value;
@@ -20,12 +21,14 @@ struct Layout {
   std::string startRoom;
   // final_bosses: 0 both, 1 Meta Ridley only, 2 Metroid Prime only, 3 neither.
   int finalBosses = 0;
+  // required_artifacts: how many artifacts open the Artifact Temple.
+  int requiredArtifacts = 12;
   // elevator_mapping: area -> elevator room -> the room it leads to.
   std::map< std::string, std::map< std::string, std::string > > elevators;
 
   bool operator==(const Layout& other) const {
     return startRoom == other.startRoom && finalBosses == other.finalBosses &&
-           elevators == other.elevators;
+           requiredArtifacts == other.requiredArtifacts && elevators == other.elevators;
   }
   bool operator!=(const Layout& other) const { return !(*this == other); }
 };
@@ -48,6 +51,16 @@ bool StartRoom(const Layout& layout, Place& out);
 // `retail` on the disc, leads in this seed. False when it is left alone.
 bool TeleporterDestination(const Layout& layout, uint32_t mlvl, uint32_t editorId,
                            const Place& retail, Place& out);
+
+// The seed has no Meta Ridley fight: the temple opens its portal as soon as
+// the artifacts are counted.
+bool SkipsRidley(const Layout& layout);
+
+// What the seed changes in the Artifact Temple's script, as an op list for
+// PortSkipCutscenes::ApplyOps (randomprime's patch_required_artifact_count
+// and patch_artifact_temple_activate_portal_conditions). Empty for a retail
+// temple.
+std::vector< uint8_t > TempleOps(const Layout& layout);
 
 } // namespace PortApWorld
 

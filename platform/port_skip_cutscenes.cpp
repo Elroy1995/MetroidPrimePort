@@ -156,6 +156,15 @@ bool PatchArea(uint32_t mreaId, const uint8_t* scly, size_t size, std::vector< u
     else
       PortLog::Write("randomizer: Artifact Temple patch doesn't match, left as is\n");
   }
+  std::vector< uint8_t > seedOps;
+  if (mreaId == kArtifactTemple && !out.empty() && PortAp::TempleOps(seedOps)) {
+    // The seed's own temple rules, on top of the randomizer's temple.
+    std::vector< uint8_t > temple;
+    if (ApplyOps(out.data(), out.size(), seedOps.data(), seedOps.size(), temple) == 0)
+      out.swap(temple);
+    else
+      PortLog::Write("archipelago: the seed's Artifact Temple patch doesn't match, left as is\n");
+  }
   return !out.empty();
 }
 

@@ -83,11 +83,16 @@ With the built-in tables, the client does what the AP ISO patch would:
   with the retail equipment. It also needs the built-in client; an external
   client cannot move the start or the elevators. The elevators' hologram and
   scan text still name the retail destination.
+- The Artifact Temple follows `required_artifacts` and `final_bosses`: its
+  portal opens once that many artifacts are held; without Meta Ridley it opens
+  right after the stones light up, and without Metroid Prime it leads to the
+  credits, which is the goal. The mission text in the temple still asks for
+  twelve.
 - Seed options the port does not implement are named once on connect as
   `Seed option not supported: ...`: door colour and blast shield
-  randomisation, locked doors, a final boss choice, Hive Mecha removal,
-  backwards Lower Mines, Flaahgra power bombs, removed X-Ray or Thermal
-  requirements, a changed energy tank capacity, and fewer than 12 artifacts.
+  randomisation, locked doors, Hive Mecha removal, backwards Lower Mines,
+  Flaahgra power bombs, removed X-Ray or Thermal requirements, and a changed
+  energy tank capacity.
   Such a seed can expect a door the game does not have.
 - Spring Ball (C-stick up in morph ball) follows the seed's `spring_ball`: with
   the Morph Ball Bombs (the default), as its own item (Spring Ball), as the

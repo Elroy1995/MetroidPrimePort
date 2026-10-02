@@ -422,14 +422,12 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
       {"door_color_randomization", 0, "door color randomization"},
       {"blast_shield_randomization", 0, "blast shield randomization"},
       {"locked_door_count", 0, "locked doors"},
-      {"final_bosses", 0, "a final boss choice"},
       {"remove_hive_mecha", 0, "Hive Mecha removal"},
       {"backwards_lower_mines", 0, "backwards Lower Mines"},
       {"flaahgra_power_bombs", 0, "Flaahgra power bombs"},
       {"remove_xray_requirements", 0, "removed X-Ray requirements"},
       {"remove_thermal_requirements", 0, "removed Thermal requirements"},
       {"etank_capacity", 100, "a changed energy tank capacity"},
-      {"required_artifacts", 12, "fewer than 12 artifacts"},
   };
   for (const Unsupported& option : kUnsupported) {
     if (number(option.key, option.vanilla) != option.vanilla)

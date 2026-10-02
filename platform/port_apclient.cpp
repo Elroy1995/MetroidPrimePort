@@ -1674,6 +1674,27 @@ bool TeleporterDestination(uint32_t world, uint32_t editorId, uint32_t& destWorl
   }
 }
 
+bool TempleOps(std::vector< uint8_t >& ops) {
+  try {
+    PortApWorld::Layout layout;
+    if (!SeedLayout(layout))
+      return false;
+    ops = PortApWorld::TempleOps(layout);
+    return !ops.empty();
+  } catch (...) {
+    return false;
+  }
+}
+
+int RequiredArtifacts() {
+  try {
+    PortApWorld::Layout layout;
+    return SeedLayout(layout) ? layout.requiredArtifacts : 12;
+  } catch (...) {
+    return 12;
+  }
+}
+
 bool VariaOnlyHeatProtection() {
   try {
     Runtime& runtime = GetRuntime();

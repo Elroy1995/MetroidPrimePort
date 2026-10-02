@@ -1113,6 +1113,25 @@ int main() {
     layout.finalBosses = 0;
     Check(!PortApWorld::TeleporterDestination(layout, 0x39F2DE28u, 0x00100001u, crater, dest),
           "with both bosses the temple portal is the disc's");
+
+    // The temple's script: untouched for 12 artifacts and both bosses.
+    Check(PortApWorld::TempleOps(layout).empty() && !PortApWorld::SkipsRidley(layout),
+          "a retail temple needs no patch");
+    layout.requiredArtifacts = 5;
+    const std::vector< uint8_t > fewer = PortApWorld::TempleOps(layout);
+    // Two edits (counter value, auto-reset) and twelve connections.
+    Check(fewer.size() == 17 + 14 + 12 * 17 && fewer[0] == 2 && fewer[16] == 5,
+          "fewer artifacts lower the temple's counter");
+    layout.finalBosses = 2;
+    Check(PortApWorld::SkipsRidley(layout) && PortApWorld::TempleOps(layout).size() > fewer.size(),
+          "without Meta Ridley the temple skips the fight");
+    PortJson::Value fewerData;
+    Check(PortJson::Parse(R"({"required_artifacts":5,"final_bosses":2})", fewerData, offset,
+                          &reason),
+          "the temple fixture parses");
+    PortApWorld::Parse(fewerData, reread);
+    Check(reread.requiredArtifacts == 5 && reread.finalBosses == 2,
+          "slot_data carries the temple's rules");
   }
 
   std::filesystem::remove_all(testDir);

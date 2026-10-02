@@ -248,10 +248,13 @@ void PortArtifactTemple(CStateManager& mgr) {
   CEntity* trigger = PortTempleObject(mgr, 0x50100470); // Trigger - Progress Cinema
   if (trigger == nullptr || trigger->GetUniqueId() == sPortTempleArmed)
     return;
+  int held = 0;
   for (int item = CPlayerState::kIT_Truth; item <= CPlayerState::kIT_Newborn; ++item) {
-    if (!state.HasPowerUp(static_cast< CPlayerState::EItemType >(item)))
-      return;
+    if (state.HasPowerUp(static_cast< CPlayerState::EItemType >(item)))
+      ++held;
   }
+  if (held < PortAp::RequiredArtifacts())
+    return;
   sPortTempleArmed = trigger->GetUniqueId();
   mgr.DeliverScriptMsg(trigger, kInvalidUniqueId, kSM_Activate);
 }
