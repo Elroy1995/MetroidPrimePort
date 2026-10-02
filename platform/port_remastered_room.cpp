@@ -53,6 +53,20 @@ constexpr uint32_t kPropActorModel = 0xcb1c52f6;
 // Unnamed in retrotool's templates; what they mean is read off which actors carry them.
 constexpr uint32_t kPropActorAdded = 0x9a25df3b;
 constexpr uint32_t kPropActorAttached = 0x1285da4d;
+// Liquids. A WaterMP1 is the retail water object; the surface drawn for it is a render
+// volume on the same entity.
+constexpr uint32_t kWaterMP1 = 0x12db855d;
+constexpr uint32_t kWaterRenderVolume = 0x23c5dff4;
+constexpr uint32_t kLavaRenderVolume = 0xa7ee9c33;
+constexpr uint32_t kPropWaterFluid[3] = {0xce78300b, 0x18706e5c, 0x6e9e14b9};  // 0 water, 10 poison, 11 lava
+constexpr uint32_t kPropWaterModel = 0x736e5890;
+constexpr uint32_t kPropLavaModel = 0xcaf8e8c3;
+constexpr uint32_t kPropWaterLook = 0xd1e9d29d;
+constexpr uint32_t kPropWaterTint = 0xe8969fad;
+constexpr uint32_t kPropWaterNormal[2] = {0x03e33f4b, 0x90a143ef};
+constexpr uint32_t kPropWaterNormalScale[2] = {0x03e33f4b, 0xd4483c7e};
+constexpr uint32_t kPropWaterWaves[2] = {0x30fbb790, 0x0951bf3e};
+constexpr uint32_t kPropWaveAngle = 0xd1edd7b5;
 
 constexpr size_t kMaxChunks = 1u << 20;
 constexpr size_t kMaxVolumeFloats = size_t(1) << 28;
@@ -235,6 +249,8 @@ public:
   // The component's own top level properties. A value that is itself a
   // property list is a nested group, which is not a top level key.
   std::map<uint32_t, Span> Flat(const Component& c) const;
+  // A property inside nested groups, named by the groups' ids and then its own.
+  bool Nested(const Component& c, std::initializer_list<uint32_t> path, Span& out) const;
 
 private:
   struct Chunk {
@@ -415,6 +431,29 @@ bool PropList(const uint8_t* b, size_t len, std::vector<Prop>* out) {
     o += size;
   }
   return o == len;
+}
+
+bool Room::Nested(const Component& c, std::initializer_list<uint32_t> path, Span& out) const {
+  Span at = c.raw;
+  for (const uint32_t id : path) {
+    std::vector<Prop> props;
+    if (!PropList(Bytes(at), at.size, &props)) {
+      return false;
+    }
+    bool found = false;
+    for (const Prop& p : props) {
+      if (p.id == id) {
+        at = {at.start + p.data.start, p.data.size};
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      return false;
+    }
+  }
+  out = at;
+  return true;
 }
 
 std::map<uint32_t, Span> Room::Flat(const Component& c) const {
@@ -641,6 +680,8 @@ private:
             std::string& note) const;
   // The room's static geometry (its ModCon components), as "<MREA id>.roomgeo".
   void WriteGeometry(const RoomData& r, uint32_t mrea);
+  // The room's liquid surfaces (its water and lava render volumes), as "<MREA id>.roomliquid".
+  void WriteLiquids(const RoomData& r, uint32_t mrea);
   std::string WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
                         const float tonemap[5], int& written, std::string& matched);
 
@@ -1321,6 +1362,116 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
   Log(line);
 }
 
+void Writer::WriteLiquids(const RoomData& r, uint32_t mrea) {
+  // Liquids are room geometry: they come with it, so a models-only import keeps the
+  // retail planes (and the small arena its mod starts with).
+  if (!m_io.liquid || (m_io.wantsGeometry && !m_io.wantsGeometry(r.name))) {
+    return;
+  }
+  static const int kAxis[3] = {0, 2, 1};
+  static const double kSign[3] = {-1, 1, 1};
+  // What each entity's retail water object is filled with.
+  std::map<int, int> fluids;
+  for (const Component* c : r.room.Of(kWaterMP1)) {
+    Span s;
+    int type = RoomLiquid::kWater;
+    if (r.room.Nested(*c, {kPropWaterFluid[0], kPropWaterFluid[1], kPropWaterFluid[2]}, s) && s.size >= 4) {
+      const uint32_t fluid = Le32(r.room.Bytes(s));
+      type = fluid == 10 ? RoomLiquid::kPoison : fluid == 11 ? RoomLiquid::kLava : RoomLiquid::kWater;
+    }
+    fluids[c->entity] = type;
+  }
+  std::vector<uint8_t> body;
+  uint32_t count = 0;
+  size_t dropped = 0;
+  for (const bool lava : {false, true}) {
+    for (const Component* c : r.room.Of(lava ? kLavaRenderVolume : kWaterRenderVolume)) {
+      const auto f = r.room.Flat(*c);
+      const auto prop = f.find(lava ? kPropLavaModel : kPropWaterModel);
+      Vec3 pos, rot, scale;
+      if (prop == f.end() || prop->second.size != 16 || !r.room.Xform(*c, pos, rot, scale)) {
+        continue;
+      }
+      RoomLiquid liquid;
+      liquid.model = SwapUuid(r.room.Bytes(prop->second));
+      if (liquid.model == Id16{}) {
+        continue;
+      }
+      const auto fluid = fluids.find(c->entity);
+      liquid.type = lava ? RoomLiquid::kLava : fluid != fluids.end() ? fluid->second : RoomLiquid::kWater;
+      if (!lava) {
+        Span s;
+        if (r.room.Nested(*c, {kPropWaterLook, kPropWaterTint}, s) && s.size >= 16) {
+          for (int i = 0; i < 4; ++i) {
+            liquid.tint[i] = LeFloat(r.room.Bytes(s) + 4 * i);
+          }
+        }
+        if (r.room.Nested(*c, {kPropWaterLook, kPropWaterNormal[0], kPropWaterNormal[1]}, s) && s.size == 16) {
+          liquid.normal = SwapUuid(r.room.Bytes(s));
+          liquid.hasNormal = liquid.normal != Id16{};
+        }
+        float perUnit = 0.08f;
+        if (r.room.Nested(*c, {kPropWaterLook, kPropWaterNormalScale[0], kPropWaterNormalScale[1]}, s) &&
+            s.size >= 4) {
+          perUnit = LeFloat(r.room.Bytes(s));
+        }
+        liquid.normalScale[0] = perUnit;
+        liquid.normalScale[1] = perUnit;
+        for (int i = 0; i < 2; ++i) {
+          if (r.room.Nested(*c, {kPropWaterWaves[i], kPropWaveAngle}, s) && s.size >= 4) {
+            liquid.waveAngle[i] = LeFloat(r.room.Bytes(s));
+          }
+        }
+      }
+      if (m_io.cancelled && m_io.cancelled()) {
+        return;
+      }
+      uint32_t id = 0;
+      if (!m_io.liquid(liquid, id)) {
+        ++dropped;
+        continue;
+      }
+      double s[3], k[3];
+      for (int i = 0; i < 3; ++i) {
+        s[i] = std::sin(rot[i] * (3.14159265358979323846 / 180.0));
+        k[i] = std::cos(rot[i] * (3.14159265358979323846 / 180.0));
+      }
+      const double m[3][3] = {
+          {k[2] * k[1], k[2] * s[1] * s[0] - s[2] * k[0], k[2] * s[1] * k[0] + s[2] * s[0]},
+          {s[2] * k[1], s[2] * s[1] * s[0] + k[2] * k[0], s[2] * s[1] * k[0] - k[2] * s[0]},
+          {-s[1], k[1] * s[0], k[1] * k[0]},
+      };
+      PutLe32(body, uint32_t(liquid.type));
+      PutLe32(body, id);
+      for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+          // The entity's scale is the size of the volume; the model is in units already.
+          PutFloat(body, kSign[row] * kSign[col] * m[kAxis[row]][kAxis[col]]);
+        }
+        PutFloat(body, kSign[row] * pos[kAxis[row]]);
+      }
+      ++count;
+    }
+  }
+  if (count == 0) {
+    return;
+  }
+  std::vector<uint8_t> out;
+  PutLe32(out, 0x4C52504D);  // 'MPRL'
+  PutLe32(out, 1);
+  PutLe32(out, count);
+  out.insert(out.end(), body.begin(), body.end());
+  char file[32];
+  std::snprintf(file, sizeof file, "%08X.roomliquid", mrea);
+  if (!m_io.write || !m_io.write(file, out)) {
+    Log("  " + r.name + ": could not write " + file);
+    return;
+  }
+  char line[160];
+  std::snprintf(line, sizeof line, "  %s: %u liquid surfaces, %zu dropped", r.name.c_str(), count, dropped);
+  Log(line);
+}
+
 std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
                               const float tonemap[5], int& written, std::string& matched) {
   matched.clear();
@@ -1334,6 +1485,7 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
     return head;
   }
   WriteGeometry(r, m.mrea);
+  WriteLiquids(r, m.mrea);
   const std::vector<Vec3>& gdoors = m.area->doors;
   double rot[3][3], trans[3];
   for (int i = 0; i < 3; ++i) {

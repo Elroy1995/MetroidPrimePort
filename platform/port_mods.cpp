@@ -11,6 +11,7 @@
 #include "port_log.h"
 #include "port_room_env.h"
 #include "port_room_geo.h"
+#include "port_room_liquid.h"
 
 #include <aurora/dvd.h>
 #include <dolphin/gx.h>
@@ -45,6 +46,7 @@ std::unordered_map<uint32_t, std::string> sNativeTextures;
 std::unordered_map<uint32_t, std::string> sRoomEnvs;
 std::string sFont;
 std::unordered_map<uint32_t, std::string> sRoomGeos;
+std::unordered_map<uint32_t, std::string> sRoomLiquids;
 // <FRME id>.hudbars files, by frame.
 std::unordered_map<uint32_t, std::string> sHudBars;
 struct BoundTexture {
@@ -322,12 +324,18 @@ std::string RoomGeoPath(uint32_t mrea) {
   return found != sRoomGeos.end() ? found->second : std::string();
 }
 
+std::string RoomLiquidPath(uint32_t mrea) {
+  const auto found = sRoomLiquids.find(mrea);
+  return found != sRoomLiquids.end() ? found->second : std::string();
+}
+
 size_t NativeTextureCount() { return sNativeTextures.size(); }
 size_t NativeTexturesBound() { return sBoundTextures.size(); }
 
 void BeginReload() {
   // Its models go while the pool they came from is still there.
   PortRoomGeo::Reset();
+  PortRoomLiquid::Reset();
   sRebind.clear();
   for (const auto& [owner, bound] : sBoundTextures) {
     aurora::texture::unregister_replacement(bound.registration);
@@ -354,6 +362,7 @@ void Initialize() {
   sRoomEnvs.clear();
   sFont.clear();
   sRoomGeos.clear();
+  sRoomLiquids.clear();
   sHudBars.clear();
   sStatus.folder = Folder();
   sStatus.active = PortDebug::ModsEnabled();
@@ -428,6 +437,10 @@ void Initialize() {
       }
       if (PortRoomGeo::ParseFileName(name, id)) {
         sRoomGeos[id] = PathString(file);
+        continue;
+      }
+      if (PortRoomLiquid::ParseFileName(name, id)) {
+        sRoomLiquids[id] = PathString(file);
         continue;
       }
       if (ParseLooseName(name, type, id)) {

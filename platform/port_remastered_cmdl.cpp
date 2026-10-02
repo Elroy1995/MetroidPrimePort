@@ -68,6 +68,7 @@ const uint32_t kFormFoot = FourCc('F', 'O', 'O', 'T');
 const uint32_t kChunkMeta = FourCc('M', 'E', 'T', 'A');
 const uint32_t kFormCmdl = FourCc('C', 'M', 'D', 'L');
 const uint32_t kFormSmdl = FourCc('S', 'M', 'D', 'L');
+const uint32_t kFormWmdl = FourCc('W', 'M', 'D', 'L');
 const uint32_t kChunkHead = FourCc('H', 'E', 'A', 'D');
 const uint32_t kChunkWdhd = FourCc('W', 'D', 'H', 'D');
 const uint32_t kChunkSkhd = FourCc('S', 'K', 'H', 'D');
@@ -1115,7 +1116,8 @@ bool ParseModel(const uint8_t* data, size_t size, Model& out, std::string& error
     // this: another pair, or another form, means another layout, and parsing it as this
     // one would be guesswork.
     const bool known = (form.id == kFormCmdl && form.readerVersion == 114 && form.writerVersion == 125) ||
-                       (form.id == kFormSmdl && form.readerVersion == 127 && form.writerVersion == 133);
+                       (form.id == kFormSmdl && form.readerVersion == 127 && form.writerVersion == 133) ||
+                       (form.id == kFormWmdl && form.readerVersion == 118 && form.writerVersion == 124);
     if (!known) {
       error = "remastered model: not a model form this reader knows (" + std::to_string(form.id) +
               " " + std::to_string(form.readerVersion) + "/" + std::to_string(form.writerVersion) + ")";

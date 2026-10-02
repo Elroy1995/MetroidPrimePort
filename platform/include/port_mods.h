@@ -178,6 +178,8 @@ std::string RoomEnvPath(uint32_t mrea);
 std::string HudBarsPath(uint32_t frame);
 // The <MREA id>.roomgeo a mod supplies for an area (port_room_geo.h); empty when none.
 std::string RoomGeoPath(uint32_t mrea);
+// The same for its liquid surfaces (port_room_liquid.h).
+std::string RoomLiquidPath(uint32_t mrea);
 // Whether any mod folder holds room geometry. Reads the disk, and needs no Initialize:
 // the frame buffers are sized from it before there is a renderer.
 bool HasRoomGeometry();

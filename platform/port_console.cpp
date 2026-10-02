@@ -13,6 +13,7 @@
 #include "port_remastered_import.h"
 #include "port_room_env.h"
 #include "port_room_geo.h"
+#include "port_room_liquid.h"
 #include "port_console.h"
 #include "port_mods.h"
 #include "port_savestate.h"
@@ -420,6 +421,7 @@ void CmdHelp() {
   Out("probe [off|on|mirror|window]   the PBR reflection probe, or what PBR surfaces show of it");
   Out("roomgeo [on|off|overlay]  the room geometry mods supply, in place of the area's own or on top of it");
   Out("roomgeo at <x> <y> <z> [margin] | hide <cmdl> | show [cmdl]   its instances at a point; stop drawing one");
+  Out("roomliquid [on|off]       the water, poison and lava surfaces mods supply, in place of the game's");
   Out("roomgeo lights on|off     light it with the area's lights even where the room has baked light");
   Out("roomgeo pick              the instances the middle of the view looks through, nearest first, and the");
   Out("                           first one's materials");
@@ -1313,6 +1315,21 @@ void RunFrame() {
           stats->drawCallCount, stats->lastVertSize / 1048576.f, stats->lastIndexSize / 1048576.f,
           stats->lastStorageSize / 1048576.f, stats->lastUniformSize / 1048576.f, aurora_get_fps());
     }
+    Finish();
+  } else if (name == "roomliquid") {
+    if (sCmd.args.size() > 1) {
+      const std::string arg = Lower(sCmd.args[1]);
+      if (arg != "on" && arg != "off") {
+        return Finish("usage: roomliquid [on|off]");
+      }
+      PortRoomLiquid::SetEnabled(arg == "on");
+    }
+    int areas = 0;
+    int surfaces = 0;
+    int drawn = 0;
+    PortRoomLiquid::Stats(areas, surfaces, drawn);
+    Out("roomliquid %s: %d area(s), %d surface(s), %d drawn", PortRoomLiquid::Enabled() ? "on" : "off", areas,
+        surfaces, drawn);
     Finish();
   } else if (name == "viewmodel") {
     const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";

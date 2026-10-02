@@ -243,6 +243,11 @@ void CCubeModel::PortSetPBRMaterial(const int idx) const {
       values[entry.field] = entry.value;
     }
   }
+  // A liquid's surface (kinds 5 and 6) moves: its first parameter is a rate, and the
+  // shader gets the phase.
+  if (values[13] > 4.5f) {
+    values[15] *= CGraphics::GetSecondsMod900();
+  }
   // World up as the shader sees it: view space is right, up, -forward.
   const CTransform4f& view = CGraphics::GetViewMatrix();
   const f32 up[3] = {view.Get20(), view.Get22(), -view.Get21()};

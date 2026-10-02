@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -49,6 +50,7 @@ namespace fs = std::filesystem;
 
 constexpr uint32_t kCMDL = 0x434D444C;
 constexpr uint32_t kSMDL = 0x534D444C;
+constexpr uint32_t kWMDL = 0x574D444C;  // a liquid's surface
 constexpr uint32_t kCSKR = 0x43534B52;
 constexpr uint32_t kTXTR = 0x54585452;
 constexpr uint32_t kMLVL = 0x4D4C564C;
@@ -74,6 +76,8 @@ constexpr const char* kMapFolder = "map";
 constexpr const char* kMovieFolder = "Video";
 // Largest edge of a room geometry texture: there are thousands of them.
 constexpr int kGeometryTexture = 1024;
+// Texcoords a second a water surface's wave layers move by.
+constexpr double kLiquidDrift = 0.02;
 
 // The rooms whose geometry is imported, from MP_REMASTERED_GEOMETRY: "all", or
 // room names (any part of one) separated by commas, or "none". Without it,
@@ -323,7 +327,7 @@ public:
       const std::vector<PakAsset>& assets = pak->Assets();
       for (size_t a = 0; a < assets.size(); ++a) {
         const uint32_t type = assets[a].type;
-        if (type == kCMDL || type == kSMDL) {
+        if (type == kCMDL || type == kSMDL || type == kWMDL) {
           m_models.emplace(assets[a].id, Where{m_paks.size(), a});
         } else if (type == kTXTR) {
           m_textures.emplace(assets[a].id, Where{m_paks.size(), a});
@@ -763,7 +767,9 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
   struct GeometryModel {
     ModelUuid uuid;
     uint32_t id;
+    int liquid = -1;  // index into `liquids` when it is a liquid's surface
   };
+  std::vector<RoomLiquid> liquids;
   std::vector<GeometryModel> geometry;
   std::unordered_map<ModelUuid, uint32_t, PakIdHash> geometryIds;
   auto geometryId = [&](const ModelUuid& uuid, uint32_t& id) {
@@ -785,6 +791,22 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     geometry.push_back({uuid, id});
     return true;
   };
+  // A liquid's surface is converted with what its room says of it, so it is a model of its
+  // own even where two rooms share the sheet.
+  auto liquidId = [&](const RoomLiquid& liquid, uint32_t& id) {
+    std::lock_guard<std::mutex> lock(takenMutex);
+    id = 0x811C9DC5u ^ uint32_t(liquids.size() + 1) * 0x9E3779B1u;
+    for (const uint8_t byte : liquid.model) {
+      id = (id ^ byte) * 0x01000193u;
+    }
+    while (id == 0 || id == 0xFFFFFFFFu || retail.HasId(id) || taken.count(id) != 0) {
+      ++id;
+    }
+    taken.insert(id);
+    geometry.push_back({liquid.model, id, int(liquids.size())});
+    liquids.push_back(liquid);
+    return true;
+  };
   auto roomWork = [&] {
     YieldToGame();
     for (size_t i = nextWorld++; i < worlds.size() && !sCancel; i = nextWorld++) {
@@ -794,12 +816,14 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
       RoomIO io;
       io.retail = [&](uint32_t type, uint32_t id, std::vector<uint8_t>& out) { return retail.Read(type, id, out); };
       io.write = [&](const std::string& name, const std::vector<uint8_t>& data) {
-        const bool isGeometry = name.size() > 8 && name.compare(name.size() - 8, 8, ".roomgeo") == 0;
+        const bool isGeometry = (name.size() > 8 && name.compare(name.size() - 8, 8, ".roomgeo") == 0) ||
+                                (name.size() > 11 && name.compare(name.size() - 11, 11, ".roomliquid") == 0);
         std::ofstream file((isGeometry ? geometryFolder : roomFolder) / PathFromString(name), std::ios::binary);
         file.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
         return bool(file);
       };
       io.model = geometryId;
+      io.liquid = liquidId;
       io.wantsGeometry = WantsGeometry;
       io.cancelled = [] { return sCancel.load(); };
       int written = 0;
@@ -851,6 +875,22 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
         // stone is named "simple".
         options.skip.clear();
         options.nativeMax = kGeometryTexture;
+        if (geometry[i].liquid >= 0 && liquids[size_t(geometry[i].liquid)].type != RoomLiquid::kLava) {
+          const RoomLiquid& liquid = liquids[size_t(geometry[i].liquid)];
+          options.water = true;
+          options.waterHasNormal = liquid.hasNormal;
+          options.waterNormal = liquid.normal;
+          for (int k = 0; k < 4; ++k) {
+            options.waterTint[k] = liquid.tint[k];
+          }
+          // Each wave layer drifts the way it faces; Remastered's speeds are not read.
+          for (int k = 0; k < 2; ++k) {
+            const double angle = double(liquid.waveAngle[k]) * (3.14159265358979323846 / 180.0);
+            options.waterScale[k] = liquid.normalScale[k];
+            options.waterFlow[k * 2] = kLiquidDrift * std::cos(angle);
+            options.waterFlow[k * 2 + 1] = kLiquidDrift * std::sin(angle);
+          }
+        }
         std::string modelError;
         std::vector<uint8_t> raw;
         Model model;

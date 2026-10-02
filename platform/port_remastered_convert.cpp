@@ -578,11 +578,13 @@ struct RemMaterial {
   double layerSmooth = 0.0;                      // BLSM: the width of the blend's edge
   double layerHeight[4] = {1.0, 0.0, 1.0, 0.0};  // BSAO: scale and offset of each layer's height
   // A shader of its own the port draws (GXSetPBRMaterial's kinds): 1 a second
-  // layer on what faces up, 2 a detail map, 3 lava, 4 ice seen into.
+  // layer on what faces up, 2 a detail map, 3 lava, 4 ice seen into, 5 a
+  // liquid's surface (water, poison), 6 a lava pool's.
   int kind = 0;
   double kindStrength = 0.0;
   double kindParam[4] = {0.0, 0.0, 0.0, 0.0};
   bool vcolor = false;  // it reads the vertex colour, which is no tint
+  double tint[3] = {0.0, 0.0, 0.0};  // kind 5: the liquid's colour
   bool hidden = false;  // not drawn: the game has its own
 };
 
@@ -1069,6 +1071,10 @@ constexpr uint32_t kShaderUpLayer = 0x9EFE0D2E;   // TCH0-2 are a second layer o
 constexpr uint32_t kShaderDetail = 0x9AB899E7;    // TCH0 is a detail map, on a texcoord of its own
 constexpr uint32_t kShaderLava = 0x023388CD;      // the glow is CCH0.x times the vertex alpha
 constexpr uint32_t kShaderParallax = 0x2F3FB02B;  // TCH0 is seen inside the surface; CCH0 and CCH1.x say how
+// A lava pool's surface (a LavaRenderVolume's model): BCLR is a colour ramp, TCH0 a pattern
+// carried along TCH2's flow map in two phases that TCH1's noise offsets, CCH0 the flow's
+// strength, its period in seconds and the brightness, CCH1 the maps' scales.
+constexpr uint32_t kShaderLavaPool[] = {0x3ADE58B7, 0xB9C24545};
 // A shader with parameters of its own (TCHn, CCHn) reads the vertex colour as
 // it likes: masks for its extra maps, a colour seen through ice. These are the
 // ones read that multiply the albedo by it, as the standard shader does.
@@ -1281,6 +1287,25 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
       out.kindParam[i] = ShortestDouble(cch[0]->color[i]);
     }
     out.kindStrength = cch[1] ? ShortestDouble(cch[1]->color[0]) : 0.0;
+  } else if (std::find(std::begin(kShaderLavaPool), std::end(kShaderLavaPool), shader) != std::end(kShaderLavaPool) &&
+             out.maps[kBase].has && tch[0] && tch[1] && tch[2] && cch[0] && cch[1]) {
+    out.kind = 6;
+    out.vcolor = true;
+    static const int slot[3] = {kBase, kMr, kNormal};
+    for (int i = 0; i < 3; ++i) {
+      set(slot[i], tch[i]->texture, &out.layer[slot[i]]);
+      // The shader reads every map on the first texcoord, whatever the material says.
+      out.layer[slot[i]].coord = 0;
+    }
+    out.maps[kBase].coord = 0;
+    const double period = ShortestDouble(cch[0]->color[1]);
+    out.kindParam[0] = period > 1e-3 ? 1.0 / period : 0.0;  // the game multiplies it by the time
+    out.kindParam[1] = ShortestDouble(cch[0]->color[0]);
+    out.kindParam[2] = ShortestDouble(cch[1]->color[0]);
+    out.kindParam[3] = ShortestDouble(cch[1]->color[2]);
+    out.layerHeight[0] = ShortestDouble(cch[1]->color[1]);  // the noise map's scale
+    out.layerHeight[1] = 1.0;
+    out.kindStrength = ShortestDouble(cch[0]->color[2]);
   }
   // BKLT is a parameter vector like CCHn, not a colour: x is the strength (0 to
   // 2), what y means is not known and it is not used.
@@ -1289,6 +1314,12 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   // floor on the width is not known, so a zero one is the thinnest edge.
   out.layered = out.maps[kBase].has && out.layer[kBase].has && !out.cutout && !out.blended;
   out.layerSmooth = std::clamp(out.layerSmooth, 1e-3, 16.0);
+  if (out.kind == 6) {
+    // Its own colour, and the extra maps are no second layer but must be bound like one.
+    out.layered = out.unlit = true;
+    out.cutout = out.blended = out.tinted = out.mask = false;
+    out.height = 0.0;
+  }
   // All but lava draw with the second layer's maps.
   if (out.kind != 3 && !out.layered) {
     out.kind = 0;
@@ -1311,7 +1342,8 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
   const double e = std::sqrt(std::min(std::max(m.emissive, 0.0), kPbrEmissiveMax));
   const double k = std::min(std::max(m.backlight, 0.0), 2.0);
   for (int i = 0; i < 3; ++i) {
-    PF(b, e);
+    // A liquid has no glow of its own, and its colour goes where the glow's would.
+    PF(b, m.kind == 5 ? m.tint[i] : e);
   }
   for (int i = 0; i < 3; ++i) {
     PF(b, k);
@@ -1327,7 +1359,7 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
       }
       if (m.kind) {
         PF(b, double(m.kind));
-        PF(b, std::sqrt(std::min(std::max(m.kindStrength, 0.0), kPbrEmissiveMax)));
+        PF(b, m.kind >= 5 ? m.kindStrength : std::sqrt(std::min(std::max(m.kindStrength, 0.0), kPbrEmissiveMax)));
         for (double v : m.kindParam) {
           PF(b, v);
         }
@@ -1707,6 +1739,37 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   for (const ModelMaterial& m : model.materials) {
     mats.push_back(ReadMaterial(m, opt));
   }
+  // A liquid's model says nothing of how it looks (its maps are placeholders): the room does.
+  // The material is a blended one of the liquid kind, whose second layer is only there
+  // because the kinds are drawn by the layered shader.
+  bool liquid = false;
+  for (RemMaterial& m : mats) {
+    if (opt.water && opt.standalone) {
+      m.kind = 5;
+      m.layered = m.blended = true;
+      m.cutout = m.tinted = m.vcolor = m.unlit = m.mask = m.hidden = false;
+      m.height = 0.0;
+      m.backlight = 0.0;
+      m.maps[kMr].has = m.maps[kEmissive].has = false;
+      m.maps[kNormal].has = opt.waterHasNormal;
+      m.maps[kNormal].id = opt.waterNormal;
+      m.maps[kNormal].src = opt.texturePrefix + IdToString(opt.waterNormal) + opt.textureSuffix;
+      for (MapRef& ref : m.maps) {
+        ref.coord = 0;
+      }
+      m.layer[kBase] = m.maps[kBase];
+      m.layer[kMr].has = m.layer[kNormal].has = false;
+      m.layerSmooth = 0.0;
+      std::copy(opt.waterFlow, opt.waterFlow + 4, m.layerHeight);
+      std::copy(opt.waterTint, opt.waterTint + 3, m.tint);
+      m.kindStrength = opt.waterNormalStrength;
+      m.kindParam[0] = 1.0;  // the game multiplies it by the time
+      m.kindParam[1] = 0.0;
+      m.kindParam[2] = opt.waterTint[3];
+      m.kindParam[3] = opt.waterFresnel;
+    }
+    liquid = liquid || m.kind >= 5;
+  }
   std::vector<Buffer> buffers(model.vertexBuffers.size());
   std::vector<Prim> prims;
   std::vector<uint32_t> bufOrder;  // buffers in the order the primitives reach them
@@ -1745,7 +1808,9 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       b.loaded = true;
       b.src = &vb;
       b.n = vb.vertexCount;
-      if (vb.positions.size() != b.n * 3 || vb.normals.size() != b.n * 3) {
+      // A liquid's surface has no normals: it is flat, and faces up.
+      const bool flat = vb.normals.empty() && mats[mesh.material].kind >= 5;
+      if (vb.positions.size() != b.n * 3 || (!flat && vb.normals.size() != b.n * 3)) {
         throw Fail{"a Remastered vertex buffer has no positions or normals"};
       }
       if (vb.uvs.empty() || vb.uvs[0].size() != b.n * 2) {
@@ -1759,7 +1824,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
           double p = 0.0, q = 0.0;
           for (int c = 0; c < 3; ++c) {
             p += double(vb.positions[v * 3 + c]) * M[r][c];
-            q += double(vb.normals[v * 3 + c]) * M[r][c];
+            q += (flat ? (c == 1 ? 1.0 : 0.0) : double(vb.normals[v * 3 + c])) * M[r][c];
           }
           b.P[v * 3 + r] = p + opt.offset[r];
           nrm[r] = q;
@@ -1771,6 +1836,15 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       }
       for (const std::vector<float>& uv : vb.uvs) {
         b.uv.emplace_back(uv.size() == b.n * 2 ? std::vector<double>(uv.begin(), uv.end()) : std::vector<double>());
+      }
+      if (opt.water && opt.standalone) {
+        // Its maps lie on the surface by where a point is, not by the model's texcoords.
+        std::vector<double> planar(b.n * 2);
+        for (size_t v = 0; v < b.n; ++v) {
+          planar[v * 2] = double(vb.positions[v * 3]) * opt.waterScale[0];
+          planar[v * 2 + 1] = double(vb.positions[v * 3 + 2]) * opt.waterScale[1];
+        }
+        b.uv.assign(1, std::move(planar));
       }
       b.skinned = vb.joints.size() == b.n * 4 && vb.weights.size() == b.n * 4;
       b.C.assign(b.n * 4, 255);
@@ -1983,7 +2057,8 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       for (size_t v = 0; v < n; ++v) {
         u[v * 2] = lo + (hi - lo) * std::clamp((u[v * 2] - u0) / (u1 - u0), 0.0, 1.0);
       }
-    } else {
+    } else if (!liquid) {
+      // A liquid's maps repeat and move, so its coordinates stay as they are.
       // Remastered UVs are not normalised (U can span -3.9..5.0, or be entirely
       // negative), so a CLAMP sampler collapses the texture onto one edge
       // texel. A set whose span is at most two tiles is a single tile that

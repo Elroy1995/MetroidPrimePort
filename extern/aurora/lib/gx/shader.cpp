@@ -973,7 +973,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     // no derivatives.
     layer += fmt::format(R"""(
       var pbr_poff = vec2f(0.0);
-      if (pbr_kind > 3.5 && pbr_tlen > 1e-24) {{
+      if (pbr_kind > 3.5 && pbr_kind < 4.5 && pbr_tlen > 1e-24) {{
           let pbr_pz = min(dot(pbr_ng, in.pbr_pos), -0.05 * length(in.pbr_pos));
           pbr_poff = vec2f(dot(pbr_t * inverseSqrt(max(dot(pbr_t, pbr_t), 1e-30)), in.pbr_pos),
                            dot(pbr_b * inverseSqrt(max(dot(pbr_b, pbr_b), 1e-30)), in.pbr_pos)) *
@@ -1002,7 +1002,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       if (pbr_kind > 1.5 && pbr_kind < 2.5) {{
           pbr_base = pbr_base * pow(max(sampled{1}.rgb, vec3f(0.0)), vec3f(2.2)) * 2.0;
       }}
-      if (pbr_kind > 3.5) {{
+      if (pbr_kind > 3.5 && pbr_kind < 4.5) {{
           let pbr_kf = pow(clamp(dot(pbr_ng, normalize(-in.pbr_pos)), 0.0, 1.0), max(ubuf.pbr_param.x, 1e-4)) *
                        ubuf.pbr_param.y;
           let pbr_ki = mix(pbr_inner, pbr_vraw.rgb, pbr_kf);
@@ -1020,6 +1020,65 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     // The vertex alpha is the layers' weight there and no opacity.
     tintAlpha.clear();
   }
+  // Kinds 5 and 6 are a liquid's surface. Their maps move, so they are sampled at
+  // coordinates of their own inside the branch, with the derivatives taken outside it.
+  std::string liquid;
+  if (layered && mapStage[5] != -1 && mapStage[6] != -1) {
+    const auto mapOf = [&](int map) { return underlying(config.tevStages[mapStage[map]].texMapId); };
+    const auto uv = underlying(config.tevStages[mapStage[0]].texCoordId);
+    layer += fmt::format(R"""(
+      let pbr_quv1 = dpdx(tex{0}_uv);
+      let pbr_quv2 = dpdy(tex{0}_uv);)""",
+                         uv);
+    // Kind 6, a lava pool: map 4 is a pattern carried along map 6's flow in two phases half
+    // a period apart, each fading out as it wraps, and map 5's noise offsets the phase so
+    // that the pool does not pulse as one. The pattern's two channels and the heat (the
+    // vertex alpha and the flow's speed) pick the colour from map 0, a ramp. pbr_param is
+    // the phase, the flow's reach and the pattern's scale, pbr_layer_height.x the noise's.
+    kinds += fmt::format(R"""(
+      if (pbr_kind > 5.5 && pbr_kind < 6.5) {{
+          let pbr_qs = vec2f(ubuf.pbr_param.z, ubuf.pbr_param.w);
+          let pbr_qns = vec2f(pbr_qs.x * ubuf.pbr_layer_height.x / max(pbr_qs.y, 1e-4), ubuf.pbr_layer_height.x);
+          let pbr_qnoise = textureSampleGrad(tex{2}, tex{2}_samp, tex{4}_uv * pbr_qns, pbr_quv1 * pbr_qns,
+                                             pbr_quv2 * pbr_qns).r;
+          let pbr_qflow = sampled{3}.rg * 2.0 - 1.0;
+          let pbr_qph = ubuf.pbr_param.x + pbr_qnoise;
+          let pbr_qp0 = fract(pbr_qph);
+          let pbr_qp1 = fract(pbr_qph + 0.5);
+          let pbr_quv = tex{4}_uv * pbr_qs;
+          let pbr_qa = textureSampleGrad(tex{1}, tex{1}_samp, pbr_quv - pbr_qflow * (ubuf.pbr_param.y * pbr_qp0),
+                                         pbr_quv1 * pbr_qs, pbr_quv2 * pbr_qs).rg;
+          let pbr_qb = textureSampleGrad(tex{1}, tex{1}_samp, pbr_quv - pbr_qflow * (ubuf.pbr_param.y * pbr_qp1) + 0.5,
+                                         pbr_quv1 * pbr_qs, pbr_quv2 * pbr_qs).rg;
+          let pbr_qxy = mix(pbr_qa, pbr_qb, abs(pbr_qp0 - 0.5) * 2.0);
+          let pbr_qheat = clamp(pbr_vraw.a * 2.0 + min(length(pbr_qflow), 1.0) - 1.0, 0.0, 1.0);
+          let pbr_qd = pbr_qxy.y - pbr_qxy.x;
+          let pbr_qt = clamp((pbr_qheat * ubuf.pbr_layer_height.y + pbr_qd) * 2.5 - 2.5, 0.0, 1.0);
+          let pbr_qramp = textureSampleLevel(tex{0}, tex{0}_samp,
+                                             clamp(vec2f(pbr_qxy.x + pbr_qd * (3.0 - 2.0 * pbr_qt) * pbr_qt * pbr_qt, pbr_qheat),
+                                                   vec2f(0.02), vec2f(0.98)), 0.0).rgb;
+          pbr_base = vec3f(0.0);
+          pbr_kglow = pow(max(pbr_qramp, vec3f(0.0)), vec3f(2.2)) * ubuf.pbr_layer.z;
+      }})""",
+                         mapOf(0), mapOf(4), mapOf(5), mapStage[6], uv);
+    // Kind 5, water: the normal is two copies of map 2 moving across each other
+    // (pbr_layer_height is their speeds, pbr_param.x the time, pbr_layer.z the strength).
+    // Lava has no normal map.
+    if (mapStage[2] != -1) {
+      liquid = fmt::format(R"""(
+        if (pbr_kind > 4.5 && pbr_kind < 5.5 && pbr_tlen > 1e-24) {{
+            let pbr_qw0 = textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + ubuf.pbr_layer_height.xy * ubuf.pbr_param.x,
+                                            pbr_quv1, pbr_quv2).rg * 2.0 - 1.0;
+            let pbr_qw1 = textureSampleGrad(tex{0}, tex{0}_samp,
+                                            tex{1}_uv.yx * 0.73 + ubuf.pbr_layer_height.zw * ubuf.pbr_param.x,
+                                            pbr_quv1.yx * 0.73, pbr_quv2.yx * 0.73).gr * 2.0 - 1.0;
+            let pbr_qwn = (pbr_qw0 + pbr_qw1) * ubuf.pbr_layer.z;
+            let pbr_qws = inverseSqrt(pbr_tlen);
+            pbr_n = normalize(pbr_t * (pbr_qws * pbr_qwn.x) - pbr_b * (pbr_qws * pbr_qwn.y) + pbr_ng);
+        }})""",
+                           mapOf(2), uv);
+    }
+  }
   const std::string baseRgb =
       layered ? fmt::format("mix(pow(max({0}.rgb, vec3f(0.0)), vec3f(2.2)), pow(max(sampled{1}.rgb, vec3f(0.0)), "
                             "vec3f(2.2)), pbr_ls)",
@@ -1030,13 +1089,28 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     // glTF normal maps are +Y up with V running down the image, so the bitangent is the
     // negated dP/dV. Kind 4 scales the map's tilt.
     normal = fmt::format(R"""(
-      let pbr_ts = ({0} * 2.0 - 1.0) * select(1.0, ubuf.pbr_param.z, pbr_kind > 3.5);
+      let pbr_ts = ({0} * 2.0 - 1.0) * select(1.0, ubuf.pbr_param.z, pbr_kind > 3.5 && pbr_kind < 4.5);
       let pbr_tn = vec3f(pbr_ts, sqrt(max(0.0, 1.0 - dot(pbr_ts, pbr_ts))));
       if (pbr_tlen > 1e-24) {{
         let pbr_s = inverseSqrt(pbr_tlen);
         pbr_n = normalize(pbr_t * (pbr_s * pbr_tn.x) - pbr_b * (pbr_s * pbr_tn.y) + pbr_ng * pbr_tn.z);
       }})""",
                          normalXy);
+  }
+  normal += liquid;
+  // And what is seen of it: its own colour in the room's light where it is looked into,
+  // the surroundings' reflection where it is seen at a grazing angle (Schlick, pbr_param.w
+  // at the normal), and more opaque the more it reflects. pbr_param.z is the opacity seen
+  // straight on, pbr_emissive the colour.
+  if (!liquid.empty()) {
+    liquid = R"""(
+      if (pbr_kind > 4.5 && pbr_kind < 5.5) {
+          let pbr_qf = ubuf.pbr_param.w + (1.0 - ubuf.pbr_param.w) * pow(1.0 - pbr_nv, 5.0);
+          pbr_alpha = mix(ubuf.pbr_param.z, 1.0, pbr_qf);
+          pbr_lo = (max(ubuf.pbr_emissive.rgb, vec3f(0.0)) * pbr_ambd * (ubuf.pbr_param.z * (1.0 - pbr_qf)) +
+                    pbr_envspec * pbr_qf) / max(pbr_alpha, 1e-3);
+          pbr_glow = vec3f(0.0);
+      })""";
   }
   std::string attn;
   if (cc.attnFn == GX_AF_SPOT) {
@@ -1206,7 +1280,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       if ((pbr_mode > 0.5 && pbr_mode < 1.5) || pbr_mode > 2.5) {{
           // Unlit (screens, holograms): the surface's own colour and its glow.
           pbr_lo = pbr_diff * pbr_ao;
-      }}
+      }}{14}
       let pbr_out = max(pbr_lo + pbr_glow, vec3f(0.0));
       // Highlights roll off into white instead of clipping: unchanged up to 0.6, and the
       // rest of the range (a room cube's lamps are many times brighter than 1) approaches 1.
@@ -1267,7 +1341,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       }}
     }})""",
                      base, orm, sampled(3, "vec4f(0.0)"), normal, GX::MaxLights, attn, amb,
-                     gfx::probe::MipCount - 1, tint, tintAlpha, layer, baseRgb, layered ? "1.0" : "prev.a", kinds);
+                     gfx::probe::MipCount - 1, tint, tintAlpha, layer, baseRgb, layered ? "1.0" : "prev.a", kinds, liquid);
   if (!lit) {
     // The uniform block has no lights then.
     const size_t begin = source.find("// pbr-lights-begin");

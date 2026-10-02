@@ -9,6 +9,7 @@
 #include "port_log.h"
 #include "port_room_env.h"
 #include "port_room_geo.h"
+#include "port_room_liquid.h"
 #include "port_savestate.h"
 #include "port_skip_cutscenes.h"
 #include "port_viewmodel.h"
@@ -2658,6 +2659,7 @@ void CStateManager::PortCaptureProbeFace() const {
     PortRoomEnv::SetViewArea(x850_world->GetArea(x8cc_nextAreaId)->GetAreaAssetId());
   }
   PortRoomGeo::SetLoadedAreas(mreas, mreaCount);
+  PortRoomLiquid::SetLoadedAreas(mreas, mreaCount);
   static uint lastDraws = 0;
   static int face = 0;
   static int filled = 0;

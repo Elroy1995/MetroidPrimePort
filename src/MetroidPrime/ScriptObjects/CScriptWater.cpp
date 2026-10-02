@@ -27,6 +27,9 @@
 #include "Kyoto/Math/CloseEnough.hpp"
 #include "Kyoto/Particles/CGenDescription.hpp"
 #include "MetaRender/CCubeRenderer.hpp"
+#ifdef TARGET_PC
+#include "port_room_liquid.h"
+#endif
 
 #include "rstl/math.hpp"
 
@@ -270,6 +273,15 @@ void CScriptWater::Render(const CStateManager& mgr) const {
     xf.AddTranslationZ(zOffset);
     const CVector3f& areaCenter =
         mgr.GetWorld()->GetAreaAlways(mgr.GetNextAreaId()).GetAABB().GetCenterPoint();
+#ifdef TARGET_PC
+    // A mod's surface stands in for the fluid plane (port_room_liquid.h); the visors that
+    // draw the world their own way keep the game's.
+    const CPlayerState::EPlayerVisor portVisor = mgr.GetPlayerState()->GetActiveVisor(mgr);
+    if (portVisor == CPlayerState::kPV_Thermal || portVisor == CPlayerState::kPV_XRay ||
+        !PortRoomLiquid::Draw(mgr, mgr.GetWorld()->GetAreaAlways(GetCurrentAreaId()), GetUniqueId().value,
+                              GetTranslation(), x1b4_fluidPlane->GetFluidType(),
+                              GetTranslation().GetZ() + x130_bounds.GetMaxPoint().GetZ()))
+#endif
     x1b4_fluidPlane->Render(
         mgr, x2bc_alpha, aabb, xf, mgr.GetWorld()->GetAreaAlways(GetCurrentAreaId()).GetTM(), false,
         x150_frustum, mgr.GetFluidPlaneManager()->GetRippleManager(), GetUniqueId(),

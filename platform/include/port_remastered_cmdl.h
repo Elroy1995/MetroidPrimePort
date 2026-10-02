@@ -1,6 +1,6 @@
 #pragma once
 
-// Reads a Metroid Prime Remastered model resource (a "CMDL" or "SMDL" RFRM form,
+// Reads a Metroid Prime Remastered model resource (a "CMDL", "SMDL" or "WMDL" RFRM form,
 // as retrotool extracts them) and hands back the decoded geometry and materials in
 // memory. It parses; it converts to nothing and writes nothing.
 //
@@ -161,7 +161,7 @@ struct ModelLod {
 
 // A parsed model.
 struct Model {
-  uint32_t form = 0;  // 'CMDL' or 'SMDL'
+  uint32_t form = 0;  // 'CMDL', 'SMDL' or 'WMDL'
   uint32_t readerVersion = 0;
   uint32_t writerVersion = 0;
   bool skinned = false;  // the file carried an SKHD chunk, so it is a skinned model
