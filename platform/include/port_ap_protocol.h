@@ -1,5 +1,6 @@
 #ifndef METROID_PRIME_PORT_PORT_AP_PROTOCOL_H
 #define METROID_PRIME_PORT_PORT_AP_PROTOCOL_H
+#include "port_ap_logic.h"
 #include "port_json.h"
 
 #include <cstdint>
@@ -134,6 +135,11 @@ struct State {
   // below nextItemIndex are skipped on reconnect, so the counts cannot be
   // rebuilt from what the server resends. Absent in older files: all zero.
   std::map< int64_t, int64_t > progressive;
+  // The seed's options that decide which checks are in logic ("logic", under
+  // their slot_data names), kept so the tracker also works before the server
+  // answers. hasLogic is false until a Metroid Prime slot has sent them.
+  bool hasLogic = false;
+  PortApLogic::Options logic;
 };
 State LoadStateFile(const std::string& path);
 // Writes the state through a temporary file and renames it into place.

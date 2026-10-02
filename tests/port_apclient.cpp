@@ -308,6 +308,23 @@ int main() {
   Check(reloaded.slot == saved.slot && reloaded.nextItemIndex == saved.nextItemIndex &&
             reloaded.checkedLocations == saved.checkedLocations && reloaded.seed == saved.seed,
         "saved state round-trips");
+  Check(!reloaded.hasLogic, "a state without logic options has none");
+  {
+    State withLogic = saved;
+    withLogic.hasLogic = true;
+    withLogic.logic.trickDifficulty = 1;
+    withLogic.logic.combatLogic = -1;
+    withLogic.logic.progressiveBeams = true;
+    withLogic.logic.mainMissile = true;
+    withLogic.logic.trickAllow = {"Alcove Escape", "A \"quoted\" trick"};
+    withLogic.logic.trickDeny = {"Landing Site Scan Dash"};
+    const std::filesystem::path logicPath = testDir / "logic-state.json";
+    Check(SaveStateFile(logicPath.string(), withLogic), "state with logic options saves");
+    const State logicReloaded = LoadStateFile(logicPath.string());
+    Check(logicReloaded.hasLogic && logicReloaded.logic == withLogic.logic &&
+              logicReloaded.checkedLocations == saved.checkedLocations,
+          "the seed's logic options round-trip through the state file");
+  }
   const std::filesystem::path emptyStatePath = testDir / "empty-state.json";
   const State absentState = LoadStateFile(emptyStatePath.string());
   Check(absentState.slot.empty() && absentState.nextItemIndex == 0 &&
@@ -832,6 +849,11 @@ int main() {
     Check(slot.variaOnlyHeat, "non_varia_heat_damage parses");
     Check(slot.springBall == 1, "spring_ball parses");
     Check(slot.preScanElevators, "pre_scan_elevators parses");
+    Check(session.GetState().hasLogic && session.GetState().logic.mainMissile &&
+              !session.GetState().logic.mainPowerBomb && session.GetState().logic.variaOnlyHeat &&
+              session.GetState().logic.preScanElevators &&
+              session.GetState().logic.trickDifficulty == -1,
+          "slot_data fills the logic options");
     Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "elevator"),
           "only the unsupported option is warned about");
     Check(session.GetConfig().deathLink && outgoing.size() == 4 &&

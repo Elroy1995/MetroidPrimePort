@@ -1,5 +1,7 @@
 #ifndef METROID_PRIME_PORT_PORT_APCLIENT_H
 #define METROID_PRIME_PORT_PORT_APCLIENT_H
+#include "port_ap_logic.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -104,6 +106,19 @@ std::vector< ChatLine > ChatLog(uint64_t* serial = nullptr);
 bool SendChat(const std::string& text, std::string& error);
 // Seed name from the server's RoomInfo, or "" before it arrives.
 const char* SeedName();
+
+// The tracker's view of the seed: for each location (indexed as
+// PortApLogic::Checks and MetroidPrime::Locations) whether it is in logic with
+// the items received so far, and whether it has been checked. False when there
+// is nothing to say: no session on the built-in tables, or the seed's options
+// have never been received. Works offline once they have. Game thread.
+struct LogicState {
+  std::vector< PortApLogic::Level > levels;
+  std::vector< bool > checked;
+};
+bool Logic(LogicState& out);
+// The same as text for the console: the reachable checks, one per line.
+std::string LogicText();
 
 // Queues the configured location id for `locationKey` (the randomizer's
 // "world:area:entity" key). No-op when unconfigured, unmapped, or already sent.

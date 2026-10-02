@@ -452,8 +452,24 @@ still works; anything marked as a gap still limits a session.
   else the scouts for an artifact in this world. Pickup scans name the scouted
   item and its owner (`docs/RANDOMIZER.md`, "Scans and the Artifact Temple").
   Both update when late data arrives. `ap_fake_server.py --hints
-  ITEM=LOC[@PLAYER]` serves test hints. There is no hint list or tracker
-  marking beyond that.
+  ITEM=LOC[@PLAYER]` serves test hints. There is no hint list beyond that.
+- **Logic tracker — done.** F1 > Tracker lists the checks within reach, and
+  the map's pickup dots take a tracker's colours: green in logic, yellow
+  reachable with a trick the seed doesn't count on, blue visible but not
+  collectable, red out of reach, grey checked (`map_logic_colors=0` in the
+  settings, or the checkbox above the list, gives the plain white dots).
+  Console `tracker` prints the same list. It is worked out from the items the
+  session received and the seed's logic options (tricks, combat logic, visor
+  requirements, progressive beams and so on, kept in the state file as
+  `"logic"`, so it works offline once a seed has connected). The rules are
+  those of the
+  [Metroid Prime AP PopTracker pack](https://github.com/lilDavid/MetroidPrimeAP-PoptrackerPack)
+  (MIT, v1.2.0), compiled into `platform/port_ap_logic_data.inc` by
+  `tools/gen_ap_logic.py <pack checkout> > platform/port_ap_logic_data.inc`;
+  run that again when the apworld's logic changes. It assumes the vanilla
+  starting room and unshuffled elevators and door colours, as the pack's
+  defaults do, and needs the built-in client (not an external one). Not tried
+  against a real seed.
 - **DeathLink — done, opt-in.** Set `"death_link": true` in `archipelago.json`
   and a DeathLink bounce from another player kills this one, naming them; this
   client's own deaths are announced once. The client connects with the

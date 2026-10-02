@@ -120,6 +120,7 @@ bool sHideHelmet = false;
 bool sHideVisorEffects = false;
 bool sRevealMap = false;
 bool sMapPickups = false;
+bool sMapLogicColors = true;
 bool sCheats = false;
 bool sSkippableCutscenes = false;
 bool sSaveStateHotkeys = true;
@@ -329,6 +330,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sRevealMap = ParseBool(value);
   } else if (key == "map_pickups") {
     sMapPickups = ParseBool(value);
+  } else if (key == "map_logic_colors") {
+    sMapLogicColors = ParseBool(value);
   } else if (key == "cheats") {
     sCheats = ParseBool(value);
   } else if (key == "skippable_cutscenes") {
@@ -514,6 +517,7 @@ void SaveSettings() {
   file << "hide_visor_effects=" << (sHideVisorEffects ? 1 : 0) << '\n';
   file << "reveal_map=" << (sRevealMap ? 1 : 0) << '\n';
   file << "map_pickups=" << (sMapPickups ? 1 : 0) << '\n';
+  file << "map_logic_colors=" << (sMapLogicColors ? 1 : 0) << '\n';
   file << "cheats=" << (sCheats ? 1 : 0) << '\n';
   file << "skippable_cutscenes=" << (sSkippableCutscenes ? 1 : 0) << '\n';
   file << "savestate_hotkeys=" << (sSaveStateHotkeys ? 1 : 0) << '\n';
@@ -978,6 +982,17 @@ bool MapPickups() {
 void SetMapPickups(bool enabled) {
   EnsureInitialized();
   sMapPickups = enabled;
+  MarkDirty();
+}
+
+bool MapLogicColors() {
+  EnsureInitialized();
+  return sMapLogicColors;
+}
+
+void SetMapLogicColors(bool enabled) {
+  EnsureInitialized();
+  sMapLogicColors = enabled;
   MarkDirty();
 }
 
@@ -3833,6 +3848,94 @@ void DrawTrackerCount(const char* label, const PortTracker::Count& count) {
   }
 }
 
+// The Archipelago checks within reach, coloured as on the map.
+void DrawTrackerLogic() {
+  static PortAp::LogicState state;
+  if (!PortAp::Logic(state)) {
+    return;
+  }
+  ImGui::SeparatorText("Archipelago checks");
+  bool colors = sMapLogicColors;
+  if (ImGui::Checkbox("Colour the map's dots by logic", &colors)) {
+    SetMapLogicColors(colors);
+  }
+  static const ImVec4 kColors[] = {
+      ImVec4(0.95f, 0.30f, 0.30f, 1.f), // out of logic
+      ImVec4(0.35f, 0.60f, 1.00f, 1.f), // inspect
+      ImVec4(1.00f, 0.85f, 0.25f, 1.f), // sequence break
+      ImVec4(0.35f, 0.90f, 0.40f, 1.f), // in logic
+  };
+  static const ImVec4 kGrey(0.55f, 0.55f, 0.55f, 1.f);
+  size_t count = 0;
+  const PortApLogic::Check* checks = PortApLogic::Checks(count);
+  int totals[4] = {};
+  int checked = 0;
+  for (size_t i = 0; i < count; ++i) {
+    if (state.checked[i]) {
+      ++checked;
+    } else {
+      ++totals[static_cast< int >(state.levels[i])];
+    }
+  }
+  ImGui::TextColored(kColors[3], "%d in logic", totals[3]);
+  ImGui::SameLine();
+  ImGui::TextColored(kColors[2], "%d sequence break", totals[2]);
+  ImGui::SameLine();
+  ImGui::TextColored(kColors[1], "%d visible only", totals[1]);
+  ImGui::SameLine();
+  ImGui::TextColored(kColors[0], "%d out of reach", totals[0]);
+  ImGui::SameLine();
+  ImGui::TextColored(kGrey, "%d checked", checked);
+  ImGui::TextWrapped(
+      "Worked out from the items received and the seed's logic options, with the rules of "
+      "the Metroid Prime Archipelago tracker pack. Green is in logic; yellow can be reached "
+      "with a trick the seed doesn't count on; blue can be seen but not collected.");
+
+  // One header per area, holding what can be reached there, best first.
+  const char* area = nullptr;
+  bool open = false;
+  for (size_t i = 0; i < count; ++i) {
+    if (area == nullptr || std::strcmp(area, checks[i].area) != 0) {
+      area = checks[i].area;
+      int inLogic = 0;
+      int other = 0;
+      for (size_t j = 0; j < count; ++j) {
+        if (std::strcmp(checks[j].area, area) != 0 || state.checked[j]) {
+          continue;
+        }
+        if (state.levels[j] == PortApLogic::Level::Normal) {
+          ++inLogic;
+        } else if (state.levels[j] != PortApLogic::Level::None) {
+          ++other;
+        }
+      }
+      char header[160];
+      std::snprintf(header, sizeof(header), "%s (%d in logic, %d other)###aplogic%s", area, inLogic,
+                    other, area);
+      ImGui::SetNextItemOpen(inLogic > 0, ImGuiCond_Once);
+      open = ImGui::CollapsingHeader(header);
+      if (open) {
+        for (int level = 3; level >= 1; --level) {
+          for (size_t j = 0; j < count; ++j) {
+            if (std::strcmp(checks[j].area, area) != 0 || state.checked[j] ||
+                static_cast< int >(state.levels[j]) != level) {
+              continue;
+            }
+            if (checks[j].section[0] != 0) {
+              ImGui::TextColored(kColors[level], "  %s - %s", checks[j].room, checks[j].section);
+            } else {
+              ImGui::TextColored(kColors[level], "  %s", checks[j].room);
+            }
+          }
+        }
+        if (inLogic + other == 0) {
+          ImGui::TextDisabled("  nothing within reach");
+        }
+      }
+    }
+  }
+}
+
 void DrawTrackerTab() {
   bool reveal = sRevealMap;
   if (ImGui::Checkbox("Reveal map", &reveal)) {
@@ -3852,7 +3955,10 @@ void DrawTrackerTab() {
   }
   ImGui::TextWrapped(
       "A white dot marks each item pickup in the rooms the map shows, until you collect "
-      "it. Every item gets the same dot, so it doesn't give away what a pickup holds.");
+      "it. Every item gets the same dot, so it doesn't give away what a pickup holds. "
+      "An Archipelago game colours them by what its logic lets you reach.");
+
+  DrawTrackerLogic();
 
   CStateManager* mgr = sStateManager;
   if (mgr == nullptr || mgr->GetPlayerState() == nullptr) {

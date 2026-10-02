@@ -331,6 +331,66 @@ std::string ItemDisplay(const ItemEntry& entry, int64_t count) {
   return "item";
 }
 
+// Reads the options that decide logic from a slot_data object, or from the
+// copy of them the state file keeps under the same names.
+void ParseLogicOptions(const PortJson::Value& data, PortApLogic::Options& logic) {
+  logic = PortApLogic::Options();
+  const auto number = [&data](const char* name, int64_t fallback) {
+    int64_t value = fallback;
+    const PortJson::Value* member = Member(data, name);
+    if (member != nullptr && member->IsBool())
+      value = member->AsBool() ? 1 : 0;
+    else
+      IntegerMember(data, name, value);
+    return static_cast< int >(std::clamp< int64_t >(value, -1, 3));
+  };
+  const auto names = [&data](const char* name, std::vector< std::string >& out) {
+    const PortJson::Value* member = Member(data, name);
+    if (member == nullptr || !member->IsArray())
+      return;
+    for (const PortJson::Value& entry : member->AsArray()) {
+      if (entry.IsString())
+        out.push_back(entry.AsString());
+    }
+  };
+  logic.trickDifficulty = number("trick_difficulty", -1);
+  logic.combatLogic = number("combat_logic_difficulty", 0);
+  logic.removeXray = number("remove_xray_requirements", 0);
+  logic.removeThermal = number("remove_thermal_requirements", 0);
+  logic.flaahgraPowerBombs = number("flaahgra_power_bombs", 0) > 0;
+  logic.progressiveBeams = number("progressive_beam_upgrades", 0) > 0;
+  logic.mainMissile = number("missile_launcher", 0) > 0;
+  logic.mainPowerBomb = number("main_power_bomb", 0) > 0;
+  logic.variaOnlyHeat = number("non_varia_heat_damage", 0) > 0;
+  logic.preScanElevators = number("pre_scan_elevators", 0) > 0;
+  names("trick_allow_list", logic.trickAllow);
+  names("trick_deny_list", logic.trickDeny);
+}
+
+std::string LogicOptionsText(const PortApLogic::Options& logic) {
+  std::ostringstream text;
+  text << "{\"trick_difficulty\":" << logic.trickDifficulty
+       << ",\"combat_logic_difficulty\":" << logic.combatLogic
+       << ",\"remove_xray_requirements\":" << logic.removeXray
+       << ",\"remove_thermal_requirements\":" << logic.removeThermal
+       << ",\"flaahgra_power_bombs\":" << (logic.flaahgraPowerBombs ? 1 : 0)
+       << ",\"progressive_beam_upgrades\":" << (logic.progressiveBeams ? 1 : 0)
+       << ",\"missile_launcher\":" << (logic.mainMissile ? 1 : 0)
+       << ",\"main_power_bomb\":" << (logic.mainPowerBomb ? 1 : 0)
+       << ",\"non_varia_heat_damage\":" << (logic.variaOnlyHeat ? 1 : 0)
+       << ",\"pre_scan_elevators\":" << (logic.preScanElevators ? 1 : 0);
+  const auto names = [&text](const char* name, const std::vector< std::string >& list) {
+    text << ",\"" << name << "\":[";
+    for (size_t i = 0; i < list.size(); ++i)
+      text << (i != 0 ? "," : "") << Quote(list[i]);
+    text << ']';
+  };
+  names("trick_allow_list", logic.trickAllow);
+  names("trick_deny_list", logic.trickDeny);
+  text << '}';
+  return text.str();
+}
+
 // Reads a Metroid Prime slot_data object. The options it names as unsupported
 // are ones the AP ISO patches into the game and the port does not; a seed
 // generated with them can expect a door, an elevator or a start the port does
@@ -633,6 +693,11 @@ State LoadStateFile(const std::string& path) {
           state.progressive[itemId] = number;
       }
     }
+    const PortJson::Value* logic = Member(root, "logic");
+    if (logic != nullptr && logic->IsObject()) {
+      ParseLogicOptions(*logic, state.logic);
+      state.hasLogic = true;
+    }
   } catch (...) {
     return State();
   }
@@ -658,7 +723,10 @@ bool SaveStateFile(const std::string& path, const State& state) {
       text << '"' << count.first << "\":" << count.second;
       firstCount = false;
     }
-    text << "}}";
+    text << '}';
+    if (state.hasLogic)
+      text << ",\"logic\":" << LogicOptionsText(state.logic);
+    text << '}';
     return WriteFileAtomically(path, text.str());
   } catch (...) {
     return false;
@@ -914,6 +982,8 @@ void Session::HandlePacket(const PortJson::Value& packet, std::vector<std::strin
     const PortJson::Value* slotData = Member(packet, "slot_data");
     if (mConfig.builtin && slotData != nullptr && slotData->IsObject()) {
       ParseSlotData(*slotData, mSlotData);
+      ParseLogicOptions(*slotData, mState.logic);
+      mState.hasLogic = true;
       for (const std::string& warning : mSlotData.warnings)
         AppendNotification(mNotifications, "Seed option " + warning);
       // The seed's DeathLink option decides unless archipelago.json said

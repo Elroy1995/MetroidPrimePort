@@ -810,7 +810,7 @@ void RunTick(CStateManager& mgr) {
   } else if (name == "warp") {
     CmdWarp(mgr);
   } else if (name == "tracker") {
-    sCmd.out += PortTracker::Text(PortTracker::Collect(mgr)) + "\n";
+    sCmd.out += PortTracker::Text(PortTracker::Collect(mgr)) + "\n" + PortAp::LogicText();
     Finish();
   }
 }

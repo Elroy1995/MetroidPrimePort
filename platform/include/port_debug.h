@@ -160,6 +160,11 @@ void SetRevealMap(bool enabled);
 // and Archipelago games force it on (PortMapPickups::Active).
 bool MapPickups();
 void SetMapPickups(bool enabled);
+// In an Archipelago game, colour the dots by the seed's logic like a tracker
+// (green in logic, yellow sequence break, blue visible only, red out of reach,
+// grey checked). On by default; off gives the plain white dots.
+bool MapLogicColors();
+void SetMapLogicColors(bool enabled);
 // randomprime's skippable cutscenes: every cinematic can be skipped with the
 // usual button. Rooms load patched, so a change applies to rooms loaded
 // afterwards. Randomizer and Archipelago games force it on

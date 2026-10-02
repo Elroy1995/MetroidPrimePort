@@ -765,7 +765,8 @@ a temporary directory instead of mounting.
   stay hidden. Pickup dots (`map_pickups`, also pause Options > Visor, off by
   default, always on in randomized games) draw a plain white dot on the map and
   minimap for every pickup not yet collected, in rooms the map shows. The dots
-  never tell what the item is. The positions come from
+  never tell what the item is; an Archipelago game colours them by its logic
+  (`map_logic_colors`, see `ARCHIPELAGO.md`). The positions come from
   `tools/gen_map_pickups.py` (`platform/port_map_pickups.inc`). The Tracker
   tab shows item percentage, energy tanks, missile
   capacity (in packs of 5, launcher included), power bombs, artifacts, missing

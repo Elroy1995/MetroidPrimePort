@@ -101,6 +101,7 @@ set(MP_PORT_SOURCES
     platform/port_randomizer.cpp
     platform/port_ap_metroidprime.cpp
     platform/port_ap_protocol.cpp
+    platform/port_ap_logic.cpp
     platform/port_apclient.cpp
     platform/port_json.cpp
     platform/port_discord.cpp
@@ -312,12 +313,20 @@ if(MP_BUILD_TESTS)
         tests/port_apclient.cpp
         platform/port_ap_metroidprime.cpp
         platform/port_ap_protocol.cpp
+        platform/port_ap_logic.cpp
         platform/port_json.cpp
         platform/port_randomizer.cpp)
     target_include_directories(port_apclient_tests PRIVATE
         platform/include extern/aurora/include include)
     target_compile_definitions(port_apclient_tests PRIVATE TARGET_PC VERSION=0)
     target_link_libraries(port_apclient_tests PRIVATE ${AURORA_SDL3_TARGET})
+    add_executable(port_ap_logic_tests
+        tests/port_ap_logic.cpp
+        platform/port_ap_logic.cpp
+        platform/port_ap_metroidprime.cpp)
+    target_include_directories(port_ap_logic_tests PRIVATE
+        platform/include extern/aurora/include include)
+    target_compile_definitions(port_ap_logic_tests PRIVATE TARGET_PC VERSION=0)
     add_executable(port_musyx_tests tests/port_musyx.c)
     target_link_libraries(port_musyx_tests PRIVATE musyx)
     add_executable(port_disc_tests tests/port_disc.cpp platform/disc.cpp)
@@ -387,7 +396,7 @@ if(MP_BUILD_TESTS)
     add_test(NAME port_gci_tests COMMAND port_gci_tests)
     set_tests_properties(port_gci_tests PROPERTIES TIMEOUT 15 LABELS port)
     aurora_copy_runtime_dlls(port_gci_tests)
-    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_musyx_tests port_disc_tests port_mouse_tests port_touch_pad_tests port_json_tests port_ws_tests port_mods_tests port_room_env_tests port_hd_font_tests port_hud_bars_tests port_importers_tests port_custom_res_tests port_hold_toggle_tests port_tick_pair_tests port_livesplit_tests port_discord_tests port_savestate_tests port_timing_tests port_audio_math_tests)
+    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_ap_logic_tests port_musyx_tests port_disc_tests port_mouse_tests port_touch_pad_tests port_json_tests port_ws_tests port_mods_tests port_room_env_tests port_hd_font_tests port_hud_bars_tests port_importers_tests port_custom_res_tests port_hold_toggle_tests port_tick_pair_tests port_livesplit_tests port_discord_tests port_savestate_tests port_timing_tests port_audio_math_tests)
         add_test(NAME ${test} COMMAND ${test})
         set_tests_properties(${test} PROPERTIES TIMEOUT 15 LABELS port)
         aurora_copy_runtime_dlls(${test})

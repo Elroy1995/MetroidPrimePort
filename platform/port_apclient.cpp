@@ -255,6 +255,12 @@ struct Runtime {
   // Held for the whole of a restart (Connect/Disconnect), so two in a row run
   // one after the other.
   std::mutex restartMutex;
+  // The last logic evaluation and what it was made from; it only changes with
+  // an item or the seed's options, and the map asks every frame.
+  bool logicValid = false;
+  PortApLogic::Options logicOptions;
+  PortApLogic::Items logicItems;
+  std::vector<PortApLogic::Level> logicLevels;
   bool enabled = false;
   bool connected = false;
   std::string stateLabel = "off";
@@ -712,6 +718,8 @@ void WorkerLoop(Runtime& runtime) {
               const std::map<int64_t, int64_t> oldProgressive =
                   runtime.session->GetState().progressive;
               const std::string oldSeed = runtime.session->GetState().seed;
+              const bool oldHasLogic = runtime.session->GetState().hasLogic;
+              const PortApLogic::Options oldLogic = runtime.session->GetState().logic;
               const std::string oldError = runtime.session->LastError();
               const std::string oldResetReason = runtime.session->ResetReason();
               runtime.session->HandlePacket(command, outgoing, newGrants);
@@ -726,7 +734,8 @@ void WorkerLoop(Runtime& runtime) {
               }
               const Protocol::State& state = runtime.session->GetState();
               if (state.nextItemIndex != oldIndex || state.checkedLocations != oldChecks ||
-                  state.progressive != oldProgressive || state.seed != oldSeed)
+                  state.progressive != oldProgressive || state.seed != oldSeed ||
+                  state.hasLogic != oldHasLogic || state.logic != oldLogic)
                 runtime.MarkStateDirtyLocked();
               runtime.grants.insert(runtime.grants.end(), newGrants.begin(), newGrants.end());
               runtime.lastMessage = runtime.session->LastMessage();
@@ -1663,6 +1672,79 @@ int SpringBallRule() {
     }
   } catch (...) {
     return -1;
+  }
+}
+
+bool Logic(LogicState& out) {
+  try {
+    Runtime& runtime = GetRuntime();
+    size_t count = 0;
+    const MetroidPrime::Location* locations = MetroidPrime::Locations(count);
+    {
+      std::lock_guard<std::mutex> lock(runtime.mutex);
+      if (!runtime.enabled || !runtime.config.builtin || runtime.session == nullptr)
+        return false;
+      const Protocol::State& state = runtime.session->GetState();
+      if (!state.hasLogic)
+        return false;
+      if (!runtime.logicValid || runtime.logicOptions != state.logic ||
+          runtime.logicItems != state.progressive) {
+        runtime.logicOptions = state.logic;
+        runtime.logicItems = state.progressive;
+        runtime.logicLevels = PortApLogic::Evaluate(state.logic, state.progressive);
+        runtime.logicValid = true;
+      }
+      out.levels = runtime.logicLevels;
+      out.checked.assign(count, false);
+      for (size_t i = 0; i < count; ++i) {
+        out.checked[i] = std::find(state.checkedLocations.begin(), state.checkedLocations.end(),
+                                   locations[i].id) != state.checkedLocations.end();
+      }
+    }
+    // Checks made while disconnected are only in the save so far.
+    if (gpGameState != nullptr && gpGameState->PortApProgress().reconciled) {
+      const CGameState::ApProgress& progress = gpGameState->PortApProgress();
+      for (size_t i = 0; i < count && i < 128; ++i) {
+        if (((progress.checked[i / 32] >> (i % 32)) & 1) != 0)
+          out.checked[i] = true;
+      }
+    }
+    return out.levels.size() == count;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::string LogicText() {
+  try {
+    LogicState state;
+    if (!Logic(state))
+      return "logic: no Archipelago seed options yet\n";
+    static const char* const kNames[] = {"out of logic", "inspect", "sequence break", "in logic"};
+    size_t count = 0;
+    const PortApLogic::Check* checks = PortApLogic::Checks(count);
+    int totals[4] = {};
+    int checked = 0;
+    std::string lines;
+    for (size_t i = 0; i < count; ++i) {
+      if (state.checked[i]) {
+        ++checked;
+        continue;
+      }
+      ++totals[static_cast<int>(state.levels[i])];
+      if (state.levels[i] == PortApLogic::Level::None)
+        continue;
+      lines += std::string("check ") + kNames[static_cast<int>(state.levels[i])] + ": " +
+               checks[i].area + " / " + checks[i].room +
+               (checks[i].section[0] != 0 ? std::string(" / ") + checks[i].section : std::string()) +
+               "\n";
+    }
+    return "logic: " + std::to_string(totals[3]) + " in logic, " + std::to_string(totals[2]) +
+           " sequence break, " + std::to_string(totals[1]) + " inspect, " +
+           std::to_string(totals[0]) + " out of logic, " + std::to_string(checked) + " checked\n" +
+           lines;
+  } catch (...) {
+    return std::string();
   }
 }
 
