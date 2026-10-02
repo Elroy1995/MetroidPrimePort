@@ -1186,12 +1186,8 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
       Log("  " + r.name + ": unreadable MCON");
       continue;
     }
-    // The instances are relative to the component's entity. Every one in the game is
-    // unrotated but for a 2 degree turn, and unscaled, so only its position is applied.
-    Vec3 pos{}, rot{}, scale{};
-    if (!r.room.Xform(*c, pos, rot, scale)) {
-      pos = {};
-    }
+    // The instances are in room space, not relative to the component's entity: where an
+    // entity is off the origin, adding its position moves the geometry off the room's doors.
     std::vector<int> state(mcon.models.size(), 0);  // 1 converted, 2 not
     std::vector<uint32_t> ids(mcon.models.size(), 0);
     for (size_t i = 0; i < mcon.index.size(); ++i) {
@@ -1217,7 +1213,7 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
         for (int col = 0; col < 3; ++col) {
           PutFloat(body, kSign[row] * kSign[col] * double(LeFloat(from + 4 * kAxis[col])));
         }
-        PutFloat(body, kSign[row] * (double(LeFloat(from + 12)) + pos[size_t(kAxis[row])]));
+        PutFloat(body, kSign[row] * double(LeFloat(from + 12)));
       }
       ++count;
     }

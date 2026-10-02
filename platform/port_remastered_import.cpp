@@ -585,6 +585,9 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
         ConvertOptions options;
         options.retail = geometry[i].id;
         options.standalone = true;
+        // The list drops a character's simplified meshes by name; a room has none, and its
+        // stone is named "simple".
+        options.skip.clear();
         options.nativeMax = kGeometryTexture;
         std::string modelError;
         std::vector<uint8_t> raw;
