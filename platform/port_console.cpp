@@ -411,7 +411,7 @@ void CmdHelp() {
   Out("shot                       take a screenshot and print its path");
   Out("wait <frames>              let frames pass");
   Out("probe [off|on|mirror|window]   the PBR reflection probe, or what PBR surfaces show of it");
-  Out("roomenv [on|off]           the room environments mods supply (reflection cubes per area)");
+  Out("roomenv [on|off|exposure on|off]  the room environments mods supply; exposure: by room, not by cube");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
   Out("fov <45..90>               first-person vertical FOV, as the Options row does");
   Out("msaa <1|4>, aniso <1..16>  anti-aliasing and anisotropic filtering, applied next frame");
@@ -975,18 +975,22 @@ void RunFrame() {
   } else if (name == "roomenv") {
     if (sCmd.args.size() > 1) {
       const std::string arg = Lower(sCmd.args[1]);
-      if (arg != "on" && arg != "off") {
-        return Finish("usage: roomenv [on|off]");
+      if (arg == "exposure" && sCmd.args.size() > 2 && (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
+        PortRoomEnv::SetRoomExposed(Lower(sCmd.args[2]) == "on");
+      } else if (arg == "on" || arg == "off") {
+        PortRoomEnv::SetEnabled(arg == "on");
+      } else {
+        return Finish("usage: roomenv [on|off|exposure on|off]");
       }
-      PortRoomEnv::SetEnabled(arg == "on");
     }
     int areas = 0;
     int probes = 0;
     int cubes = 0;
     int grids = 0;
     PortRoomEnv::Stats(areas, probes, cubes, grids);
-    Out("roomenv %s: %d area(s), %d probe(s), %d cube(s) loaded, %d ambient grid(s)",
-        PortRoomEnv::Enabled() ? "on" : "off", areas, probes, cubes, grids);
+    Out("roomenv %s: %d area(s), %d probe(s), %d cube(s) loaded, %d ambient grid(s), exposure by %s",
+        PortRoomEnv::Enabled() ? "on" : "off", areas, probes, cubes, grids,
+        PortRoomEnv::RoomExposed() ? "room" : "cube");
     Finish();
   } else if (name == "viewmodel") {
     const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : "status";

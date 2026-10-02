@@ -157,8 +157,9 @@ extern "C" {
 
 /**
  * Port extension: the baked ambient light of the following PBR draws, which the
- * luminance of the GX ambient colour then scales. Six vectors of four floats (see GXSetPBRAmbient); a first w of 0
- * goes back to the GX ambient. Stays in effect until changed.
+ * luminance of the GX ambient colour then scales (a first w of 1) or which is used as it is
+ * (2). Six vectors of four floats (see GXSetPBRAmbient); a first w of 0 goes back to the GX
+ * ambient. Stays in effect until changed.
  */
 #define GX_AURORA_SET_PBR_AMBIENT 0x004A
 

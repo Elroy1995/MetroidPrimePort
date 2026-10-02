@@ -44,7 +44,7 @@ void GXSetPBRCube(u32 id, const f32 params[4]);
 // The rows are base, lobe, power, then the direction of red, green and blue; the
 // directions are not unit length (shorter is more even). The luminance of the GX ambient
 // colour scales the result. Null goes back to the GX ambient alone.
-void GXSetPBRAmbient(const f32 rows[6][3]);
+void GXSetPBRAmbient(const f32 rows[6][3], f32 mode);
 
 void GXColor4f32(float r, float g, float b, float a);
 

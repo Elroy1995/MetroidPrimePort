@@ -135,6 +135,22 @@ void TestGrid() {
   Check(!PortRoomEnv::Parse(std::vector<uint8_t>(bad), file, error), "grid: count");
   Check(PortRoomEnv::Parse(MakeFile(), file, error) && file.grids.empty(), "grid: version 1 has none");
   Check(PortRoomEnv::Parse(std::vector<uint8_t>(good), file, error), "grid: parse again");
+  Check(file.exposure[0] == 0.f && file.exposure[1] == 0.f, "grid: version 2 has no exposure range");
+
+  // Version 3 ends with the exposure range.
+  std::vector<uint8_t> v3 = good;
+  v3[4] = 3;
+  Check(!PortRoomEnv::Parse(std::vector<uint8_t>(v3), file, error), "exposure: cut short");
+  PutFloat(v3, 5.5f);
+  PutFloat(v3, 6.f);
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(v3), file, error) && file.exposure[0] == 5.5f && file.exposure[1] == 6.f,
+        "exposure: range");
+  PutFloat(v3, 0.f);
+  std::memcpy(v3.data() + v3.size() - 8, v3.data() + v3.size() - 4, 4); // highest below lowest
+  v3.resize(v3.size() - 4);
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(v3), file, error) && file.exposure[0] == 0.f && file.exposure[1] == 0.f,
+        "exposure: a backwards range is none");
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(good), file, error), "grid: parse once more");
 
   PortRoomEnv::Ambient a;
   const float atPoint[3] = {10.f, 20.f, 30.f};
@@ -185,7 +201,7 @@ void TestParse() {
     Check(!PortRoomEnv::Parse(std::vector<uint8_t>(good.begin(), good.begin() + length), file, error), "parse: cut short");
   }
   std::vector<uint8_t> bad = good;
-  bad[4] = 3;
+  bad[4] = 4;
   Check(!PortRoomEnv::Parse(std::vector<uint8_t>(bad), file, error), "parse: version");
   bad = good;
   bad[32 + 88] = 2;

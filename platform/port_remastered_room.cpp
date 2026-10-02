@@ -33,6 +33,7 @@ constexpr uint32_t kEntity = 0x749749f1;
 constexpr uint32_t kRoomController = 0x83cc17aa;
 constexpr uint32_t kTonemap = 0xddea916d;
 constexpr uint32_t kReflectionProbe = 0x27807e39;
+constexpr uint32_t kAutoExposureHint = 0x98694074;
 constexpr uint32_t kDoorMP1 = 0x564a1641;
 
 // Property ids.
@@ -40,6 +41,9 @@ constexpr uint32_t kPropRoomId = 0x30a4d63d;
 constexpr uint32_t kPropProbeRefl = 0x020e5559;
 constexpr uint32_t kPropProbeBlend = 0x362216cf;
 constexpr uint32_t kPropTonemap[4] = {0x44a2e298, 0x34bb937d, 0x49ee7747, 0x295132dd};
+constexpr uint32_t kPropHintMin = 0x682f8a1f;
+constexpr uint32_t kPropHintMax = 0x839d334c;
+constexpr uint32_t kPropHintMode = 0x590d6843;
 
 constexpr size_t kMaxChunks = 1u << 20;
 constexpr size_t kMaxVolumeFloats = size_t(1) << 28;
@@ -613,7 +617,8 @@ private:
     const Area* area = nullptr;
   };
   bool MatchRoom(const RoomData& r, const std::map<std::string, Placement>& placed, Match& out) const;
-  bool Tonemap(const RoomData& master, float out[4]) const;
+  void Tonemap(const RoomData& r, float out[4]) const;
+  void Exposure(const RoomData& r, float out[2]) const;
   bool Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>& check, std::vector<uint8_t>& out,
             std::string& note) const;
   std::string WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
@@ -777,20 +782,48 @@ bool Writer::MatchRoom(const RoomData& r, const std::map<std::string, Placement>
   return true;
 }
 
-bool Writer::Tonemap(const RoomData& master, float out[4]) const {
-  static const float kDefault[4] = {4.0f, 0.18f, 0.6f, 0.15f};
-  std::copy(kDefault, kDefault + 4, out);
-  for (const Component* c : master.room.Of(kTonemap)) {
-    const auto f = master.room.Flat(*c);
+// The first Tonemap component's values, where the room has one; `out` keeps the rest.
+void Writer::Tonemap(const RoomData& r, float out[4]) const {
+  for (const Component* c : r.room.Of(kTonemap)) {
+    const auto f = r.room.Flat(*c);
     for (int i = 0; i < 4; ++i) {
       const auto it = f.find(kPropTonemap[i]);
       if (it != f.end() && it->second.size >= 4) {
-        out[i] = LeFloat(master.room.Bytes(it->second));
+        out[i] = LeFloat(r.room.Bytes(it->second));
       }
     }
     break;
   }
-  return true;
+}
+
+// The range of exposure values the room's auto exposure is held to, or 0, 0. A room can
+// have several hints: the plain one for the whole room is wanted, not those with a mode
+// (they are for a state of the room, such as a cutscene) or a volume of their own.
+void Writer::Exposure(const RoomData& r, float out[2]) const {
+  out[0] = out[1] = 0.f;
+  int best = 0;
+  for (const Component* c : r.room.Of(kAutoExposureHint)) {
+    const auto f = r.room.Flat(*c);
+    const auto lo = f.find(kPropHintMin);
+    const auto hi = f.find(kPropHintMax);
+    if (lo == f.end() || hi == f.end() || lo->second.size < 4 || hi->second.size < 4) {
+      continue;
+    }
+    const float range[2] = {LeFloat(r.room.Bytes(lo->second)), LeFloat(r.room.Bytes(hi->second))};
+    if (!std::isfinite(range[0]) || !std::isfinite(range[1]) || range[1] < range[0]) {
+      continue;
+    }
+    Vec3 pos, rot, scale;
+    const bool whole = !r.room.Xform(*c, pos, rot, scale) ||
+                       (std::fabs(scale[0] - 1.0) < 1e-3 && std::fabs(scale[1] - 1.0) < 1e-3 &&
+                        std::fabs(scale[2] - 1.0) < 1e-3);
+    const int rank = f.find(kPropHintMode) != f.end() ? 1 : whole ? 3 : 2;
+    if (rank > best) {
+      best = rank;
+      out[0] = range[0];
+      out[1] = range[1];
+    }
+  }
 }
 
 // One decoded LTPB texture, placed in the room's grid of 64x64x16 blocks.
@@ -1186,9 +1219,12 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   }
 
   std::vector<uint8_t> out = {'M', 'P', 'E', 'V'};
-  PutLe32(out, 2);
+  PutLe32(out, 3);
+  float tone[4];
+  std::copy(tonemap, tonemap + 4, tone);
+  Tonemap(r, tone);
   for (int i = 0; i < 4; ++i) {
-    PutFloat(out, tonemap[i]);
+    PutFloat(out, tone[i]);
   }
   PutLe32(out, uint32_t(probeCount));
   PutLe32(out, uint32_t(cubes.size()));
@@ -1198,6 +1234,10 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   }
   PutLe32(out, grid.empty() ? 0 : 1);
   out.insert(out.end(), grid.begin(), grid.end());
+  float exposure[2];
+  Exposure(r, exposure);
+  PutFloat(out, exposure[0]);
+  PutFloat(out, exposure[1]);
   char file[32];
   std::snprintf(file, sizeof file, "%08X.roomenv", m.mrea);
   if (!m_io.write || !m_io.write(file, out)) {
@@ -1310,7 +1350,8 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
     placed[name].pos = {p[0] + shift[0], p[1] + shift[1], p[2] + shift[2]};
   }
 
-  float tonemap[4];
+  // A room without a Tonemap of its own takes the world's.
+  float tonemap[4] = {4.0f, 0.18f, 0.6f, 0.15f};
   Tonemap(master, tonemap);
   std::map<std::string, std::string> seen;
   for (const auto& r : rooms) {

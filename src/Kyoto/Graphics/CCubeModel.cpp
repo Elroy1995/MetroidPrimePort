@@ -246,9 +246,9 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
                            env.ambient[row][2] * viewToWorld[2][col];
         }
       }
-      GXSetPBRAmbient(rows);
+      GXSetPBRAmbient(rows, env.ambientAbsolute ? 2.f : 1.f);
     } else {
-      GXSetPBRAmbient(nullptr);
+      GXSetPBRAmbient(nullptr, 0.f);
     }
     PortSetPBRMaterial(surface.GetMaterialIndex());
     GXSetPBR(GX_TRUE);

@@ -1025,7 +1025,8 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       if (ubuf.pbr_ambient[0].w > 0.0) {{
           let pbr_aq = clamp(vec3f(dot(pbr_n, ubuf.pbr_ambient[3].xyz), dot(pbr_n, ubuf.pbr_ambient[4].xyz),
                                    dot(pbr_n, ubuf.pbr_ambient[5].xyz)) * 0.5 + 0.5, vec3f(0.0), vec3f(1.0));
-          pbr_ambd = dot(pbr_amb, vec3f(0.2126, 0.7152, 0.0722)) * max(ubuf.pbr_ambient[0].rgb + ubuf.pbr_ambient[1].rgb * pow(pbr_aq, ubuf.pbr_ambient[2].rgb),
+          // w is 1 when the game's ambient sets the level, 2 when the baked light is the level.
+          pbr_ambd = select(dot(pbr_amb, vec3f(0.2126, 0.7152, 0.0722)), 1.0, ubuf.pbr_ambient[0].w > 1.5) * max(ubuf.pbr_ambient[0].rgb + ubuf.pbr_ambient[1].rgb * pow(pbr_aq, ubuf.pbr_ambient[2].rgb),
                          vec3f(0.0));
       }}
       pbr_lo += (pbr_ambd * pbr_diff + pbr_envspec * (pbr_f0 * pbr_ab.x + pbr_ab.y)) * pbr_ao;

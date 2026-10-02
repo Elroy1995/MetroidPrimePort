@@ -416,7 +416,12 @@ skipped. Inside a mod:
   through the room, each with the light arriving there and the direction most
   of it comes from, per colour. A PBR model standing in a grid takes the
   colour and direction of its ambient light from the points around its origin;
-  the game's ambient colour only sets how bright it is. Files load and unload with their areas, and a cube is decoded
+  the game's ambient colour only sets how bright it is. A file also carries
+  the room's tonemap values and the range its auto exposure is held to, and a
+  probe's scale turns its cube (stored normalised) back into radiance. With
+  `MP_ROOM_ENV_EXPOSURE=1` those set one exposure for the whole room: cubes
+  keep their level relative to it and the baked ambient is used at its own
+  brightness, without the game's. Off by default (see below). Files load and unload with their areas, and a cube is decoded
   on first use. The layout is in `platform/include/port_room_env.h`.
 - a PBR material (flag bit 14) may end in a 28-byte record: six big-endian floats
   (emissive multiplier rgb, backlight weight rgb) and the tag `PBRM`, inside the
@@ -857,6 +862,11 @@ a temporary directory instead of mounting.
   `MP_ROOM_ENV_GAIN` (exposure, default 1), `MP_ROOM_ENV_LOD` (the mip a
   roughness of 1 reflects, default 5) and `MP_ROOM_ENV_AMBIENT` (scale of the
   baked ambient light, default 1; 0 keeps the game's ambient colour).
+  `MP_ROOM_ENV_EXPOSURE=1` (console `roomenv exposure on|off`) exposes by
+  room instead of by cube. In the two rooms measured it brings models closer
+  to retail's brightness (the morph ball 113 against retail's 132, from 77),
+  but it rests on a constant fitted across rooms with a spread of one stop,
+  so it stays opt-in until more rooms are looked at.
 - `tools/pbr_shots.py`: contact sheets of models under PBR, for comparing mod
   builds. One game per (variant, place), each booted straight into the room
   with `MP_BOOT_WORLD` on its own console port and an Xvfb display, about 10 s

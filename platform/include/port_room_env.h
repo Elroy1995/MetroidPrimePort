@@ -13,7 +13,7 @@
 // ambient colour.
 //
 // The file is little endian:
-//   'MPEV', u32 version (1 or 2), f32 tonemap[4], u32 probes, u32 cubes
+//   'MPEV', u32 version (1 to 3), f32 tonemap[4], u32 probes, u32 cubes
 //   probe: f32 worldToBox[12], f32 worldToCube[9], s32 layer, u32 cube, f32 scale, f32 blend
 //   cube:  u32 size, u32 mips, u32 signed, u32 bytes, then BC6H blocks, every face of
 //          mip 0, then of mip 1 and so on
@@ -24,6 +24,11 @@
 //   point: half mean[3], half lobe[3], u8 sharpness[3], u8 direction[3][3] (of red, green
 //          and blue, along the grid's axes; 0..255 is -1..1). A mean of zero is no point
 //          (inside a wall).
+// Version 3 goes on:
+//   f32 exposure[2], the lowest and highest exposure value the room's auto exposure may
+//          settle on (0, 0: no limits)
+// The cubes are stored normalised; a probe's scale times its cube is the radiance, in the
+// same units as the grid's points.
 namespace PortRoomEnv {
 
 struct Probe {
@@ -55,6 +60,7 @@ struct Grid {
 
 struct File {
   float tonemap[4] = {};
+  float exposure[2] = {}; // EV range; both 0 when the room sets none
   std::vector<Probe> probes;
   std::vector<Cube> cubes;
   std::vector<Grid> grids;
@@ -109,6 +115,8 @@ struct Selection {
   // For GXSetPBRAmbient: scaled so that the game's ambient level multiplies it, with the
   // directions still in world space.
   float ambient[6][3] = {};
+  // The ambient is the light itself, at the room's exposure; the game's level stays out.
+  bool ambientAbsolute = false;
 };
 // The room cube and baked ambient for a model at `pos`; false when no loaded area has
 // either (or MP_ROOM_ENV=0).
@@ -118,6 +126,11 @@ void Reset();
 // 0 off, 1 on; the console's `roomenv`.
 void SetEnabled(bool enabled);
 bool Enabled();
+// Whether cubes and ambient are exposed for the room as a whole, by its radiance and its
+// exposure hint (MP_ROOM_ENV_EXPOSURE=1, the console's `roomenv exposure`). Otherwise each
+// cube is exposed to middle grey and the ambient takes the game's level.
+void SetRoomExposed(bool on);
+bool RoomExposed();
 // Areas with an environment, cubes on the GPU, ambient grids.
 void Stats(int& areas, int& probes, int& cubes, int& grids);
 
