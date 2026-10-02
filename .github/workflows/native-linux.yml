@@ -6,6 +6,11 @@ on:
     branches: [port, main, master]
   pull_request:
 
+# Pushes often arrive a few minutes apart; only the newest one's result matters.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04

@@ -58,7 +58,8 @@ path. Preserve the accompanying dependency licenses/notices.
 Alternatively set `MP_DISC`, keep the image beside the executable, or let the
 port ask for it: when no disc is found it opens the platform's file dialog and
 remembers the answer as `disc_path` in the settings file. There is no prompt
-when the port has no window to show one on, as on a build runner. The disc must
+when the port has no window to show one on, or with `MP_NO_DISC_DIALOG=1`
+(for scripted runs that do have a window, as on a build runner). The disc must
 identify as **GM8E01, disc 0, revision 0**; other revisions/regions are
 rejected. Nod/Aurora supports additional image
 containers, but the same retail content is required.

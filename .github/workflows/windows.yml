@@ -102,6 +102,9 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          # With no disc the game opens a file dialog, which nobody answers
+          # here: it used to hold the job for its whole five minute timeout.
+          $env:MP_NO_DISC_DIALOG = "1"
           $process = Start-Process -FilePath ./dist/metroid_prime_port.exe -WorkingDirectory ./dist -Wait -PassThru -RedirectStandardError ./startup-error.log
           if ($process.ExitCode -ne 1) { throw "Unexpected exit code: $($process.ExitCode)" }
           if (-not (Select-String -Path ./startup-error.log -Pattern 'no disc image given')) { throw 'Packaged executable did not reach main' }

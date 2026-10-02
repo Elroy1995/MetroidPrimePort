@@ -333,6 +333,12 @@ std::string AskForDiscImage() {
         {"GameCube disc image", "iso;gcm;rvz;wbfs;ciso;nkit"},
         {"All files", "*"},
     };
+    if (const char* env = std::getenv("MP_NO_DISC_DIALOG"); env != nullptr && env[0] == '1') {
+        // For scripted runs with a window, such as the packaged startup check
+        // on a build runner, where the dialog would sit open until it times out.
+        PortLog::Write( "metroid_prime_port: not asking for a disc image (MP_NO_DISC_DIALOG)\n");
+        return {};
+    }
     int windowCount = 0;
     SDL_Window** windows = SDL_GetWindows(&windowCount);
     SDL_Window* window = windows != nullptr && windowCount > 0 ? windows[0] : nullptr;
