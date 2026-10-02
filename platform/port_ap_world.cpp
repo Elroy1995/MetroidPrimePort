@@ -494,6 +494,14 @@ const uint32_t kMainPlaza = 0xD5CDB809;
 const uint32_t kMainVentilationShaftB = 0xAFD4E038; // 08b_under_intro_ventshaft
 const uint32_t kResearchLabHydra = 0x43E4CC25;      // 10_ice_research_a
 const uint32_t kMainQuarry = 0x643D038F;            // 01_mines_mainplaza
+const uint32_t kSunTower = 0xDE161372;              // 0v_connect_tunnel
+const uint32_t kSunchamber = 0x9A0A03EB;            // 22_Flaahgra
+const uint32_t kResearchCore = 0xA49B2544;          // 13_ice_vault
+const uint32_t kResearchLabAether = 0x21B4BFF6;     // 12_ice_research_b
+const uint32_t kObservatory = 0x3FB4A34E;           // 11_ice_observatory
+const uint32_t kMinesSecurityStation = 0x956F1552;  // 02_mines_shotemup
+const uint32_t kGravityChamber = 0x49175472;        // 18_ice_gravity_chamber
+const uint32_t kEliteQuarters = 0x3953C353;         // 12_mines_eliteboss
 
 void LogicOps(uint32_t mrea, const std::vector< PortSkipCutscenes::ScriptObject >& objects,
               std::vector< uint8_t >& ops);
@@ -1237,6 +1245,154 @@ void LogicOps(uint32_t mrea, const std::vector< PortSkipCutscenes::ScriptObject 
         ops.push_back(6);
         u32(id);
       }
+    }
+  }
+
+  // The softlocks an item shuffle opens up (randomprime's qolGameBreaking,
+  // on in every seed). The crash fixes of that set are for the console's
+  // memory, and the ones for later disc revisions don't apply to this one.
+  auto has = [&](uint32_t id, uint8_t type) {
+    for (const PortSkipCutscenes::ScriptObject& o : objects)
+      if (o.id == id)
+        return o.type == type;
+    return false;
+  };
+  auto connected = [&](uint32_t id, const Conn& c) {
+    for (const PortSkipCutscenes::ScriptObject& o : objects)
+      if (o.id == id)
+        for (const PortSkipCutscenes::ScriptObject::Connection& x : o.connections)
+          if (x.state == c.state && x.message == c.msg && x.target == c.target)
+            return true;
+    return false;
+  };
+  auto link = [&](uint32_t sender, const Conn& c) {
+    if (!connected(sender, c))
+      connect(sender, c);
+  };
+  auto unlink = [&](uint32_t sender, const Conn& c) {
+    if (!connected(sender, c))
+      return;
+    ops.push_back(3);
+    u32(sender);
+    u32(c.state);
+    u32(c.msg);
+    u32(c.target);
+  };
+  auto remove = [&](uint32_t id) {
+    ops.push_back(6);
+    u32(id);
+  };
+  auto real = [&](uint32_t id, uint32_t off, float v) {
+    uint32_t bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    edit(id, off, {uint8_t(bits >> 24), uint8_t(bits >> 16), uint8_t(bits >> 8), uint8_t(bits)});
+  };
+  auto layerSwitch = [](const char* name, uint32_t area, uint32_t layer) {
+    Props props(15, name);
+    props.Vec(0.f, 0.f, 0.f).Vec(0.f, 0.f, 0.f).U32(16).Str("").F(0.f).F(0.f).F(0.f);
+    props.U32(area).U32(layer).U32(0).B(true).F(0.f).U32(0xFFFFFFFF).U32(0xFFFFFFFF);
+    props.U32(0xFFFFFFFF);
+    return props.data;
+  };
+  enum { kPickupType = 0x11, kPirateType = 0x24 };
+  enum { kArrivedState = 1, kDeathRattleState = 0x14 };
+  const size_t kTriggerSize = 63;
+  const uint32_t kTriggerScale = 12;
+
+  // Sun Tower's trigger that sets the Sunchamber up for the ghosts would do it
+  // before Flaahgra, taking her item away: it waits on a layer of its own,
+  // which Flaahgra's death switches on.
+  if (mrea == kSunTower && find(0x001D015B, kTriggerType, kTriggerSize) != nullptr &&
+      find(0x001D015B, kTriggerType, kTriggerSize)->layer == 0) {
+    for (const PortSkipCutscenes::ScriptObject& o : objects)
+      if (o.layer == 1)
+        remove(o.id);
+    ops.push_back(7);
+    ops.push_back(1);
+    u32(0x001D015B);
+  }
+  if (mrea == kSunchamber && has(0x042500D4, kRelayType) && !exists(0x04256FF0)) {
+    push(1, kSpecialFunctionType, 0x04256FF0, {},
+         layerSwitch("Enable Sun Tower Layer Change Trigger", 0xCF4C7AA5, 1));
+    connect(0x042500D4, {kZeroState, kIncrementMsg, 0x04256FF0});
+  }
+
+  // Research Lab Aether entered from below: the wall is gone once the labs
+  // have gone dark, and the lower trigger breaks the glass itself instead of
+  // waiting for the pirate to jump through it.
+  if (mrea == kResearchCore && has(0x00280468, kRelayType) && !exists(0x00286FF0)) {
+    push(0, kSpecialFunctionType, 0x00286FF0, {},
+         layerSwitch("SpecialFunction - Remove Research Lab Aether wall", 0x354889CE, 3));
+    connect(0x00280468, {kZeroState, kDecrementMsg, 0x00286FF0});
+  }
+  if (mrea == kResearchLabAether && has(0x04330219, kTriggerType) &&
+      has(0x0433005D, kTimerType)) {
+    link(0x04330219, {kEnteredState, kResetAndStartMsg, 0x0433005D});
+    if (exists(0x1433007C))
+      link(0x04330219, {kEnteredState, kDeactivateMsg, 0x1433007C});
+  }
+
+  // Observatory: the two pirates of the second pass count towards the panel,
+  // and the door lock of the first pass also arms when the room is entered
+  // from the save station or from the labs.
+  if (mrea == kObservatory) {
+    for (uint32_t pirate : {0x081E0460u, 0x081E0461u})
+      if (has(pirate, kPirateType) && exists(0x001E02EA))
+        link(pirate, {kDeathRattleState, kIncrementMsg, 0x001E02EA});
+    const uint32_t lock = 0x041E0381, relay = 0x041E037A;
+    const uint32_t south = 0x041E6FF0, north = 0x041E6FF1;
+    if (has(lock, kTriggerType) && has(relay, kRelayType) && !exists(south) && !exists(north)) {
+      connect(lock, {kEnteredState, kDeactivateMsg, south});
+      connect(lock, {kEnteredState, kDeactivateMsg, north});
+      push(1, kTriggerType, south,
+           {{kEnteredState, kDeactivateMsg, lock},
+            {kEnteredState, kDeactivateMsg, north},
+            {kEnteredState, kSetToZeroMsg, relay}},
+           trigger("Trigger", -71.30155f, -941.33795f, 129.97682f, 10.516006f, 6.079956f,
+                   7.128998f, true, true));
+      push(1, kTriggerType, north,
+           {{kEnteredState, kDeactivateMsg, lock},
+            {kEnteredState, kDeactivateMsg, south},
+            {kEnteredState, kSetToZeroMsg, relay}},
+           trigger("Trigger", -71.30155f, -853.69434f, 129.97682f, 10.516006f, 6.079956f,
+                   7.128998f, true, true));
+    }
+  }
+
+  // Triggers that could be walked around: the Security Station's alert and
+  // the Hive Totem's falling platforms.
+  if (mrea == kMinesSecurityStation && find(0x0407033F, kTriggerType, kTriggerSize) != nullptr) {
+    real(0x0407033F, kTriggerScale, 50.f);
+    real(0x0407033F, kTriggerScale + 4, 100.f);
+    real(0x0407033F, kTriggerScale + 8, 40.f);
+  }
+  if (mrea == kHiveTotem && find(0x002400CA, kTriggerType, kTriggerSize) != nullptr)
+    real(0x002400CA, kTriggerScale + 4, 60.f);
+
+  // Gravity Chamber keeps its stalactite, and with it the grapple point.
+  if (mrea == kGravityChamber && has(0x0035013A, kSpecialFunctionType))
+    remove(0x0035013A);
+
+  // Elite Research: the platforms wait out the elite's longest death.
+  if (mrea == kEliteResearch && find(0x000D02F2, kTimerType, 11) != nullptr)
+    real(0x000D02F2, 0, 5.f);
+
+  // Elite Quarters: taking the item is what unlocks the room, not the Omega
+  // Pirate's death.
+  if (mrea == kEliteQuarters) {
+    for (uint32_t pickup : {0x001A04B8u, 0x041A04C5u}) {
+      if (!has(pickup, kPickupType))
+        continue;
+      if (exists(0x041A0348))
+        link(pickup, {kArrivedState, kSetToZeroMsg, 0x041A0348});
+      if (exists(0x001A03D9))
+        link(pickup, {kArrivedState, kDecrementMsg, 0x001A03D9});
+      if (exists(0x141A0328))
+        link(pickup, {kArrivedState, kSetToZeroMsg, 0x141A0328});
+    }
+    if (has(0x001A04B8, kPickupType) || has(0x041A04C5, kPickupType)) {
+      unlink(0x141A0126, {kDeadState, kSetToZeroMsg, 0x141A0328});
+      unlink(0x141A0126, {kDeadState, kDecrementMsg, 0x001A03D9});
     }
   }
 }

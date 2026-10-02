@@ -1383,6 +1383,42 @@ int main() {
       taken.push_back(object(0x15, 0x00020004, 1));
       Check(PortApWorld::RoomOps(plain, 0xD5CDB809, taken).empty(),
             "a Main Plaza that isn't the disc's is left alone");
+
+      // The softlock fixes.
+      std::vector< PortSkipCutscenes::ScriptObject > tower = {object(0x04, 0x001D015B, 63),
+                                                               object(0x02, 0x041D006E, 61)};
+      tower[1].layer = 1;
+      const uint8_t moved[] = {6, 0x04, 0x1D, 0x00, 0x6E, 7, 1, 0x00, 0x1D, 0x01, 0x5B};
+      Check(PortApWorld::RoomOps(plain, 0xDE161372, tower) ==
+                std::vector< uint8_t >(moved, moved + sizeof(moved)),
+            "Sun Tower's layer trigger moves to a layer of its own");
+      tower[0].layer = 1;
+      Check(PortApWorld::RoomOps(plain, 0xDE161372, tower).empty(),
+            "a Sun Tower already changed is left alone");
+      const std::vector< uint8_t > flaahgra =
+          PortApWorld::RoomOps(plain, 0x9A0A03EB, {object(0x15, 0x042500D4, 1)});
+      const std::vector< uint8_t > towerArea = {0xCF, 0x4C, 0x7A, 0xA5, 0, 0, 0, 1};
+      Check(flaahgra.size() > 80 && flaahgra[0] == 5 && flaahgra[1] == 1 && flaahgra[2] == 0x3A &&
+                flaahgra[flaahgra.size() - 17] == 4 &&
+                std::search(flaahgra.begin(), flaahgra.end(), towerArea.begin(),
+                            towerArea.end()) != flaahgra.end(),
+            "Flaahgra's death switches the Sun Tower trigger on");
+      const std::vector< uint8_t > station =
+          PortApWorld::RoomOps(plain, 0x956F1552, {object(0x04, 0x0407033F, 63)});
+      Check(station.size() == 3 * 17 && station[0] == 2 && station[10] == 12 &&
+                station[13] == 0x42 && station[14] == 0x48 && station[17 + 10] == 16 &&
+                station[34 + 10] == 20,
+            "the Security Station's alert trigger fills the room");
+      std::vector< PortSkipCutscenes::ScriptObject > quarters = {
+          object(0x11, 0x041A04C5, 234), object(0x86, 0x141A0126, 793),
+          object(0x15, 0x141A0328, 1), object(0x08, 0x001A03D9, 300)};
+      quarters[1].connections.push_back({14, 13, 0x141A0328});
+      const std::vector< uint8_t > omega = PortApWorld::RoomOps(plain, 0x3953C353, quarters);
+      Check(omega.size() == 3 * 17 && omega[0] == 4 && omega[17] == 4 && omega[34] == 3 &&
+                omega[35] == 0x14,
+            "the Elite Quarters item unlocks the room, the Omega Pirate no longer does");
+      Check(PortApWorld::RoomOps(plain, 0x49175472, {object(0x3A, 0x0035013A, 70)}).size() == 5,
+            "Gravity Chamber keeps its stalactite");
     }
     std::vector< PortSkipCutscenes::ScriptObject > hatch = objects;
     if (!hatch.empty()) {

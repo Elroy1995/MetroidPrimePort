@@ -118,6 +118,18 @@ With the built-in tables, the client does what the AP ISO patch would:
   crashed frigate's unpowered door, Research Lab Hydra's force field and Main
   Quarry's barrier can be passed from their far side, and the Phazon Elite is
   in Elite Research without Central Dynamo's power having been restored.
+- So do randomprime's softlock fixes, which matter once doors and elevators
+  can bring you into a room from the wrong side or without the item the room
+  expects: Sun Tower's and Research Core's one-way sequences, the locks of
+  Research Lab Aether, the Observatory, the Mines Security Station and the
+  Hive Totem, Gravity Chamber's stalactite, Elite Research's dropped item and
+  the Elite Quarters, which unlock when the item is taken rather than when
+  the Omega Pirate dies. A missile station refills power bombs too.
+- Not ported from randomprime: the fixes for crashes only the console has,
+  the ones for other disc revisions, moved spawn points, the item capacities
+  above the game's own (250 missiles, 8 power bombs, 14 energy tanks), the
+  warp to the start room from a save station, and the renamed elevator and
+  temple texts.
 - A start room the port's tables don't have is named once on connect as
   `Seed option not supported: ...`.
 - Spring Ball (C-stick up in morph ball) follows the seed's `spring_ball`: with

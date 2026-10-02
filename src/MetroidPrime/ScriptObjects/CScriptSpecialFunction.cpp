@@ -295,6 +295,14 @@ void CScriptSpecialFunction::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId
         CPlayerState& pState = *mgr.PlayerState();
         pState.SetPickup(CPlayerState::kIT_Missiles,
                          pState.GetItemCapacity(CPlayerState::kIT_Missiles));
+#ifdef TARGET_PC
+        // Port: an Archipelago seed's missile stations refill power bombs too
+        // (randomprime's missileStationPbRefill, on in every seed).
+        if (PortAp::SeedGivesStartItems()) {
+          pState.SetPickup(CPlayerState::kIT_PowerBombs,
+                           pState.GetItemCapacity(CPlayerState::kIT_PowerBombs));
+        }
+#endif
       }
       break;
     }
