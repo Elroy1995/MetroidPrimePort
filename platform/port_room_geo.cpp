@@ -8,6 +8,8 @@
 #include "port_room_env.h"
 
 #include "Kyoto/CResFactory.hpp"
+#include "Kyoto/Graphics/CCubeMaterial.hpp"
+#include "Kyoto/Graphics/CCubeModel.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Graphics/CModel.hpp"
 #include "Kyoto/Graphics/CModelFlags.hpp"
@@ -20,6 +22,7 @@
 #include "MetaRender/CCubeRenderer.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -67,10 +70,38 @@ std::unordered_map< uint32_t, Area >& Areas() {
 }
 
 int sMode = -1;
+int sAreaLights = -1;
 bool sBuffersReady = false;
 bool sWarned = false;
 int sDrawn = 0;
 int sDrawnLast = 0;
+
+// The console's material values, by model id; CCubeModel holds them by model, which is
+// only good while the model is in memory, so they are handed over again every frame.
+struct MaterialValue {
+  uint32_t id;
+  int material;
+  int field;
+  float value;
+};
+std::vector< MaterialValue > sMaterialValues;
+
+const CCubeModel* CubeModel(const Model& model) {
+  return model.loaded ? (**model.data->PickStaticModel(CModelData::kWM_Normal)).GetCubeModel() : nullptr;
+}
+
+void BindMaterialValues() {
+  CCubeModel::PortClearPBROverrides();
+  for (const MaterialValue& value : sMaterialValues) {
+    for (const auto& [mrea, area] : Areas()) {
+      for (const Model& model : area.models) {
+        if (model.id == value.id) {
+          CCubeModel::PortOverridePBR(CubeModel(model), value.material, value.field, value.value);
+        }
+      }
+    }
+  }
+}
 
 void Load(uint32_t mrea, Area& area) {
   const std::string path = PortMods::RoomGeoPath(mrea);
@@ -132,6 +163,7 @@ void SetLoadedAreas(const uint32_t* mreas, size_t count) {
     }
   }
   if (GetMode() == Mode::Off) {
+    CCubeModel::PortClearPBROverrides();
     areas.clear();
     return;
   }
@@ -153,6 +185,9 @@ void SetLoadedAreas(const uint32_t* mreas, size_t count) {
   }
   sDrawnLast = sDrawn;
   sDrawn = 0;
+  if (!sMaterialValues.empty()) {
+    BindMaterialValues();
+  }
 }
 
 bool Draw(const CStateManager& mgr, const CGameArea& gameArea, const CFrustumPlanes& frustum) {
@@ -190,8 +225,7 @@ bool Draw(const CStateManager& mgr, const CGameArea& gameArea, const CFrustumPla
       return false;
     }
   }
-  static const bool areaLights = std::getenv("MP_ROOM_GEO_AREA_LIGHTS") != nullptr;
-  const bool baked = !areaLights && PortRoomEnv::HasVolume(gameArea.GetAreaAssetId());
+  const bool baked = !AreaLights() && PortRoomEnv::HasVolume(gameArea.GetAreaAssetId());
   for (Placed& item : area.items) {
     const Model& model = area.models[item.model];
     if (!model.loaded || model.hidden) {
@@ -326,7 +360,174 @@ int SetHidden(uint32_t id, bool hidden) {
   return count;
 }
 
-void Reset() { Areas().clear(); }
+uint32_t Pick(const CVector3f& origin, const CVector3f& direction, std::string& out) {
+  struct Hit {
+    float key; // distance to the box, or its volume when the origin is inside
+    bool inside;
+    uint32_t mrea;
+    const Placed* item;
+  };
+  std::vector< Hit > hits;
+  const float o[3] = {origin.GetX(), origin.GetY(), origin.GetZ()};
+  const float d[3] = {direction.GetX(), direction.GetY(), direction.GetZ()};
+  for (const auto& [mrea, area] : Areas()) {
+    for (const Placed& item : area.items) {
+      if (!item.bounded || area.models[item.model].hidden) {
+        continue;
+      }
+      const CVector3f lo = item.bounds.GetMinPoint();
+      const CVector3f hi = item.bounds.GetMaxPoint();
+      const float l[3] = {lo.GetX(), lo.GetY(), lo.GetZ()};
+      const float h[3] = {hi.GetX(), hi.GetY(), hi.GetZ()};
+      float enter = -3.4e38f;
+      float leave = 3.4e38f;
+      bool miss = false;
+      for (int axis = 0; axis < 3 && !miss; ++axis) {
+        if (std::fabs(d[axis]) < 1e-8f) {
+          miss = o[axis] < l[axis] || o[axis] > h[axis];
+          continue;
+        }
+        float t0 = (l[axis] - o[axis]) / d[axis];
+        float t1 = (h[axis] - o[axis]) / d[axis];
+        if (t0 > t1) {
+          std::swap(t0, t1);
+        }
+        enter = std::max(enter, t0);
+        leave = std::min(leave, t1);
+      }
+      if (miss || enter > leave || leave < 0.f) {
+        continue;
+      }
+      const bool inside = enter <= 0.f;
+      hits.push_back({inside ? (h[0] - l[0]) * (h[1] - l[1]) * (h[2] - l[2]) : enter, inside, mrea, &item});
+    }
+  }
+  std::sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) {
+    return a.inside != b.inside ? !a.inside : a.key < b.key;
+  });
+  constexpr size_t kLines = 12;
+  char line[200];
+  for (size_t i = 0; i < hits.size() && i < kLines; ++i) {
+    const Hit& hit = hits[i];
+    const CVector3f lo = hit.item->bounds.GetMinPoint();
+    const CVector3f hi = hit.item->bounds.GetMaxPoint();
+    const uint32_t id = Areas()[hit.mrea].models[hit.item->model].id;
+    if (hit.inside) {
+      std::snprintf(line, sizeof(line), "%08X in %08X: around the camera, (%.1f, %.1f, %.1f) to (%.1f, %.1f, %.1f)\n",
+                    id, hit.mrea, lo.GetX(), lo.GetY(), lo.GetZ(), hi.GetX(), hi.GetY(), hi.GetZ());
+    } else {
+      std::snprintf(line, sizeof(line), "%08X in %08X: %.1f m, (%.1f, %.1f, %.1f) to (%.1f, %.1f, %.1f)\n", id,
+                    hit.mrea, hit.key, lo.GetX(), lo.GetY(), lo.GetZ(), hi.GetX(), hi.GetY(), hi.GetZ());
+    }
+    out += line;
+  }
+  if (hits.size() > kLines) {
+    std::snprintf(line, sizeof(line), "and %zu more\n", hits.size() - kLines);
+    out += line;
+  }
+  return hits.empty() ? 0 : Areas()[hits[0].mrea].models[hits[0].item->model].id;
+}
+
+std::string Materials(uint32_t id) {
+  static const char* const kTags[] = {"PBRM", "PBR2", "PBR3", "PBR4"};
+  for (const auto& [mrea, area] : Areas()) {
+    for (const Model& model : area.models) {
+      const CCubeModel* const cube = model.id == id ? CubeModel(model) : nullptr;
+      if (cube == nullptr) {
+        continue;
+      }
+      std::string out;
+      char line[320];
+      const int count = int(cube->PortMaterialCount());
+      for (int i = 0; i < count; ++i) {
+        const uint flags = cube->GetMaterialByIndex(i).GetFlags();
+        float v[19];
+        const int floats = cube->PortReadPBRMaterial(i, v);
+        const char* const tag =
+            floats == 19 ? kTags[3] : floats == 13 ? kTags[2] : floats == 8 ? kTags[1] : floats == 6 ? kTags[0] : "none";
+        // What the console's `roomgeo mat` put in place is what gets drawn, so show that.
+        int shown = floats;
+        bool overridden = false;
+        for (const MaterialValue& value : sMaterialValues) {
+          if (value.id == id && value.material == i) {
+            v[value.field] = value.value;
+            overridden = true;
+            shown = std::max(shown, value.field < 6 ? 6 : value.field < 8 ? 8 : 19);
+          }
+        }
+        int used = std::snprintf(line, sizeof(line), "%d: flags %08X %s%s%s, record %s", i, flags,
+                                 (flags & kStateFlag_PortPBR) != 0 ? "PBR" : "TEV",
+                                 (flags & kStateFlag_DepthSorting) != 0 ? " blended" : "",
+                                 (flags & kStateFlag_AlphaTest) != 0 ? " cutout" : "", tag);
+        if (shown > 0 && used < int(sizeof(line))) {
+          used += std::snprintf(line + used, sizeof(line) - used,
+                                ", emissive %g %g %g, backlight %g %g %g", v[0], v[1], v[2], v[3], v[4], v[5]);
+        }
+        if (shown >= 8 && used < int(sizeof(line))) {
+          used += std::snprintf(line + used, sizeof(line) - used, ", height %g, mode %g", v[6], v[7]);
+        }
+        if (shown >= 19 && used < int(sizeof(line))) {
+          used += std::snprintf(line + used, sizeof(line) - used, ", kind %g, strength %g, params %g %g %g %g",
+                                v[13], v[14], v[15], v[16], v[17], v[18]);
+        }
+        if (overridden && used < int(sizeof(line))) {
+          std::snprintf(line + used, sizeof(line) - used, " (overridden)");
+        }
+        out += line;
+        out += '\n';
+      }
+      return out;
+    }
+  }
+  return {};
+}
+
+bool SetMaterialValue(uint32_t id, int material, int field, float value) {
+  if (material < 0 || field < 0 || field >= 19) {
+    return false;
+  }
+  bool found = false;
+  for (const auto& [mrea, area] : Areas()) {
+    for (const Model& model : area.models) {
+      const CCubeModel* const cube = model.id == id ? CubeModel(model) : nullptr;
+      found = found || (cube != nullptr && uint(material) < cube->PortMaterialCount());
+    }
+  }
+  if (!found) {
+    return false;
+  }
+  for (MaterialValue& entry : sMaterialValues) {
+    if (entry.id == id && entry.material == material && entry.field == field) {
+      entry.value = value;
+      BindMaterialValues();
+      return true;
+    }
+  }
+  sMaterialValues.push_back({id, material, field, value});
+  BindMaterialValues();
+  return true;
+}
+
+int ClearMaterialValues() {
+  const int count = int(sMaterialValues.size());
+  sMaterialValues.clear();
+  CCubeModel::PortClearPBROverrides();
+  return count;
+}
+
+void Reset() {
+  CCubeModel::PortClearPBROverrides();
+  Areas().clear();
+}
+
+bool AreaLights() {
+  if (sAreaLights < 0) {
+    sAreaLights = std::getenv("MP_ROOM_GEO_AREA_LIGHTS") != nullptr ? 1 : 0;
+  }
+  return sAreaLights != 0;
+}
+
+void SetAreaLights(bool on) { sAreaLights = on ? 1 : 0; }
 
 void SetMode(Mode mode) {
   sMode = int(mode);

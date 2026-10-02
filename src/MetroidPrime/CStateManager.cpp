@@ -2,6 +2,7 @@
 #include "MetroidPrime/CStateManager.hpp"
 #include "port_apclient.h"
 #include "port_debug.h"
+#include "port_freecam.h"
 #include "port_discord.h"
 #include "port_hold_toggle.h"
 #include "port_livesplit.h"
@@ -11,6 +12,7 @@
 #include "port_savestate.h"
 #include "port_skip_cutscenes.h"
 #include "port_viewmodel.h"
+#include "port_console.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 #endif
@@ -1319,6 +1321,14 @@ void CStateManager::Update(float dt) {
   if (GetWantsToQuit()) return;
 
 #ifdef TARGET_PC
+  // The debug free camera can hold the simulation still. The console keeps running.
+  if (PortFreeCam::Frozen()) {
+    PortConsoleTick(*this);
+    return;
+  }
+#endif
+
+#ifdef TARGET_PC
   // Port: record the pre-tick transforms that presented frames blend from
   // (CActor::PortPresentedView).
   if (PortDebug::ActorInterpolation()) {
@@ -1360,8 +1370,8 @@ void CStateManager::Update(float dt) {
   PortSmokeDash(*this);
   PortSmokeWater(*this);
   PortSmokeMouseBeforeUpdate(*this);
-  PortConsoleTick(*this);
 #endif
+  PortConsoleTick(*this);
 
   PortDebug::SetStateManager(this);
   PortDebug::ConsumeWorldSweepRequest(*this);
@@ -1595,6 +1605,12 @@ void CStateManager::ProcessInput(const CFinalInput& input) {
     if (x84c_player->GetDisableInput()) {
       disableInput = true;
     }
+#ifdef TARGET_PC
+    // The debug free camera flies on the pad; the player stands still meanwhile.
+    if (PortFreeCam::Input(input)) {
+      disableInput = true;
+    }
+#endif
 
     if (disableInput) {
       xb54_finalInput = skDefaultInput;
@@ -1612,6 +1628,11 @@ void CStateManager::ProcessInput(const CFinalInput& input) {
     }
   }
 
+#ifdef TARGET_PC
+  if (PortFreeCam::Active()) {
+    return;
+  }
+#endif
   x870_cameraManager->ProcessInput(input, *this);
 }
 
@@ -2446,7 +2467,8 @@ void CStateManager::PreRender() {
   BuildDynamicLightListForWorld();
 
   const CGameCamera& curCam = x870_cameraManager->GetCurrentCamera(*this);
-  const CTransform4f curCamXf = x870_cameraManager->GetCurrentCameraTransform(*this);
+  const CTransform4f curCamXf =
+      PortFreeCam::View(x870_cameraManager->GetCurrentCameraTransform(*this));
   CFrustumPlanes frustum(curCamXf, 0.017453292f * curCam.GetFov(), curCam.GetAspectRatio(),
                          curCam.GetNearClipDistance(), false, 100.f);
 
@@ -2483,7 +2505,8 @@ void CStateManager::PreRender() {
 
 CFrustumPlanes CStateManager::SetupViewForDraw(const CViewport& viewport) const {
   const CGameCamera& cam = x870_cameraManager->GetCurrentCamera(*this);
-  const CTransform4f camXf = x870_cameraManager->GetCurrentCameraTransform(*this);
+  const CTransform4f camXf =
+      PortFreeCam::View(x870_cameraManager->GetCurrentCameraTransform(*this));
   gpRender->SetWorldViewpoint(camXf);
 
   const CVector3f playerPos = x84c_player->GetTranslation();
@@ -2664,7 +2687,8 @@ void CStateManager::PortCaptureProbeFace() const {
   };
   const int kSize = 128;
   const CGameCamera& cam = x870_cameraManager->GetCurrentCamera(*this);
-  const CVector3f pos = x870_cameraManager->GetCurrentCameraTransform(*this).GetTranslation();
+  const CVector3f pos =
+      PortFreeCam::View(x870_cameraManager->GetCurrentCameraTransform(*this)).GetTranslation();
   const CVector3f fwd(kFaces[face][0], kFaces[face][1], kFaces[face][2]);
   const CVector3f up(kFaces[face][3], kFaces[face][4], kFaces[face][5]);
   const CVector3f right = CVector3f::Cross(fwd, up);
@@ -2983,7 +3007,7 @@ void CStateManager::DrawWorld() const {
     }
 #endif
 #ifdef TARGET_PC
-    if (!PortViewModel::Active())
+    if (!PortViewModel::Active() && !PortFreeCam::Active())
 #endif
     x84c_player->RenderGun(*this, x870_cameraManager->GetGlobalCameraTranslation(*this));
 #ifdef TARGET_PC

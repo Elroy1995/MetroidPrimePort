@@ -12,6 +12,7 @@
 #ifdef TARGET_PC
 #include <dolphin/gx/GXExtra.h>
 #include "port_room_env.h"
+#include <vector>
 #endif
 
 static bool sDrawingOccluders = false;
@@ -169,8 +170,10 @@ CCubeMaterial CCubeModel::GetMaterialByIndex(const int idx) const {
 // 'PBR3', or nineteen (the same, then the kind of a special surface, its strength and four
 // parameters; see GXSetPBRMaterial) and 'PBR4'. A material without one gets the neutral
 // values.
-void CCubeModel::PortSetPBRMaterial(const int idx) const {
-  f32 values[19] = {1.f, 1.f, 1.f};
+int CCubeModel::PortReadPBRMaterial(const int idx, f32 values[19]) const {
+  for (int i = 0; i < 19; ++i) {
+    values[i] = i < 3 ? 1.f : 0.f;
+  }
   const uchar* table = static_cast< const uchar* >(x0_instance.GetMaterialPointer()) +
                        (x1c_textures->size() + 1) * 4;
   const uint count = CBasics::SwapBytes(*reinterpret_cast< const uint* >(table));
@@ -194,6 +197,51 @@ void CCubeModel::PortSetPBRMaterial(const int idx) const {
     memcpy(&bits, record + i * 4, 4);
     bits = CBasics::SwapBytes(bits);
     memcpy(&values[i], &bits, 4);
+  }
+  return floats;
+}
+
+uint CCubeModel::PortMaterialCount() const {
+  const uchar* table = static_cast< const uchar* >(x0_instance.GetMaterialPointer()) +
+                       (x1c_textures->size() + 1) * 4;
+  return CBasics::SwapBytes(*reinterpret_cast< const uint* >(table));
+}
+
+// Values a debugging session puts in place of a record's (the console's `roomgeo mat`).
+namespace {
+struct SPortPBROverride {
+  const CCubeModel* model;
+  int material;
+  int field;
+  f32 value;
+};
+std::vector< SPortPBROverride > sPortPBROverrides;
+} // namespace
+
+void CCubeModel::PortOverridePBR(const CCubeModel* model, const int material, const int field,
+                                 const f32 value) {
+  if (model == nullptr || field < 0 || field >= 19) {
+    return;
+  }
+  for (SPortPBROverride& entry : sPortPBROverrides) {
+    if (entry.model == model && entry.material == material && entry.field == field) {
+      entry.value = value;
+      return;
+    }
+  }
+  const SPortPBROverride entry = {model, material, field, value};
+  sPortPBROverrides.push_back(entry);
+}
+
+void CCubeModel::PortClearPBROverrides() { sPortPBROverrides.clear(); }
+
+void CCubeModel::PortSetPBRMaterial(const int idx) const {
+  f32 values[19];
+  PortReadPBRMaterial(idx, values);
+  for (const SPortPBROverride& entry : sPortPBROverrides) {
+    if (entry.model == this && entry.material == idx) {
+      values[entry.field] = entry.value;
+    }
   }
   // World up as the shader sees it: view space is right, up, -forward.
   const CTransform4f& view = CGraphics::GetViewMatrix();

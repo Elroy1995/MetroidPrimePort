@@ -92,6 +92,8 @@ bool Enabled() {
   return sEnabled != 0;
 }
 
+void SetEnabled(bool enabled) { sEnabled = enabled ? 1 : 0; }
+
 void Reset() {
   if (sLoaded) {
     GXDestroyTexObj(&sTexture);

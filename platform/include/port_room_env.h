@@ -145,6 +145,18 @@ void SetVolumeHint(uint32_t mrea, const float centre[3]);
 void ClearVolumeHint();
 // Whether a model announced for this area would get a volume.
 bool HasVolume(uint32_t mrea);
+// MP_ROOM_ENV_VOLUME, the console's `roomenv volume`.
+void SetVolumesEnabled(bool on);
+bool VolumesEnabled();
+// What the baked ambient is multiplied by; 0 leaves the game's own ambient
+// (MP_ROOM_ENV_AMBIENT, the console's `roomenv ambient`).
+void SetAmbientScale(float scale);
+float AmbientScale();
+// What volume-lit surfaces show, for debugging: 0 the shaded surface, 1 the volume's
+// texture coordinates, 2 the baked light alone (MP_ROOM_ENV_VOLUME_SHOW, the console's
+// `roomenv show`).
+void SetVolumeView(int view);
+int VolumeView();
 // Forgets everything (the mods folder changed).
 void Reset();
 // 0 off, 1 on; the console's `roomenv`.
@@ -169,5 +181,8 @@ bool Tone(float rows[3][4]);
 void BuildTone(float mid, float contrast, float toe, float shoulder, float rows[3][4]);
 // Areas with an environment, cubes on the GPU, ambient grids.
 void Stats(int& areas, int& probes, int& cubes, int& grids);
+// What every loaded area's environment gives a model at `pos` (the console's `roomenv
+// info`): exposure and tone curve, the probe it would reflect, the baked ambient there.
+std::string Info(const float pos[3]);
 
 } // namespace PortRoomEnv

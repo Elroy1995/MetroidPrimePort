@@ -71,6 +71,12 @@ void GXDestroyPBRVolume(u32 id);
 // coordinates, rows 3 to 5 a view-space normal to the volume's axes. w of row 3 scales the
 // light (0: no volume), w of row 4 is how far along the normal the sample is taken.
 void GXSetPBRVolume(u32 id, const f32 rows[6][4]);
+// Aurora extension: what PBR surfaces drawn from now on show, for debugging: 0 the shaded
+// result, 1 base colour, 2 normal (view space), 3 roughness, 4 metalness, 5 occlusion,
+// 6 the diffuse ambient, 7 the reflection, 8 the glow, 9 the lit level in stops around
+// middle grey (blue under, red over), 10 the special surface's kind. Not a FIFO command:
+// it rides with the next GXSetPBRMaterial.
+void GXSetPBRDebugView(u32 view);
 // Aurora extension: a three-piece tone curve over the lit colour x, which is taken as
 // already exposed (see GX_AURORA_SET_PBR_TONE). Row 0 is the toe, (a x + b) x^2 + c x below
 // z of row 1; row 1 the line S x + y0 (x, y) from there to its w; row 2 the shoulder

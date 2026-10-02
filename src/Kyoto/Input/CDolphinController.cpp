@@ -1,4 +1,5 @@
 #include "Kyoto/Input/CDolphinController.hpp"
+#include "port_console.h"
 #include "port_debug.h"
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_keyboard.h>
@@ -70,6 +71,8 @@ void CDolphinController::ReadDevices() {
   held = PortSmokeMouseButtons(held);
   inputFocused = inputFocused || PortSmokeMouseEnabled() || PortSmokeScriptedInput();
 #endif
+  // The console's pad commands work in a window without focus.
+  inputFocused = inputFocused || PortConsoleEnabled();
   const unsigned mouse = PortDebug::MouseWeaponButtons(held);
   // Out of first-person aim a left click is still A: bombs in morph ball, and
   // advancing text boxes and menus. Its gate also waits for a release, so a

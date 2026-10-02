@@ -44,6 +44,8 @@ std::unordered_map<uint32_t, Area> sAreas;
 uint32_t sNextCube = 1;
 uint32_t sNextVolume = 1;
 int sVolumes = -1;
+float sAmbientScale = -1.f;
+float sVolumeView = -1.f;
 bool sHint = false;
 uint32_t sHintArea = 0;
 float sHintCentre[3];
@@ -105,13 +107,6 @@ uint16_t FloatToHalf(float value) {
   return uint16_t(sign | (exponent << 10) | (mantissa >> 13));
 }
 
-bool VolumesEnabled() {
-  if (sVolumes < 0) {
-    const char* const env = std::getenv("MP_ROOM_ENV_VOLUME");
-    sVolumes = env != nullptr && env[0] == '0' ? 0 : 1;
-  }
-  return sVolumes != 0;
-}
 
 // A grid as the textures of GXCreatePBRVolume. The points inside walls are empty, and a
 // surface sits between those and the lit ones, so the texture filter would darken every
@@ -400,6 +395,43 @@ void SetViewArea(uint32_t mrea) {
   }
 }
 
+bool VolumesEnabled() {
+  if (sVolumes < 0) {
+    const char* const env = std::getenv("MP_ROOM_ENV_VOLUME");
+    sVolumes = env != nullptr && env[0] == '0' ? 0 : 1;
+  }
+  return sVolumes != 0;
+}
+
+void SetVolumesEnabled(bool on) {
+  sVolumes = on ? 1 : 0;
+  sLastValid = false;
+}
+
+float AmbientScale() {
+  if (sAmbientScale < 0.f) {
+    sAmbientScale = std::max(EnvFloat("MP_ROOM_ENV_AMBIENT", 1.f), 0.f);
+  }
+  return sAmbientScale;
+}
+
+void SetAmbientScale(float scale) {
+  sAmbientScale = std::max(scale, 0.f);
+  sLastValid = false;
+}
+
+int VolumeView() {
+  if (sVolumeView < 0.f) {
+    sVolumeView = std::max(EnvFloat("MP_ROOM_ENV_VOLUME_SHOW", 0.f), 0.f);
+  }
+  return static_cast<int>(sVolumeView);
+}
+
+void SetVolumeView(int view) {
+  sVolumeView = static_cast<float>(std::max(view, 0));
+  sLastValid = false;
+}
+
 bool Enabled() {
   if (sEnabled < 0) {
     const char* const env = std::getenv("MP_ROOM_ENV");
@@ -498,7 +530,7 @@ bool Select(const float origin[3], Selection& out) {
   }
   static const float gain = EnvFloat("MP_ROOM_ENV_GAIN", 1.f);
   static const float lod = EnvFloat("MP_ROOM_ENV_LOD", 5.f);
-  static const float ambient = EnvFloat("MP_ROOM_ENV_AMBIENT", 1.f);
+  const float ambient = AmbientScale();
   const float grey = 0.18f * gain;
   sLast = {};
   Area* bestArea = nullptr;
@@ -572,8 +604,7 @@ bool Select(const float origin[3], Selection& out) {
         const float exposure = RoomExposed() ? FrameExposure(area) : 0.f;
         sLast.volumeLevel = (exposure > 0.f ? exposure * gain : 0.18f / grid.average) / 3.14159265f;
         sLast.volumeBias = volumeBias;
-        static const float show = EnvFloat("MP_ROOM_ENV_VOLUME_SHOW", 0.f);
-        sLast.volumeDiagnostic = show;
+        sLast.volumeDiagnostic = static_cast<float>(VolumeView());
         if (fresh) {
           PortLog::Write("room env: %08X volume %u %ux%ux%u exposure %g average %g level %g\n", sHintArea, gpu.id,
                          grid.size[0], grid.size[1], grid.size[2], exposure, grid.average, sLast.volumeLevel);
@@ -638,6 +669,55 @@ void Stats(int& areas, int& probes, int& cubes, int& grids) {
       cubes += cube.id != 0 ? 1 : 0;
     }
   }
+}
+
+std::string Info(const float pos[3]) {
+  std::string out;
+  char line[320];
+  for (const auto& [mrea, area] : sAreas) {
+    const File& file = area.file;
+    if (file.probes.empty() && file.grids.empty()) {
+      continue;
+    }
+    const float* const t = file.tonemap;
+    std::snprintf(line, sizeof(line),
+                  "%08X%s: exposure %g (EV %g, hint %g..%g, bias %g), tone EV %g mid %g contrast %g toe %g "
+                  "shoulder %g, %zu probe(s), %zu cube(s), %zu grid(s)\n",
+                  mrea, mrea == sViewArea ? " (camera)" : "", area.exposure,
+                  area.exposure > 0.f ? 3.f - std::log2(area.exposure) : 0.f, file.exposure[0], file.exposure[1],
+                  file.exposureBias, t[0], t[1], file.contrast, t[2], t[3], file.probes.size(), file.cubes.size(),
+                  file.grids.size());
+    out += line;
+    const Pick pick = PickProbe(file, pos);
+    if (pick.probe >= 0) {
+      const Probe& probe = file.probes[pick.probe];
+      const GpuCube& cube = area.cubes[probe.cube];
+      std::snprintf(line, sizeof(line),
+                    "  probe %d (%s, %s %g): cube %u, scale %g, blend %g, average %g, peak %g%s\n", pick.probe,
+                    pick.inside ? "inside" : "outside", pick.inside ? "volume" : "distance", pick.score, probe.cube,
+                    probe.scale, probe.blend, cube.average * probe.scale, cube.peak * probe.scale,
+                    cube.failed ? ", black" : "");
+      out += line;
+    }
+    for (size_t i = 0; i < file.grids.size(); ++i) {
+      const Grid& grid = file.grids[i];
+      const float distance = GridDistance(grid, pos);
+      Ambient ambient;
+      const bool lit = distance == 0.f && SampleGrid(file, grid, pos, ambient);
+      int used = std::snprintf(line, sizeof(line), "  grid %zu: %u x %u x %u, average %g, ", i, grid.size[0],
+                               grid.size[1], grid.size[2], grid.average);
+      if (lit) {
+        std::snprintf(line + used, sizeof(line) - used, "here mean %g %g %g, lobe %g %g %g\n", ambient.mean[0],
+                      ambient.mean[1], ambient.mean[2], ambient.lobe[0], ambient.lobe[1], ambient.lobe[2]);
+      } else if (distance == 0.f) {
+        std::snprintf(line + used, sizeof(line) - used, "no lit point here\n");
+      } else {
+        std::snprintf(line + used, sizeof(line) - used, "%.1f m away\n", distance);
+      }
+      out += line;
+    }
+  }
+  return out;
 }
 
 } // namespace PortRoomEnv

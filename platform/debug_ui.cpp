@@ -3,6 +3,10 @@
 // to build the windows between aurora_begin_frame and aurora_end_frame.
 
 #include "port_debug.h"
+#include "port_freecam.h"
+#include "port_hd_font.h"
+#include "port_room_env.h"
+#include "port_room_geo.h"
 #include "port_log.h"
 #include "port_paths.h"
 #include "port_apclient.h"
@@ -26,6 +30,7 @@
 #endif
 
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
+#include "Kyoto/Graphics/CCubeMaterial.hpp"
 #include "MetroidPrime/CHealthInfo.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMapWorld.hpp"
@@ -39,6 +44,7 @@
 
 #include <aurora/aurora.h>
 #include <aurora/gfx.h>
+#include <dolphin/gx/GXExtra.h>
 #include <dolphin/pad.h>
 #include <dolphin/vi.h>
 #include <imgui.h>
@@ -1803,6 +1809,35 @@ void SetStateManager(CStateManager* mgr) {
   sStateManager = mgr;
 }
 CStateManager* StateManager() { return sStateManager; }
+bool ViewRay(float origin[3], float forward[3]) {
+  if (sStateManager == nullptr || sStateManager->GetCameraManager() == nullptr) {
+    return false;
+  }
+  const CTransform4f view =
+      PortFreeCam::View(sStateManager->GetCameraManager()->GetCurrentCameraTransform(*sStateManager));
+  const CVector3f at = view.GetTranslation();
+  const CVector3f to = view.GetForward();
+  origin[0] = at.GetX();
+  origin[1] = at.GetY();
+  origin[2] = at.GetZ();
+  forward[0] = to.GetX();
+  forward[1] = to.GetY();
+  forward[2] = to.GetZ();
+  return true;
+}
+
+namespace {
+const char* const kPbrViews[] = {"off",     "albedo",     "normal", "rough",    "metal", "ao",
+                                 "ambient", "reflection", "glow",   "exposure", "kind"};
+int sPbrView = 0;
+} // namespace
+int PbrViewCount() { return int(sizeof(kPbrViews) / sizeof(kPbrViews[0])); }
+const char* PbrViewName(int view) { return view >= 0 && view < PbrViewCount() ? kPbrViews[view] : "?"; }
+int PbrView() { return sPbrView; }
+void SetPbrView(int view) {
+  sPbrView = view >= 0 && view < PbrViewCount() ? view : 0;
+  GXSetPBRDebugView(u32(sPbrView));
+}
 void RequestTeleport(int areaId) { sPendingTeleport = areaId; }
 bool ConsumeTeleportRequest(int& areaId) {
   if (sPendingTeleport < 0) {
@@ -3956,7 +3991,169 @@ void DrawCheats() {
   }
 }
 
+// The free camera: the view leaves the player, who stands still meanwhile.
+void DrawFreeCam() {
+  CStateManager* mgr = StateManager();
+  bool on = PortFreeCam::Active();
+  ImGui::BeginDisabled(mgr == nullptr && !on);
+  if (ImGui::Checkbox("Free camera", &on)) {
+    PortFreeCam::SetActive(on, mgr);
+  }
+  ImGui::EndDisabled();
+  if (!PortFreeCam::Active()) {
+    return;
+  }
+  ImGui::SameLine();
+  bool frozen = PortFreeCam::Frozen();
+  if (ImGui::Checkbox("Freeze the game", &frozen)) {
+    PortFreeCam::SetFrozen(frozen);
+  }
+  float speed = PortFreeCam::Speed();
+  if (ImGui::SliderFloat("Speed", &speed, 1.f, 100.f, "%.0f m/s", ImGuiSliderFlags_Logarithmic)) {
+    PortFreeCam::SetSpeed(speed);
+  }
+  PortFreeCam::Pose pose = PortFreeCam::GetPose();
+  float pos[3] = {pose.x, pose.y, pose.z};
+  float look[2] = {pose.yaw, pose.pitch};
+  bool moved = ImGui::InputFloat3("Position", pos, "%.2f");
+  moved |= ImGui::InputFloat2("Yaw, pitch", look, "%.1f");
+  if (moved) {
+    pose.x = pos[0];
+    pose.y = pos[1];
+    pose.z = pos[2];
+    pose.yaw = look[0];
+    pose.pitch = look[1];
+    PortFreeCam::SetPose(pose);
+  }
+  ImGui::TextWrapped("Close this menu to fly: stick moves, C stick or mouse looks, Z / D-pad up "
+                     "rises, L / D-pad down sinks, R goes four times as fast.");
+}
+
+// The switches and readouts for working on what mods draw: room geometry, room
+// environments, PBR.
+void DrawRendering() {
+  int view = PortDebug::PbrView();
+  if (ImGui::BeginCombo("PBR surfaces show", view == 0 ? "the shaded result" : PortDebug::PbrViewName(view))) {
+    for (int i = 0; i < PortDebug::PbrViewCount(); ++i) {
+      if (ImGui::Selectable(i == 0 ? "the shaded result" : PortDebug::PbrViewName(i), i == view)) {
+        PortDebug::SetPbrView(i);
+      }
+    }
+    ImGui::EndCombo();
+  }
+  static const char* const kProbes[] = {"off", "on", "mirror", "window"};
+  int probe = std::clamp(CCubeMaterial::sPortPBRProbeMode, 0, 3);
+  if (ImGui::Combo("Reflection probe", &probe, kProbes, 4)) {
+    CCubeMaterial::sPortPBRProbeMode = probe;
+  }
+  bool font = PortHdFont::Enabled();
+  if (ImGui::Checkbox("HD font", &font)) {
+    PortHdFont::SetEnabled(font);
+  }
+
+  static const char* const kModes[] = {"off", "in place of the room", "on top of the room"};
+  int mode = int(PortRoomGeo::GetMode());
+  if (ImGui::Combo("Room geometry", &mode, kModes, 3)) {
+    PortRoomGeo::SetMode(PortRoomGeo::Mode(mode));
+  }
+  bool areaLights = PortRoomGeo::AreaLights();
+  if (ImGui::Checkbox("Room geometry takes the area's lights", &areaLights)) {
+    PortRoomGeo::SetAreaLights(areaLights);
+  }
+  bool env = PortRoomEnv::Enabled();
+  if (ImGui::Checkbox("Room environments", &env)) {
+    PortRoomEnv::SetEnabled(env);
+  }
+  ImGui::BeginDisabled(!env);
+  bool exposed = PortRoomEnv::RoomExposed();
+  if (ImGui::Checkbox("Exposure by room", &exposed)) {
+    PortRoomEnv::SetRoomExposed(exposed);
+  }
+  ImGui::SameLine();
+  bool volumes = PortRoomEnv::VolumesEnabled();
+  if (ImGui::Checkbox("Baked light per pixel", &volumes)) {
+    PortRoomEnv::SetVolumesEnabled(volumes);
+  }
+  float ambient = PortRoomEnv::AmbientScale();
+  if (ImGui::SliderFloat("Baked ambient scale", &ambient, 0.f, 4.f, "%.2f")) {
+    PortRoomEnv::SetAmbientScale(ambient);
+  }
+  static const char* const kVolumeViews[] = {"the shaded surface", "volume coordinates", "the baked light"};
+  int volumeView = std::clamp(PortRoomEnv::VolumeView(), 0, 2);
+  if (ImGui::Combo("Baked surfaces show", &volumeView, kVolumeViews, 3)) {
+    PortRoomEnv::SetVolumeView(volumeView);
+  }
+  ImGui::EndDisabled();
+
+  // What the middle of the screen looks at.
+  static std::string picked;
+  static uint32_t pickedModel = 0;
+  static std::string materials;
+  float origin[3];
+  float forward[3];
+  const bool inWorld = PortDebug::ViewRay(origin, forward);
+  ImGui::BeginDisabled(!inWorld);
+  if (ImGui::Button("Pick the model ahead")) {
+    picked.clear();
+    pickedModel = PortRoomGeo::Pick(CVector3f(origin[0], origin[1], origin[2]),
+                                    CVector3f(forward[0], forward[1], forward[2]), picked);
+    materials = pickedModel != 0 ? PortRoomGeo::Materials(pickedModel) : std::string();
+    if (picked.empty()) {
+      picked = "No room geometry ahead.";
+    }
+  }
+  ImGui::EndDisabled();
+  if (pickedModel != 0) {
+    ImGui::SameLine();
+    if (ImGui::Button("Hide it")) {
+      PortRoomGeo::SetHidden(pickedModel, true);
+    }
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Show all")) {
+    PortRoomGeo::SetHidden(0, false);
+  }
+  if (!picked.empty()) {
+    ImGui::TextUnformatted(picked.c_str());
+  }
+  if (!materials.empty() && ImGui::TreeNode("Materials of the first")) {
+    ImGui::TextUnformatted(materials.c_str());
+    ImGui::TreePop();
+  }
+
+  if (ImGui::TreeNode("Frame")) {
+    if (const AuroraStats* stats = aurora_get_stats()) {
+      ImGui::Text("%.0f fps, %u draws (%u merged), %u PBR", aurora_get_fps(), stats->drawCallCount,
+                  stats->mergedDrawCallCount, CCubeMaterial::sPortPBRDraws);
+      ImGui::Text("vertices %.1f MiB, indices %.1f, arrays %.1f, uniforms %.1f, texture uploads %.1f",
+                  stats->lastVertSize / 1048576.f, stats->lastIndexSize / 1048576.f,
+                  stats->lastStorageSize / 1048576.f, stats->lastUniformSize / 1048576.f,
+                  stats->lastTextureUploadSize / 1048576.f);
+      ImGui::Text("pipelines %u made, %u waiting", stats->createdPipelines, stats->queuedPipelines);
+    }
+    int areas = 0;
+    int instances = 0;
+    int models = 0;
+    int loaded = 0;
+    int drawn = 0;
+    PortRoomGeo::Stats(areas, instances, models, loaded, drawn);
+    ImGui::Text("room geometry: %d area(s), %d of %d model(s) loaded, %d of %d instance(s) drawn", areas, loaded,
+                models, drawn, instances);
+    ImGui::TreePop();
+  }
+  if (inWorld && ImGui::TreeNode("Room environment here")) {
+    ImGui::TextUnformatted(PortRoomEnv::Info(origin).c_str());
+    ImGui::TreePop();
+  }
+}
+
 void DrawDebugTab() {
+  ImGui::SeparatorText("Camera");
+  DrawFreeCam();
+
+  ImGui::SeparatorText("Rendering");
+  DrawRendering();
+
   ImGui::SeparatorText("Audio");
   DrawAudio();
   if (ImGui::CollapsingHeader("Voices")) {

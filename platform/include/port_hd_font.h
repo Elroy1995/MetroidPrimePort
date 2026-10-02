@@ -88,8 +88,9 @@ class CRasterFont;
 
 namespace PortHdFont {
 
-// MP_HD_FONT=0 turns the feature off.
+// MP_HD_FONT=0 turns the feature off; so does the console's `hdfont`.
 bool Enabled();
+void SetEnabled(bool enabled);
 // Lets go of the loaded font; the next Begin reads the mods' again.
 void Reset();
 // Sets the render state for drawing `font`'s text from the distance field.

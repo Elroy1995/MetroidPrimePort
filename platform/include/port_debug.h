@@ -15,6 +15,14 @@ namespace PortDebug {
 // CStateManager::Update). Null before gameplay starts.
 void SetStateManager(CStateManager* mgr);
 CStateManager* StateManager();
+// Where the world is drawn from and which way it looks (the free camera's while it is
+// on); false outside a world.
+bool ViewRay(float origin[3], float forward[3]);
+// What PBR surfaces show in place of their shaded result (GXSetPBRDebugView); 0 is off.
+int PbrViewCount();
+const char* PbrViewName(int view);
+int PbrView();
+void SetPbrView(int view);
 // Requests an area change; consumed and executed by the game update so it does
 // not run from the render/UI path.
 void RequestTeleport(int areaId);

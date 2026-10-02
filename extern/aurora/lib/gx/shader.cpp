@@ -1223,6 +1223,33 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           pbr_tm = clamp(pbr_tm, vec3f(0.0), vec3f(1.0));
       }}
       prev = vec4f(pow(pbr_tm, vec3f(1.0 / 2.2)), pbr_alpha);
+      // A debug view (GXSetPBRDebugView): one input of the shading in place of the result.
+      if (ubuf.pbr_layer.w > 0.5) {{
+          let pbr_dv = ubuf.pbr_layer.w;
+          var pbr_dc = pow(clamp(pbr_base, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2));
+          if (pbr_dv > 1.5) {{ pbr_dc = pbr_n * 0.5 + 0.5; }}
+          if (pbr_dv > 2.5) {{ pbr_dc = vec3f(pbr_rough); }}
+          if (pbr_dv > 3.5) {{ pbr_dc = vec3f(pbr_metal); }}
+          if (pbr_dv > 4.5) {{ pbr_dc = vec3f(pbr_ao); }}
+          if (pbr_dv > 5.5) {{ pbr_dc = pow(clamp(pbr_ambd, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)); }}
+          if (pbr_dv > 6.5) {{ pbr_dc = pow(clamp(pbr_envspec, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)); }}
+          if (pbr_dv > 7.5) {{ pbr_dc = pow(clamp(pbr_glow, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)); }}
+          if (pbr_dv > 8.5) {{
+              // The lit level in stops around middle grey: blue 4 under, green at, red 4 over.
+              let pbr_dt = clamp(log2(max(dot(pbr_out, vec3f(0.2126, 0.7152, 0.0722)), 1e-6) / 0.18) / 8.0 + 0.5,
+                                 0.0, 1.0);
+              pbr_dc = clamp(vec3f(4.0 * pbr_dt - 2.0, 2.0 - abs(4.0 * pbr_dt - 2.0), 2.0 - 4.0 * pbr_dt),
+                             vec3f(0.0), vec3f(1.0));
+          }}
+          if (pbr_dv > 9.5) {{
+              // The special surface's kind: grey for none, then a colour each.
+              let pbr_dk = i32(pbr_kind + 0.5);
+              pbr_dc = vec3f(0.5 * f32(pbr_dk & 1) + 0.25 * f32(pbr_dk == 0),
+                             0.5 * f32((pbr_dk >> 1) & 1) + 0.25 * f32(pbr_dk == 0),
+                             0.5 * f32((pbr_dk >> 2) & 1) + 0.25 * f32(pbr_dk == 0)) * 1.6;
+          }}
+          prev = vec4f(clamp(pbr_dc, vec3f(0.0), vec3f(1.0)), prev.a);
+      }}
       if (ubuf.pbr_volume[5].w > 0.5) {{
           prev = vec4f(clamp(pbr_vdiag, vec3f(0.0), vec3f(1.0)), prev.a);
       }}

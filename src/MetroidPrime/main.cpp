@@ -45,6 +45,7 @@
 
 // Port: drives the streamed-audio AI DMA callback (see platform/ai_dma.cpp).
 extern "C" void AIPortPoll(void);
+#include "port_console.h"
 #ifdef MP_ENABLE_SMOKE_DRIVER
 #include "port_smoke.h"
 extern bool PortSmokeFrame(unsigned frame);
@@ -872,6 +873,10 @@ int CMain::RsMain(int argc, const char* const* argv) {
       }
 #ifdef MP_ENABLE_SMOKE_DRIVER
       if (PortSmokeFrame(s_frameLog)) {
+        break;
+      }
+#else
+      if (PortConsoleFrame(s_frameLog)) {
         break;
       }
 #endif

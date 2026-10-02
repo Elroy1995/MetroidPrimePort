@@ -64,6 +64,10 @@ enum class Mode {
 // MP_ROOM_GEO=0|1|overlay, the console's `roomgeo`.
 void SetMode(Mode mode);
 Mode GetMode();
+// Whether room geometry takes the area's lights where the room has baked light too
+// (MP_ROOM_GEO_AREA_LIGHTS, the console's `roomgeo lights`).
+void SetAreaLights(bool on);
+bool AreaLights();
 // Areas with a file, their instances, the distinct models and how many have loaded, and
 // the instances drawn in the last frame.
 void Stats(int& areas, int& instances, int& models, int& loaded, int& drawn);
@@ -74,5 +78,17 @@ void Stats(int& areas, int& instances, int& models, int& loaded, int& drawn);
 std::string At(const CVector3f& point, float margin);
 // Stops or resumes drawing a model, or every model for id 0; how many it matched.
 int SetHidden(uint32_t id, bool hidden);
+// What a ray meets (the console's `roomgeo pick`): one line per instance whose box it
+// passes through, nearest first, then the boxes the origin is already inside, smallest
+// first. Boxes, not triangles, so the surface looked at is among the first few. Returns
+// the first one's model, 0 for none.
+uint32_t Pick(const CVector3f& origin, const CVector3f& direction, std::string& out);
+// One line per material of a loaded model: flags, whether it is drawn through PBR, and
+// its record (see CCubeModel::PortSetPBRMaterial). Empty when no loaded model has the id.
+std::string Materials(uint32_t id);
+// Draws a model's material with one value of its record replaced (index 0 to 18), until
+// cleared; kept across room loads. False when no loaded model has that material.
+bool SetMaterialValue(uint32_t id, int material, int field, float value);
+int ClearMaterialValues();
 
 } // namespace PortRoomGeo

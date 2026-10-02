@@ -1,4 +1,4 @@
-// Debug command console for smoke builds (MP_ENABLE_SMOKE_DRIVER): with
+// Debug command console: with
 // MP_CONSOLE=<port> (1 = 4777) the game listens on 127.0.0.1 and runs one
 // command per line, e.g. `warp 83F6FF6F 492CBF4A`, `objs EyeBall`, `shot`.
 // Every reply ends with a line `=> ok` or `=> err: <why>`. tools/mpcon.py is
@@ -7,16 +7,20 @@
 #include "port_apclient.h"
 #include "port_debug.h"
 #include "port_discord.h"
+#include "port_freecam.h"
+#include "port_hd_font.h"
 #include "port_livesplit.h"
 #include "port_remastered_import.h"
 #include "port_room_env.h"
 #include "port_room_geo.h"
-#include "port_smoke.h"
+#include "port_console.h"
 #include "port_mods.h"
 #include "port_savestate.h"
 #include "port_tracker.h"
 #include "port_viewmodel.h"
 #include "Kyoto/Graphics/CCubeMaterial.hpp"
+#include "Kyoto/Alloc/CMemorySys.hpp"
+#include "Kyoto/Alloc/IAllocator.hpp"
 #include "MetroidPrime/CActor.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
@@ -416,7 +420,24 @@ void CmdHelp() {
   Out("probe [off|on|mirror|window]   the PBR reflection probe, or what PBR surfaces show of it");
   Out("roomgeo [on|off|overlay]  the room geometry mods supply, in place of the area's own or on top of it");
   Out("roomgeo at <x> <y> <z> [margin] | hide <cmdl> | show [cmdl]   its instances at a point; stop drawing one");
+  Out("roomgeo lights on|off     light it with the area's lights even where the room has baked light");
+  Out("roomgeo pick              the instances the middle of the view looks through, nearest first, and the");
+  Out("                           first one's materials");
+  Out("roomgeo mats <cmdl>       a loaded model's materials: flags, PBR or TEV, the PBR record");
+  Out("roomgeo mat <cmdl> <material> <field> <value...> | mat clear");
+  Out("                           draw a material with a record value replaced: emissive, backlight, height,");
+  Out("                           mode, kind, strength, p0..p3, or the value's index (0 to 18)");
+  Out("roomenv info [<x> <y> <z>] exposure, tone curve, probe and baked ambient at the view or a point");
+  Out("view [off|albedo|normal|rough|metal|ao|ambient|reflection|glow|exposure|kind]");
+  Out("                           what PBR surfaces show in place of their shaded result");
+  Out("stats                      the last frame's draws and buffers, the heap, room geometry and environments");
   Out("roomenv [on|off|exposure on|off]  the room environments mods supply; exposure: by room, not by cube");
+  Out("roomenv volume on|off | ambient <scale> | show off|coords|light");
+  Out("                           the baked light per pixel; the baked ambient's weight (0: the game's);");
+  Out("                           draw the volume's coordinates or its light alone on room geometry");
+  Out("hdfont [on|off]            the distance-field font mods supply, in place of the disc's glyphs");
+  Out("freecam [on|off|freeze on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]");
+  Out("                           fly the view away from the player (HUD hidden; freeze holds the game still)");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
   Out("fov <45..90>               first-person vertical FOV, as the Options row does");
   Out("msaa <1|4>, aniso <1..16>  anti-aliasing and anisotropic filtering, applied next frame");
@@ -766,6 +787,140 @@ void CmdWarp(CStateManager& mgr) {
   }
 }
 
+// A line at a time: Out() holds 1 KiB.
+void OutLines(const std::string& text) {
+  for (size_t from = 0; from < text.size();) {
+    size_t to = text.find('\n', from);
+    if (to == std::string::npos) {
+      to = text.size();
+    }
+    Out("%s", text.substr(from, to - from).c_str());
+    from = to + 1;
+  }
+}
+
+// A model id: hex, and not 0, which several commands take to mean every model.
+bool ParseModel(const std::string& s, uint32_t& id) {
+  char* end = nullptr;
+  const unsigned long long value = std::strtoull(s.c_str(), &end, 16);
+  if (end == s.c_str() || *end != '\0' || value == 0 || value > 0xFFFFFFFFull) {
+    return false;
+  }
+  id = uint32_t(value);
+  return true;
+}
+
+// The value of a PBR record a name stands for, and how many in a row; see
+// CCubeModel::PortSetPBRMaterial.
+bool ParseMaterialField(const std::string& s, int& field, int& count) {
+  static const struct {
+    const char* name;
+    int field;
+    int count;
+  } kFields[] = {{"emissive", 0, 3}, {"backlight", 3, 3}, {"height", 6, 1},  {"mode", 7, 1}, {"kind", 13, 1},
+                 {"strength", 14, 1}, {"p0", 15, 1},      {"p1", 16, 1},     {"p2", 17, 1},  {"p3", 18, 1}};
+  for (const auto& entry : kFields) {
+    if (s == entry.name) {
+      field = entry.field;
+      count = entry.count;
+      return true;
+    }
+  }
+  unsigned index = 0;
+  if (ParseUnsigned(s, index) && index < 19) {
+    field = int(index);
+    count = 1;
+    return true;
+  }
+  return false;
+}
+
+// stats: what the last frame cost, and the game's heap.
+void CmdStats() {
+  if (const AuroraStats* stats = aurora_get_stats()) {
+    Out("frame: %.0f fps, %u draws (%u merged), %u PBR, pipelines %u made %u waiting", aurora_get_fps(),
+        stats->drawCallCount, stats->mergedDrawCallCount, CCubeMaterial::sPortPBRDraws, stats->createdPipelines,
+        stats->queuedPipelines);
+    Out("buffers: %.1f MiB vertices, %.1f indices, %.1f arrays, %.1f uniforms, %.1f texture uploads",
+        stats->lastVertSize / 1048576.f, stats->lastIndexSize / 1048576.f, stats->lastStorageSize / 1048576.f,
+        stats->lastUniformSize / 1048576.f, stats->lastTextureUploadSize / 1048576.f);
+  }
+  {
+    const IAllocator::SMetrics m = CMemorySys::GetGameAllocator().GetMetrics();
+    Out("heap: %.1f of %.1f MiB in use (%u allocations), %.1f free, peak %.1f", m.x10_ / 1048576.f,
+        m.x0_heapSize / 1048576.f, m.x8_, m.x14_heapSize2 / 1048576.f, m.x1c_ / 1048576.f);
+  }
+  int areas = 0;
+  int instances = 0;
+  int models = 0;
+  int loaded = 0;
+  int drawn = 0;
+  PortRoomGeo::Stats(areas, instances, models, loaded, drawn);
+  Out("room geometry: %d area(s), %d of %d model(s) loaded, %d of %d instance(s) drawn", areas, loaded, models,
+      drawn, instances);
+  int probes = 0;
+  int cubes = 0;
+  int grids = 0;
+  PortRoomEnv::Stats(areas, probes, cubes, grids);
+  Out("room environments: %d area(s), %d probe(s), %d cube(s) loaded, %d grid(s)", areas, probes, cubes, grids);
+  Finish();
+}
+
+// view [off|albedo|...]: what PBR surfaces show in place of their shaded result.
+void CmdView() {
+  if (sCmd.args.size() > 1) {
+    const std::string arg = Lower(sCmd.args[1]);
+    int view = -1;
+    for (int i = 0; i < PortDebug::PbrViewCount(); ++i) {
+      if (arg == PortDebug::PbrViewName(i)) {
+        view = i;
+      }
+    }
+    if (view < 0) {
+      return Finish("usage: view [off|albedo|normal|rough|metal|ao|ambient|reflection|glow|exposure|kind]");
+    }
+    PortDebug::SetPbrView(view);
+  }
+  Out("view %s", PortDebug::PbrViewName(PortDebug::PbrView()));
+  Finish();
+}
+
+// freecam [on|off|freeze on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]
+void CmdFreeCam() {
+  static const char* const usage =
+      "usage: freecam [on|off|freeze on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]";
+  const CStateManager* mgr = PortDebug::StateManager();
+  if (sCmd.args.size() > 1) {
+    const std::string arg = Lower(sCmd.args[1]);
+    const std::string value = sCmd.args.size() > 2 ? Lower(sCmd.args[2]) : std::string();
+    PortFreeCam::Pose pose = PortFreeCam::GetPose();
+    float number = 0.f;
+    if (arg == "on" || arg == "off") {
+      if (arg == "on" && mgr == nullptr) {
+        return Finish("not in a world");
+      }
+      PortFreeCam::SetActive(arg == "on", mgr);
+    } else if (arg == "freeze" && (value == "on" || value == "off")) {
+      PortFreeCam::SetFrozen(value == "on");
+    } else if (arg == "speed" && sCmd.args.size() > 2 && ParseFloat(sCmd.args[2], number)) {
+      PortFreeCam::SetSpeed(number);
+    } else if (arg == "pos" && sCmd.args.size() > 4 && ParseFloat(sCmd.args[2], pose.x) &&
+               ParseFloat(sCmd.args[3], pose.y) && ParseFloat(sCmd.args[4], pose.z)) {
+      PortFreeCam::SetPose(pose);
+    } else if (arg == "look" && sCmd.args.size() > 3 && ParseFloat(sCmd.args[2], pose.yaw) &&
+               ParseFloat(sCmd.args[3], pose.pitch)) {
+      PortFreeCam::SetPose(pose);
+    } else {
+      return Finish(usage);
+    }
+  }
+  const PortFreeCam::Pose pose = PortFreeCam::GetPose();
+  Out("freecam %s%s speed %.1f pos %.2f %.2f %.2f yaw %.1f pitch %.1f",
+      PortFreeCam::Active() ? "on" : "off", PortFreeCam::Frozen() ? " (frozen)" : "",
+      PortFreeCam::Speed(), pose.x, pose.y, pose.z, pose.yaw, pose.pitch);
+  Finish();
+}
+
 bool IsTickCommand(const std::string& name) {
   static const char* const names[] = {"status", "areas", "objs", "obj", "send", "give",
                                       "take", "items", "heal", "god", "tp", "face", "look", "warp",
@@ -991,15 +1146,59 @@ void RunFrame() {
     }
     Out("probe %s weight %.0f", ProbeModeName(), CCubeMaterial::sPortPBRProbeWeight);
     Finish();
-  } else if (name == "roomenv") {
+  } else if (name == "freecam") {
+    CmdFreeCam();
+  } else if (name == "view") {
+    CmdView();
+  } else if (name == "stats") {
+    CmdStats();
+  } else if (name == "hdfont") {
     if (sCmd.args.size() > 1) {
       const std::string arg = Lower(sCmd.args[1]);
-      if (arg == "exposure" && sCmd.args.size() > 2 && (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
+      if (arg != "on" && arg != "off") {
+        return Finish("usage: hdfont [on|off]");
+      }
+      PortHdFont::SetEnabled(arg == "on");
+    }
+    Out("hdfont %s", PortHdFont::Enabled() ? "on" : "off");
+    Finish();
+  } else if (name == "roomenv") {
+    float number = 0.f;
+    if (sCmd.args.size() > 1) {
+      const std::string arg = Lower(sCmd.args[1]);
+      if (arg == "info") {
+        // At a point, or where the view is.
+        float at[3];
+        float forward[3];
+        if (sCmd.args.size() > 4) {
+          if (!ParseFloat(sCmd.args[2], at[0]) || !ParseFloat(sCmd.args[3], at[1]) ||
+              !ParseFloat(sCmd.args[4], at[2])) {
+            return Finish("usage: roomenv info [<x> <y> <z>]");
+          }
+        } else if (!PortDebug::ViewRay(at, forward)) {
+          return Finish("not in a world");
+        }
+        const std::string info = PortRoomEnv::Info(at);
+        Out("at %.2f %.2f %.2f", at[0], at[1], at[2]);
+        OutLines(info.empty() ? std::string("no room environment loaded") : info);
+        return Finish();
+      } else if (arg == "exposure" && sCmd.args.size() > 2 &&
+                 (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
         PortRoomEnv::SetRoomExposed(Lower(sCmd.args[2]) == "on");
       } else if (arg == "on" || arg == "off") {
         PortRoomEnv::SetEnabled(arg == "on");
+      } else if (arg == "volume" && sCmd.args.size() > 2 &&
+                 (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
+        PortRoomEnv::SetVolumesEnabled(Lower(sCmd.args[2]) == "on");
+      } else if (arg == "ambient" && sCmd.args.size() > 2 && ParseFloat(sCmd.args[2], number)) {
+        PortRoomEnv::SetAmbientScale(number);
+      } else if (arg == "show" && sCmd.args.size() > 2 &&
+                 (Lower(sCmd.args[2]) == "off" || Lower(sCmd.args[2]) == "coords" ||
+                  Lower(sCmd.args[2]) == "light")) {
+        PortRoomEnv::SetVolumeView(Lower(sCmd.args[2]) == "off" ? 0 : Lower(sCmd.args[2]) == "coords" ? 1 : 2);
       } else {
-        return Finish("usage: roomenv [on|off|exposure on|off]");
+        return Finish("usage: roomenv [on|off|info [<x> <y> <z>]|exposure on|off|volume on|off|ambient <scale>|"
+                      "show off|coords|light]");
       }
     }
     int areas = 0;
@@ -1007,9 +1206,12 @@ void RunFrame() {
     int cubes = 0;
     int grids = 0;
     PortRoomEnv::Stats(areas, probes, cubes, grids);
-    Out("roomenv %s: %d area(s), %d probe(s), %d cube(s) loaded, %d ambient grid(s), exposure by %s",
+    static const char* const kViews[] = {"off", "coords", "light"};
+    Out("roomenv %s: %d area(s), %d probe(s), %d cube(s) loaded, %d ambient grid(s), exposure by %s, "
+        "volume %s, ambient %g, show %s",
         PortRoomEnv::Enabled() ? "on" : "off", areas, probes, cubes, grids,
-        PortRoomEnv::RoomExposed() ? "room" : "cube");
+        PortRoomEnv::RoomExposed() ? "room" : "cube", PortRoomEnv::VolumesEnabled() ? "on" : "off",
+        PortRoomEnv::AmbientScale(), kViews[std::clamp(PortRoomEnv::VolumeView(), 0, 2)]);
     Finish();
   } else if (name == "roomgeo") {
     if (sCmd.args.size() > 1) {
@@ -1018,35 +1220,82 @@ void RunFrame() {
         PortRoomGeo::SetMode(arg == "on" ? PortRoomGeo::Mode::Replace
                              : arg == "off" ? PortRoomGeo::Mode::Off
                                             : PortRoomGeo::Mode::Overlay);
+      } else if (arg == "lights" && sCmd.args.size() > 2 &&
+                 (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
+        PortRoomGeo::SetAreaLights(Lower(sCmd.args[2]) == "on");
       } else if (arg == "at" && sCmd.args.size() > 4) {
         const CVector3f point(float(std::atof(sCmd.args[2].c_str())), float(std::atof(sCmd.args[3].c_str())),
                               float(std::atof(sCmd.args[4].c_str())));
         const float margin = sCmd.args.size() > 5 ? float(std::atof(sCmd.args[5].c_str())) : 0.f;
         const std::string list = PortRoomGeo::At(point, margin);
-        // A line at a time: Out() holds 1 KiB, and a point in a big room is in many boxes.
-        for (size_t from = 0; from < list.size();) {
-          const size_t to = list.find('\n', from);
-          Out("%s", list.substr(from, to - from).c_str());
-          from = to + 1;
+        OutLines(list.empty() ? std::string("no instance there") : list);
+        return Finish();
+      } else if (arg == "pick") {
+        float origin[3];
+        float forward[3];
+        if (!PortDebug::ViewRay(origin, forward)) {
+          return Finish("not in a world");
         }
-        if (list.empty()) {
-          Out("no instance there");
+        std::string list;
+        const uint32_t first = PortRoomGeo::Pick(CVector3f(origin[0], origin[1], origin[2]),
+                                                 CVector3f(forward[0], forward[1], forward[2]), list);
+        OutLines(list.empty() ? std::string("no instance ahead") : list);
+        if (first != 0) {
+          Out("materials of %08X:", first);
+          OutLines(PortRoomGeo::Materials(first));
         }
+        return Finish();
+      } else if (arg == "mats" && sCmd.args.size() > 2) {
+        uint32_t id = 0;
+        if (!ParseModel(sCmd.args[2], id)) {
+          return Finish("roomgeo: not a model id");
+        }
+        const std::string list = PortRoomGeo::Materials(id);
+        OutLines(list.empty() ? std::string("no loaded model has that id") : list);
+        return Finish();
+      } else if (arg == "mat" && sCmd.args.size() == 3 && Lower(sCmd.args[2]) == "clear") {
+        Out("%d value(s) cleared", PortRoomGeo::ClearMaterialValues());
+        return Finish();
+      } else if (arg == "mat" && sCmd.args.size() > 5) {
+        uint32_t id = 0;
+        unsigned material = 0;
+        int field = 0;
+        int count = 0;
+        if (!ParseModel(sCmd.args[2], id) || !ParseUnsigned(sCmd.args[3], material) ||
+            !ParseMaterialField(Lower(sCmd.args[4]), field, count)) {
+          return Finish("usage: roomgeo mat <cmdl> <material> <field> <value...> | mat clear; fields: emissive "
+                        "backlight height mode kind strength p0 p1 p2 p3, or 0 to 18");
+        }
+        // One value for all of a colour, or one each.
+        float values[3] = {};
+        const int given = int(sCmd.args.size()) - 5;
+        if (given != 1 && given != count) {
+          return Finish("roomgeo: that field takes one value, or one per component");
+        }
+        for (int i = 0; i < given; ++i) {
+          if (!ParseFloat(sCmd.args[5 + i], values[i])) {
+            return Finish("roomgeo: not a number");
+          }
+        }
+        for (int i = 0; i < count; ++i) {
+          if (!PortRoomGeo::SetMaterialValue(id, int(material), field + i, values[given == 1 ? 0 : i])) {
+            return Finish("roomgeo: no loaded model has that material");
+          }
+        }
+        OutLines(PortRoomGeo::Materials(id));
+        Out("(drawn until `roomgeo mat clear` or the next start)");
         return Finish();
       } else if ((arg == "hide" || arg == "show") && (sCmd.args.size() > 2 || arg == "show")) {
         uint32_t id = 0;
-        if (sCmd.args.size() > 2) {
-          // 0 means every model, so a mistyped id must not parse as one.
-          char* end = nullptr;
-          const unsigned long long value = std::strtoull(sCmd.args[2].c_str(), &end, 16);
-          if (end == sCmd.args[2].c_str() || *end != '\0' || value == 0 || value > 0xFFFFFFFFull) {
-            return Finish("roomgeo: not a model id");
-          }
-          id = uint32_t(value);
+        // 0 means every model, so a mistyped id must not parse as one.
+        if (sCmd.args.size() > 2 && !ParseModel(sCmd.args[2], id)) {
+          return Finish("roomgeo: not a model id");
         }
         Out("%d model(s)", PortRoomGeo::SetHidden(id, arg == "hide"));
       } else {
-        return Finish("usage: roomgeo [on|off|overlay | at <x> <y> <z> [margin] | hide <cmdl> | show [cmdl]]");
+        return Finish("usage: roomgeo [on|off|overlay | lights on|off | at <x> <y> <z> [margin] | pick | "
+                      "hide <cmdl> | show [cmdl] | mats <cmdl> | mat <cmdl> <material> <field> <value...> | "
+                      "mat clear]");
       }
     }
     int areas = 0;
@@ -1445,6 +1694,13 @@ void Tokenize(const std::string& line, std::vector< std::string >& args) {
 }
 
 } // namespace
+
+bool PortConsoleEnabled() {
+  if (!sStarted) {
+    Start();
+  }
+  return sEnabled;
+}
 
 bool PortConsoleFrame(unsigned frame) {
   if (!sStarted) {
