@@ -1302,7 +1302,7 @@ int main() {
       PortApWorld::Layout options;
       const std::vector< PortSkipCutscenes::ScriptObject > totem = {object(0x15, 0x0024008C, 1)};
       Check(PortApWorld::RoomOps(options, 0xC8309DF6, totem).empty() &&
-                PortApWorld::Layers(options).empty(),
+                PortApWorld::Layers(options).size() == 2,
             "a seed without the options leaves the rooms alone");
       options.removeHiveMecha = true;
       options.backwardsLowerMines = true;
@@ -1316,7 +1316,7 @@ int main() {
       Check(copy == options, "the options survive the layout's text");
       const std::vector< uint8_t > mecha = PortApWorld::RoomOps(options, 0xC8309DF6, totem);
       const std::vector< PortApWorld::LayerChange > layers = PortApWorld::Layers(options);
-      Check(mecha.size() > 8 && mecha[0] == 5 && mecha[2] == 0x05 && layers.size() == 1 &&
+      Check(mecha.size() > 8 && mecha[0] == 5 && mecha[2] == 0x05 && layers.size() == 3 &&
                 layers[0].mrea == 0xC8309DF6 && layers[0].layer == 1 && !layers[0].active,
             "no Hive Mecha: a timer ends the fight and its layer is off");
       Check(PortApWorld::RoomOps(options, 0xC8309DF6, {object(0x15, 0x0024008C, 0)}).empty(),
@@ -1338,6 +1338,51 @@ int main() {
       Check(field.size() == 14 && field[0] == 2 && field[9] == 0x01 && field[10] == 0x45 &&
                 field[13] == 1,
             "backwards Lower Mines: Elite Control's force field lets shots through");
+
+      // What every seed changes.
+      const PortApWorld::Layout plain;
+      const std::vector< PortApWorld::LayerChange > elite = PortApWorld::Layers(plain);
+      Check(elite.size() == 2 && elite[0].mrea == 0x8A97BB54 && elite[0].layer == 1 &&
+                elite[0].active && elite[0].whileLayer == 5 && elite[1].layer == 5 &&
+                !elite[1].active && elite[1].whileLayer == -1,
+            "the Phazon Elite is there once, without Central Dynamo");
+      const std::vector< uint8_t > dynamo = PortApWorld::RoomOps(
+          plain, 0xFEA372E2, {object(0x3A, 0x001B0522, 70), object(0x3A, 0x001B0525, 70)});
+      const uint8_t switches[] = {6, 0x00, 0x1B, 0x05, 0x25, 6, 0x00, 0x1B, 0x05, 0x22};
+      Check(dynamo == std::vector< uint8_t >(switches, switches + sizeof(switches)),
+            "Central Dynamo no longer switches the Phazon Elite's layers");
+      const std::vector< uint8_t > hydra =
+          PortApWorld::RoomOps(plain, 0x43E4CC25, {object(0x00, 0x0C190332, 354)});
+      Check(hydra.size() == 14 && hydra[0] == 2 && hydra[10] == 0x45 && hydra[13] == 1,
+            "Research Lab Hydra's force field lets a scan through");
+      const std::vector< uint8_t > vent =
+          PortApWorld::RoomOps(plain, 0xAFD4E038, {object(0x15, 0x0015006F, 1)});
+      Check(vent.size() > 20 && vent[0] == 5 && vent[1] == 0 && vent[2] == 0x04 && vent[8] == 1,
+            "the frigate's unpowered door gets a trigger behind it");
+      Check(PortApWorld::RoomOps(plain, 0xAFD4E038, {object(0x15, 0x0015006F, 1),
+                                                      object(0x04, 0x00156FF0, 63)})
+                .empty(),
+            "a room that has the trigger already is left alone");
+      const std::vector< uint8_t > quarry = PortApWorld::RoomOps(
+          plain, 0x643D038F, {object(0x00, 0x100201DA, 354), object(0x3A, 0x000202B5, 70)});
+      Check(quarry.size() > 30 && quarry[0] == 5 && quarry[1] == 4 && quarry[2] == 0x04 &&
+                quarry[8] == 2,
+            "Main Quarry's barrier gets a trigger behind it, in the barrier's layer");
+      const std::vector< PortSkipCutscenes::ScriptObject > plaza = {
+          object(0x03, 0x00020060, 217), object(0x1A, 0x00020016, 180),
+          object(0x04, 0x00020017, 63),  object(0x00, 0x00020018, 354),
+          object(0x05, 0x00020019, 11),  object(0x42, 0x000202F4, 37),
+          object(0x04, 0x000202B8, 63),  object(0x15, 0x000202FD, 1)};
+      const std::vector< uint8_t > twoWay = PortApWorld::RoomOps(plain, 0xD5CDB809, plaza);
+      const std::vector< uint8_t > shieldId = {0x00, 0x00, 0x02, 0x00, 0x04};
+      Check(twoWay.size() > 700 && twoWay[0] == 5 && twoWay[2] == 0x1A &&
+                std::search(twoWay.begin(), twoWay.end(), shieldId.begin(), shieldId.end()) !=
+                    twoWay.end(),
+            "Main Plaza's one-way door gets a shield and its triggers");
+      std::vector< PortSkipCutscenes::ScriptObject > taken = plaza;
+      taken.push_back(object(0x15, 0x00020004, 1));
+      Check(PortApWorld::RoomOps(plain, 0xD5CDB809, taken).empty(),
+            "a Main Plaza that isn't the disc's is left alone");
     }
     std::vector< PortSkipCutscenes::ScriptObject > hatch = objects;
     if (!hatch.empty()) {

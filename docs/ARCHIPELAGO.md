@@ -101,9 +101,7 @@ With the built-in tables, the client does what the AP ISO patch would:
   scan that names it. Breaking one opens the door, and the save remembers
   it, so the shield is gone from both sides for good. A missile shield the
   disc has on such a door is removed, unless the seed asks for a missile
-  shield there. Morph ball doors get none, and Main Plaza's locked door to
-  the Vault ledge gets none either (randomprime's two-way door is not
-  ported). The models are the disc's missile shield with its glow and metal
+  shield there. Morph ball doors get none. The models are the disc's missile shield with its glow and metal
   tinted per weapon, so they are not randomprime's painted ones.
 - The smaller options change the game as randomprime does: `remove_hive_mecha`
   leaves the Hive Totem as it is after the fight, `backwards_lower_mines`
@@ -114,6 +112,12 @@ With the built-in tables, the client does what the AP ISO patch would:
   sandstone, and `etank_capacity` is the energy a tank holds (the suit's own
   is one less). `remove_xray_requirements` and `remove_thermal_requirements`
   only change the seed's logic.
+- Every seed also has the changes the apworld's logic counts on, as
+  randomprime makes them: Main Plaza's locked door to the Vault ledge opens
+  from the plaza side too (and takes the seed's colour and blast shield), the
+  crashed frigate's unpowered door, Research Lab Hydra's force field and Main
+  Quarry's barrier can be passed from their far side, and the Phazon Elite is
+  in Elite Research without Central Dynamo's power having been restored.
 - A start room the port's tables don't have is named once on connect as
   `Seed option not supported: ...`.
 - Spring Ball (C-stick up in morph ball) follows the seed's `spring_ball`: with

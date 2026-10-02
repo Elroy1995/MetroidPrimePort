@@ -508,6 +508,8 @@ void ApplyBuiltinWorld(Runtime& runtime, CStateManager& mgr, CPlayerState& playe
     if (state == nullptr || area.Value() < 0 ||
         static_cast<size_t>(area.Value()) >= state->GetAreaLayers().size())
       continue;
+    if (change.whileLayer >= 0 && !state->IsLayerActive(area, TLayerId(change.whileLayer)))
+      continue;
     if (state->IsLayerActive(area, TLayerId(change.layer)) != change.active)
       state->SetLayerActive(area, TLayerId(change.layer), change.active);
   }

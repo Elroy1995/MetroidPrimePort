@@ -488,6 +488,15 @@ const uint32_t kMetroidQuarantineA = 0xFB051F5A;
 const uint32_t kMetroidQuarantineB = 0xBB3AFC4E;
 const uint32_t kEliteControl = 0xC50AF17A;
 const uint32_t kCentralDynamo = 0xFEA372E2;
+const uint32_t kMinesWorld = 0xB1AC4D65;
+const uint32_t kEliteResearch = 0x8A97BB54;
+const uint32_t kMainPlaza = 0xD5CDB809;
+const uint32_t kMainVentilationShaftB = 0xAFD4E038; // 08b_under_intro_ventshaft
+const uint32_t kResearchLabHydra = 0x43E4CC25;      // 10_ice_research_a
+const uint32_t kMainQuarry = 0x643D038F;            // 01_mines_mainplaza
+
+void LogicOps(uint32_t mrea, const std::vector< PortSkipCutscenes::ScriptObject >& objects,
+              std::vector< uint8_t >& ops);
 
 } // namespace
 
@@ -502,6 +511,23 @@ std::vector< LayerChange > Layers(const Layout& layout) {
     firstPass.active = false;
     out.push_back(firstPass);
   }
+  // The Phazon Elite is there without Central Dynamo's power having been
+  // restored (randomprime's phazonEliteWithoutDynamo, which the apworld's
+  // logic counts on). The dummy's layer is on until this has been done, and
+  // nothing else switches it, so the elite's own layer is left to the game
+  // afterwards: beating it turns it off for good.
+  LayerChange elite;
+  elite.mlvl = kMinesWorld;
+  elite.mrea = kEliteResearch;
+  elite.area = 0x0D;
+  elite.layer = 1; // "3rd pass elite bustout"
+  elite.active = true;
+  elite.whileLayer = 5;
+  out.push_back(elite);
+  elite.layer = 5; // the dummy elite
+  elite.active = false;
+  elite.whileLayer = -1;
+  out.push_back(elite);
   return out;
 }
 
@@ -611,6 +637,7 @@ std::vector< uint8_t > RoomOps(const Layout& layout, uint32_t mrea,
     if (mrea == kCentralDynamo && has(0x001B065F, kActor, kActorSize))
       remove(0x001B065F);
   }
+  LogicOps(mrea, objects, ops);
   return ops;
 }
 
@@ -1045,6 +1072,174 @@ enum {
   kDoorScan = 127,
   kDoorTail13 = 43, // orbit position to the end, for 13 properties
 };
+
+// The changes every Archipelago seed has, because the apworld's logic counts
+// on them (its Config.py: mainPlazaDoor, backwardsFrigate, backwardsLabs,
+// backwardsUpperMines, phazonEliteWithoutDynamo).
+void LogicOps(uint32_t mrea, const std::vector< PortSkipCutscenes::ScriptObject >& objects,
+              std::vector< uint8_t >& ops) {
+  auto u16 = [&](uint32_t v) {
+    ops.push_back(uint8_t(v >> 8));
+    ops.push_back(uint8_t(v));
+  };
+  auto u32 = [&](uint32_t v) {
+    for (int shift = 24; shift >= 0; shift -= 8)
+      ops.push_back(uint8_t(v >> shift));
+  };
+  auto find = [&](uint32_t id, uint8_t type,
+                  size_t size) -> const PortSkipCutscenes::ScriptObject* {
+    for (const PortSkipCutscenes::ScriptObject& o : objects) {
+      if (o.id != id)
+        continue;
+      const size_t start = NameEnd(o.props);
+      return o.type == type && start != 0 && o.props.size() >= start + size ? &o : nullptr;
+    }
+    return nullptr;
+  };
+  auto exists = [&](uint32_t id) {
+    for (const PortSkipCutscenes::ScriptObject& o : objects)
+      if (o.id == id)
+        return true;
+    return false;
+  };
+  struct Conn {
+    uint32_t state, msg, target;
+  };
+  auto push = [&](uint8_t layer, uint8_t type, uint32_t id, const std::vector< Conn >& conns,
+                  const std::vector< uint8_t >& props) {
+    ops.push_back(5);
+    ops.push_back(layer);
+    ops.push_back(type);
+    u32(id);
+    u16(static_cast< uint32_t >(conns.size()));
+    for (const Conn& c : conns) {
+      u32(c.state);
+      u32(c.msg);
+      u32(c.target);
+    }
+    u32(static_cast< uint32_t >(props.size()));
+    ops.insert(ops.end(), props.begin(), props.end());
+  };
+  auto connect = [&](uint32_t sender, const Conn& c) {
+    ops.push_back(4);
+    u32(sender);
+    u32(c.state);
+    u32(c.msg);
+    u32(c.target);
+  };
+  auto edit = [&](uint32_t id, uint32_t off, std::initializer_list< uint8_t > data) {
+    ops.push_back(2);
+    u32(id);
+    u16(0);
+    u16(1);
+    u16(off);
+    u16(static_cast< uint32_t >(data.size()));
+    ops.insert(ops.end(), data);
+  };
+  auto trigger = [](const char* name, float x, float y, float z, float sx, float sy, float sz,
+                    bool active, bool offOnEnter) {
+    Props props(9, name);
+    props.Vec(x, y, z).Vec(sx, sy, sz).U32(4).U32(0).F(0.f).F(0.f).F(0.f).Vec(0.f, 0.f, 0.f);
+    props.U32(1).B(active).B(offOnEnter).B(false); // detects the player
+    return props.data;
+  };
+  enum { kSpecialFunctionType = 0x3A };
+  enum { kEnteredState = 3, kInsideState = 6, kOpenState = 8, kReflectedState = 0x1F };
+  enum { kCloseMsg = 3, kResetAndStartMsg = 11, kStartMsg = 14 };
+  const uint32_t kActorPassthrough = 325;
+  const size_t kActorSize = 354;
+
+  if (mrea == kMainPlaza) {
+    // The door to the Plaza Access ledge opens from the plaza too
+    // (make_main_plaza_locked_door_two_ways): it gets the shield, triggers
+    // and timer a plain door has, copied from the room's door to Ruined
+    // Shrine Access and moved over.
+    const uint32_t kDoor = 0x00020060, kScan = 0x000202F4, kScanSwitch = 0x000202B8,
+                   kIneffective = 0x000202FD;
+    const uint32_t kUnlock = 0x0002000F, kShield = 0x00020004, kOpen = 0x00020007,
+                   kTimer = 0x00020008, kRelay = 0x00020010;
+    const PortSkipCutscenes::ScriptObject* unlock = find(0x00020016, kDamageableTriggerType, 170);
+    const PortSkipCutscenes::ScriptObject* open = find(0x00020017, kTriggerType, 63);
+    const PortSkipCutscenes::ScriptObject* shield = find(0x00020018, kActorType, kActorSize);
+    const PortSkipCutscenes::ScriptObject* timer = find(0x00020019, kTimerType, 11);
+    bool free = true;
+    for (uint32_t id : {kUnlock, kShield, kOpen, kTimer, kRelay})
+      free = free && !exists(id);
+    if (free && unlock != nullptr && open != nullptr && shield != nullptr && timer != nullptr &&
+        find(kDoor, kDoorType, 217) != nullptr && find(kScan, kPointOfInterestType, 37) != nullptr &&
+        find(kScanSwitch, kTriggerType, 63) != nullptr && find(kIneffective, kRelayType, 1) != nullptr) {
+      auto moved = [](const PortSkipCutscenes::ScriptObject& from, float x, float y, float z) {
+        std::vector< uint8_t > props = from.props;
+        const std::vector< uint8_t > at = Props(0, "").Vec(x, y, z).data;
+        std::copy(at.begin() + 5, at.end(), props.begin() + NameEnd(props));
+        return props;
+      };
+      std::vector< uint8_t > props = moved(*unlock, 152.23212f, 86.45113f, 24.472418f);
+      props[NameEnd(props) + 155] = 8; // seen from the other side
+      push(0, kDamageableTriggerType, kUnlock,
+           {{kReflectedState, kSetToZeroMsg, kIneffective},
+            {kDeadState, kDeactivateMsg, kShield},
+            {kMaxReachedState, kActivateMsg, kShield},
+            {kDeadState, kActivateMsg, kOpen},
+            {kDeadState, kSetToZeroMsg, kDoor}},
+           props);
+      push(0, kRelayType, kRelay,
+           {{kZeroState, kActivateMsg, kShield}, {kZeroState, kActivateMsg, kUnlock}},
+           Props(2, "Relay_Unlock").B(true).data);
+      push(0, kTriggerType, kOpen,
+           {{kInsideState, kOpenMsg, kDoor}, {kInsideState, kResetAndStartMsg, kTimer}},
+           moved(*open, 147.6384f, 86.56792f, 24.701054f));
+      push(0, kActorType, kShield, {}, moved(*shield, 151.95119f, 86.46258f, 24.503178f));
+      push(0, kTimerType, kTimer,
+           {{kZeroState, kCloseMsg, kDoor}, {kZeroState, kDeactivateMsg, kOpen}}, timer->props);
+      // The "locked from this side" scan goes.
+      edit(kScan, 24, {0, 0, 0, 0, 1, 0xFF, 0xFF, 0xFF, 0xFF});
+      edit(kScanSwitch, 60, {0});
+      // A plain door's looks, and shots stop at the shield, not the door.
+      edit(kDoor, 36, {0x26, 0x88, 0x69, 0x45, 0, 0, 0, 0, 0, 0, 0, 2});
+      edit(kDoor, 211, {0});
+      for (const Conn& c : {Conn{kOpenState, kActivateMsg, kOpen},
+                            Conn{kOpenState, kStartMsg, kTimer},
+                            Conn{kClosedState, kDeactivateMsg, kOpen},
+                            Conn{kOpenState, kDeactivateMsg, kUnlock},
+                            Conn{kOpenState, kDeactivateMsg, kShield},
+                            Conn{kClosedState, kSetToZeroMsg, kRelay},
+                            Conn{kMaxReachedState, kDeactivateMsg, kShield},
+                            Conn{kMaxReachedState, kDeactivateMsg, kUnlock}})
+        connect(kDoor, c);
+    }
+  }
+
+  // The crashed frigate from the far end: standing behind the door that has
+  // no power switches it on.
+  if (mrea == kMainVentilationShaftB && find(0x0015006F, kRelayType, 1) != nullptr &&
+      !exists(0x00156FF0))
+    push(0, kTriggerType, 0x00156FF0, {{kInsideState, kSetToZeroMsg, 0x0015006F}},
+         trigger("Trigger_DoorOpen-component", 31.232622f, 442.69165f, -64.20529f, 6.f, 17.f, 6.f,
+                 true, false));
+
+  // The labs from the far end: the force field can be scanned through.
+  if (mrea == kResearchLabHydra && find(0x0C190332, kActorType, kActorSize) != nullptr)
+    edit(0x0C190332, kActorPassthrough, {1});
+
+  // Main Quarry from the far end: walking up behind the barrier drops it.
+  if (mrea == kMainQuarry && find(0x100201DA, kActorType, kActorSize) != nullptr &&
+      find(0x000202B5, kSpecialFunctionType, 70) != nullptr && !exists(0x10026FF0))
+    push(4, kTriggerType, 0x10026FF0,
+         {{kEnteredState, kDeactivateMsg, 0x100201DA}, {kEnteredState, kDecrementMsg, 0x000202B5}},
+         trigger("Trigger - Disable Main Quarry barrier", 82.412056f, 9.354454f, 2.807631f, 10.f,
+                 5.f, 7.f, true, true));
+
+  // Central Dynamo no longer decides whether the Phazon Elite is there.
+  if (mrea == kCentralDynamo) {
+    for (uint32_t id : {0x001B0525u, 0x001B0522u}) {
+      if (find(id, kSpecialFunctionType, 70) != nullptr) {
+        ops.push_back(6);
+        u32(id);
+      }
+    }
+  }
+}
 
 } // namespace
 

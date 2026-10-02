@@ -92,13 +92,15 @@ std::vector< uint8_t > TempleOps(const Layout& layout);
 
 // What the seed's smaller options change in room `mrea`'s script, as an op
 // list for PortSkipCutscenes::ApplyOps: randomprime's patch_hive_mecha,
-// patch_backwards_lower_mines_* and patch_arboretum_sandstone. `objects` is
+// patch_backwards_lower_mines_* and patch_arboretum_sandstone, and with them
+// the changes the apworld asks of every seed (Main Plaza's two-way door, the
+// frigate, the labs and Main Quarry from their far ends). `objects` is
 // the room's script; a room that isn't the disc's is left alone. Empty for no
 // change.
 std::vector< uint8_t > RoomOps(const Layout& layout, uint32_t mrea,
                                const std::vector< PortSkipCutscenes::ScriptObject >& objects);
 
-// A script layer the seed keeps on or off for the whole game.
+// A script layer the seed keeps on or off; they apply in order.
 struct LayerChange {
   uint32_t mlvl = 0;
   uint32_t mrea = 0;
@@ -106,6 +108,8 @@ struct LayerChange {
   int area = 0;
   int layer = 0;
   bool active = false;
+  // When not -1: only while this layer of the area is on.
+  int whileLayer = -1;
 };
 std::vector< LayerChange > Layers(const Layout& layout);
 

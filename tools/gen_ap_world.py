@@ -171,6 +171,10 @@ def door_lines(rando, apworld, by_pak):
                 if door.get("destination_area") is not None:
                     flags |= 4
                 door_id, rotation, forces, shields = objects.get((mrea, dock), (0, [0.0, 0.0, 0.0], [], []))
+                if (mrea, dock) == (0xD5CDB809, 4):
+                    # Main Plaza's one-way door: the port gives it a shield
+                    # of its own (randomprime's ids).
+                    forces, shields = [0x0002000F], [0x00020004]
                 lock = lambda name: LOCKS.index(door[name]) if name in door else -1
                 shield = SHIELDS.index(door["blast_shield"]) if "blast_shield" in door else -1
                 lines.append(
