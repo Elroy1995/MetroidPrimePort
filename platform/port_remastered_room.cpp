@@ -223,6 +223,15 @@ public:
     return true;
   }
 
+  // Whether the component's entity starts active (the first byte of an entity).
+  bool Active(const Component& c) const {
+    if (c.entity < 0) {
+      return false;
+    }
+    const Span& raw = m_comps[size_t(c.entity)].raw;
+    return raw.size >= 1 && Bytes(raw)[0] != 0;
+  }
+
   // The component's own top level properties. A value that is itself a
   // property list is a nested group, which is not a top level key.
   std::map<uint32_t, Span> Flat(const Component& c) const;
@@ -1236,7 +1245,7 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
   // which no actor that retail also has does. One that also has kPropActorAttached may follow
   // another object (platforms carry them), so it is left out rather than drawn where it starts.
   std::map<Id16, uint32_t> actorModels;  // 0 when the model did not convert
-  size_t actors = 0, attached = 0;
+  size_t actors = 0, attached = 0, inactive = 0;
   for (const Component* c : r.room.Of(kActorMP1)) {
     const auto f = r.room.Flat(*c);
     const auto prop = f.find(kPropActorModel);
@@ -1247,6 +1256,12 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
     }
     if (f.find(kPropActorAttached) != f.end()) {
       ++attached;
+      continue;
+    }
+    // One that starts inactive waits for a script: the ships of the landing cutscene sit in
+    // the sky and on the pad, where retail's own ship already is.
+    if (!r.room.Active(*c)) {
+      ++inactive;
       continue;
     }
     const Id16 model = SwapUuid(r.room.Bytes(prop->second));
@@ -1301,8 +1316,8 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
     return;
   }
   char line[160];
-  std::snprintf(line, sizeof line, "  %s: %u instances (%zu actors, %zu attached ones left out), %zu dropped",
-                r.name.c_str(), count, actors, attached, dropped);
+  std::snprintf(line, sizeof line, "  %s: %u instances (%zu actors, %zu attached and %zu inactive ones left out), %zu dropped",
+                r.name.c_str(), count, actors, attached, inactive, dropped);
   Log(line);
 }
 

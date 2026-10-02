@@ -583,6 +583,7 @@ struct RemMaterial {
   double kindStrength = 0.0;
   double kindParam[4] = {0.0, 0.0, 0.0, 0.0};
   bool vcolor = false;  // it reads the vertex colour, which is no tint
+  bool hidden = false;  // not drawn: the game has its own
 };
 
 struct Buffer {
@@ -1062,6 +1063,7 @@ constexpr uint32_t kCutoutFlag = 0x20;       // one-bit alpha: ground leaves, gr
 constexpr uint32_t kIncanMaskFlag = 0x200;   // the base map's alpha masks the glow
 // The first four bytes of the id of a shader whose alpha is read below.
 constexpr uint32_t kShaderHeightBlend = 0xCA10C453;  // snow and ice over rock
+constexpr uint32_t kShaderWaterfall = 0x50412FE7;  // three scrolling unlit layers: falling water
 // Shaders with maps and parameters of their own (TCHn, CCHn), read from their code.
 constexpr uint32_t kShaderUpLayer = 0x9EFE0D2E;   // TCH0-2 are a second layer on what faces up, CCH0.x its edge
 constexpr uint32_t kShaderDetail = 0x9AB899E7;    // TCH0 is a detail map, on a texcoord of its own
@@ -1082,6 +1084,9 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   uint8_t sid[4];
   std::memcpy(sid, &mat.shaderId, 4);
   const uint32_t shader = uint32_t(sid[0]) << 24 | uint32_t(sid[1]) << 16 | uint32_t(sid[2]) << 8 | sid[3];
+  // A waterfall is an animated sheet in both games, and retail's is an actor of the room that
+  // is drawn whatever the geometry: Remastered's on top of it would be a second, still one.
+  out.hidden = shader == kShaderWaterfall;
   bool custom = false;
   for (const ModelMaterialData& d : mat.data) {
     const uint32_t family = d.usage & 0xFFFFFF00u;
@@ -1133,6 +1138,7 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     m.coord = t.texCoord;
     m.src = opt.texturePrefix + IdToString(m.id) + opt.textureSuffix;
   };
+  bool bclr = false;
   const ModelMaterialData* icnc = nullptr;
   const ModelMaterialData* bklt = nullptr;
   for (const ModelMaterialData& d : mat.data) {
@@ -1140,9 +1146,16 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     const bool layered = d.kind == ModelMaterialData::Kind::LayeredTexture;
     switch (d.usage) {
     case FourCC('D', 'I', 'F', 'T'):
+      // A material with a base colour map keeps a legacy diffuse slot beside
+      // it, holding a 1x1 white default: the base colour map is the albedo.
+      if (texture && !bclr) {
+        set(kBase, d.texture);
+      }
+      break;
     case FourCC('B', 'C', 'L', 'R'):
       if (texture) {
         set(kBase, d.texture);
+        bclr = d.texture.hasUsage;
       }
       break;
     case FourCC('B', 'C', 'R', 'L'):
@@ -1723,7 +1736,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     for (const std::string& s : opt.skip) {
       skip = skip || name.find(s) != std::string::npos;
     }
-    if (skip || (opt.standalone && !mats[mesh.material].maps[kBase].has)) {
+    if (skip || mats[mesh.material].hidden || (opt.standalone && !mats[mesh.material].maps[kBase].has)) {
       continue;
     }
     Buffer& b = buffers[mesh.vertexBuffer];
