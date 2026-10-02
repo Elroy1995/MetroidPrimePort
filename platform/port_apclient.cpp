@@ -463,6 +463,10 @@ void ApplyBuiltinWorld(Runtime& runtime, CStateManager& mgr, CPlayerState& playe
     const bool builtin = runtime.config.builtin && runtime.session != nullptr;
     if (builtin && runtime.session->GetState().hasWorld)
       layout = runtime.session->GetState().world;
+    // The world's item limits (its Config.py; not in slot data) hold in a
+    // seed's game, the disc's anywhere else.
+    const bool seedGame = builtin && runtime.session->GetState().hasWorld;
+    CPlayerState::PortSetAmmoLimits(seedGame ? 999 : 250, seedGame ? 99 : 8);
     // The seed's tank capacity; a game outside Archipelago has the disc's.
     const float capacity = static_cast<float>(layout.etankCapacity);
     if (CPlayerState::GetEnergyTankCapacity() != capacity) {

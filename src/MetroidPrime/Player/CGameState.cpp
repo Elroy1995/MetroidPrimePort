@@ -216,11 +216,12 @@ void CWorldState::SetDesiredAreaAssetId(CAssetId id) { x10_desiredAreaAssetId = 
 rstl::ncrc_ptr< CScriptLayerManager >& CWorldState::GetLayerState() { return x14_layerState; }
 
 #ifdef TARGET_PC
-// Marks the Archipelago trailer after the retail save data ("APX3"; "APX2"
-// before the broken blast shields were kept, "APIX" before the checked
-// locations were). The unused tail of a retail save is zero, so it cannot
+// Marks the Archipelago trailer after the retail save data ("APX4"; "APX3"
+// before the ammo counts were kept, "APX2" before the broken blast shields
+// were, "APIX" before the checked locations were). The unused tail of a retail save is zero, so it cannot
 // match by accident.
-static const uint kPortApMagic = 0x41505833;
+static const uint kPortApMagic = 0x41505834;
+static const uint kPortApMagicV3 = 0x41505833;
 static const uint kPortApMagicV2 = 0x41505832;
 static const uint kPortApMagicV1 = 0x41504958;
 #endif
@@ -288,14 +289,25 @@ CGameState::CGameState(CInputStream& in, int saveIdx) : x0_(static_cast< uchar >
   {
     // The first trailer had no checked locations, the second no shields.
     const uint magic = in.ReadBits(32);
-    const bool hasChecked = magic == kPortApMagic || magic == kPortApMagicV2;
+    const bool hasShields = magic == kPortApMagic || magic == kPortApMagicV3;
+    const bool hasChecked = hasShields || magic == kPortApMagicV2;
     xpc_apProgress.recorded = hasChecked || magic == kPortApMagicV1;
     xpc_apProgress.identity = xpc_apProgress.recorded ? in.ReadBits(32) : 0;
     xpc_apProgress.appliedIndex = xpc_apProgress.recorded ? in.ReadBits(32) : 0;
     for (int i = 0; i < 4; ++i)
       xpc_apProgress.checked[i] = hasChecked ? in.ReadBits(32) : 0;
     for (int i = 0; i < 4; ++i)
-      xpc_apProgress.shields[i] = magic == kPortApMagic ? in.ReadBits(32) : 0;
+      xpc_apProgress.shields[i] = hasShields ? in.ReadBits(32) : 0;
+    if (magic == kPortApMagic) {
+      // A seed may hold more ammo than the retail fields above can.
+      static const CPlayerState::EItemType kAmmo[] = {CPlayerState::kIT_Missiles,
+                                                      CPlayerState::kIT_PowerBombs};
+      for (int i = 0; i < 2; ++i) {
+        const int amount = in.ReadBits(16);
+        const int capacity = in.ReadBits(16);
+        x98_playerState->PortRestoreAmmo(kAmmo[i], amount, capacity);
+      }
+    }
   }
   xpc_apProgress.reconciled = false;
 #endif
@@ -386,6 +398,10 @@ void CGameState::PutTo(COutputStream& out) {
       out.WriteBits(xpc_apProgress.checked[i], 32);
     for (int i = 0; i < 4; ++i)
       out.WriteBits(xpc_apProgress.shields[i], 32);
+    out.WriteBits(x98_playerState->GetItemAmount(CPlayerState::kIT_Missiles), 16);
+    out.WriteBits(x98_playerState->GetItemCapacity(CPlayerState::kIT_Missiles), 16);
+    out.WriteBits(x98_playerState->GetItemAmount(CPlayerState::kIT_PowerBombs), 16);
+    out.WriteBits(x98_playerState->GetItemCapacity(CPlayerState::kIT_PowerBombs), 16);
   }
 #endif
 }

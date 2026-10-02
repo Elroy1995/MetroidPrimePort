@@ -67,7 +67,8 @@ With the built-in tables, the client does what the AP ISO patch would:
   item (its cutscene, and the artifact special functions), and move what the cutscene's end did onto a relay that
   the pickup fires, so a pickup no longer plays its retail item's cutscene.
 - Slot data sets the Missile Launcher and main Power Bomb requirements (ammo
-  capacity follows the world's rules), DeathLink, and `non_varia_heat_damage`
+  capacity follows the world's rules: up to 999 missiles and 99 power bombs
+  in a seed's game, 250 and 8 anywhere else), DeathLink, and `non_varia_heat_damage`
   (on by default: only the Varia Suit keeps out heat, rather than any suit).
   Unlimited Missiles and Power Bombs top the ammo off, the Artifact Temple
   totems follow the artifacts held, and reaching the end of the game sends the
@@ -126,9 +127,8 @@ With the built-in tables, the client does what the AP ISO patch would:
   the Elite Quarters, which unlock when the item is taken rather than when
   the Omega Pirate dies. A missile station refills power bombs too.
 - Not ported from randomprime: the fixes for crashes only the console has,
-  the ones for other disc revisions, the item capacities
-  above the game's own (250 missiles, 8 power bombs, 14 energy tanks), and
-  two texts the server never sends: the apworld version on the main menu and
+  the ones for other disc revisions, more than 14 energy tanks (the world
+  never sends a fifteenth), and two texts the server never sends: the apworld version on the main menu and
   the list of major item locations in the credits.
 - Warp to start: at a save station, hold L and R while answering No and the
   game takes you to the seed's starting room. It happens at once, without
@@ -329,14 +329,16 @@ On every connect the whole recorded check list is re-sent, so a reconnect or a
 reloaded save re-announces what was already collected.
 
 The file's item index says what the client has received, not what the game
-holds, so the game save records that too: a 28-byte trailer after the retail
-save data (magic `APX2`, a hash of seed and slot, how many received items the
-save holds, and one bit per built-in location it has collected). When a game is
+holds, so the game save records that too: a 52-byte trailer after the retail
+save data (magic `APX4`, a hash of seed and slot, how many received items the
+save holds, one bit per built-in location it has collected, one per blast
+shield it has broken, and the missile and power bomb counts, which may be
+more than the retail fields hold: those stay at most 250 and 8). When a game is
 loaded, or a new one started, the client compares the two. If the game holds
 fewer (quit without saving, an older save, a new game) or items from another
 seed or slot, the session rewinds to what the game holds and sends a `Sync`, and
 the server replays the rest. Saves written before the trailer existed are taken
-to hold what the state file says; `APIX` saves (no location bits) still load.
+to hold what the state file says; older trailers (`APIX`, `APX2`, `APX3`) still load.
 
 **Playing while disconnected.** A save some session has given items to is an
 AP game, and its pickups at the built-in locations stay the multiworld's with
