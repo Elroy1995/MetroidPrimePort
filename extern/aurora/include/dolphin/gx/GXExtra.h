@@ -61,6 +61,11 @@ void GXDestroyPBRVolume(u32 id);
 // coordinates, rows 3 to 5 a view-space normal to the volume's axes. w of row 3 scales the
 // light (0: no volume), w of row 4 is how far along the normal the sample is taken.
 void GXSetPBRVolume(u32 id, const f32 rows[6][4]);
+// Aurora extension: a three-piece tone curve over the lit colour x, which is taken as
+// already exposed (see GX_AURORA_SET_PBR_TONE). Row 0 is the toe, (a x + b) x^2 + c x below
+// z of row 1; row 1 the line S x + y0 (x, y) from there to its w; row 2 the shoulder
+// x t / (1 + t) + w with t = y x + z. Null, or a slope of 0, is no curve.
+void GXSetPBRTone(const f32 rows[3][4]);
 
 void GXColor4f32(float r, float g, float b, float a);
 

@@ -41,10 +41,12 @@ constexpr uint32_t kModCon = 0x451740eb;
 constexpr uint32_t kPropRoomId = 0x30a4d63d;
 constexpr uint32_t kPropProbeRefl = 0x020e5559;
 constexpr uint32_t kPropProbeBlend = 0x362216cf;
-constexpr uint32_t kPropTonemap[4] = {0x44a2e298, 0x34bb937d, 0x49ee7747, 0x295132dd};
+// Exposure value, middle grey, toe, shoulder, contrast (SLdrTonemap::Load).
+constexpr uint32_t kPropTonemap[5] = {0x44a2e298, 0x34bb937d, 0x49ee7747, 0x295132dd, 0x3373d845};
 constexpr uint32_t kPropHintMin = 0x682f8a1f;
 constexpr uint32_t kPropHintMax = 0x839d334c;
 constexpr uint32_t kPropHintMode = 0x590d6843;
+constexpr uint32_t kPropHintBias = 0x038f85da;
 constexpr uint32_t kPropModConMcon = 0xa8e2ba93;
 
 constexpr size_t kMaxChunks = 1u << 20;
@@ -619,14 +621,14 @@ private:
     const Area* area = nullptr;
   };
   bool MatchRoom(const RoomData& r, const std::map<std::string, Placement>& placed, Match& out) const;
-  void Tonemap(const RoomData& r, float out[4]) const;
-  void Exposure(const RoomData& r, float out[2]) const;
+  void Tonemap(const RoomData& r, float out[5]) const;
+  void Exposure(const RoomData& r, float out[3]) const;
   bool Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>& check, std::vector<uint8_t>& out,
             std::string& note) const;
   // The room's static geometry (its ModCon components), as "<MREA id>.roomgeo".
   void WriteGeometry(const RoomData& r, uint32_t mrea);
   std::string WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
-                        const float tonemap[4], int& written, std::string& matched);
+                        const float tonemap[5], int& written, std::string& matched);
 
   const RoomPak& m_master;
   const std::vector<RoomPak>& m_rooms;
@@ -787,10 +789,10 @@ bool Writer::MatchRoom(const RoomData& r, const std::map<std::string, Placement>
 }
 
 // The first Tonemap component's values, where the room has one; `out` keeps the rest.
-void Writer::Tonemap(const RoomData& r, float out[4]) const {
+void Writer::Tonemap(const RoomData& r, float out[5]) const {
   for (const Component* c : r.room.Of(kTonemap)) {
     const auto f = r.room.Flat(*c);
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
       const auto it = f.find(kPropTonemap[i]);
       if (it != f.end() && it->second.size >= 4) {
         out[i] = LeFloat(r.room.Bytes(it->second));
@@ -800,20 +802,22 @@ void Writer::Tonemap(const RoomData& r, float out[4]) const {
   }
 }
 
-// The range of exposure values the room's auto exposure is held to, or 0, 0. A room can
-// have several hints: the plain one for the whole room is wanted, not those with a mode
-// (they are for a state of the room, such as a cutscene) or a volume of their own.
-void Writer::Exposure(const RoomData& r, float out[2]) const {
-  out[0] = out[1] = 0.f;
+// The range of exposure values the room's auto exposure is held to and the bias it adds,
+// or 0, 0, 0 for a room without auto exposure. A room can have several hints: the plain
+// one for the whole room is wanted, not those with a mode (they are for a state of the
+// room, such as a cutscene) or a volume of their own. A value the hint leaves out is
+// SLdrAutoExposureHint's default.
+void Writer::Exposure(const RoomData& r, float out[3]) const {
+  out[0] = out[1] = out[2] = 0.f;
   int best = 0;
   for (const Component* c : r.room.Of(kAutoExposureHint)) {
     const auto f = r.room.Flat(*c);
-    const auto lo = f.find(kPropHintMin);
-    const auto hi = f.find(kPropHintMax);
-    if (lo == f.end() || hi == f.end() || lo->second.size < 4 || hi->second.size < 4) {
-      continue;
-    }
-    const float range[2] = {LeFloat(r.room.Bytes(lo->second)), LeFloat(r.room.Bytes(hi->second))};
+    const auto value = [&](uint32_t prop, float fallback) {
+      const auto it = f.find(prop);
+      return it != f.end() && it->second.size >= 4 ? LeFloat(r.room.Bytes(it->second)) : fallback;
+    };
+    const float range[2] = {value(kPropHintMin, -24.f), value(kPropHintMax, 24.f)};
+    const float bias = value(kPropHintBias, 0.f);
     if (!std::isfinite(range[0]) || !std::isfinite(range[1]) || range[1] < range[0]) {
       continue;
     }
@@ -826,6 +830,7 @@ void Writer::Exposure(const RoomData& r, float out[2]) const {
       best = rank;
       out[0] = range[0];
       out[1] = range[1];
+      out[2] = std::isfinite(bias) ? bias : 0.f;
     }
   }
 }
@@ -1241,7 +1246,7 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
 }
 
 std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
-                              const float tonemap[4], int& written, std::string& matched) {
+                              const float tonemap[5], int& written, std::string& matched) {
   matched.clear();
   Match m;
   if (!MatchRoom(r, placed, m)) {
@@ -1365,9 +1370,9 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   }
 
   std::vector<uint8_t> out = {'M', 'P', 'E', 'V'};
-  PutLe32(out, 3);
-  float tone[4];
-  std::copy(tonemap, tonemap + 4, tone);
+  PutLe32(out, 4);
+  float tone[5];
+  std::copy(tonemap, tonemap + 5, tone);
   Tonemap(r, tone);
   for (int i = 0; i < 4; ++i) {
     PutFloat(out, tone[i]);
@@ -1380,10 +1385,12 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   }
   PutLe32(out, grid.empty() ? 0 : 1);
   out.insert(out.end(), grid.begin(), grid.end());
-  float exposure[2];
+  float exposure[3];
   Exposure(r, exposure);
   PutFloat(out, exposure[0]);
   PutFloat(out, exposure[1]);
+  PutFloat(out, exposure[2]);
+  PutFloat(out, tone[4]);
   char file[32];
   std::snprintf(file, sizeof file, "%08X.roomenv", m.mrea);
   if (!m_io.write || !m_io.write(file, out)) {
@@ -1497,7 +1504,7 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
   }
 
   // A room without a Tonemap of its own takes the world's.
-  float tonemap[4] = {4.0f, 0.18f, 0.6f, 0.15f};
+  float tonemap[5] = {4.0f, 0.18f, 0.6f, 0.15f, 0.f};
   Tonemap(master, tonemap);
   std::map<std::string, std::string> seen;
   for (const auto& r : rooms) {

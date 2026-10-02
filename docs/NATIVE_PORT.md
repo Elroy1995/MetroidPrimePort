@@ -417,11 +417,16 @@ skipped. Inside a mod:
   of it comes from, per colour. A PBR model standing in a grid takes the
   colour and direction of its ambient light from the points around its origin;
   the game's ambient colour only sets how bright it is. A file also carries
-  the room's tonemap values and the range its auto exposure is held to, and a
-  probe's scale turns its cube (stored normalised) back into radiance. With
-  `MP_ROOM_ENV_EXPOSURE=1` those set one exposure for the whole room: cubes
-  keep their level relative to it and the baked ambient is used at its own
-  brightness, without the game's. Off by default (see below). Files load and unload with their areas, and a cube is decoded
+  the room's tonemap values and its auto exposure settings, and a
+  probe's scale turns its cube (stored normalised) back into radiance. Those
+  set one exposure for the frame, the way Remastered does: the room the
+  camera is in is exposed by its own radiance, its exposure bias and the
+  range its auto exposure is held to, cubes and baked ambient keep their
+  level relative to that, and the result goes through that room's tone curve
+  (the formulas are Remastered's own; the frame's average is stood in for by
+  the room's middle probe). `MP_ROOM_ENV_EXPOSURE=0` turns that off: every
+  cube is then exposed to middle grey and the game's ambient sets the level.
+  Files load and unload with their areas, and a cube is decoded
   on first use. The layout is in `platform/include/port_room_env.h`.
 - a file named `<MREA id, 8 hex digits>.roomgeo`, anywhere in the mod, is that
   area's static geometry: a list of models, each with the transform that
@@ -897,17 +902,14 @@ a temporary directory instead of mounting.
   `MP_ROOM_ENV_GAIN` (exposure, default 1), `MP_ROOM_ENV_LOD` (the mip a
   roughness of 1 reflects, default 5) and `MP_ROOM_ENV_AMBIENT` (scale of the
   baked ambient light, default 1; 0 keeps the game's ambient colour).
-  `MP_ROOM_ENV_EXPOSURE=1` (console `roomenv exposure on|off`) exposes by
-  room instead of by cube. In the two rooms measured it brings models closer
-  to retail's brightness (the morph ball 113 against retail's 132, from 77),
-  but it rests on a constant fitted across rooms with a spread of one stop,
-  so it stays opt-in until more rooms are looked at.
+  `MP_ROOM_ENV_EXPOSURE=0` (console `roomenv exposure on|off`) exposes each
+  cube on its own instead of the frame by the camera's room, and drops the
+  room's tone curve. Files older than version 4 lack the exposure bias and
+  the curve's contrast, so re-import to get the right levels.
   Room geometry is lit by the baked ambient grid per pixel, as a 3D texture,
   and takes no area lights (Remastered has no lightmaps; this grid is its room
   lighting). `MP_ROOM_ENV_VOLUME=0` goes back to the area's lights, as does
-  `MP_ROOM_GEO_AREA_LIGHTS=1`. For tuning: `MP_ROOM_ENV_VOLUME_GAIN` (default
-  0.6, chosen by eye over four rooms; 1 is the room's own exposure and washes
-  out without Remastered's tone curve), `MP_ROOM_ENV_VOLUME_BIAS` (metres off
+  `MP_ROOM_GEO_AREA_LIGHTS=1`. For tuning: `MP_ROOM_ENV_VOLUME_BIAS` (metres off
   the surface a sample is taken, default 0.25) and `MP_ROOM_ENV_VOLUME_SHOW`
   (1 draws the texture coordinates, 2 the light alone, 3 the shading normal).
 - `tools/pbr_shots.py`: contact sheets of models under PBR, for comparing mod

@@ -139,4 +139,13 @@ void GXSetPBRVolume(u32 id, const f32 rows[6][4]) {
     }
   }
 }
+
+void GXSetPBRTone(const f32 rows[3][4]) {
+  GX_WRITE_AURORA(GX_AURORA_SET_PBR_TONE);
+  for (int row = 0; row < 3; ++row) {
+    for (int i = 0; i < 4; ++i) {
+      GX_WRITE_F32(rows != nullptr ? rows[row][i] : 0.f);
+    }
+  }
+}
 }

@@ -23,6 +23,7 @@ struct GpuCube {
   uint32_t id = 0;      // 0: not made yet (or it failed)
   bool failed = false;
   float average = 0.f;  // luminance over every direction, as stored
+  float peak = 0.f;     // the largest channel of the colour over every direction
   uint32_t mipCount = 0;
 };
 
@@ -35,6 +36,7 @@ struct Area {
   std::vector<GpuCube> cubes;
   std::vector<GpuVolume> volumes; // one a grid
   float exposure = 0.f; // what takes the room's radiance to the display's range; 0: unknown
+  float tone[3][4] = {}; // its tone curve
 };
 
 // Areas in memory; one without a file has an empty File.
@@ -47,6 +49,7 @@ uint32_t sHintArea = 0;
 float sHintCentre[3];
 int sEnabled = -1;
 int sExposure = -1;
+uint32_t sViewArea = 0;
 // Model draws come in runs at one position.
 bool sLastValid = false;
 float sLastPos[3];
@@ -222,55 +225,65 @@ float GridDistance(const Grid& grid, const float pos[3]) {
   return scale > 1e-12f ? std::sqrt(sum) / scale : 3.4e38f;
 }
 
-// A cube's average luminance, from its last mip (a texel or four a face).
-float CubeAverage(const File& file, const Cube& cube) {
+// A cube's average luminance, from its last mip (a texel or four a face), and the largest
+// channel of its average colour.
+float CubeAverage(const File& file, const Cube& cube, float& peak) {
   const uint32_t edge = std::max(cube.size >> (cube.mipCount - 1), 1u);
   const size_t blockBytes = size_t((edge + 3) / 4) * ((edge + 3) / 4) * 16;
   const uint8_t* blocks = file.data.data() + cube.offset + cube.length - blockBytes * 6;
   std::vector<uint16_t> texels(size_t(edge) * edge * 4);
-  double sum = 0.0;
+  double sum[3] = {};
   for (uint32_t face = 0; face < 6; ++face) {
     PortRemastered::DecodeBc6hFace(blocks + blockBytes * face, edge, cube.isSigned, texels.data());
     for (size_t i = 0; i < size_t(edge) * edge; ++i) {
-      sum += 0.2126 * HalfToFloat(texels[i * 4]) + 0.7152 * HalfToFloat(texels[i * 4 + 1]) +
-             0.0722 * HalfToFloat(texels[i * 4 + 2]);
+      for (int c = 0; c < 3; ++c) {
+        sum[c] += HalfToFloat(texels[i * 4 + c]);
+      }
     }
   }
-  return float(sum / (6.0 * edge * edge));
+  const double count = 6.0 * edge * edge;
+  peak = float(std::max(std::max(sum[0], sum[1]), sum[2]) / count);
+  return float((0.2126 * sum[0] + 0.7152 * sum[1] + 0.0722 * sum[2]) / count);
 }
 
-// The exposure Remastered's auto exposure would settle on for the room as a whole. Its
-// exposure values are log2 of the radiance plus a constant: over the 275 rooms the middle
-// of the hint's range is 7.77 above log2 of the median probe's radiance (slope 1.08,
-// spread one stop), and a room at its value comes out at the key, 0.18.
+// What Remastered multiplies the room's radiance by before its tone curve: 2^(3 - EV).
+// Without auto exposure EV is the Tonemap's own. With it (CPostFXManager::
+// UpdateTonemapping), EV = log2(L / grey) + 3 + bias, held to the hint's range, where L is
+// the largest channel of the last frame's average colour and grey is sRGB 128. The port
+// has no HDR frame to average, so L is the middle one of the room's probes instead; over
+// the 275 rooms that lands inside the hint's range for most.
 float RoomExposure(const Area& area) {
-  constexpr float kEvOffset = 7.77f;
-  std::vector<float> levels;
-  for (const Probe& probe : area.file.probes) {
-    const float level = area.cubes[probe.cube].average * probe.scale;
-    if (level > 0.f && std::isfinite(level)) {
-      levels.push_back(level);
+  constexpr float kGrey = 0.2158605f; // sRGB 128, linear
+  const File& file = area.file;
+  float ev = file.tonemap[0];
+  if (file.exposure[0] != 0.f || file.exposure[1] != 0.f) {
+    std::vector<float> levels;
+    for (const Probe& probe : file.probes) {
+      const float level = area.cubes[probe.cube].peak * probe.scale;
+      if (level > 0.f && std::isfinite(level)) {
+        levels.push_back(level);
+      }
     }
-  }
-  float level = 0.f;
-  if (!levels.empty()) {
-    std::nth_element(levels.begin(), levels.begin() + levels.size() / 2, levels.end());
-    level = levels[levels.size() / 2];
-  } else {
-    // The grid's points are the same radiance.
-    for (const Grid& grid : area.file.grids) {
-      level = std::max(level, grid.average);
+    float level = 0.f;
+    if (!levels.empty()) {
+      std::nth_element(levels.begin(), levels.begin() + levels.size() / 2, levels.end());
+      level = levels[levels.size() / 2];
+    } else {
+      // The grid's points are the same radiance.
+      for (const Grid& grid : file.grids) {
+        level = std::max(level, grid.average);
+      }
     }
+    if (!(level > 0.f)) {
+      return 0.f;
+    }
+    ev = std::log2(level / kGrey) + 3.f + file.exposureBias;
+    ev = std::min(std::max(ev, file.exposure[0]), file.exposure[1]);
   }
-  if (!(level > 0.f)) {
+  if (!std::isfinite(ev)) {
     return 0.f;
   }
-  float ev = std::log2(level) + kEvOffset;
-  if (area.file.exposure[0] != 0.f || area.file.exposure[1] != 0.f) {
-    ev = std::min(std::max(ev, area.file.exposure[0]), area.file.exposure[1]);
-  }
-  const float key = area.file.tonemap[1] > 0.f && area.file.tonemap[1] < 1.f ? area.file.tonemap[1] : 0.18f;
-  return key * std::exp2(kEvOffset - ev); // key / level when the hint does not bind
+  return std::exp2(3.f - ev);
 }
 
 void Load(uint32_t mrea, Area& area) {
@@ -288,12 +301,27 @@ void Load(uint32_t mrea, Area& area) {
   }
   area.cubes.resize(area.file.cubes.size());
   for (size_t i = 0; i < area.cubes.size(); ++i) {
-    area.cubes[i].average = CubeAverage(area.file, area.file.cubes[i]);
+    area.cubes[i].average = CubeAverage(area.file, area.file.cubes[i], area.cubes[i].peak);
     // Black: nothing to reflect, and no exposure to set by it.
     area.cubes[i].failed = !(area.cubes[i].average > 1e-6f);
   }
   area.volumes.resize(area.file.grids.size());
   area.exposure = RoomExposure(area);
+  const float* const t = area.file.tonemap;
+  if (area.exposure > 0.f && t[1] > 0.f && t[1] < 1.f) {
+    BuildTone(t[1], area.file.contrast, t[2], t[3], area.tone);
+  }
+  PortLog::Write("room env: %08X exposure %g (EV %g, hint %g..%g bias %g), tone mid %g contrast %g toe %g shoulder %g\n",
+                 mrea, area.exposure, area.exposure > 0.f ? 3.f - std::log2(area.exposure) : 0.f,
+                 area.file.exposure[0], area.file.exposure[1], area.file.exposureBias, t[1], area.file.contrast, t[2],
+                 t[3]);
+}
+
+// The frame's exposure, for radiance from `area`: that of the room the camera is in, as
+// one exposure covers the whole picture, or the area's own when that room has none.
+float FrameExposure(const Area& area) {
+  const auto view = sAreas.find(sViewArea);
+  return view != sAreas.end() && view->second.exposure > 0.f ? view->second.exposure : area.exposure;
 }
 
 // Decodes a cube and hands it to the GPU.
@@ -328,6 +356,50 @@ void Upload(const File& file, const Cube& cube, GpuCube& gpu) {
 
 } // namespace
 
+void BuildTone(float mid, float contrast, float toe, float shoulder, float rows[3][4]) {
+  const float a25 = std::atan2(0.25f, mid);
+  const float a75 = std::atan2(0.75f, mid);
+  const float slope = std::tan(a25 + contrast * (a75 - a25));
+  const float lineEnd = mid + 0.75f * shoulder / slope;
+  // The toe: a cubic through the origin that meets the line at `mid`, in value and slope.
+  const float half = 0.5f * (0.75f / mid - slope);
+  const float c = (half - slope >= 0.f ? slope : half) * (1.f - toe);
+  rows[0][0] = (slope + c) / (mid * mid) - 0.5f / (mid * mid * mid);
+  rows[0][1] = 0.75f / (mid * mid) - (slope + 2.f * c) / mid;
+  rows[0][2] = c;
+  rows[0][3] = 0.f;
+  rows[1][0] = slope;
+  rows[1][1] = 0.25f - slope * mid;
+  rows[1][2] = mid;
+  rows[1][3] = lineEnd;
+  // The shoulder: from the line's end towards 1.
+  const float top = 0.25f + 0.75f * shoulder;
+  const float k = 1.f - top > 0.f ? slope / (1.f - top) : 0.f;
+  rows[2][0] = 1.f - top;
+  rows[2][1] = k;
+  rows[2][2] = -lineEnd * k;
+  rows[2][3] = top;
+}
+
+bool Tone(float rows[3][4]) {
+  if (!Enabled() || !RoomExposed()) {
+    return false;
+  }
+  const auto view = sAreas.find(sViewArea);
+  if (view == sAreas.end() || !(view->second.tone[1][0] > 0.f)) {
+    return false;
+  }
+  std::memcpy(rows, view->second.tone, sizeof(view->second.tone));
+  return true;
+}
+
+void SetViewArea(uint32_t mrea) {
+  if (sViewArea != mrea) {
+    sViewArea = mrea;
+    sLastValid = false;
+  }
+}
+
 bool Enabled() {
   if (sEnabled < 0) {
     const char* const env = std::getenv("MP_ROOM_ENV");
@@ -339,7 +411,7 @@ bool Enabled() {
 bool RoomExposed() {
   if (sExposure < 0) {
     const char* const env = std::getenv("MP_ROOM_ENV_EXPOSURE");
-    sExposure = env != nullptr && env[0] == '1' ? 1 : 0;
+    sExposure = env != nullptr && env[0] == '0' ? 0 : 1;
   }
   return sExposure != 0;
 }
@@ -450,9 +522,10 @@ bool Select(const float origin[3], Selection& out) {
       // it then come out many times brighter than white, as they should.
       // With the room's exposure the cube keeps its level instead: a probe in a dark
       // corner reflects a dark corner.
-      const bool room = RoomExposed() && bestArea->exposure > 0.f;
+      const float exposure = RoomExposed() ? FrameExposure(*bestArea) : 0.f;
+      const bool room = exposure > 0.f;
       sLast.cube = gpu.id;
-      sLast.params[0] = room ? bestArea->exposure * probe.scale * gain : grey / gpu.average;
+      sLast.params[0] = room ? exposure * probe.scale * gain : grey / gpu.average;
       sLast.params[1] = std::min(lod, float(gpu.mipCount - 1));
       sLast.params[2] = float(gpu.mipCount > 2 ? gpu.mipCount - 2 : 0);
       sLast.params[3] = ambient > 0.f ? 1.f / (room ? gpu.average * sLast.params[0] : grey) : 0.f;
@@ -460,7 +533,6 @@ bool Select(const float origin[3], Selection& out) {
     }
   }
   if (sHint && VolumesEnabled()) {
-    static const float volumeGain = EnvFloat("MP_ROOM_ENV_VOLUME_GAIN", 0.6f);
     static const float volumeBias = EnvFloat("MP_ROOM_ENV_VOLUME_BIAS", 0.25f);
     const auto found = sAreas.find(sHintArea);
     if (found != sAreas.end()) {
@@ -494,16 +566,17 @@ bool Select(const float origin[3], Selection& out) {
             sLast.worldToAxes[row * 3 + col] = m[row * 4 + col] / scale;
           }
         }
-        // The baked light is the level, at the room's exposure; without one, the grid's
+        // The baked light is the level, at the frame's exposure; without one, the grid's
         // average comes out at the key. The grid holds irradiance, and a diffuse surface
         // sends 1/pi of that back.
-        sLast.volumeLevel = (area.exposure > 0.f ? area.exposure : 0.18f / grid.average) * volumeGain / 3.14159265f;
+        const float exposure = RoomExposed() ? FrameExposure(area) : 0.f;
+        sLast.volumeLevel = (exposure > 0.f ? exposure * gain : 0.18f / grid.average) / 3.14159265f;
         sLast.volumeBias = volumeBias;
         static const float show = EnvFloat("MP_ROOM_ENV_VOLUME_SHOW", 0.f);
         sLast.volumeDiagnostic = show;
         if (fresh) {
           PortLog::Write("room env: %08X volume %u %ux%ux%u exposure %g average %g level %g\n", sHintArea, gpu.id,
-                         grid.size[0], grid.size[1], grid.size[2], area.exposure, grid.average, sLast.volumeLevel);
+                         grid.size[0], grid.size[1], grid.size[2], exposure, grid.average, sLast.volumeLevel);
         }
       }
     }
@@ -521,7 +594,7 @@ bool Select(const float origin[3], Selection& out) {
           if (!sLast.hasAmbient && grid.average > 0.f && SampleGrid(area.file, grid, spot, sample)) {
             sLast.hasAmbient = true;
             average = grid.average;
-            roomExposure = area.exposure;
+            roomExposure = FrameExposure(area);
           }
         }
       }

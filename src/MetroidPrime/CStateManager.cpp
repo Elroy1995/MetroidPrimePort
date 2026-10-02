@@ -2605,6 +2605,9 @@ void CStateManager::PortCaptureProbeFace() const {
     }
   }
   PortRoomEnv::SetLoadedAreas(mreas, mreaCount);
+  if (x8cc_nextAreaId != kInvalidAreaId) {
+    PortRoomEnv::SetViewArea(x850_world->GetArea(x8cc_nextAreaId)->GetAreaAssetId());
+  }
   PortRoomGeo::SetLoadedAreas(mreas, mreaCount);
   static uint lastDraws = 0;
   static int face = 0;

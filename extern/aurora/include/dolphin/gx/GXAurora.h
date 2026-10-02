@@ -177,6 +177,13 @@ extern "C" {
 #define GX_AURORA_DESTROY_PBR_VOLUME 0x004C
 #define GX_AURORA_SET_PBR_VOLUME 0x004D
 
+/**
+ * Port extension: the tone curve of the following PBR draws, as three vec4f (see
+ * GXSetPBRTone). A slope of 0 (x of the second) goes back to the built-in highlight
+ * roll-off. Stays in effect until changed.
+ */
+#define GX_AURORA_SET_PBR_TONE 0x004E
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

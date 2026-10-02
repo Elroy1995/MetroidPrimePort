@@ -1124,8 +1124,6 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_rim = 1.0 - pbr_nv;
       pbr_lo += max(ubuf.pbr_backlight.rgb, vec3f(0.0)) * pbr_base * min(pbr_amb + pbr_lsum, vec3f(1.0)) *
                 (pbr_rim * pbr_rim * pbr_ao);
-      // Highlights roll off into white instead of clipping: unchanged up to 0.6, and the
-      // rest of the range (a room cube's lamps are many times brighter than 1) approaches 1.
       // The material's alpha and shading modes (w of the GX_AURORA_SET_PBR_MATERIAL rows).
       var pbr_glow = pbr_emissive;
       var pbr_alpha = {12}{9};
@@ -1150,7 +1148,20 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           pbr_lo = pbr_diff * pbr_ao;
       }}
       let pbr_out = max(pbr_lo + pbr_glow, vec3f(0.0));
-      let pbr_tm = min(pbr_out, vec3f(0.6)) + 0.4 * (1.0 - exp(-max(pbr_out - 0.6, vec3f(0.0)) / 0.4));
+      // Highlights roll off into white instead of clipping: unchanged up to 0.6, and the
+      // rest of the range (a room cube's lamps are many times brighter than 1) approaches 1.
+      var pbr_tm = min(pbr_out, vec3f(0.6)) + 0.4 * (1.0 - exp(-max(pbr_out - 0.6, vec3f(0.0)) / 0.4));
+      if (ubuf.pbr_tone[1].x > 0.0) {{
+          // Or a tone curve (GX_AURORA_SET_PBR_TONE): a cubic toe, a line and a shoulder
+          // that approaches 1.
+          let pbr_toe = ((ubuf.pbr_tone[0].x * pbr_out + ubuf.pbr_tone[0].y) * pbr_out + ubuf.pbr_tone[0].z) * pbr_out;
+          let pbr_line = ubuf.pbr_tone[1].x * pbr_out + ubuf.pbr_tone[1].y;
+          let pbr_st = max(ubuf.pbr_tone[2].y * pbr_out + ubuf.pbr_tone[2].z, vec3f(0.0));
+          let pbr_sh = ubuf.pbr_tone[2].x * pbr_st / (1.0 + pbr_st) + ubuf.pbr_tone[2].w;
+          pbr_tm = select(select(pbr_sh, pbr_line, pbr_out < vec3f(ubuf.pbr_tone[1].w)), pbr_toe,
+                          pbr_out < vec3f(ubuf.pbr_tone[1].z));
+          pbr_tm = clamp(pbr_tm, vec3f(0.0), vec3f(1.0));
+      }}
       prev = vec4f(pow(pbr_tm, vec3f(1.0 / 2.2)), pbr_alpha);
       if (ubuf.pbr_volume[5].w > 0.5) {{
           prev = vec4f(clamp(pbr_vdiag, vec3f(0.0), vec3f(1.0)), prev.a);
@@ -1846,6 +1857,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     uniBufAttrs += "\n    pbr_cube: vec4f,";
     uniBufAttrs += "\n    pbr_ambient: array<vec4f, 6>,";
     uniBufAttrs += "\n    pbr_volume: array<vec4f, 6>,";
+    uniBufAttrs += "\n    pbr_tone: array<vec4f, 3>,";
     const auto pbr = pbr_func(config, info, vtxOutAttrs, vtxXfrAttrs, vtxOutIdx);
     if (!pbr.empty()) {
       fragmentFn += pbr;

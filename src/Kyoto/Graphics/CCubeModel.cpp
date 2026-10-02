@@ -279,6 +279,9 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     } else {
       GXSetPBRVolume(0, nullptr);
     }
+    // The frame's tone curve, when rooms are exposed as Remastered exposes them.
+    f32 tone[3][4];
+    GXSetPBRTone(PortRoomEnv::Tone(tone) ? tone : nullptr);
     PortSetPBRMaterial(surface.GetMaterialIndex());
     GXSetPBR(GX_TRUE);
     ++CCubeMaterial::sPortPBRDraws;
