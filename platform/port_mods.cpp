@@ -6,6 +6,7 @@
 
 #include "port_debug.h"
 #include "port_hd_font.h"
+#include "port_hud_bars.h"
 #include "port_log.h"
 #include "port_room_env.h"
 #include "port_room_geo.h"
@@ -43,6 +44,8 @@ std::unordered_map<uint32_t, std::string> sNativeTextures;
 std::unordered_map<uint32_t, std::string> sRoomEnvs;
 std::string sFont;
 std::unordered_map<uint32_t, std::string> sRoomGeos;
+// <FRME id>.hudbars files, by frame.
+std::unordered_map<uint32_t, std::string> sHudBars;
 struct BoundTexture {
   aurora::texture::ReplacementRegistration registration;
   uint32_t id = 0;
@@ -315,6 +318,11 @@ std::string RoomEnvPath(uint32_t mrea) {
   return found != sRoomEnvs.end() ? found->second : std::string();
 }
 
+std::string HudBarsPath(uint32_t frame) {
+  const auto found = sHudBars.find(frame);
+  return found != sHudBars.end() ? found->second : std::string();
+}
+
 std::string RoomGeoPath(uint32_t mrea) {
   const auto found = sRoomGeos.find(mrea);
   return found != sRoomGeos.end() ? found->second : std::string();
@@ -338,6 +346,7 @@ void FinishReload() {
   Initialize();
   PortRoomEnv::Reset();
   PortHdFont::Reset();
+  PortHudBars::Reset();
   // A texture whose image is gone keeps its stub until the game loads it again.
   for (const auto& [owner, id] : sRebind) {
     BindTexture(owner, id);
@@ -351,6 +360,7 @@ void Initialize() {
   sRoomEnvs.clear();
   sFont.clear();
   sRoomGeos.clear();
+  sHudBars.clear();
   sStatus.folder = Folder();
   sStatus.active = PortDebug::ModsEnabled();
   if (sStatus.folder.empty()) {
@@ -416,6 +426,10 @@ void Initialize() {
       }
       if (PortRoomEnv::ParseFileName(name, id)) {
         sRoomEnvs[id] = PathString(file);
+        continue;
+      }
+      if (PortHudBars::ParseFileName(name, id)) {
+        sHudBars[id] = PathString(file);
         continue;
       }
       if (PortRoomGeo::ParseFileName(name, id)) {

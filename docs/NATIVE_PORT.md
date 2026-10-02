@@ -417,6 +417,14 @@ skipped. Inside a mod:
   that run of text is drawn from the disc. The last mod with one wins,
   `MP_HD_FONT=0` turns it off, and the layout is in
   `platform/include/port_hd_font.h`.
+- a file named `<FRME id, 8 hex digits>.hudbars`, anywhere in the mod, gives
+  the energy-bar widgets of that HUD frame their own shape: per bar, named
+  after its widget, a strip of stations (two points and their texture
+  coordinates) from the empty end to the full end. The game still supplies the
+  value, the colours and the texture; the port fills the strip by its measured
+  length, so stations need not be evenly spaced, and blends it as the widget's
+  draw flags say. The last mod with one for a frame wins, and the layout is in
+  `platform/include/port_hud_bars.h`.
 - a file named `<MREA id, 8 hex digits>.roomenv`, anywhere in the mod, is that
   area's lighting environment for PBR materials: reflection probes, each a box
   of the world with a prefiltered HDR cube map (BC6H) of what surrounds it. A

@@ -174,6 +174,8 @@ size_t NativeTexturesBound();
 std::string FontPath();
 // The <MREA id>.roomenv a mod supplies for an area (port_room_env.h); empty when none.
 std::string RoomEnvPath(uint32_t mrea);
+// The <FRME id>.hudbars a mod supplies for a HUD frame (port_hud_bars.h); empty when none.
+std::string HudBarsPath(uint32_t frame);
 // The <MREA id>.roomgeo a mod supplies for an area (port_room_geo.h); empty when none.
 std::string RoomGeoPath(uint32_t mrea);
 // Whether any mod folder holds room geometry. Reads the disk, and needs no Initialize:
