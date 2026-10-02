@@ -55,6 +55,7 @@ CTexture::CTexture(ETexelFormat fmt, const short w, const short h, int mips)
 , mClampMode(kCM_Repeat)
 #ifdef TARGET_PC
 , mPortNativeId(0)
+, mPortTexelsChanged(false)
 #endif
 {
   InitBitmapBuffers(fmt, w, h, mips);
@@ -83,6 +84,7 @@ CTexture::CTexture(CInputStream& in, EAutoMipmap automip, EBlackKey blackKey)
 , mClampMode(kCM_Repeat)
 #ifdef TARGET_PC
 , mPortNativeId(0)
+, mPortTexelsChanged(false)
 #endif
 {
   mTexelFormat = ETexelFormat(in.Get< uint >());
@@ -214,6 +216,14 @@ void CTexture::Load(GXTexMapID tex, EClampMode clamp) const {
       GXInitTexObjWrapMode(&mTexObj, (GXTexWrapMode)mClampMode, (GXTexWrapMode)mClampMode);
     }
 
+#ifdef TARGET_PC
+    // Aurora draws its own copy of the texels for as long as the object names the same data,
+    // so texels rewritten in place (UnLock) have to be announced.
+    if (mPortTexelsChanged) {
+      GXInitTexObjData(&mTexObj, nullptr);
+      mPortTexelsChanged = false;
+    }
+#endif
     GXInitTexObjData(&mTexObj, ptr);
 #ifdef TARGET_PC
     if (mPortNativeId != 0) {
@@ -501,6 +511,10 @@ void CTexture::InitBitmapBuffers(ETexelFormat fmt, short width, short height, in
 
 void CTexture::UnLock() {
   mLocked = false;
+#ifdef TARGET_PC
+  mPortTexelsChanged = true;
+  mCanLoadObj = true; // a bound texture is not loaded again otherwise
+#endif
   CountMemory();
   DCFlushRange(mARAMToken.GetMRAMSafe(), OSRoundUp32B(mMemoryAllocated));
 }

@@ -141,6 +141,7 @@ private:
 #ifdef TARGET_PC
   // Port: the asset id, when a mod draws this texture from <id>.dds (port_mods.h).
   uint mPortNativeId;
+  mutable bool mPortTexelsChanged; // written in place since the last Load
 
 public:
   void PortSetNativeId(uint id);

@@ -658,10 +658,6 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   if (!obj.has_data()) {
     return {};
   }
-  if (!texture_source_is_mapped(obj)) {
-    log_invalid_texture_source(obj, "resolve_static_texture");
-    return {};
-  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -672,6 +668,13 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
         return entry.handle;
       }
     }
+  }
+
+  // Only a source that is about to be read needs the check: it is a system call, and a cached
+  // texture is drawn without touching its source.
+  if (!texture_source_is_mapped(obj)) {
+    log_invalid_texture_source(obj, "resolve_static_texture");
+    return {};
   }
 
   gfx::TextureHandle handle;
@@ -716,10 +719,6 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
   if (!obj.has_data()) {
     return {};
   }
-  if (!texture_source_is_mapped(obj)) {
-    log_invalid_texture_source(obj, "resolve_static_palette_texture");
-    return {};
-  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -734,6 +733,13 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
         return entry.handle;
       }
     }
+  }
+
+  // Only a source that is about to be read needs the check: it is a system call, and a cached
+  // texture is drawn without touching its source.
+  if (!texture_source_is_mapped(obj)) {
+    log_invalid_texture_source(obj, "resolve_static_palette_texture");
+    return {};
   }
 
   gfx::TextureHandle handle;

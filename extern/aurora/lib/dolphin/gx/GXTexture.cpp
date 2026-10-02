@@ -155,6 +155,11 @@ void GXInitTexObjLOD(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt, f
 
 void GXInitTexObjData(GXTexObj* obj_, const void* data) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  // The game names the data again on every bind. Only a different pointer is new data: a new
+  // version makes the next draw hash the whole source again to find its texture.
+  if (obj->data == data) {
+    return;
+  }
   obj->data = data;
   ++obj->texDataVersion;
 }
