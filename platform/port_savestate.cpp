@@ -2,6 +2,7 @@
 
 #include "port_debug.h"
 #include "port_gci.h"
+#include "port_paths.h"
 #include "port_mods.h"
 #if !defined(__ANDROID__)
 #include "port_remastered_import.h"
@@ -279,17 +280,10 @@ void Place(CStateManager& mgr) {
 } // namespace
 
 std::string Folder() {
-  std::string dir;
-  if (const char* env = std::getenv("MP_USER_PATH"); env != nullptr && env[0] != '\0') {
-    dir = env;
-  } else if (char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime")) {
-    dir = pref;
-    SDL_free(pref);
-  } else {
+  std::string dir = PortPaths::UserFolder();
+  if (dir.empty()) {
     return {};
   }
-  if (dir.back() != '/' && dir.back() != '\\')
-    dir += '/';
   dir += "savestates";
   std::error_code ec;
   fs::create_directories(PortGci::PathFromString(dir), ec);

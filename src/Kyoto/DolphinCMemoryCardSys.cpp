@@ -13,6 +13,7 @@
 #include "Kyoto/MemoryCopy.hpp"
 #include "Kyoto/Basics/CBasics.hpp"
 #include "port_log.h"
+#include "port_paths.h"
 
 #include <aurora/card.h>
 #include <filesystem>
@@ -264,7 +265,9 @@ void CMemoryCardSys::Initialize() {
       }
     }
 #else
-    base = SDL_GetBasePath();
+    // The executable's folder, or the user folder when that one is read-only.
+    const std::string cardFolder = PortPaths::CardFolder();
+    base = cardFolder.empty() ? nullptr : cardFolder.c_str();
 #endif
     if (base == nullptr) {
       // Deliberately leaving mIsInitialized false so a later call retries rather

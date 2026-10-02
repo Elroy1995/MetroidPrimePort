@@ -1,5 +1,6 @@
 #include "port_apclient.h"
 #include "port_log.h"
+#include "port_paths.h"
 
 #include "port_ap_metroidprime.h"
 #include "port_ap_protocol.h"
@@ -52,16 +53,8 @@ bool EnvEnabled(const char* name) {
 }
 
 std::string UserDirectory() {
-  if (const char* env = std::getenv("MP_USER_PATH")) {
-    if (env[0] != '\0')
-      return env;
-  }
-  if (char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime")) {
-    std::string dir(pref);
-    SDL_free(pref);
-    return dir;
-  }
-  return ".";
+  const std::string& dir = PortPaths::UserFolder();
+  return dir.empty() ? std::string(".") : dir;
 }
 
 std::string ConfigPath() {

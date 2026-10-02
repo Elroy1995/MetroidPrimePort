@@ -4,6 +4,7 @@
 
 #include "port_debug.h"
 #include "port_log.h"
+#include "port_paths.h"
 #include "port_apclient.h"
 #include "port_controls.h"
 #include "port_gci.h"
@@ -255,24 +256,8 @@ struct WorldSweep {
 } sWorldSweep;
 
 std::string SettingsFilePath() {
-  std::string dir;
-  if (const char* env = std::getenv("MP_USER_PATH")) {
-    if (env[0] != '\0') {
-      dir = env;
-    }
-  }
-  if (dir.empty()) {
-    if (char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime")) {
-      dir = pref;
-      SDL_free(pref);
-    } else {
-      dir = ".";
-    }
-  }
-  if (!dir.empty() && dir.back() != '/' && dir.back() != '\\') {
-    dir += '/';
-  }
-  return dir + "port_settings.ini";
+  const std::string& dir = PortPaths::UserFolder();
+  return (dir.empty() ? std::string("./") : dir) + "port_settings.ini";
 }
 
 bool ParseBool(const std::string& value) {

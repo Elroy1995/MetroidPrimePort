@@ -69,17 +69,29 @@ graphics. The same revision appears in the launch log and F1 Performance tab.
 Include it when reporting a copied build from another machine; a `-dirty` suffix
 means the executable was built with uncommitted source changes.
 
-Aurora selects user/cache directories through its SDL platform paths and logs
-them at initialization. `MP_USER_PATH` and `MP_CACHE_PATH` override these with
-explicit directories; use separate directories for automated testing so runs do
-not share normal saves/settings. Screenshots are written to `screenshots/` in
-the working directory.
+A copied build is self-contained: everything the port writes goes in the folder
+holding the executable (for an AppImage, the folder the `.AppImage` file is in).
+That is `port_settings.ini`, `mods/`, `savestates/`, `importers/`,
+`user_textures/`, the randomizer and Archipelago files, the controller bindings
+and the shader caches (`dawn_cache.db`, `pipeline_cache.db`), next to the memory
+card in `<region>/Card A`. The disc image is auto-detected there too (or one
+level below), and texture replacements are loaded from `textures/` when present;
+`MP_DISC` and `MP_TEXTURES` override those two. The launch log names the folder
+(`port: user folder ...`).
 
-A copied build is self-contained by default: the memory card is written to
-`<executable dir>/<region>/Card A`, the disc image is auto-detected next to the
-executable (or one level below it), and texture replacements are loaded from
-`<executable dir>/textures` when present. `MP_DISC` and `MP_TEXTURES` still
-override these.
+The per-user folder (`~/.local/share/Metroid Prime`, `%APPDATA%\Metroid Prime`)
+is used only when:
+
+- the executable's folder cannot be written to (a Flatpak, a system package), or
+- it already holds a `port_settings.ini` from an older build and the
+  executable's folder has none. Move its contents next to the executable to make
+  that install portable.
+
+Android always uses the app's own storage. `MP_USER_PATH` overrides the folder
+and `MP_CACHE_PATH` the caches alone; use separate directories for automated
+testing so runs do not share normal saves/settings (the memory card stays with
+the executable either way). Screenshots are written to `screenshots/` in the
+working directory.
 
 ### A Wayland session hangs at startup
 
@@ -307,7 +319,7 @@ every source texture to `<cachePath>/texture_dumps` as DDS, for authoring
 replacements.
 
 A user pack is layered over that built-in set, with the same folder rules. It
-lives in `user_textures` in the pref folder (`~/.local/share/Metroid Prime/`
+lives in `user_textures` in the user folder (next to the executable; for a read-only install `~/.local/share/Metroid Prime/`
 on Linux, `~/.var/app/io.github.odrannnn.metroidprimeport/data/Metroid Prime/`
 in the Flatpak, `%APPDATA%\Metroid Prime\` on Windows), or wherever
 `MP_USER_TEXTURES` points, so updates never touch it; the overlay's Render page
@@ -376,7 +388,7 @@ screen quickly to see the result.
 
 ### Mods folder
 
-`mods` in the pref folder (or wherever `MP_MODS` points; created on first
+`mods` in the user folder (or wherever `MP_MODS` points; created on first
 start) replaces disc data without touching the disc image. Each folder in it is
 a mod, applied in name order so a later name wins; folders starting with `.` are
 skipped. Inside a mod:
@@ -641,8 +653,7 @@ a temporary directory instead of mounting.
 - F1: debug overlay. F10: 60 FPS cap/unlimited presentation. F12: screenshot.
 - Settings changed in the F1 overlay (aspect, vsync, render scale, frame limit,
   mouse aim/inversion/sensitivity, audio mutes) are saved to
-  `port_settings.ini` in the user directory (`MP_USER_PATH`, else Aurora's SDL
-  preference path) and restored on the next launch. The Session tab shows the
+  `port_settings.ini` in the user folder (next to the executable, see above) and restored on the next launch. The Session tab shows the
   path and has a **Save settings now** button. Environment variables still
   override the file for that run, and are written back into it if any setting is
   changed during that run.
@@ -787,7 +798,7 @@ a temporary directory instead of mounting.
   rides the elevator after loading, like stepping onto it. Console:
   `state list | last | save [n] | load [n] | undo | slot <n>`.
 - Memory card transfer (F1 > Extras > Memory card): moves saves between the
-  port's card (a GCI folder, `USA/Card A` in the pref folder, or the current
+  port's card (a GCI folder, `USA/Card A` next to the executable, or the current
   Archipelago game's) and Dolphin's. Import takes a Dolphin `.gci`, a whole raw
   card image (`MemoryCardA.USA.raw`, every Metroid Prime file in it) or, from the
   console, a folder of `.gci` files; only GM8E/01 files are taken. The game

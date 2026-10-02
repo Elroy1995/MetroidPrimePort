@@ -3,6 +3,7 @@
 // result with Aurora's DVD overlays.
 
 #include "port_mods.h"
+#include "port_paths.h"
 
 #include "port_debug.h"
 #include "port_hd_font.h"
@@ -221,16 +222,9 @@ std::string Folder() {
   if (const char* env = std::getenv("MP_MODS"); env != nullptr && env[0] != '\0') {
     dir = env;
   } else {
-    if (const char* env = std::getenv("MP_USER_PATH"); env != nullptr && env[0] != '\0') {
-      dir = env;
-    } else if (char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime")) {
-      dir = pref;
-      SDL_free(pref);
-    } else {
+    dir = PortPaths::UserFolder();
+    if (dir.empty()) {
       return {};
-    }
-    if (dir.back() != '/' && dir.back() != '\\') {
-      dir += '/';
     }
     dir += "mods";
   }

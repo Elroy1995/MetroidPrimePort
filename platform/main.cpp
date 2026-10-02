@@ -14,6 +14,7 @@
 #include <dolphin/dvd.h>
 
 #include "port_debug.h"
+#include "port_paths.h"
 #include "port_apclient.h"
 #include "port_randomizer.h"
 #include "port_textures.h"
@@ -502,10 +503,17 @@ int main(int argc, char** argv) {
         PortLog::Write("port: frame buffers at %ux (%s)\n", frameBufferScale,
                        std::getenv("MP_FRAME_BUFFERS") != nullptr ? "MP_FRAME_BUFFERS" : "room geometry");
     }
+    // Settings, mods, save states and the shader caches sit next to the
+    // executable when that folder can be written to (port_paths.h).
+    const std::string& userFolder = PortPaths::UserFolder();
+    const char* cacheEnv = std::getenv("MP_CACHE_PATH");
+    const std::string cacheFolder = cacheEnv != nullptr && cacheEnv[0] != '\0' ? cacheEnv : userFolder;
+    PortLog::Write("port: user folder %s%s\n", userFolder.empty() ? "(none)" : userFolder.c_str(),
+                   PortPaths::IsPortable() ? " (next to the executable)" : "");
     AuroraConfig config = {
         .appName = "Metroid Prime",
-        .userPath = std::getenv("MP_USER_PATH"),
-        .cachePath = std::getenv("MP_CACHE_PATH"),
+        .userPath = userFolder.empty() ? nullptr : userFolder.c_str(),
+        .cachePath = cacheFolder.empty() ? nullptr : cacheFolder.c_str(),
         .resourcesPath = resourcesPath.empty() ? nullptr : resourcesPath.c_str(),
         .desiredBackend = BACKEND_AUTO,
         .vsync = false,
@@ -591,15 +599,14 @@ int main(int argc, char** argv) {
     if (textures == nullptr || textures[0] == '\0') {
         textures = DefaultTexturesPath();
     }
-    // The user's own pack, over the built-in set. Kept in the pref folder, which
-    // updates never replace (the built-in set is read-only in an AppImage or
+    // The user's own pack, over the built-in set. Kept in the user folder, under
+    // a name updates never replace (the built-in set is read-only in an AppImage or
     // Flatpak, and re-copied on every Android launch).
     std::string userTextures;
     if (const char* env = std::getenv("MP_USER_TEXTURES"); env != nullptr && env[0] != '\0') {
         userTextures = env;
-    } else if (char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime")) {
-        userTextures = std::string(pref) + "user_textures";
-        SDL_free(pref);
+    } else if (!PortPaths::UserFolder().empty()) {
+        userTextures = PortPaths::UserFolder() + "user_textures";
     }
     PortTextures::Initialize(textures, userTextures.c_str());
     // Binding-aware prompt icons, served from <textures>/bindings.
