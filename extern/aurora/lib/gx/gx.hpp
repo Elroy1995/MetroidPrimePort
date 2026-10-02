@@ -394,6 +394,8 @@ struct GXState {
   Vec4<float> pbrBacklight{0.f, 0.f, 0.f, 0.f};
   Vec4<float> pbrLayer{0.f, 0.f, 0.f, 0.f};       // x: the edge width of a second layer's blend
   Vec4<float> pbrLayerHeight{1.f, 0.f, 1.f, 0.f}; // scale and offset of each layer's height
+  Vec4<float> pbrParam{0.f, 0.f, 0.f, 0.f};       // the parameters of pbrLayer's kind (y; z its strength)
+  Vec4<float> pbrUp{0.f, 1.f, 0.f, 0.f};          // world up in view space
   u32 pbrCube = 0; // GX_AURORA_SET_PBR_CUBE
   Vec4<float> pbrCubeParams{0.f, 0.f, 0.f, 0.f}; // see GXSetPBRCube
   std::array<Vec4<float>, 6> pbrAmbient{}; // GX_AURORA_SET_PBR_AMBIENT

@@ -577,6 +577,12 @@ struct RemMaterial {
   MapRef layer[3];
   double layerSmooth = 0.0;                      // BLSM: the width of the blend's edge
   double layerHeight[4] = {1.0, 0.0, 1.0, 0.0};  // BSAO: scale and offset of each layer's height
+  // A shader of its own the port draws (GXSetPBRMaterial's kinds): 1 a second
+  // layer on what faces up, 2 a detail map, 3 lava, 4 ice seen into.
+  int kind = 0;
+  double kindStrength = 0.0;
+  double kindParam[4] = {0.0, 0.0, 0.0, 0.0};
+  bool vcolor = false;  // it reads the vertex colour, which is no tint
 };
 
 struct Buffer {
@@ -1056,6 +1062,11 @@ constexpr uint32_t kCutoutFlag = 0x20;       // one-bit alpha: ground leaves, gr
 constexpr uint32_t kIncanMaskFlag = 0x200;   // the base map's alpha masks the glow
 // The first four bytes of the id of a shader whose alpha is read below.
 constexpr uint32_t kShaderHeightBlend = 0xCA10C453;  // snow and ice over rock
+// Shaders with maps and parameters of their own (TCHn, CCHn), read from their code.
+constexpr uint32_t kShaderUpLayer = 0x9EFE0D2E;   // TCH0-2 are a second layer on what faces up, CCH0.x its edge
+constexpr uint32_t kShaderDetail = 0x9AB899E7;    // TCH0 is a detail map, on a texcoord of its own
+constexpr uint32_t kShaderLava = 0x023388CD;      // the glow is CCH0.x times the vertex alpha
+constexpr uint32_t kShaderParallax = 0x2F3FB02B;  // TCH0 is seen inside the surface; CCH0 and CCH1.x say how
 // A shader with parameters of its own (TCHn, CCHn) reads the vertex colour as
 // it likes: masks for its extra maps, a colour seen through ice. These are the
 // ones read that multiply the albedo by it, as the standard shader does.
@@ -1219,6 +1230,45 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     }
   }
   out.emissive = s;
+  // The shaders of their own. ICNC is 1 in every lava material and the strength
+  // is CCH0.x instead.
+  const ModelMaterialData* tch[3] = {nullptr, nullptr, nullptr};
+  const ModelMaterialData* cch[2] = {nullptr, nullptr};
+  for (const ModelMaterialData& d : mat.data) {
+    for (uint32_t i = 0; i < 3; ++i) {
+      if (d.kind == ModelMaterialData::Kind::Texture && d.usage == FourCC('T', 'C', 'H', char('0' + i))) {
+        tch[i] = &d;
+      }
+      if (i < 2 && d.kind == ModelMaterialData::Kind::Color && d.usage == FourCC('C', 'C', 'H', char('0' + i))) {
+        cch[i] = &d;
+      }
+    }
+  }
+  if (shader == kShaderUpLayer && tch[0] && cch[0]) {
+    out.kind = 1;
+    static const int slot[3] = {kBase, kMr, kNormal};
+    for (int i = 0; i < 3; ++i) {
+      if (tch[i]) {
+        set(slot[i], tch[i]->texture, &out.layer[slot[i]]);
+      }
+    }
+    out.layerSmooth = ShortestDouble(cch[0]->color[0]);
+  } else if (shader == kShaderDetail && tch[0]) {
+    out.kind = 2;
+    set(kBase, tch[0]->texture, &out.layer[kBase]);
+  } else if (shader == kShaderLava && cch[0]) {
+    out.kind = 3;
+    out.vcolor = true;
+    out.emissive = ShortestDouble(cch[0]->color[0]);
+  } else if (shader == kShaderParallax && tch[0] && cch[0]) {
+    out.kind = 4;
+    out.vcolor = true;
+    set(kBase, tch[0]->texture, &out.layer[kBase]);
+    for (int i = 0; i < 4; ++i) {
+      out.kindParam[i] = ShortestDouble(cch[0]->color[i]);
+    }
+    out.kindStrength = cch[1] ? ShortestDouble(cch[1]->color[0]) : 0.0;
+  }
   // BKLT is a parameter vector like CCHn, not a colour: x is the strength (0 to
   // 2), what y means is not known and it is not used.
   out.backlight = bklt ? ShortestDouble(bklt->color[0]) : 0.0;
@@ -1226,6 +1276,11 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   // floor on the width is not known, so a zero one is the thinnest edge.
   out.layered = out.maps[kBase].has && out.layer[kBase].has && !out.cutout && !out.blended;
   out.layerSmooth = std::clamp(out.layerSmooth, 1e-3, 16.0);
+  // All but lava draw with the second layer's maps.
+  if (out.kind != 3 && !out.layered) {
+    out.kind = 0;
+    out.vcolor = false;
+  }
   return out;
 }
 
@@ -1234,7 +1289,8 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
 // for a material with a height blend or no lighting, those, the blend's
 // threshold, the mode (1 unlit, 2 glow masked by the base alpha, 4 tinted by
 // the vertex colour, summed), and 'PBR2'; or, for a layered one, those, the blend's edge width, the scale and offset of
-// each layer's height, and 'PBR3'.
+// each layer's height, and 'PBR3'; or, for a shader of its own, those, the kind, its strength
+// (compressed like the emissive one) and its four parameters, and 'PBR4'.
 // Remastered's emissive strengths are HDR values meant for its bloom, and the
 // port's output is 8-bit with none, so the strength is compressed (square
 // root, capped) around 1, where the map is drawn as converted.
@@ -1247,13 +1303,23 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
   for (int i = 0; i < 3; ++i) {
     PF(b, k);
   }
-  if (m.height > 0.0 || m.unlit || m.mask || m.layered || m.tinted) {
+  if (m.height > 0.0 || m.unlit || m.mask || m.layered || m.tinted || m.kind) {
     PF(b, m.height);
     PF(b, (m.unlit ? 1.0 : 0.0) + (m.mask ? 2.0 : 0.0) + (m.tinted ? 4.0 : 0.0));
-    if (m.layered) {
-      PF(b, m.layerSmooth);
+    if (m.layered || m.kind) {
+      // Only a blend of two layers has an edge.
+      PF(b, m.layered && m.kind <= 1 ? m.layerSmooth : 0.0);
       for (double h : m.layerHeight) {
         PF(b, h);
+      }
+      if (m.kind) {
+        PF(b, double(m.kind));
+        PF(b, std::sqrt(std::min(std::max(m.kindStrength, 0.0), kPbrEmissiveMax)));
+        for (double v : m.kindParam) {
+          PF(b, v);
+        }
+        b.insert(b.end(), {'P', 'B', 'R', '4'});
+        return;
       }
       b.insert(b.end(), {'P', 'B', 'R', '3'});
       return;
@@ -1848,7 +1914,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   bool useColor = false;
   if (opt.standalone) {
     for (const Prim& p : prims) {
-      useColor = useColor || (mats[p.mat].tinted && buffers[p.buffer].colored);
+      useColor = useColor || ((mats[p.mat].tinted || mats[p.mat].vcolor) && buffers[p.buffer].colored);
     }
   }
   if (useColor) {
@@ -1858,7 +1924,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     }
     std::vector<bool> keepAlpha(n, false);
     for (const Prim& p : prims) {
-      if ((mats[p.mat].blended || mats[p.mat].layered) && mats[p.mat].tinted) {
+      if (((mats[p.mat].blended || mats[p.mat].layered) && mats[p.mat].tinted) || mats[p.mat].vcolor) {
         for (uint32_t i : p.I) {
           keepAlpha[i] = true;
         }
@@ -1952,7 +2018,13 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       rem.maps[kEmissive].has = false;
     }
     // A retail material's vertices have no layer weight.
-    rem.layered = rem.layered && opt.standalone && useColor && rem.tinted;
+    // A shader of its own needs none: without colours the up-facing one goes by
+    // the normal alone.
+    if (!opt.standalone) {
+      rem.kind = 0;
+      rem.vcolor = false;
+    }
+    rem.layered = rem.layered && opt.standalone && (rem.kind != 0 || (useColor && rem.tinted));
     // Nor do the alpha and shading modes belong on one: what they say is about the
     // Remastered surface, and a retail model keeps the retail material's.
     if (!opt.standalone) {
@@ -1972,14 +2044,13 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       vtx |= 3u << 8;
       ntexattr = 1;
     }
-    // Bits 4 and 5 are colour 0. Only a tinted material declares it: the port's
-    // PBR shader tints by whatever colour the descriptor has.
-    const bool tinted = useColor && rem.tinted;
-    rem.tinted = tinted;
-    if (tinted) {
+    // Bits 4 and 5 are colour 0. Only a material that reads it declares it.
+    const bool colored = useColor && (rem.tinted || rem.vcolor);
+    rem.tinted = useColor && rem.tinted;
+    if (colored) {
       vtx |= 3u << 4;
     }
-    dlColor.push_back(tinted);
+    dlColor.push_back(colored);
     // PBR needs a base map and an opaque retail material: blended effects keep
     // their TEV.
     // Only a room's own material asks for a cutout: a retail material's alpha

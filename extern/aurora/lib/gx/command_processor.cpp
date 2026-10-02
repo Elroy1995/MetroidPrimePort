@@ -876,7 +876,8 @@ void handle_aurora(ByteReader& reader) noexcept {
     }
   } else if (subCmd == GX_AURORA_SET_PBR_MATERIAL) {
     for (Vec4<float>* v :
-         {&g_gxState.pbrEmissive, &g_gxState.pbrBacklight, &g_gxState.pbrLayer, &g_gxState.pbrLayerHeight}) {
+         {&g_gxState.pbrEmissive, &g_gxState.pbrBacklight, &g_gxState.pbrLayer, &g_gxState.pbrLayerHeight,
+          &g_gxState.pbrParam, &g_gxState.pbrUp}) {
       const f32 x = reader.read<f32>();
       const f32 y = reader.read<f32>();
       const f32 z = reader.read<f32>();

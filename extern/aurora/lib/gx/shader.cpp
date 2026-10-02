@@ -913,33 +913,104 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
   // A vertex colour is the surface's tint where the material says so (mode 4), whatever
   // the channel does with it: the game points an unlit channel at its material register,
   // which would lose it. A retail model's colours are not a tint.
-  std::string tint, tintAlpha;
+  // A special surface (the kind in pbr_layer.y) reads the colour its own way, tint or not.
+  std::string tint, tintAlpha, vclr = "vec4f(1.0)";
   if (config.attrs[GX_VA_CLR0].attrType != GX_NONE) {
     vtxOutAttrs += fmt::format("\n    @location({}) pbr_vclr: vec4f,", vtxOutIdx++);
-    vtxXfrAttrs += fmt::format("\n    out.pbr_vclr = select(vec4f(1.0), {}, ubuf.pbr_backlight.w > 3.5);",
-                                vtx_attr(config, GX_VA_CLR0));
-    tint = " * in.pbr_vclr.rgb";
-    tintAlpha = " * in.pbr_vclr.a";
+    vtxXfrAttrs += fmt::format("\n    out.pbr_vclr = {};", vtx_attr(config, GX_VA_CLR0));
+    tint = " * pbr_vc.rgb";
+    tintAlpha = " * pbr_vc.a";
+    vclr = "in.pbr_vclr";
   }
 
   // A second layer (maps 4-6: base, MR, normal) over the first. The vertex alpha says
   // where, and the two base maps' alphas are heights that decide which layer shows
   // through first across the edge: this is Remastered's blend.
   const bool layered = mapStage[4] != -1;
-  std::string layer, base = sampled(0, ""), orm = sampled(1, "vec4f(1.0, 0.6, 0.0, 1.0)");
+  std::string base = sampled(0, ""), orm = sampled(1, "vec4f(1.0, 0.6, 0.0, 1.0)");
   std::string normalXy = mapStage[2] == -1 ? std::string() : fmt::format("sampled{}.rg", mapStage[2]);
+  std::string layer = fmt::format(R"""(
+      let pbr_ng = normalize(in.pbr_nrm);
+      let pbr_kind = ubuf.pbr_layer.y;
+      let pbr_vraw = {};
+      let pbr_vc = select(vec4f(1.0), pbr_vraw, ubuf.pbr_backlight.w > 3.5);)""",
+                                  vclr);
+  const bool framed = mapStage[2] != -1 || layered;
+  if (framed) {
+    // Cotangent frame (Schüler): pbr_t and pbr_b are the directions U and V grow in. WebGPU's
+    // framebuffer Y runs down, so the Y derivatives are negated to get GL's (view space Y up)
+    // orientation.
+    layer += fmt::format(R"""(
+      let pbr_dp1 = dpdx(in.pbr_pos);
+      let pbr_dp2 = -dpdy(in.pbr_pos);
+      let pbr_duv1 = dpdx(tex{0}_uv);
+      let pbr_duv2 = -dpdy(tex{0}_uv);
+      let pbr_dp2perp = cross(pbr_dp2, pbr_ng);
+      let pbr_dp1perp = cross(pbr_ng, pbr_dp1);
+      let pbr_t = pbr_dp2perp * pbr_duv1.x + pbr_dp1perp * pbr_duv2.x;
+      let pbr_b = pbr_dp2perp * pbr_duv1.y + pbr_dp1perp * pbr_duv2.y;
+      let pbr_tlen = max(dot(pbr_t, pbr_t), dot(pbr_b, pbr_b));)""",
+                         underlying(config.tevStages[mapStage[mapStage[2] != -1 ? 2 : 0]].texCoordId));
+  }
+  std::string kinds = "\n      var pbr_kglow = vec3f(0.0);";
   if (layered) {
-    layer = fmt::format(R"""(
+    // Kind 1 lays the second layer on what faces up: the weight is the first layer's own
+    // normal along world up, lifted by the vertex alpha.
+    std::string first = "\n              var pbr_n1 = pbr_ng;";
+    if (mapStage[2] != -1) {
+      first += fmt::format(R"""(
+              let pbr_ts1 = sampled{}.rg * 2.0 - 1.0;
+              if (pbr_tlen > 1e-24) {{
+                  let pbr_s1 = inverseSqrt(pbr_tlen);
+                  pbr_n1 = normalize(pbr_t * (pbr_s1 * pbr_ts1.x) - pbr_b * (pbr_s1 * pbr_ts1.y) +
+                                     pbr_ng * sqrt(max(0.0, 1.0 - dot(pbr_ts1, pbr_ts1))));
+              }})""",
+                           mapStage[2]);
+    }
+    const auto& inner = config.tevStages[mapStage[4]];
+    // Kind 4 sees map 4 inside the surface: where the view ray is once it has gone the
+    // base map's alpha deep. The sample is taken whatever the kind, as one in a branch has
+    // no derivatives.
+    layer += fmt::format(R"""(
+      var pbr_poff = vec2f(0.0);
+      if (pbr_kind > 3.5 && pbr_tlen > 1e-24) {{
+          let pbr_pz = min(dot(pbr_ng, in.pbr_pos), -0.05 * length(in.pbr_pos));
+          pbr_poff = vec2f(dot(pbr_t * inverseSqrt(max(dot(pbr_t, pbr_t), 1e-30)), in.pbr_pos),
+                           dot(pbr_b * inverseSqrt(max(dot(pbr_b, pbr_b), 1e-30)), in.pbr_pos)) *
+                     ({0}.a * ubuf.pbr_param.w / pbr_pz);
+      }}
+      let pbr_inner = pow(max(textureSampleBias(tex{4}, tex{4}_samp, tex{5}_uv + pbr_poff, ubuf.tex{4}_size_bias.z).rgb,
+                              vec3f(0.0)), vec3f(2.2));
       var pbr_ls = 0.0;
       if (ubuf.pbr_layer.x > 0.0) {{
-          let pbr_lw = {1} * 2.0 - 1.0;
+          var pbr_lw = pbr_vraw.a * 2.0 - 1.0;
+          if (pbr_kind > 0.5 && pbr_kind < 1.5) {{{3}
+              let pbr_va2 = max(pbr_vraw.a * 2.0, 1e-4);
+              pbr_lw = max(0.0, (dot(pbr_n1, ubuf.pbr_up.xyz) + pbr_va2 - 1.0) / pbr_va2) * 2.0 - 1.0;
+          }}
           let pbr_lh = clamp(sampled{2}.a * ubuf.pbr_layer_height.z + ubuf.pbr_layer_height.w, 0.0, 1.0) -
                        clamp({0}.a * ubuf.pbr_layer_height.x + ubuf.pbr_layer_height.y, 0.0, 1.0);
           let pbr_lt = ubuf.pbr_layer.x;
           let pbr_lx = clamp((pbr_lh + pbr_lw * pbr_lt + pbr_lw + pbr_lt) * 0.5 / pbr_lt, 0.0, 1.0);
           pbr_ls = pbr_lx * pbr_lx * (3.0 - 2.0 * pbr_lx);
       }})""",
-                        base, tintAlpha.empty() ? "1.0" : "in.pbr_vclr.a", mapStage[4]);
+                         base, 0, mapStage[4], first, underlying(inner.texMapId), underlying(inner.texCoordId));
+    // Kind 2: map 4 is a detail map, grey where it leaves the base alone. Kind 4: the
+    // inside shows where the surface is seen edge on (a fresnel that also takes it to the
+    // vertex colour) and where the base map's alpha says it is clear, and glows there.
+    kinds += fmt::format(R"""(
+      if (pbr_kind > 1.5 && pbr_kind < 2.5) {{
+          pbr_base = pbr_base * pow(max(sampled{1}.rgb, vec3f(0.0)), vec3f(2.2)) * 2.0;
+      }}
+      if (pbr_kind > 3.5) {{
+          let pbr_kf = pow(clamp(dot(pbr_ng, normalize(-in.pbr_pos)), 0.0, 1.0), max(ubuf.pbr_param.x, 1e-4)) *
+                       ubuf.pbr_param.y;
+          let pbr_ki = mix(pbr_inner, pbr_vraw.rgb, pbr_kf);
+          let pbr_ka = {0}.a * {0}.a * pbr_vraw.a;
+          pbr_base = mix(pbr_base, pbr_ki, clamp(pbr_kf + pbr_ka - 1.0, 0.0, 1.0));
+          pbr_kglow = pbr_ki * (pbr_ka * ubuf.pbr_layer.z);
+      }})""",
+                         base, mapStage[4]);
     if (mapStage[5] != -1) {
       orm = fmt::format("mix({}, sampled{}, pbr_ls)", orm, mapStage[5]);
     }
@@ -956,27 +1027,16 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
               : fmt::format("pow(max({}.rgb, vec3f(0.0)), vec3f(2.2))", base);
   std::string normal;
   if (mapStage[2] != -1) {
-    // Cotangent frame (Schüler). glTF normal maps are +Y up with V running down the image,
-    // so the bitangent is the negated dP/dV. The frame's sign follows the determinant, and
-    // WebGPU's framebuffer Y runs down, so the Y derivatives are negated to get GL's (view
-    // space Y up) orientation.
+    // glTF normal maps are +Y up with V running down the image, so the bitangent is the
+    // negated dP/dV. Kind 4 scales the map's tilt.
     normal = fmt::format(R"""(
-      let pbr_ts = {0} * 2.0 - 1.0;
+      let pbr_ts = ({0} * 2.0 - 1.0) * select(1.0, ubuf.pbr_param.z, pbr_kind > 3.5);
       let pbr_tn = vec3f(pbr_ts, sqrt(max(0.0, 1.0 - dot(pbr_ts, pbr_ts))));
-      let pbr_dp1 = dpdx(in.pbr_pos);
-      let pbr_dp2 = -dpdy(in.pbr_pos);
-      let pbr_duv1 = dpdx(tex{1}_uv);
-      let pbr_duv2 = -dpdy(tex{1}_uv);
-      let pbr_dp2perp = cross(pbr_dp2, pbr_ng);
-      let pbr_dp1perp = cross(pbr_ng, pbr_dp1);
-      let pbr_t = pbr_dp2perp * pbr_duv1.x + pbr_dp1perp * pbr_duv2.x;
-      let pbr_b = pbr_dp2perp * pbr_duv1.y + pbr_dp1perp * pbr_duv2.y;
-      let pbr_tlen = max(dot(pbr_t, pbr_t), dot(pbr_b, pbr_b));
       if (pbr_tlen > 1e-24) {{
         let pbr_s = inverseSqrt(pbr_tlen);
         pbr_n = normalize(pbr_t * (pbr_s * pbr_tn.x) - pbr_b * (pbr_s * pbr_tn.y) + pbr_ng * pbr_tn.z);
       }})""",
-                         normalXy, underlying(config.tevStages[mapStage[2]].texCoordId));
+                         normalXy);
   }
   std::string attn;
   if (cc.attnFn == GX_AF_SPOT) {
@@ -994,13 +1054,12 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     // PBR (GX_AURORA_SET_PBR)
     {{
       let pbr_pi = 3.14159265;{10}
-      let pbr_base = {11};
+      var pbr_base = {11};{13}
       let pbr_orm = {1}.rgb;
       let pbr_ao = pbr_orm.r;
       let pbr_rough = clamp(pbr_orm.g, 0.02, 1.0);
       let pbr_metal = clamp(pbr_orm.b, 0.0, 1.0);
       let pbr_emissive = pow(max({2}.rgb, vec3f(0.0)), vec3f(2.2)) * ubuf.pbr_emissive.rgb;
-      let pbr_ng = normalize(in.pbr_nrm);
       var pbr_n = pbr_ng;{3}
       let pbr_v = normalize(-in.pbr_pos);
       let pbr_nv = max(dot(pbr_n, pbr_v), 1e-4);
@@ -1125,7 +1184,8 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       pbr_lo += max(ubuf.pbr_backlight.rgb, vec3f(0.0)) * pbr_base * min(pbr_amb + pbr_lsum, vec3f(1.0)) *
                 (pbr_rim * pbr_rim * pbr_ao);
       // The material's alpha and shading modes (w of the GX_AURORA_SET_PBR_MATERIAL rows).
-      var pbr_glow = pbr_emissive;
+      // Kind 3 (lava, embers): the vertex alpha is how much of the glow shows.
+      var pbr_glow = pbr_emissive * select(1.0, pbr_vraw.a, pbr_kind > 2.5 && pbr_kind < 3.5) + pbr_kglow;
       var pbr_alpha = {12}{9};
       if (ubuf.pbr_emissive.w > 0.0) {{
           // A height blend (snow and ice laid over rock): the base map's alpha lifts the
@@ -1135,7 +1195,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           pbr_alpha = pbr_hs * pbr_hs * (3.0 - 2.0 * pbr_hs);
       }}
       // 1 = unlit, 2 = the base map's alpha masks the glow, 4 = tinted by the vertex colour
-      // (taken in the vertex stage); the sum of those.
+      // (pbr_vc); the sum of those.
       let pbr_mode = ubuf.pbr_backlight.w - select(0.0, 4.0, ubuf.pbr_backlight.w > 3.5);
       if (pbr_mode > 1.5) {{
           // The base map's alpha is how much of the glow shows, and no opacity: the
@@ -1180,7 +1240,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       }}
     }})""",
                      base, orm, sampled(3, "vec4f(0.0)"), normal, GX::MaxLights, attn, amb,
-                     gfx::probe::MipCount - 1, tint, tintAlpha, layer, baseRgb, layered ? "1.0" : "prev.a");
+                     gfx::probe::MipCount - 1, tint, tintAlpha, layer, baseRgb, layered ? "1.0" : "prev.a", kinds);
   if (!lit) {
     // The uniform block has no lights then.
     const size_t begin = source.find("// pbr-lights-begin");
@@ -1854,6 +1914,8 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     uniBufAttrs += "\n    pbr_backlight: vec4f,";
     uniBufAttrs += "\n    pbr_layer: vec4f,";
     uniBufAttrs += "\n    pbr_layer_height: vec4f,";
+    uniBufAttrs += "\n    pbr_param: vec4f,";
+    uniBufAttrs += "\n    pbr_up: vec4f,";
     uniBufAttrs += "\n    pbr_cube: vec4f,";
     uniBufAttrs += "\n    pbr_ambient: array<vec4f, 6>,";
     uniBufAttrs += "\n    pbr_volume: array<vec4f, 6>,";

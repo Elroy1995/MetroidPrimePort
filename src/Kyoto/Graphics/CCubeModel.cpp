@@ -166,9 +166,11 @@ CCubeMaterial CCubeModel::GetMaterialByIndex(const int idx) const {
 // (emissive multiplier rgb, backlight weight rgb) and the tag 'PBRM', or eight (the same,
 // then the height blend threshold and the shading mode) and 'PBR2', or thirteen (the same,
 // then a second layer's edge width and the scale and offset of each layer's height) and
-// 'PBR3'. A material without one gets the neutral values.
+// 'PBR3', or nineteen (the same, then the kind of a special surface, its strength and four
+// parameters; see GXSetPBRMaterial) and 'PBR4'. A material without one gets the neutral
+// values.
 void CCubeModel::PortSetPBRMaterial(const int idx) const {
-  f32 values[13] = {1.f, 1.f, 1.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+  f32 values[19] = {1.f, 1.f, 1.f};
   const uchar* table = static_cast< const uchar* >(x0_instance.GetMaterialPointer()) +
                        (x1c_textures->size() + 1) * 4;
   const uint count = CBasics::SwapBytes(*reinterpret_cast< const uint* >(table));
@@ -177,7 +179,9 @@ void CCubeModel::PortSetPBRMaterial(const int idx) const {
   const uint end = GetMaterialOffset(table, idx + 1);
   const uchar* materialEnd = table + count * 4 + end;
   int floats = 0;
-  if (end >= begin + 56 && memcmp(materialEnd - 4, "PBR3", 4) == 0) {
+  if (end >= begin + 80 && memcmp(materialEnd - 4, "PBR4", 4) == 0) {
+    floats = 19;
+  } else if (end >= begin + 56 && memcmp(materialEnd - 4, "PBR3", 4) == 0) {
     floats = 13;
   } else if (end >= begin + 36 && memcmp(materialEnd - 4, "PBR2", 4) == 0) {
     floats = 8;
@@ -191,7 +195,10 @@ void CCubeModel::PortSetPBRMaterial(const int idx) const {
     bits = CBasics::SwapBytes(bits);
     memcpy(&values[i], &bits, 4);
   }
-  GXSetPBRMaterial(values, values + 3, values[6], values[7], values + 8);
+  // World up as the shader sees it: view space is right, up, -forward.
+  const CTransform4f& view = CGraphics::GetViewMatrix();
+  const f32 up[3] = {view.Get20(), view.Get22(), -view.Get21()};
+  GXSetPBRMaterial(values, values + 3, values[6], values[7], values + 8, values + 13, up);
 }
 #endif
 

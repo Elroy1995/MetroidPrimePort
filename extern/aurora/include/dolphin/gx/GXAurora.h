@@ -136,13 +136,15 @@ extern "C" {
 #define GX_AURORA_SET_PBR_PROBE 0x0045
 
 /**
- * Port extension: per-material constants for PBR draws, as four vec4f. The first is a
+ * Port extension: per-material constants for PBR draws, as six vec4f. The first is a
  * multiplier on the emissive map (rgb; 1 leaves it as sampled) and, in w, the threshold of
  * a height-blended alpha. The second is a backlight weight (rgb, linear): a rim of the
  * surface's base colour times that weight, scaled by the light reaching the surface, on the
  * edges facing away from the viewer; zero is off; its w is the shading mode. The third's x
- * is the edge width of a second layer's blend (0: none) and the fourth the scale and offset
- * of each layer's height (see GXSetPBRMaterial). Stays in effect until changed.
+ * is the edge width of a second layer's blend (0: none), its y the kind of a special
+ * surface and z that kind's strength; the fourth is the scale and offset of each layer's
+ * height, the fifth the kind's parameters and the sixth world up in view space (see
+ * GXSetPBRMaterial). Stays in effect until changed.
  */
 #define GX_AURORA_SET_PBR_MATERIAL 0x0046
 

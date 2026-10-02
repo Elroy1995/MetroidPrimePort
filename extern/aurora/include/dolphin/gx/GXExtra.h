@@ -35,8 +35,15 @@ void GXSetPBRProbe(const f32 viewToProbe[3][3], f32 weight);
 // of being the opacity, 4 has the vertex colour tint the surface; the sum of those. `layer` is the blend of a second layer (texture maps 4-6:
 // base, MR, normal) over the first by the vertex alpha and the two base maps' alphas: the
 // width of its edge, then the scale and offset of the first layer's height and of the
-// second's. A width of 0 is no second layer.
-void GXSetPBRMaterial(const f32 emissive[3], const f32 backlight[3], f32 heightBlend, f32 mode, const f32 layer[5]);
+// second's. A width of 0 is no second layer. `kind` is one of Remastered's special
+// surfaces, a strength and four parameters of it: 1 lays the second layer on what faces
+// `up` (world up in view space; the vertex alpha lifts it), 2 has map 4 as a detail map
+// multiplied into the base, 3 scales the glow by the vertex alpha (lava), 4 is ice: map 4
+// is seen inside the surface, at a depth of the base map's alpha times the fourth
+// parameter, through a fresnel of power and weight the first two; the third scales the
+// normal map and the strength is the inside's glow.
+void GXSetPBRMaterial(const f32 emissive[3], const f32 backlight[3], f32 heightBlend, f32 mode, const f32 layer[5],
+                      const f32 kind[6], const f32 up[3]);
 // Aurora extension: room cubes (see GX_AURORA_CREATE_PBR_CUBE). `texels` is RGBA16Float,
 // every mip of face 0 from the largest down, then face 1 and so on; it is copied.
 void GXCreatePBRCube(u32 id, u32 size, u32 mipCount, const void* texels, u32 length);
