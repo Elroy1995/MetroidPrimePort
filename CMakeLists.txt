@@ -129,7 +129,6 @@ set(MP_PORT_SOURCES
     platform/port_remastered_font.cpp
     platform/port_remastered_hud.cpp
     platform/port_remastered_movie.cpp
-    platform/port_remastered_ffmpeg.cpp
     platform/port_room_env.cpp
     platform/port_room_env_file.cpp
     platform/port_room_geo.cpp
@@ -146,8 +145,17 @@ set(MP_PORT_SOURCES
     platform/touch_pad.cpp
     platform/glibc_compat.c
     platform/ai_dma.cpp)
+# The movie import's decoder: a separate ffmpeg program on the desktop. Android
+# has none to start, so its own decoder (MediaCodec) and the port's JPEG encoder
+# do the same job there.
+if(ANDROID)
+    list(APPEND MP_PORT_SOURCES platform/port_remastered_mediacodec.cpp platform/port_remastered_jpeg.cpp)
+else()
+    list(APPEND MP_PORT_SOURCES platform/port_remastered_ffmpeg.cpp)
+endif()
 if(ANDROID)
     add_library(metroid_prime_port SHARED ${MP_PORT_SOURCES})
+    target_link_libraries(metroid_prime_port PRIVATE mediandk)
     target_link_options(metroid_prime_port PRIVATE "-Wl,-u,SDL_main")
 else()
     add_executable(metroid_prime_port ${MP_PORT_SOURCES})
@@ -370,7 +378,7 @@ if(MP_BUILD_TESTS)
     target_include_directories(port_hud_bars_tests PRIVATE platform/include)
     add_executable(port_remastered_hud_tests tests/port_remastered_hud.cpp platform/port_remastered_hud.cpp platform/port_hud_bars_file.cpp platform/port_remastered_image.cpp platform/port_remastered_pak.cpp)
     target_include_directories(port_remastered_hud_tests PRIVATE platform/include)
-    add_executable(port_remastered_movie_tests tests/port_remastered_movie.cpp platform/port_remastered_movie.cpp)
+    add_executable(port_remastered_movie_tests tests/port_remastered_movie.cpp platform/port_remastered_movie.cpp platform/port_remastered_jpeg.cpp)
     target_include_directories(port_remastered_movie_tests PRIVATE platform/include)
     add_executable(port_importers_tests tests/port_importers.cpp platform/port_importers_lines.cpp)
     target_include_directories(port_importers_tests PRIVATE platform/include)

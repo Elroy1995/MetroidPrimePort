@@ -1,5 +1,7 @@
+#include "port_remastered_jpeg.h"
 #include "port_remastered_movie.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <sstream>
@@ -143,9 +145,101 @@ void TestTable() {
   }
   Check(names == 16, "sixteen disc movies replaced");
 }
+
+void TestPacer() {
+  // 60 pictures a second played at 30: every other one.
+  PortRemastered::FramePacer half(30);
+  int kept = 0;
+  bool alternate = true;
+  for (int i = 0; i < 120; ++i) {
+    // The times a container gives are rounded down to its clock.
+    const int copies = half.Copies(int64_t(i) * 1000000 / 60);
+    alternate = alternate && copies == (i % 2 == 0 ? 1 : 0);
+    kept += copies;
+  }
+  Check(alternate && kept == 60, "half the rate keeps every other picture");
+  // 24 played at 30 repeats one in four.
+  PortRemastered::FramePacer faster(30);
+  kept = 0;
+  for (int i = 0; i < 24; ++i) {
+    kept += faster.Copies(int64_t(i) * 1000000 / 24);
+  }
+  Check(kept == 29, "a slower stream has pictures repeated");
+}
+
+// A picture of one colour, with its chroma as planes or interleaved.
+std::vector<uint8_t> Encode(PortRemastered::MovieEncoder& encoder, int width, int height, bool interleaved,
+                            uint8_t luma) {
+  const int chromaWidth = (width + 1) / 2;
+  const int chromaHeight = (height + 1) / 2;
+  std::vector<uint8_t> y(size_t(width) * height);
+  for (size_t i = 0; i < y.size(); ++i) {
+    y[i] = uint8_t(luma + i % 7);
+  }
+  std::vector<uint8_t> chroma(size_t(chromaWidth) * chromaHeight * 2);
+  PortRemastered::Picture picture;
+  picture.width = width;
+  picture.height = height;
+  picture.stride = width;
+  picture.y = y.data();
+  for (int i = 0; i < chromaWidth * chromaHeight; ++i) {
+    const uint8_t cb = uint8_t(100 + i % 5);
+    const uint8_t cr = uint8_t(150 + i % 3);
+    if (interleaved) {
+      chroma[size_t(i) * 2] = cb;
+      chroma[size_t(i) * 2 + 1] = cr;
+    } else {
+      chroma[size_t(i)] = cb;
+      chroma[size_t(chromaWidth) * chromaHeight + i] = cr;
+    }
+  }
+  picture.cb = chroma.data();
+  picture.cr = interleaved ? chroma.data() + 1 : chroma.data() + size_t(chromaWidth) * chromaHeight;
+  picture.chromaStride = interleaved ? chromaWidth * 2 : chromaWidth;
+  picture.chromaStep = interleaved ? 2 : 1;
+  std::vector<uint8_t> jpeg;
+  encoder.Encode(picture, jpeg);
+  return jpeg;
+}
+
+void TestEncoder() {
+  PortRemastered::MovieFormat format;
+  format.width = 40;
+  format.height = 26;
+  PortRemastered::MovieEncoder encoder(format);
+  const std::vector<uint8_t> jpeg = Encode(encoder, 40, 26, false, 90);
+  Check(jpeg.size() > 600 && jpeg[0] == 0xFF && jpeg[1] == 0xD8 && jpeg[jpeg.size() - 2] == 0xFF &&
+            jpeg[jpeg.size() - 1] == 0xD9,
+        "a picture from start marker to end marker");
+  // Tables (2 + 2 + 130), then the frame header: 8 bits, 26 by 40, 4:2:0.
+  const std::vector<uint8_t> frame = {0xFF, 0xC0, 0x00, 0x11, 8, 0, 26, 0, 40, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1};
+  Check(jpeg.size() > 136 + frame.size() && std::equal(frame.begin(), frame.end(), jpeg.begin() + 136),
+        "the frame header says what the game's decoder takes");
+  Check(Encode(encoder, 40, 26, true, 90) == jpeg, "interleaved chroma reads the same as planes");
+  Check(Encode(encoder, 40, 26, false, 160) != jpeg, "a brighter picture is another picture");
+  // The splitter that reads ffmpeg's output takes these too.
+  PortRemastered::JpegSplitter splitter;
+  int pictures = 0;
+  Check(splitter.Feed(jpeg.data(), jpeg.size(),
+                      [&](const std::vector<uint8_t>& picture) {
+                        ++pictures;
+                        return picture.size() <= jpeg.size();
+                      }) &&
+            splitter.Idle() && pictures == 1,
+        "the splitter takes the encoder's picture");
+  // Another size than the stream's: the header carries the format's.
+  const std::vector<uint8_t> shrunk = Encode(encoder, 80, 50, false, 90);
+  Check(shrunk.size() > 136 + frame.size() && std::equal(frame.begin(), frame.end(), shrunk.begin() + 136),
+        "a larger stream is brought to the format's size");
+  const std::vector<uint8_t> grown = Encode(encoder, 18, 14, true, 90);
+  Check(grown.size() > 136 + frame.size() && std::equal(frame.begin(), frame.end(), grown.begin() + 136),
+        "and a smaller one too");
+}
 } // namespace
 
 int main() {
+  TestPacer();
+  TestEncoder();
   TestSplitter();
   TestWriter();
   TestFormat();

@@ -595,6 +595,9 @@ your distribution.
 Without one the import finishes without the movies and says so; install ffmpeg
 and use "Import movies" in the same panel (or `--import-remastered-movies
 <nsp> [keys]`), which adds only the movies to the mod already there.
+Android cannot start a program like that, so there the system's own decoder
+(MediaCodec) reads the movies and the port writes the JPEGs itself; nothing has
+to be installed.
 
 Measured on the development machine: 342 models and 275 room environments, 44
 seconds on 16 threads, 2.3 GB of memory at the peak, 1.1 GB on disk (half of it
