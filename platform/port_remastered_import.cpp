@@ -16,9 +16,11 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 #include <aurora/dvd.h>
 
+#include "port_map_icons.h"
 #include "port_mods.h"
 #include "port_remastered_cmdl.h"
 #include "port_remastered_convert.h"
@@ -329,6 +331,9 @@ public:
         const uint32_t type = assets[a].type;
         if (type == kCMDL || type == kSMDL || type == kWMDL) {
           m_models.emplace(assets[a].id, Where{m_paks.size(), a});
+          for (const std::string& name : assets[a].names) {
+            m_modelNames.emplace(FrameKey(name), Where{m_paks.size(), a});
+          }
         } else if (type == kTXTR) {
           m_textures.emplace(assets[a].id, Where{m_paks.size(), a});
           for (const std::string& name : assets[a].names) {
@@ -393,6 +398,17 @@ public:
   bool ReadTextureNamed(const std::string& name, std::vector<uint8_t>& out, std::string& error) const {
     const auto found = m_textureNames.find(FrameKey(name));
     if (found == m_textureNames.end()) {
+      error = "not in the image";
+      return false;
+    }
+    const Pak& pak = *m_paks[found->second.pak];
+    return pak.ReadAsset(pak.Assets()[found->second.asset], out, error);
+  }
+
+  // A model by its asset name ("CMDL_MapCompass"), as ReadFrame finds a frame.
+  bool ReadModelNamed(const std::string& name, std::vector<uint8_t>& out, std::string& error) const {
+    const auto found = m_modelNames.find(FrameKey(name));
+    if (found == m_modelNames.end()) {
       error = "not in the image";
       return false;
     }
@@ -486,6 +502,7 @@ private:
   Index m_fonts;
   std::unordered_map<std::string, Where> m_frames;  // GUIF, by FrameKey
   std::unordered_map<std::string, Where> m_textureNames;  // the named TXTR, by FrameKey
+  std::unordered_map<std::string, Where> m_modelNames;    // the named CMDL, by FrameKey
   std::unordered_map<std::string, Where> m_maps;  // CMAP, by FrameKey
   std::unordered_map<std::string, Where> m_movies;  // FMV0, by IdToString
 };
@@ -985,7 +1002,22 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
       }
       ++hudFrames;
     }
-    if (hudFrames == 0) {
+    // The map screen's compass, which the game draws itself (port_map_icons.h).
+    int compassModels = 0;
+    for (const auto& [name, id] : {std::pair<const char*, uint32_t>{"CMDL_MapCompassShell", PortMapIcons::kCompassShell},
+                                   std::pair<const char*, uint32_t>{"CMDL_MapCompass", PortMapIcons::kCompassNeedle}}) {
+      std::vector<uint8_t> raw;
+      Model model;
+      std::string compassError;
+      if (!remastered.ReadModelNamed(name, raw, compassError) ||
+          !ParseModel(raw.data(), raw.size(), model, compassError) ||
+          !converter.ConvertModel(model, id, counts, compassError)) {
+        AddLine(std::string(name) + ": " + compassError);
+        continue;
+      }
+      ++compassModels;
+    }
+    if (hudFrames == 0 && compassModels == 0) {
       fs::remove_all(hudFolder, ec);
     }
   }

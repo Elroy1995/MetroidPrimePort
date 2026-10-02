@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -58,8 +59,16 @@ public:
   bool Convert(uint32_t retailFrame, const uint8_t* guif, size_t size, const Model& model, HudCounts& counts,
                std::string& error);
 
+  // A whole model (its finest level of detail), drawn the way the frames' are,
+  // under the given id: for models the game places itself, like the map's compass.
+  bool ConvertModel(const Model& model, uint32_t id, HudCounts& counts, std::string& error);
+
 private:
   uint32_t NewId(uint32_t& next);
+  bool LoadMaterial(std::string& error);
+  // The port id of a Remastered picture (pak byte order), written once; nothing
+  // for one that would not open.
+  std::optional<uint32_t> Texture(const ModelUuid& id, HudCounts& counts, const std::string& owner);
 
   ConvertIO m_io;
   std::map<ModelUuid, uint32_t> m_textures;  // by pak-order id; 0 for one that would not open

@@ -9,7 +9,9 @@
 
 #include <cstdio>
 #include <fstream>
+#include <utility>
 
+#include "port_map_icons.h"
 #include "port_remastered_hud.h"
 #include "port_remastered_pak.h"
 #include "port_remastered_txtr.h"
@@ -79,6 +81,23 @@ int main(int argc, char** argv) {
       continue;
     }
     std::printf("%s: %s\n", frame.name, error.c_str());
+    ++failed;
+  }
+  // The map screen's compass, which the import finds by name.
+  for (const auto& [name, id] : {std::pair<const char*, uint32_t>{"CMDL_MapCompassShell", PortMapIcons::kCompassShell},
+                                 std::pair<const char*, uint32_t>{"CMDL_MapCompass", PortMapIcons::kCompassNeedle}}) {
+    std::vector<uint8_t> raw;
+    Model model;
+    HudCounts counts;
+    std::string error;
+    if (!ReadFile(remDir + "/" + name + ".CMDL", raw)) {
+      error = "no model";
+    } else if (ParseModel(raw.data(), raw.size(), model, error) &&
+               converter.ConvertModel(model, id, counts, error)) {
+      std::printf("%s: %d textures\n", name, counts.textures);
+      continue;
+    }
+    std::printf("%s: %s\n", name, error.c_str());
     ++failed;
   }
   return failed == 0 ? 0 : 1;

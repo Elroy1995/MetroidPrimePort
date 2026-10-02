@@ -869,6 +869,111 @@ uint32_t HudConverter::NewId(uint32_t& next) {
   return next++;
 }
 
+bool HudConverter::LoadMaterial(std::string& error) {
+  if (m_material.empty()) {
+    Blob templateModel;
+    if (!m_io.retail || !m_io.retail(Tag('C', 'M', 'D', 'L'), kTemplateModel, templateModel) ||
+        !TemplateMaterial(templateModel, m_material)) {
+      error = "the disc's model " + Hex8(kTemplateModel) + " is not usable";
+      return false;
+    }
+  }
+  return true;
+}
+
+std::optional<uint32_t> HudConverter::Texture(const ModelUuid& id, HudCounts& counts, const std::string& owner) {
+  const auto known = m_textures.find(id);
+  if (known != m_textures.end()) {
+    return known->second == 0 ? std::nullopt : std::optional<uint32_t>(known->second);
+  }
+  m_textures[id] = 0;
+  Image image;
+  std::string textureError;
+  if (!m_io.texture || !m_io.texture(id, image, textureError) || image.width <= 0 || image.height <= 0) {
+    if (m_io.log) {
+      m_io.log(owner + ": texture " + IdToString(id) + ": " + textureError);
+    }
+    return std::nullopt;
+  }
+  const int w = std::clamp(NextPow2(image.width), 8, kNativeSize);
+  const int h = std::clamp(NextPow2(image.height), 8, kNativeSize);
+  if (w != image.width || h != image.height) {
+    image = Resize(image, w, h);
+  }
+  const int edge = std::max(w, h);
+  const int sw = edge <= kStubSize ? w : std::max(8, w * kStubSize / edge);
+  const int sh = edge <= kStubSize ? h : std::max(8, h * kStubSize / edge);
+  const uint32_t tid = NewId(m_nextTexture);
+  if ((edge > kStubSize && !m_io.write(Hex8(tid) + ".dds", EncodeDds(image, DdsFormat::BC7))) ||
+      !m_io.write(Hex8(tid) + ".TXTR", EncodeTxtrRgba8(edge > kStubSize ? Resize(image, sw, sh) : image, 8))) {
+    if (m_io.log) {
+      m_io.log(owner + ": texture " + IdToString(id) + ": cannot write");
+    }
+    return std::nullopt;
+  }
+  m_textures[id] = tid;
+  ++counts.textures;
+  return tid;
+}
+
+bool HudConverter::ConvertModel(const Model& model, uint32_t id, HudCounts& counts, std::string& error) {
+  if (!m_io.write || !LoadMaterial(error)) {
+    if (error.empty()) {
+      error = "nowhere to write";
+    }
+    return false;
+  }
+  // Each level of detail is a set of meshes of its own; keep the finest's.
+  std::vector<bool> finest(model.meshes.size(), false);
+  bool anyFinest = false;
+  for (size_t r = 0; r < 5 && r < model.lods.size(); ++r) {
+    const ModelLod& range = model.lods[r];
+    for (uint64_t i = range.indexOffset; i < uint64_t(range.indexOffset) + range.indexCount; ++i) {
+      if (i < model.lodMeshes.size() && model.lodMeshes[i] < finest.size()) {
+        finest[model.lodMeshes[i]] = true;
+        anyFinest = true;
+      }
+    }
+  }
+  std::vector<Part> parts;
+  std::vector<uint32_t> textures;
+  for (uint32_t mesh = 0; mesh < model.meshes.size(); ++mesh) {
+    if (anyFinest && !finest[mesh]) {
+      continue;
+    }
+    Part part;
+    ModelUuid picture;
+    if (!MeshPart(model, mesh, part) || !MaterialTexture(*part.material, picture)) {
+      continue;
+    }
+    const std::optional<uint32_t> tid = Texture(picture, counts, Hex8(id));
+    if (!tid) {
+      continue;
+    }
+    const auto slot = std::find(textures.begin(), textures.end(), *tid);
+    part.slot = uint32_t(slot - textures.begin());
+    if (slot == textures.end()) {
+      textures.push_back(*tid);
+    }
+    parts.push_back(std::move(part));
+  }
+  Blob file;
+  if (parts.empty()) {
+    error = "no mesh with a picture";
+    return false;
+  }
+  if (!BuildModel(parts, textures, m_material, file)) {
+    error = "too many vertices";
+    return false;
+  }
+  if (!m_io.write(Hex8(id) + ".CMDL", file)) {
+    error = "cannot write a model";
+    return false;
+  }
+  ++counts.models;
+  return true;
+}
+
 bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t size, const Model& model,
                            HudCounts& counts, std::string& error) {
   auto log = [&](const std::string& line) {
@@ -887,13 +992,8 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
   if (!ParseFrame(retail, header, disc, error) || !ParseRemFrame(guif, size, rem, error)) {
     return false;
   }
-  if (m_material.empty()) {
-    Blob templateModel;
-    if (!m_io.retail(Tag('C', 'M', 'D', 'L'), kTemplateModel, templateModel) ||
-        !TemplateMaterial(templateModel, m_material)) {
-      error = "the disc's model " + Hex8(kTemplateModel) + " is not usable";
-      return false;
-    }
+  if (!LoadMaterial(error)) {
+    return false;
   }
 
   // Where each widget is in its frame, with all its parents applied. A name
@@ -1241,34 +1341,7 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
     if (!MaterialTexture(*part.material, id)) {
       return std::nullopt;
     }
-    const auto known = m_textures.find(id);
-    if (known != m_textures.end()) {
-      return known->second == 0 ? std::nullopt : std::optional<uint32_t>(known->second);
-    }
-    m_textures[id] = 0;
-    Image image;
-    std::string textureError;
-    if (!m_io.texture || !m_io.texture(id, image, textureError) || image.width <= 0 || image.height <= 0) {
-      log("texture " + IdToString(id) + ": " + textureError);
-      return std::nullopt;
-    }
-    const int w = std::clamp(NextPow2(image.width), 8, kNativeSize);
-    const int h = std::clamp(NextPow2(image.height), 8, kNativeSize);
-    if (w != image.width || h != image.height) {
-      image = Resize(image, w, h);
-    }
-    const int edge = std::max(w, h);
-    const int sw = edge <= kStubSize ? w : std::max(8, w * kStubSize / edge);
-    const int sh = edge <= kStubSize ? h : std::max(8, h * kStubSize / edge);
-    const uint32_t tid = NewId(m_nextTexture);
-    if ((edge > kStubSize && !m_io.write(Hex8(tid) + ".dds", EncodeDds(image, DdsFormat::BC7))) ||
-        !m_io.write(Hex8(tid) + ".TXTR", EncodeTxtrRgba8(edge > kStubSize ? Resize(image, sw, sh) : image, 8))) {
-      log("texture " + IdToString(id) + ": cannot write");
-      return std::nullopt;
-    }
-    m_textures[id] = tid;
-    ++counts.textures;
-    return tid;
+    return Texture(id, counts, Hex8(retailFrame));
   };
   PortHudBars::Bars bars;
   for (Widget& w : out) {
