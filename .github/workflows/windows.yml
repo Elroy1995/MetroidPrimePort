@@ -56,6 +56,19 @@ jobs:
           Copy-Item build-win/initial_pipeline_cache.db dist/
           Get-ChildItem build-win/*.dll | Copy-Item -Destination dist/
           if (Test-Path build-win/metroid_prime_port.pdb) { Copy-Item build-win/metroid_prime_port.pdb dist/ }
+          # find_package(OpenSSL) links the runner's own OpenSSL through import
+          # libraries, so its DLLs are not in build-win and have to be taken
+          # from that install. Without them the zip fails to start on any
+          # machine that has no OpenSSL of its own.
+          $include = (Select-String -Path build-win/CMakeCache.txt -Pattern '^OPENSSL_INCLUDE_DIR:[A-Z]+=(.+)$').Matches[0].Groups[1].Value
+          if ($include -and -not $include.EndsWith('-NOTFOUND')) {
+            $root = Split-Path $include
+            foreach ($name in 'libcrypto-3-x64.dll', 'libssl-3-x64.dll') {
+              $dll = @("$root/bin/$name", "$root/$name") | Where-Object { Test-Path $_ } | Select-Object -First 1
+              if (-not $dll) { throw "$name not found under $root" }
+              Copy-Item $dll dist/
+            }
+          }
           # The HD texture and button-prompt sets live next to the executable
           # (DefaultTexturesPath); without them the zip shows GameCube prompts
           # only. The post-build step puts them in build-win/textures.
@@ -76,10 +89,19 @@ jobs:
               New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
               Copy-Item $_.FullName $destination
             }
+          if (Test-Path dist/libcrypto-3-x64.dll) {
+            $license = @("$root/license.txt", "$root/LICENSE.txt") | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if ($license) { Copy-Item $license dist/licenses/openssl.txt }
+            else { Invoke-WebRequest https://raw.githubusercontent.com/openssl/openssl/openssl-3.5/LICENSE.txt -OutFile dist/licenses/openssl.txt }
+          }
 
+      # The runner has OpenSSL and other runtimes on PATH, which hid a DLL
+      # missing from the package. Start it with the system directories only, as
+      # a player's machine would.
       - name: Check packaged startup
         shell: pwsh
         run: |
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           $process = Start-Process -FilePath ./dist/metroid_prime_port.exe -WorkingDirectory ./dist -Wait -PassThru -RedirectStandardError ./startup-error.log
           if ($process.ExitCode -ne 1) { throw "Unexpected exit code: $($process.ExitCode)" }
           if (-not (Select-String -Path ./startup-error.log -Pattern 'no disc image given')) { throw 'Packaged executable did not reach main' }
