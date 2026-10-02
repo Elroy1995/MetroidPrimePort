@@ -577,6 +577,23 @@ pictures (a small `.TXTR` and, above 64 px, a `.dds`) and, for the energy,
 missile and threat bars, a `.hudbars`. `MP_REMASTERED_HUD=0` leaves the HUD
 out. Experimental: the pause, map and message screens are still the disc's.
 
+The menu movies come along too, into the mod's `Video` folder under the disc's
+names: the title, the file select and its transitions, and four of the attract
+movies (the other six, and the credits and ending movies, stay the disc's).
+Remastered's are H.264; the game plays THP, a JPEG per frame, so each is decoded
+once and written again, by default as 1600x900 at 30 frames a second (the disc's
+own rate; the game's decoder does not keep up with 60 at that size), about
+550 MB for the sixteen. `MP_REMASTERED_MOVIES=1280x720@30` picks another size
+and rate, `MP_REMASTERED_MOVIES=0` leaves them out. A movie of any size is
+fitted to the view with its shape kept, so in 4:3 these have bars above and
+below.
+
+The decoding is done by **ffmpeg**, run as a separate program: `MP_FFMPEG` if
+set, else an `ffmpeg` next to the game's executable, else the one on the path.
+Without one the import finishes without the movies and says so; install ffmpeg
+and use "Import movies" in the same panel (or `--import-remastered-movies
+<nsp> [keys]`), which adds only the movies to the mod already there.
+
 Measured on the development machine: 342 models and 275 room environments, 44
 seconds on 16 threads, 2.3 GB of memory at the peak, 1.1 GB on disk (half of it
 the room environments). Desktop only.

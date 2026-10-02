@@ -434,9 +434,11 @@ int main(int argc, char** argv) {
     // --import-remastered <image.nsp> [key file]: build the remastered-models
     // mod from the user's own copy, without starting the game. The disc comes
     // from MP_DISC or the path the game remembers.
-    if (argc >= 2 && std::strcmp(argv[1], "--import-remastered") == 0) {
+    // --import-remastered-movies does only the menu movies, into that mod.
+    const bool importMovies = argc >= 2 && std::strcmp(argv[1], "--import-remastered-movies") == 0;
+    if (importMovies || (argc >= 2 && std::strcmp(argv[1], "--import-remastered") == 0)) {
         if (argc < 3) {
-            std::fprintf(stderr, "usage: %s --import-remastered <image.nsp> [key file]\n", argv[0]);
+            std::fprintf(stderr, "usage: %s %s <image.nsp> [key file]\n", argv[0], argv[1]);
             return 2;
         }
         PortDebug::LoadDiscPath();
@@ -451,7 +453,7 @@ int main(int argc, char** argv) {
             id->diskNumber != 0 || id->gameVersion != 0) {
             std::fprintf(stderr, "unsupported disc; expected GM8E01 USA revision 0\n");
         } else {
-            result = PortRemastered::RunImportFromCommandLine(argv[2], argc >= 4 ? argv[3] : "");
+            result = PortRemastered::RunImportFromCommandLine(argv[2], argc >= 4 ? argv[3] : "", importMovies);
         }
         aurora_dvd_close();
         return result;

@@ -42,6 +42,10 @@ std::string DefaultKeysPath();
 // the game. The disc must be open. False (with the reason in the state's
 // message) when one is already running or there is no mods folder.
 bool StartImport(const std::string& nspPath, const std::string& keysPath, int threads = 0);
+// Only the menu movies (port_remastered_movie.h), into the mod an earlier
+// import made: for a player who had no ffmpeg then. Same state and cancelling;
+// false when one is running or there is no such mod.
+bool StartMovieImport(const std::string& nspPath, const std::string& keysPath);
 ImportState ImportStatus();
 // Asks the running import to stop; it ends at the next model.
 void CancelImport();
@@ -54,6 +58,7 @@ bool ApplyPendingImport();
 
 // `--import-remastered <nsp> [keys]`: imports with every core, progress on
 // stdout, and installs the mod. The disc must be open. Returns the exit code.
-int RunImportFromCommandLine(const std::string& nspPath, const std::string& keysPath);
+// `--import-remastered-movies` is StartMovieImport() the same way.
+int RunImportFromCommandLine(const std::string& nspPath, const std::string& keysPath, bool moviesOnly = false);
 
 }  // namespace PortRemastered

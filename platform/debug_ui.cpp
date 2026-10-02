@@ -2744,9 +2744,18 @@ void DrawRemasteredImport() {
     if (ImGui::Button("Import##remastered")) {
       PortRemastered::StartImport(sImage, sKeys);
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Import movies##remastered")) {
+      PortRemastered::StartMovieImport(sImage, sKeys);
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+      ImGui::SetTooltip("Only the menu movies, added to the mod already imported. Needs ffmpeg.");
+    }
     ImGui::EndDisabled();
     if (state.finished && state.ok) {
-      ImGui::TextColored(ImVec4(0.5f, 1.f, 0.5f, 1.f), "%s", state.message.c_str());
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 1.f, 0.5f, 1.f));
+      ImGui::TextWrapped("%s", state.message.c_str());
+      ImGui::PopStyleColor();
       if (ImGui::Button("Load it now##remastered")) {
         PortSaveState::RequestModReload();
       }

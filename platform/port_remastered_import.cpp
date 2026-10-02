@@ -23,6 +23,7 @@
 #include "port_remastered_convert.h"
 #include "port_remastered_font.h"
 #include "port_remastered_hud.h"
+#include "port_remastered_movie.h"
 #include "port_remastered_nsp.h"
 #include "port_remastered_pak.h"
 #include "port_remastered_room.h"
@@ -44,6 +45,7 @@ constexpr uint32_t kMREA = 0x4D524541;
 constexpr uint32_t kFONT = 0x464F4E54;
 constexpr uint32_t kGUIF = 0x47554946;
 constexpr uint32_t kFRME = 0x46524D45;
+constexpr uint32_t kFMV0 = 0x464D5630;
 
 constexpr const char* kStagingName = ".remastered-models.importing";
 // Written last, so a staging folder without it is an import that was cut short.
@@ -53,6 +55,8 @@ constexpr const char* kGeometryFolder = "roomgeo";
 constexpr const char* kFontFolder = "font";
 constexpr const char* kFontName = "deface.sdfont";
 constexpr const char* kHudFolder = "hud";
+// The disc's own folder: a mod's file there is opened in place of the disc's.
+constexpr const char* kMovieFolder = "Video";
 // Largest edge of a room geometry texture: there are thousands of them.
 constexpr int kGeometryTexture = 1024;
 
@@ -112,6 +116,22 @@ void Finish(bool ok, const std::string& message) {
 bool WantsHud() {
   const char* env = std::getenv("MP_REMASTERED_HUD");
   return env == nullptr || std::strcmp(env, "0") != 0;
+}
+
+// MP_REMASTERED_MOVIES=0 leaves the disc's movies alone; a size and rate
+// ("1280x720@30") is what they are written as.
+bool WantsMovies(MovieFormat& format) {
+  const char* env = std::getenv("MP_REMASTERED_MOVIES");
+  if (env == nullptr || env[0] == '\0' || std::strcmp(env, "1") == 0) {
+    return true;
+  }
+  if (std::strcmp(env, "0") == 0) {
+    return false;
+  }
+  if (!ParseMovieFormat(env, format)) {
+    AddLine(std::string("MP_REMASTERED_MOVIES: \"") + env + "\" is not a size and rate like 1280x720@30");
+  }
+  return true;
 }
 
 // --- The retail disc ----------------------------------------------------------
@@ -278,6 +298,8 @@ public:
           m_textures.emplace(assets[a].id, Where{m_paks.size(), a});
         } else if (type == kFONT) {
           m_fonts.emplace(assets[a].id, Where{m_paks.size(), a});
+        } else if (type == kFMV0) {
+          m_movies.emplace(IdToString(assets[a].id), Where{m_paks.size(), a});
         } else if (type == kGUIF) {
           for (const std::string& name : assets[a].names) {
             m_frames.emplace(FrameKey(name), Where{m_paks.size(), a});
@@ -287,7 +309,7 @@ public:
       m_paks.push_back(std::move(pak));
       m_paths.push_back(file->path);
     }
-    if (m_models.empty()) {
+    if (m_models.empty() && m_movies.empty()) {
       error = "no models in this image; is it Metroid Prime Remastered?";
       return false;
     }
@@ -318,6 +340,17 @@ public:
   bool ReadFrame(const std::string& name, std::vector<uint8_t>& out, std::string& error) const {
     const auto found = m_frames.find(FrameKey(name));
     if (found == m_frames.end()) {
+      error = "not in the image";
+      return false;
+    }
+    const Pak& pak = *m_paks[found->second.pak];
+    return pak.ReadAsset(pak.Assets()[found->second.asset], out, error);
+  }
+
+  // A movie by its id as IdToString prints it.
+  bool ReadMovie(const std::string& id, std::vector<uint8_t>& out, std::string& error) const {
+    const auto found = m_movies.find(id);
+    if (found == m_movies.end()) {
       error = "not in the image";
       return false;
     }
@@ -388,6 +421,7 @@ private:
   Index m_textures;
   Index m_fonts;
   std::unordered_map<std::string, Where> m_frames;  // GUIF, by FrameKey
+  std::unordered_map<std::string, Where> m_movies;  // FMV0, by IdToString
 };
 
 // --- The import ------------------------------------------------------------------
@@ -422,6 +456,107 @@ ConvertOptions OptionsFor(const TableEntry& entry) {
     }
   }
   return options;
+}
+
+// Remastered's menu movies, written into `folder` under the disc's names
+// (port_remastered_movie.h). Returns how many of the disc's movies were replaced.
+int ImportMovies(const Remastered& remastered, const fs::path& folder, const MovieFormat& format, bool& noFfmpeg) {
+  SetMessage("Looking for ffmpeg");
+  const std::string ffmpeg = FindFfmpeg();
+  noFfmpeg = ffmpeg.empty();
+  if (noFfmpeg) {
+    AddLine("movies skipped: ffmpeg not found. Install ffmpeg (or put it next to the game), then use \"Import "
+            "movies\".");
+    return 0;
+  }
+  std::error_code ec;
+  fs::create_directories(folder, ec);
+  const auto text = [](const fs::path& path) {
+    const std::u8string u8 = path.u8string();
+    return std::string(u8.begin(), u8.end());
+  };
+  // ffmpeg reads the MP4 from a file: it has to seek in it.
+  const fs::path source = folder / "import.tmp.mp4";
+  const std::vector<Movie>& movies = Movies();
+  int written = 0;
+  for (size_t i = 0; i < movies.size() && !sCancel; ++i) {
+    const Movie& movie = movies[i];
+    SetMessage("Converting the movies (" + std::to_string(i + 1) + "/" + std::to_string(movies.size()) + ")");
+    std::vector<uint8_t> raw;
+    std::string error;
+    size_t offset = 0;
+    size_t length = 0;
+    int frames = 0;
+    const fs::path first = folder / (std::string(movie.names[0]) + ".thp");
+    const fs::path tmp = folder / "import.tmp.thp";
+    bool ok = remastered.ReadMovie(movie.id, raw, error) &&
+              (MovieStream(raw.data(), raw.size(), offset, length) || (error = "not a movie", false));
+    if (ok) {
+      std::ofstream file(source, std::ios::binary | std::ios::trunc);
+      file.write(reinterpret_cast<const char*>(raw.data() + offset), std::streamsize(length));
+      file.close();
+      ok = bool(file) || (error = "cannot write to the mod folder", false);
+    }
+    raw = {};
+    ok = ok && ConvertMovie(ffmpeg, text(source), text(tmp), format, [] { return sCancel.load(); }, frames, error);
+    if (ok) {
+      // Written beside it and renamed, so a movie cut short never has the name.
+      fs::rename(tmp, first, ec);
+      ok = !ec || (error = "cannot replace the movie: " + ec.message(), false);
+    }
+    if (!ok) {
+      fs::remove(tmp, ec);
+      if (!sCancel) {
+        AddLine(std::string(movie.names[0]) + ".thp: " + error);
+      }
+      continue;
+    }
+    ++written;
+    // The disc's other takes of a transition are the same file again.
+    for (size_t n = 1; n < movie.names.size(); ++n) {
+      const fs::path other = folder / (std::string(movie.names[n]) + ".thp");
+      fs::remove(other, ec);
+      fs::create_hard_link(first, other, ec);
+      if (ec) {
+        fs::copy_file(first, other, fs::copy_options::overwrite_existing, ec);
+      }
+      if (ec) {
+        AddLine(std::string(movie.names[n]) + ".thp: " + ec.message());
+      } else {
+        ++written;
+      }
+    }
+  }
+  fs::remove(source, ec);
+  if (written == 0) {
+    fs::remove(folder, ec); // only if nothing is in it
+  }
+  return written;
+}
+
+// Only the movies, into the mod an earlier import made: for a player who had
+// no ffmpeg at the time.
+void RunMovies(std::string nspPath, std::string keysPath, fs::path mod) {
+  SetMessage("Opening the image");
+  std::string error;
+  Remastered remastered;
+  if (!remastered.Open(nspPath, keysPath, error)) {
+    Finish(false, sCancel ? std::string("Cancelled.") : error);
+    return;
+  }
+  MovieFormat format;
+  WantsMovies(format);
+  bool noFfmpeg = false;
+  const int movies = ImportMovies(remastered, mod / kMovieFolder, format, noFfmpeg);
+  if (sCancel) {
+    Finish(false, "Cancelled.");
+  } else if (noFfmpeg) {
+    Finish(false, "ffmpeg not found. Install it, or put it next to the game.");
+  } else if (movies == 0) {
+    Finish(false, "No movies converted.");
+  } else {
+    Finish(true, std::to_string(movies) + " movies converted.");
+  }
 }
 
 void Run(std::string nspPath, std::string keysPath, int threads, fs::path staging) {
@@ -747,6 +882,16 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
       fs::remove_all(hudFolder, ec);
     }
   }
+  // Remastered's menu movies.
+  int movies = 0;
+  bool noFfmpeg = false;
+  if (MovieFormat format; WantsMovies(format) && !sCancel) {
+    movies = ImportMovies(remastered, staging / kMovieFolder, format, noFfmpeg);
+  }
+  if (sCancel) {
+    fail("Cancelled.");
+    return;
+  }
   {
     std::ofstream marker(staging / kMarkerName);
     if (!marker) {
@@ -769,7 +914,10 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
   if (hudFrames != 0) {
     message += ", " + std::to_string(hudFrames) + " HUD frames";
   }
-  Finish(true, message + ".");
+  if (movies != 0) {
+    message += ", " + std::to_string(movies) + " movies";
+  }
+  Finish(true, message + (noFfmpeg ? ". Movies skipped: ffmpeg not found." : "."));
 }
 
 }  // namespace
@@ -789,6 +937,37 @@ std::string DefaultKeysPath() {
   }
   const std::u8string text = path.u8string();
   return std::string(text.begin(), text.end());
+}
+
+bool StartMovieImport(const std::string& nspPath, const std::string& keysPath) {
+  {
+    std::lock_guard<std::mutex> lock(sStateMutex);
+    if (sState.running) {
+      return false;
+    }
+  }
+  if (sThread.joinable()) {
+    sThread.join();
+  }
+  // A finished import that has not been moved into place yet is the newer mod.
+  const fs::path staging = StagingFolder();
+  std::error_code ec;
+  fs::path mod;
+  if (!staging.empty()) {
+    mod = fs::exists(staging / kMarkerName, ec) ? staging : staging.parent_path() / kImportModName;
+  }
+  std::lock_guard<std::mutex> lock(sStateMutex);
+  sState = {};
+  if (mod.empty() || !fs::is_directory(mod, ec)) {
+    sState.finished = true;
+    sState.message = "Import the models first: the movies go into that mod.";
+    return false;
+  }
+  sCancel = false;
+  sState.running = true;
+  sState.message = "Starting";
+  sThread = std::thread(RunMovies, nspPath, keysPath, mod);
+  return true;
 }
 
 bool StartImport(const std::string& nspPath, const std::string& keysPath, int threads) {
@@ -854,13 +1033,14 @@ bool ApplyPendingImport() {
   return true;
 }
 
-int RunImportFromCommandLine(const std::string& nspPath, const std::string& keysPath) {
+int RunImportFromCommandLine(const std::string& nspPath, const std::string& keysPath, bool moviesOnly) {
   std::string keys = keysPath.empty() ? DefaultKeysPath() : keysPath;
   if (keys.empty()) {
     std::fprintf(stderr, "no key file given and no ~/.switch/prod.keys\n");
     return 2;
   }
-  if (!StartImport(nspPath, keys, int(std::max(1u, std::thread::hardware_concurrency())))) {
+  if (moviesOnly ? !StartMovieImport(nspPath, keys)
+                 : !StartImport(nspPath, keys, int(std::max(1u, std::thread::hardware_concurrency())))) {
     std::fprintf(stderr, "%s\n", ImportStatus().message.c_str());
     return 1;
   }
@@ -884,6 +1064,9 @@ int RunImportFromCommandLine(const std::string& nspPath, const std::string& keys
   }
   if (!state.ok) {
     return 1;
+  }
+  if (moviesOnly) {
+    return 0;
   }
   if (!ApplyPendingImport()) {
     std::fprintf(stderr, "could not move the mod into %s\n", PortMods::Folder().c_str());
