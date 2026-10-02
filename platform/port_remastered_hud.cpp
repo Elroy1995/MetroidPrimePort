@@ -69,6 +69,8 @@ constexpr uint32_t kMapScreen = 0x97FF54DE;
 constexpr double kPi = 3.14159265358979323846;
 const char* const kMapPrompt = "textpane_togglelegend";
 const char* const kMapDiscOnly[] = {"textpane_instructions", "textpane_right", "textpane_right1"};
+// The box around those prompts. Remastered has none, having no such row.
+const char* const kMapPromptBox = "model_framemap";
 
 std::string Lower(std::string s) {
   for (char& c : s) {
@@ -302,6 +304,8 @@ struct Widget {
   uint8_t tail[18] = {};
   int guif = -1;            // the Remastered widget of the same name
   bool added = false;       // Remastered's own, not on the disc
+  bool kept = false;        // the disc's own art, drawn in this layout as it is
+  bool row = false;         // on the map screen's row of prompts, which is the disc's
 };
 
 bool ParseFrame(const Blob& data, uint32_t header[4], std::vector<Widget>& out, std::string& error) {
@@ -1008,6 +1012,7 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
     return Mul(s, w);
   };
   std::vector<Widget> out;
+  std::optional<double> promptLeft;
   for (Widget w : disc) {
     std::string name = Lower(w.name);
     for (const auto& alias : kAlias) {
@@ -1055,6 +1060,7 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
           left = std::min(left, centre - 0.5 * (lhi[0] - llo[0]) * AxisLength(lm, 0));
         }
         w.world.m[0][3] += left - (from[0] - half);
+        promptLeft = left;
         // From the left, where the disc centres the line on its box and lets
         // it run over both edges; the box grows to the right to hold it.
         Set32(w.typeData, kTextPaneJustify, 0);
@@ -1067,10 +1073,13 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
       }
       newName[Lower(rem[found->second].name)] = w.name;
       found = remByName.end();
-    } else if (found == remByName.end() && map && w.type == Tag('T', 'X', 'P', 'N')) {
+    } else if (found == remByName.end() && map &&
+               (w.type == Tag('T', 'X', 'P', 'N') || (w.type == Tag('M', 'O', 'D', 'L') && name == kMapPromptBox))) {
       Mat s = Identity();
       s.m[0][0] = s.m[2][2] = keep;
       w.world = Mul(s, w.world);
+      w.kept = w.type == Tag('M', 'O', 'D', 'L');
+      w.row = true;
     }
     if (found != remByName.end()) {
       w.guif = int(found->second);
@@ -1116,6 +1125,38 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
       }
     }
     out.push_back(std::move(w));
+  }
+
+  // The disc centres its row of prompts and sets the legend's above it.
+  // Remastered's legend prompt is on the row's own line, at the left, so the
+  // row moves right until its box is as far from the right edge as that
+  // prompt is from the left one.
+  if (map && promptLeft) {
+    for (const Widget& w : out) {
+      Blob cmdl;
+      if (!w.kept || w.typeData.size() < 4 || !m_io.retail(Tag('C', 'M', 'D', 'L'), Get32(w.typeData, 0), cmdl) ||
+          cmdl.size() < 36) {
+        continue;
+      }
+      // A model's bounding box follows its magic, version and flags.
+      double right = -1e30;
+      for (int corner = 0; corner < 8; ++corner) {
+        double x = w.world.m[0][3];
+        for (int k = 0; k < 3; ++k) {
+          x += w.world.m[0][k] * double(GetFloat(cmdl, 12 + size_t(k) * 4 + ((corner >> k) & 1 ? 12 : 0)));
+        }
+        right = std::max(right, x);
+      }
+      const double shift = 2.0 * remWorld(size_t(camera)).m[0][3] - *promptLeft - right;
+      if (shift > 0.0) {
+        for (Widget& other : out) {
+          if (other.row) {
+            other.world.m[0][3] += shift;
+          }
+        }
+      }
+      break;
+    }
   }
 
   // Remastered's own widgets, each after its parent and its parent's children.
@@ -1232,6 +1273,9 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
   PortHudBars::Bars bars;
   for (Widget& w : out) {
     if (w.type == Tag('M', 'O', 'D', 'L') && w.typeData.size() >= kModelSize) {
+      if (w.kept) {
+        continue;
+      }
       if (w.guif < 0) {
         Set32(w.typeData, 0, kNoModel);  // the disc's art has no place in this layout
         continue;
