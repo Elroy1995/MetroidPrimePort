@@ -1515,7 +1515,24 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   std::vector<Buffer> buffers(model.vertexBuffers.size());
   std::vector<Prim> prims;
   std::vector<uint32_t> bufOrder;  // buffers in the order the primitives reach them
-  for (const ModelMesh& mesh : model.meshes) {
+  // Each level of detail is a set of meshes of its own, so drawing every mesh
+  // stacks the coarse copies on the fine one. Keep the finest level's.
+  std::vector<bool> finest(model.meshes.size(), false);
+  bool anyFinest = false;
+  for (size_t r = 0; r < 5 && r < model.lods.size(); ++r) {
+    const ModelLod& range = model.lods[r];
+    for (size_t i = range.indexOffset; i < size_t(range.indexOffset) + range.indexCount; ++i) {
+      if (i < model.lodMeshes.size() && model.lodMeshes[i] < finest.size()) {
+        finest[model.lodMeshes[i]] = true;
+        anyFinest = true;
+      }
+    }
+  }
+  for (size_t meshIndex = 0; meshIndex < model.meshes.size(); ++meshIndex) {
+    const ModelMesh& mesh = model.meshes[meshIndex];
+    if (anyFinest && !finest[meshIndex]) {
+      continue;
+    }
     if (mesh.material >= mats.size() || mesh.vertexBuffer >= buffers.size()) {
       throw Fail{"a Remastered mesh names a material or vertex buffer that does not exist"};
     }

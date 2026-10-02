@@ -336,7 +336,7 @@ std::string FormatSummary(const PortRemastered::Model& model) {
   out += "materials " + std::to_string(model.materials.size()) + "\n";
   out += "vertexBuffers " + std::to_string(model.vertexBuffers.size()) + "\n";
   out += "meshes " + std::to_string(model.meshes.size()) + "\n";
-  out += "jointIds " + std::to_string(model.jointIds.size()) + "\n";
+  out += "lodMeshes " + std::to_string(model.lodMeshes.size()) + "\n";
   out += "lods " + std::to_string(model.lods.size()) + " rules " + std::to_string(model.lodRules.size()) +
          "\n";
   out += "bounds";

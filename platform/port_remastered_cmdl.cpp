@@ -836,7 +836,7 @@ struct MeshDecl {
 };
 
 bool ParseMesh(Cursor& cursor, std::vector<MeshDecl>& meshes, std::vector<ModelLod>& lods,
-               std::vector<float>& lodRules, std::vector<uint16_t>& jointIds) {
+               std::vector<float>& lodRules, std::vector<uint16_t>& lodMeshes) {
   const uint32_t meshCount = cursor.U32();
   if (!cursor.ok() || meshCount > cursor.remaining() / 16) {
     return cursor.Fail("implausible mesh count");
@@ -855,13 +855,13 @@ bool ParseMesh(Cursor& cursor, std::vector<MeshDecl>& meshes, std::vector<ModelL
   // Two bitmaps follow the meshes, each rounded up to whole bytes.
   cursor.Skip((meshCount + 3) / 4);
   cursor.Skip((meshCount + 7) / 8);
-  const uint32_t jointCount = cursor.U32();
-  if (!cursor.ok() || jointCount > cursor.remaining() / 2) {
-    return cursor.Fail("implausible joint table length");
+  const uint32_t listCount = cursor.U32();
+  if (!cursor.ok() || listCount > cursor.remaining() / 2) {
+    return cursor.Fail("implausible LOD mesh list length");
   }
-  jointIds.resize(jointCount);
-  for (uint32_t i = 0; i < jointCount; ++i) {
-    jointIds[i] = cursor.U16();
+  lodMeshes.resize(listCount);
+  for (uint32_t i = 0; i < listCount; ++i) {
+    lodMeshes[i] = cursor.U16();
   }
   const uint8_t lodCount = cursor.U8();
   if (!cursor.ok() || lodCount > cursor.remaining() / 40) {
@@ -1202,7 +1202,7 @@ bool ParseModel(const uint8_t* data, size_t size, Model& out, std::string& error
                         return ParseMaterials(content, out.materials);
                       case kChunkMesh:
                         sawMesh = true;
-                        return ParseMesh(content, meshDecls, out.lods, out.lodRules, out.jointIds);
+                        return ParseMesh(content, meshDecls, out.lods, out.lodRules, out.lodMeshes);
                       case kChunkVbuf:
                         sawVbuf = true;
                         return ParseVertexInfos(content, vertexInfos);

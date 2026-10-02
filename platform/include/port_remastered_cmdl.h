@@ -150,8 +150,10 @@ struct ModelMesh {
   std::vector<uint32_t> indices;
 };
 
-// One of the five index ranges an LOD entry declares, flattened: the file stores
-// five per LOD, of which the game uses one or two.
+// One of the five ranges an LOD entry declares, flattened: a run of
+// Model::lodMeshes. The file stores five per LOD, of which the game uses one or two
+// (in the room models looked at, the first and last agree, as do the second and
+// fourth, and both pairs list the same meshes).
 struct ModelLod {
   uint32_t indexOffset = 0;
   uint32_t indexCount = 0;
@@ -169,9 +171,10 @@ struct Model {
   std::vector<ModelVertexBuffer> vertexBuffers;
   std::vector<ModelMesh> meshes;
   std::vector<ModelMaterial> materials;
-  // The MESH chunk's joint table: joint ids, grouped per LOD (retrotool calls it
-  // the shorts table). How many belong to each LOD is implied by lods.
-  std::vector<uint16_t> jointIds;
+  // The MESH chunk's table of mesh indices (retrotool calls it the shorts table):
+  // every level of detail is a set of meshes of its own, and each range in lods
+  // is a run of this table naming the meshes that level draws.
+  std::vector<uint16_t> lodMeshes;
   std::vector<ModelLod> lods;      // five ranges per LOD entry, in file order
   std::vector<float> lodRules;     // distance thresholds, when the file has them
 };
