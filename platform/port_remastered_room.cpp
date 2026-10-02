@@ -912,21 +912,25 @@ bool Writer::Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>&
     return false;
   }
 
-  int64_t b0[3] = {INT64_MAX, INT64_MAX, INT64_MAX}, b1[3] = {INT64_MIN, INT64_MIN, INT64_MIN};
+  // Where each texture starts, in points. A block is 64 x 64 x 16 points, and a texture
+  // 128 wide is two blocks along x, counted in its own width.
+  const auto start = [](const GridTexture& t, int axis) -> int64_t {
+    return axis == 0 ? int64_t(t.bx) * int64_t(t.w) : axis == 1 ? int64_t(t.by) * 64 : int64_t(t.bz) * 16;
+  };
+  const auto extent = [](const GridTexture& t, int axis) -> int64_t {
+    return axis == 0 ? int64_t(t.w) : axis == 1 ? 64 : 16;
+  };
+  int64_t base[3] = {INT64_MAX, INT64_MAX, INT64_MAX}, top[3] = {INT64_MIN, INT64_MIN, INT64_MIN};
   for (const GridTexture& t : textures) {
-    const int64_t b[3] = {t.bx, t.by, t.bz};
     for (int i = 0; i < 3; ++i) {
-      b0[i] = std::min(b0[i], b[i]);
-      b1[i] = std::max(b1[i], b[i]);
+      base[i] = std::min(base[i], start(t, i));
+      top[i] = std::max(top[i], start(t, i) + extent(t, i));
     }
   }
-  const int64_t block[3] = {64, 64, 16};
-  int64_t nb[3], base[3], c0[3], c1[3];
+  int64_t c0[3], c1[3];
   for (int i = 0; i < 3; ++i) {
-    nb[i] = b1[i] - b0[i] + 1;
-    base[i] = b0[i] * block[i];
     c0[i] = std::max<int64_t>(lo[i] - 1 - base[i], 0);
-    c1[i] = std::min<int64_t>(hi[i] + 2 - base[i], nb[i] * block[i]);
+    c1[i] = std::min<int64_t>(hi[i] + 2 - base[i], top[i] - base[i]);
   }
   if (c1[0] <= c0[0] || c1[1] <= c0[1] || c1[2] <= c0[2]) {
     note = "grid box outside its blocks";
@@ -943,12 +947,11 @@ bool Writer::Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>&
   // Only the cropped part of the room's volume is kept: [index][z][y][x][rgb].
   std::vector<float> g(points * 18, 0.f);
   for (const GridTexture& t : textures) {
-    const int64_t x0 = (t.bx - b0[0]) * 64, y0 = (t.by - b0[1]) * 64, z0 = (t.bz - b0[2]) * 16;
+    const int64_t x0 = start(t, 0) - base[0], y0 = start(t, 1) - base[1], z0 = start(t, 2) - base[2];
     for (int64_t z = std::max(z0, c0[2]); z < std::min(z0 + 16, c1[2]); ++z) {
       for (int64_t y = std::max(y0, c0[1]); y < std::min(y0 + 64, c1[1]); ++y) {
-        for (int64_t x = std::max(x0, c0[0]); x < std::min(x0 + 64, c1[0]); ++x) {
-          // A 128 wide texture keeps its last 64 columns.
-          const float* src = &t.rgba[((size_t(z - z0) * 64 + size_t(y - y0)) * t.w + (t.w - 64) + size_t(x - x0)) * 4];
+        for (int64_t x = std::max(x0, c0[0]); x < std::min(x0 + int64_t(t.w), c1[0]); ++x) {
+          const float* src = &t.rgba[((size_t(z - z0) * 64 + size_t(y - y0)) * t.w + size_t(x - x0)) * 4];
           float* dst = &g[((size_t(t.index) * size_t(size[2]) + size_t(z - c0[2])) * size_t(size[1]) +
                            size_t(y - c0[1])) * size_t(size[0]) * 3 + size_t(x - c0[0]) * 3];
           dst[0] = src[0];
