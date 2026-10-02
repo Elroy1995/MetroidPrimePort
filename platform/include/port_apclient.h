@@ -171,6 +171,12 @@ bool WarpToStart(uint32_t& world, uint32_t& area);
 // table, and without a seed layout.
 bool SeedStrings(uint32_t strg, std::vector< std::string >& out);
 
+// The share of damage the suits take off in the seed in play, under the
+// staggered suit damage mode the player set (0 default, 1 progressive,
+// 2 additive: the server doesn't say which the seed was made with). False
+// without a seed layout or in the default mode: the game's own rule.
+bool SuitDamageReduction(int mode, bool varia, bool gravity, bool phazon, float& out);
+
 // The line naming the seed and the slot that the completion screen shows above
 // "Percentage Complete" (randomprime's resultsString). False without a seed
 // layout.

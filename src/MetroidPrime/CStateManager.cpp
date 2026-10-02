@@ -1752,6 +1752,14 @@ bool CStateManager::ApplyLocalDamage(const CVector3f& pos, const CVector3f& dir,
       const float phazonReduction = gpTweakPlayer->GetPhazonDamageReduction();
       damageReduction = CMath::Max< float >(damageReduction, phazonReduction);
     }
+#ifdef TARGET_PC
+    // An Archipelago seed may count the suits instead (staggered_suit_damage).
+    PortAp::SuitDamageReduction(PortDebug::ApSuitDamage(),
+                                x8b8_playerState->HasPowerUp(CPlayerState::kIT_VariaSuit),
+                                x8b8_playerState->HasPowerUp(CPlayerState::kIT_GravitySuit),
+                                x8b8_playerState->HasPowerUp(CPlayerState::kIT_PhazonSuit),
+                                damageReduction);
+#endif
 
     useDamage = -(damageReduction * useDamage - useDamage);
   }

@@ -165,6 +165,11 @@ void SetMapPickups(bool enabled);
 // grey checked). On by default; off gives the plain white dots.
 bool MapLogicColors();
 void SetMapLogicColors(bool enabled);
+// The apworld's staggered_suit_damage, which the server doesn't send: 0 the
+// game's rule, 1 progressive (the apworld's default, and the port's), 2
+// additive. Only an Archipelago seed uses it.
+int ApSuitDamage();
+void SetApSuitDamage(int mode);
 // randomprime's skippable cutscenes: every cinematic can be skipped with the
 // usual button. Rooms load patched, so a change applies to rooms loaded
 // afterwards. Randomizer and Archipelago games force it on

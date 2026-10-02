@@ -403,6 +403,19 @@ bool TeleporterDestination(const Layout& layout, uint32_t mlvl, uint32_t editorI
   return false;
 }
 
+float SuitDamageReduction(int mode, bool varia, bool gravity, bool phazon) {
+  if (mode == 1) {
+    static const float kByCount[] = {0.f, 0.1f, 0.2f, 0.5f};
+    return kByCount[(varia ? 1 : 0) + (gravity ? 1 : 0) + (phazon ? 1 : 0)];
+  }
+  if (mode == 2) {
+    // Indexed by gravity | varia << 1 | phazon << 2, as randomprime's table.
+    static const float kBySuit[] = {0.f, 0.1f, 0.1f, 0.2f, 0.3f, 0.4f, 0.4f, 0.5f};
+    return kBySuit[(gravity ? 1 : 0) | (varia ? 2 : 0) | (phazon ? 4 : 0)];
+  }
+  return -1.f;
+}
+
 bool Strings(const Layout& layout, uint32_t strg, std::vector< std::string >& out) {
   // The Temple Security Station's objective scan (the apworld's get_strg).
   if (strg == 0xB389B6D6) {

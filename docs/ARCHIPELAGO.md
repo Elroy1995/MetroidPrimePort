@@ -139,6 +139,11 @@ With the built-in tables, the client does what the AP ISO patch would:
   which bosses the seed asks for. They are set when the room loads, so a
   layout first learned in that room shows after the next load. The completion
   screen names the seed and the slot above "Percentage Complete".
+- Staggered suit damage: the server doesn't send this option, so it is a
+  setting, "Staggered suit damage" on the Archipelago connect screen
+  (`ap_suit_damage=0|1|2` in the settings: the game's rule, progressive,
+  additive). It starts as progressive, the apworld's default; set it to your
+  YAML's value. It only applies in an Archipelago game.
 - A start room the port's tables don't have is named once on connect as
   `Seed option not supported: ...`.
 - Spring Ball (C-stick up in morph ball) follows the seed's `spring_ball`: with

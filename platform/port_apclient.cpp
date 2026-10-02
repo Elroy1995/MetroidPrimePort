@@ -1704,6 +1704,21 @@ bool SeedStrings(uint32_t strg, std::vector< std::string >& out) {
   }
 }
 
+bool SuitDamageReduction(int mode, bool varia, bool gravity, bool phazon, float& out) {
+  try {
+    PortApWorld::Layout layout;
+    if (!SeedLayout(layout))
+      return false;
+    const float reduction = PortApWorld::SuitDamageReduction(mode, varia, gravity, phazon);
+    if (reduction < 0.f)
+      return false;
+    out = reduction;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 bool SeedResultsLine(std::string& out) {
   try {
     EnsureLoaded();

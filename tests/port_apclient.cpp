@@ -1139,6 +1139,20 @@ int main() {
                                 "\nDefeat Meta Ridley\nDefeat Metroid Prime",
           "the temple's objective says what the seed asks for");
 
+    Check(PortApWorld::SuitDamageReduction(0, true, true, true) < 0.f,
+          "the default suit damage is the game's own");
+    Check(PortApWorld::SuitDamageReduction(1, false, false, false) == 0.f &&
+              PortApWorld::SuitDamageReduction(1, false, false, true) == 0.1f &&
+              PortApWorld::SuitDamageReduction(1, true, false, true) == 0.2f &&
+              PortApWorld::SuitDamageReduction(1, true, true, true) == 0.5f,
+          "progressive suit damage counts the suits");
+    Check(PortApWorld::SuitDamageReduction(2, true, false, false) == 0.1f &&
+              PortApWorld::SuitDamageReduction(2, false, true, false) == 0.1f &&
+              PortApWorld::SuitDamageReduction(2, false, false, true) == 0.3f &&
+              PortApWorld::SuitDamageReduction(2, true, false, true) == 0.4f &&
+              PortApWorld::SuitDamageReduction(2, true, true, true) == 0.5f,
+          "additive suit damage adds each suit's part");
+
     Check(PortApWorld::TempleOps(layout).empty() && !PortApWorld::SkipsRidley(layout),
           "a retail temple needs no patch");
     layout.requiredArtifacts = 5;

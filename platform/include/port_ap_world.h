@@ -88,6 +88,13 @@ bool TeleporterDestination(const Layout& layout, uint32_t mlvl, uint32_t editorI
 // apworld's get_strg). False for any other table.
 bool Strings(const Layout& layout, uint32_t strg, std::vector< std::string >& out);
 
+// The share of damage Samus's suits take off under the apworld's
+// staggered_suit_damage (randomprime's ApplyLocalDamage patch): 1 progressive,
+// by how many suits she has (10%, 20%, 50%); 2 additive, each suit its own
+// part (Varia 10%, Gravity 10%, Phazon 30%). Negative for any other mode: the
+// game's own rule, the strongest suit.
+float SuitDamageReduction(int mode, bool varia, bool gravity, bool phazon);
+
 // The seed has no Meta Ridley fight: the temple opens its portal as soon as
 // the artifacts are counted.
 bool SkipsRidley(const Layout& layout);

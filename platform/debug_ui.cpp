@@ -123,6 +123,7 @@ bool sHideVisorEffects = false;
 bool sRevealMap = false;
 bool sMapPickups = false;
 bool sMapLogicColors = true;
+int sApSuitDamage = 1;
 bool sCheats = false;
 bool sSkippableCutscenes = false;
 bool sSaveStateHotkeys = true;
@@ -334,6 +335,9 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sMapPickups = ParseBool(value);
   } else if (key == "map_logic_colors") {
     sMapLogicColors = ParseBool(value);
+  } else if (key == "ap_suit_damage") {
+    const int mode = std::atoi(value.c_str());
+    sApSuitDamage = mode >= 0 && mode <= 2 ? mode : 1;
   } else if (key == "cheats") {
     sCheats = ParseBool(value);
   } else if (key == "skippable_cutscenes") {
@@ -520,6 +524,7 @@ void SaveSettings() {
   file << "reveal_map=" << (sRevealMap ? 1 : 0) << '\n';
   file << "map_pickups=" << (sMapPickups ? 1 : 0) << '\n';
   file << "map_logic_colors=" << (sMapLogicColors ? 1 : 0) << '\n';
+  file << "ap_suit_damage=" << sApSuitDamage << '\n';
   file << "cheats=" << (sCheats ? 1 : 0) << '\n';
   file << "skippable_cutscenes=" << (sSkippableCutscenes ? 1 : 0) << '\n';
   file << "savestate_hotkeys=" << (sSaveStateHotkeys ? 1 : 0) << '\n';
@@ -995,6 +1000,17 @@ bool MapLogicColors() {
 void SetMapLogicColors(bool enabled) {
   EnsureInitialized();
   sMapLogicColors = enabled;
+  MarkDirty();
+}
+
+int ApSuitDamage() {
+  EnsureInitialized();
+  return sApSuitDamage;
+}
+
+void SetApSuitDamage(int mode) {
+  EnsureInitialized();
+  sApSuitDamage = mode >= 0 && mode <= 2 ? mode : 1;
   MarkDirty();
 }
 
@@ -3546,6 +3562,13 @@ void DrawArchipelagoConnect() {
   }
 
   ImGui::SeparatorText("Archipelago");
+  // The server doesn't send this option, so it is set here to match the seed.
+  int suitDamage = sApSuitDamage;
+  if (ImGui::Combo("Staggered suit damage", &suitDamage, "Default\0Progressive\0Additive\0")) {
+    SetApSuitDamage(suitDamage);
+  }
+  ImGui::SetItemTooltip("Set it to your YAML's staggered_suit_damage (the apworld's default is\n"
+                        "Progressive: damage reduction by how many suits you have).");
   ImGui::InputTextWithHint("Server", "archipelago.gg:38281", sServer, sizeof(sServer));
   ImGui::InputTextWithHint("Slot name", "your player name in the seed", sSlot, sizeof(sSlot));
   ImGui::InputTextWithHint("Password", "only if the room has one", sPassword, sizeof(sPassword),
