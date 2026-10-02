@@ -163,27 +163,35 @@ CCubeMaterial CCubeModel::GetMaterialByIndex(const int idx) const {
 #ifdef TARGET_PC
 // Port: the material record a converter may append to a kStateFlag_PortPBR material, read
 // back from the material's end so that nothing retail parses moves: six big-endian floats
-// (emissive multiplier rgb, backlight weight rgb) and the tag 'PBRM'. A material without
-// one gets the neutral values.
+// (emissive multiplier rgb, backlight weight rgb) and the tag 'PBRM', or eight (the same,
+// then the height blend threshold and the shading mode) and 'PBR2', or thirteen (the same,
+// then a second layer's edge width and the scale and offset of each layer's height) and
+// 'PBR3'. A material without one gets the neutral values.
 void CCubeModel::PortSetPBRMaterial(const int idx) const {
-  f32 values[6] = {1.f, 1.f, 1.f, 0.f, 0.f, 0.f};
+  f32 values[13] = {1.f, 1.f, 1.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
   const uchar* table = static_cast< const uchar* >(x0_instance.GetMaterialPointer()) +
                        (x1c_textures->size() + 1) * 4;
   const uint count = CBasics::SwapBytes(*reinterpret_cast< const uint* >(table));
   table += 4;
   const uint begin = idx != 0 ? GetMaterialOffset(table, idx) : 0;
   const uint end = GetMaterialOffset(table, idx + 1);
-  const uint size = sizeof(values) + 4;
-  const uchar* record = table + count * 4 + end - size;
-  if (end >= begin + size && memcmp(record + sizeof(values), "PBRM", 4) == 0) {
-    for (int i = 0; i < 6; ++i) {
-      uint bits;
-      memcpy(&bits, record + i * 4, 4);
-      bits = CBasics::SwapBytes(bits);
-      memcpy(&values[i], &bits, 4);
-    }
+  const uchar* materialEnd = table + count * 4 + end;
+  int floats = 0;
+  if (end >= begin + 56 && memcmp(materialEnd - 4, "PBR3", 4) == 0) {
+    floats = 13;
+  } else if (end >= begin + 36 && memcmp(materialEnd - 4, "PBR2", 4) == 0) {
+    floats = 8;
+  } else if (end >= begin + 28 && memcmp(materialEnd - 4, "PBRM", 4) == 0) {
+    floats = 6;
   }
-  GXSetPBRMaterial(values, values + 3);
+  const uchar* record = materialEnd - 4 - floats * 4;
+  for (int i = 0; i < floats; ++i) {
+    uint bits;
+    memcpy(&bits, record + i * 4, 4);
+    bits = CBasics::SwapBytes(bits);
+    memcpy(&values[i], &bits, 4);
+  }
+  GXSetPBRMaterial(values, values + 3, values[6], values[7], values + 8);
 }
 #endif
 

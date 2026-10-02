@@ -462,6 +462,8 @@ static void fill_uniform(ByteBuffer& buf, const ShaderInfo& info) noexcept {
     buf.append(g_gxState.pbrProbe);
     buf.append(g_gxState.pbrEmissive);
     buf.append(g_gxState.pbrBacklight);
+    buf.append(g_gxState.pbrLayer);
+    buf.append(g_gxState.pbrLayerHeight);
     buf.append(g_gxState.pbrCubeParams);
     for (const auto& v : g_gxState.pbrAmbient) {
       buf.append(v);

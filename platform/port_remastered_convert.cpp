@@ -528,7 +528,7 @@ std::vector<uint32_t> SkinBones(Span d) {
 
 // ---- Remastered side ----
 
-enum { kBase = 0, kMr = 1, kNormal = 2, kEmissive = 3, kMaps = 4 };
+enum { kBase = 0, kMr = 1, kNormal = 2, kEmissive = 3, kMaps = 4, kLayeredMaps = 7 };
 const char* const kMapName[kMaps] = {"base", "mr", "normal", "emissive"};
 // The texel a missing map gets: white, no occlusion / mid roughness / no metal,
 // a normal pointing straight out, black.
@@ -566,6 +566,17 @@ struct RemMaterial {
   double emissive = 1.0;   // Remastered's emissive strength
   double backlight = 0.0;  // and its backlight strength
   bool cutout = false;     // the base map's alpha cuts holes: leaves, grates
+  bool blended = false;    // drawn over what is behind it: glass, decals, ice
+  bool tinted = false;     // its vertices carry a colour
+  bool unlit = false;      // a screen: its own colour and glow, no lighting
+  bool mask = false;       // the base map's alpha masks the glow and is no opacity
+  double height = 0.0;     // above 0: the threshold of a height-blended alpha
+  // A second layer (base, MR, normal) the vertex alpha blends over the first
+  // by the two base maps' heights: snow on rock, moss on stone.
+  bool layered = false;
+  MapRef layer[3];
+  double layerSmooth = 0.0;                      // BLSM: the width of the blend's edge
+  double layerHeight[4] = {1.0, 0.0, 1.0, 0.0};  // BSAO: scale and offset of each layer's height
 };
 
 struct Buffer {
@@ -575,6 +586,8 @@ struct Buffer {
   bool used = false;
   std::vector<double> P, N;
   std::vector<std::vector<double>> uv;
+  std::vector<uint8_t> C;  // rgba per vertex, white where the buffer has no colours
+  bool colored = false;
   const ModelVertexBuffer* src = nullptr;
   bool skinned = false;
 };
@@ -898,7 +911,8 @@ struct Converter::State {
       // The albedo is what shows and can be CMPR; AO/roughness/metal would
       // blotch and the normals would tilt, so the normal map stays RGBA8.
       // A cutout's base is the exception: its alpha is the shape.
-      alpha = k == kNormal ? "rgba" : k == kBase && alpha == "punch" ? "punch" : "none";
+      // A blended surface's base keeps its whole alpha, which is its opacity.
+      alpha = k == kNormal ? "rgba" : k == kBase && (alpha == "punch" || alpha == "blend" || alpha == "mask") ? alpha : "none";
       cap = kPbrMax[k];
       if (src) {
         ncap = opt.nativeMax > 0 ? std::min(kPbrNative[k], opt.nativeMax) : kPbrNative[k];
@@ -946,7 +960,14 @@ struct Converter::State {
         img.rgba[i * 4 + 3] = 255;
       }
     }
-    if (isBase && alpha != "punch" && FlatBase(img)) {
+    if (alpha == "blend") {
+      // Remastered's shader squares the base map's alpha into the opacity.
+      for (size_t i = 0; i < count; ++i) {
+        const unsigned a = img.rgba[i * 4 + 3];
+        img.rgba[i * 4 + 3] = uint8_t((a * a + 127) / 255);
+      }
+    }
+    if (isBase && alpha != "punch" && alpha != "blend" && alpha != "mask" && FlatBase(img)) {
       // On the TEV path the retail texture is kept, which beats writing a flat
       // grey over a textured model. On the PBR path a flat albedo is fine: the
       // normal and MR maps carry the surface, so the material gets a solid base.
@@ -996,7 +1017,7 @@ struct Converter::State {
     if (ncap) {
       const int w = std::max(8, std::min(ncap, NextPow2(img.width)));
       const int h = std::max(8, std::min(ncap, NextPow2(img.height)));
-      if (k == kBase && alpha != "punch") {
+      if (k == kBase && alpha != "punch" && alpha != "blend" && alpha != "mask") {
         for (size_t i = 0; i < count; ++i) {
           img.rgba[i * 4 + 3] = 255;  // alpha "none", as the stub's CMPR
         }
@@ -1028,22 +1049,68 @@ struct Converter::State {
 
 namespace {
 
+// Bits of a Remastered material's feature word.
+constexpr uint32_t kTransparentFlag = 0x1;   // blended over what is behind it
+constexpr uint32_t kVertexColorFlag = 0x10;  // the vertex colour tints it
+constexpr uint32_t kCutoutFlag = 0x20;       // one-bit alpha: ground leaves, grates, foliage
+constexpr uint32_t kIncanMaskFlag = 0x200;   // the base map's alpha masks the glow
+// The first four bytes of the id of a shader whose alpha is read below.
+constexpr uint32_t kShaderHeightBlend = 0xCA10C453;  // snow and ice over rock
+// A shader with parameters of its own (TCHn, CCHn) reads the vertex colour as
+// it likes: masks for its extra maps, a colour seen through ice. These are the
+// ones read that multiply the albedo by it, as the standard shader does.
+constexpr uint32_t kShaderTints[] = {0x9EFE0D2E, 0xCA10C453, 0x17E458CD, 0xE9DF2188, 0x41A12C9E, 0xD6AA2A3A};
+
 // Which of a Remastered material's parameters feed the four maps, and its two
 // strengths. Later parameters replace earlier ones, as in the reference.
-// The bit of a Remastered material's feature word that its alpha-tested
-// materials carry (ground leaves, grates, foliage) and its opaque ones do not.
-// Found by surveying every room model; the word is otherwise undocumented.
-constexpr uint32_t kCutoutFlag = 0x20;
-
 RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   RemMaterial out;
   out.name = mat.name;
   out.cutout = (mat.unk1 & kCutoutFlag) != 0;
-  auto set = [&](int k, const ModelTextureRef& t) {
+  out.blended = (mat.unk1 & kTransparentFlag) != 0 && !out.cutout;
+  uint8_t sid[4];
+  std::memcpy(sid, &mat.shaderId, 4);
+  const uint32_t shader = uint32_t(sid[0]) << 24 | uint32_t(sid[1]) << 16 | uint32_t(sid[2]) << 8 | sid[3];
+  bool custom = false;
+  for (const ModelMaterialData& d : mat.data) {
+    const uint32_t family = d.usage & 0xFFFFFF00u;
+    custom = custom || family == (FourCC('T', 'C', 'H', '0') & 0xFFFFFF00u) ||
+             family == (FourCC('C', 'C', 'H', '0') & 0xFFFFFF00u);
+  }
+  out.tinted = (mat.unk1 & kVertexColorFlag) != 0 &&
+               (!custom || std::find(std::begin(kShaderTints), std::end(kShaderTints), shader) != std::end(kShaderTints));
+  // What the alpha a shader writes is made of is only in its code. Every one
+  // read writes the base map's alpha squared, times the vertex alpha, bar these:
+  // with the mask flag the base alpha scales the glow instead and the vertex
+  // alpha alone is the opacity, a material in no lit pass (screens, holograms)
+  // is its own colour and glow, a framebuffer one (ice, glass) writes alpha 1
+  // and refracts what is behind it, which the port does not do, and the snow
+  // shader cuts its edge by height.
+  out.mask = (mat.unk1 & kIncanMaskFlag) != 0;
+  out.unlit = mat.types.empty();
+  bool lit = false, framebuffer = false;
+  for (uint32_t type : mat.types) {
+    lit = lit || type == FourCC('R', 'L', 'T', 'G');
+    framebuffer = framebuffer || type == FourCC('R', 'F', 'B', 'P');
+  }
+  if (out.mask) {
+    out.blended = out.blended && out.tinted;
+  }
+  if (framebuffer && lit) {
+    out.blended = false;
+  }
+  if (shader == kShaderHeightBlend) {
+    for (const ModelMaterialData& d : mat.data) {
+      if (d.kind == ModelMaterialData::Kind::Color && d.usage == FourCC('C', 'C', 'H', '0')) {
+        out.height = std::clamp(ShortestDouble(d.color[0]), 0.01, 4.0);
+      }
+    }
+  }
+  auto set = [&](int k, const ModelTextureRef& t, MapRef* into = nullptr) {
     if (!t.hasUsage) {
       return;
     }
-    MapRef& m = out.maps[k];
+    MapRef& m = into ? *into : out.maps[k];
     m.has = true;
     // A model stores the id with its first three groups little endian; a pak,
     // and the printed form, have them the other way round.
@@ -1070,6 +1137,19 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     case FourCC('B', 'C', 'R', 'L'):
       if (layered) {
         set(kBase, d.layeredTextures[0]);
+        set(kBase, d.layeredTextures[1], &out.layer[kBase]);
+      }
+      break;
+    case FourCC('B', 'L', 'S', 'M'):
+      if (d.kind == ModelMaterialData::Kind::Scalar) {
+        out.layerSmooth = ShortestDouble(d.scalar);
+      }
+      break;
+    case FourCC('B', 'S', 'A', 'O'):
+      if (d.kind == ModelMaterialData::Kind::Color) {
+        for (int i = 0; i < 4; ++i) {
+          out.layerHeight[i] = ShortestDouble(d.color[i]);
+        }
       }
       break;
     case FourCC('M', 'E', 'T', 'L'):
@@ -1080,6 +1160,7 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     case FourCC('M', 'T', 'L', 'L'):
       if (layered) {
         set(kMr, d.layeredTextures[0]);
+        set(kMr, d.layeredTextures[1], &out.layer[kMr]);
       }
       break;
     case FourCC('N', 'M', 'A', 'P'):
@@ -1090,6 +1171,7 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     case FourCC('N', 'R', 'M', 'L'):
       if (layered) {
         set(kNormal, d.layeredTextures[0]);
+        set(kNormal, d.layeredTextures[1], &out.layer[kNormal]);
       }
       break;
     case FourCC('I', 'C', 'A', 'N'):
@@ -1140,11 +1222,19 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   // BKLT is a parameter vector like CCHn, not a colour: x is the strength (0 to
   // 2), what y means is not known and it is not used.
   out.backlight = bklt ? ShortestDouble(bklt->color[0]) : 0.0;
+  // Both layers' base maps and an edge width make a blend; the shader's own
+  // floor on the width is not known, so a zero one is the thinnest edge.
+  out.layered = out.maps[kBase].has && out.layer[kBase].has && !out.cutout && !out.blended;
+  out.layerSmooth = std::clamp(out.layerSmooth, 1e-3, 16.0);
   return out;
 }
 
 // The port's material record (CCubeModel::PortSetPBRMaterial), appended to a
-// PBR material: emissive multiplier rgb, backlight weight rgb, 'PBRM'.
+// PBR material: emissive multiplier rgb, backlight weight rgb, 'PBRM'; or,
+// for a material with a height blend or no lighting, those, the blend's
+// threshold, the mode (1 unlit, 2 glow masked by the base alpha, 3 both), and 'PBR2';
+// or, for a layered one, those, the blend's edge width, the scale and offset of
+// each layer's height, and 'PBR3'.
 // Remastered's emissive strengths are HDR values meant for its bloom, and the
 // port's output is 8-bit with none, so the strength is compressed (square
 // root, capped) around 1, where the map is drawn as converted.
@@ -1157,6 +1247,20 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
   for (int i = 0; i < 3; ++i) {
     PF(b, k);
   }
+  if (m.height > 0.0 || m.unlit || m.mask || m.layered) {
+    PF(b, m.height);
+    PF(b, (m.unlit ? 1.0 : 0.0) + (m.mask ? 2.0 : 0.0));
+    if (m.layered) {
+      PF(b, m.layerSmooth);
+      for (double h : m.layerHeight) {
+        PF(b, h);
+      }
+      b.insert(b.end(), {'P', 'B', 'R', '3'});
+      return;
+    }
+    b.insert(b.end(), {'P', 'B', 'R', '2'});
+    return;
+  }
   b.insert(b.end(), {'P', 'B', 'R', 'M'});
 }
 
@@ -1164,15 +1268,17 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
 // normal and emissive, each on the texcoord its Remastered map used, lit
 // channel 0 kept from retail. The TEV is the fallback the black, shadow,
 // thermal and blended paths still draw with (base x lighting + emissive), and
-// it samples every map so all four are bound.
+// it samples every map so all are bound. A layered material has three more,
+// maps 4-6: the second layer's base, MR and normal.
 Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx, uint32_t group,
                  const uint32_t* coords, const RemMaterial& rem) {
+  const int nmaps = rem.layered ? kLayeredMaps : kMaps;
   Blob b;
   const uint32_t flags =
       (pm.flags & 0xFFFF & ~uint32_t(0x8 | 0x40 | 0x100 | 0x400 | 0x800 | 0x2000)) | 0xF0000 | kPbrFlag;
   P32(b, flags);
-  P32(b, 4);
-  for (int i = 0; i < 4; ++i) {
+  P32(b, uint32_t(nmaps));
+  for (int i = 0; i < nmaps; ++i) {
     P32(b, texIdx[i]);
   }
   // The vertex descriptor is retail's: it fixes how many texcoord attributes,
@@ -1187,14 +1293,18 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
   for (uint32_t c : pm.chans) {
     P32(b, c);
   }
-  static const uint32_t tev[4][3] = {
+  static const uint32_t tev[kLayeredMaps][3] = {
       {0x7A14F, 0x21CE7, 4},  // ZERO, RASC, TEXC, ZERO: base x channel 0; alpha = base
       {0x3D0F, 0x1CE7, 255},  // ZERO, TEXC, ZERO, CPREV: MR, sampled only
       {0x3D0F, 0x1CE7, 255},  // normal, sampled only
       {0x310F, 0x1CE7, 255},  // ZERO, TEXC, ONE, CPREV: + emissive
+      {0x3D0F, 0x1CE7, 255},  // the second layer, sampled only
+      {0x3D0F, 0x1CE7, 255},
+      {0x3D0F, 0x1CE7, 255},
   };
-  P32(b, 4);
-  for (const auto& t : tev) {
+  P32(b, uint32_t(nmaps));
+  for (int i = 0; i < nmaps; ++i) {
+    const uint32_t* t = tev[i];
     P32(b, t[0]);
     P32(b, t[1]);
     P32(b, 0x100);
@@ -1204,7 +1314,7 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
     P8(b, 0);
     P8(b, uint8_t(t[2]));
   }
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < nmaps; ++i) {
     P8(b, 0);
     P8(b, 0);
     P8(b, uint8_t(i));
@@ -1213,10 +1323,10 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
   // One texgen per texcoord the maps use, taken from retail so an animated or
   // projected coordinate still drives the maps. A coord retail has no texgen
   // for gets the identity default (TEX0, GX_TG_MTX3x3).
-  const uint32_t n = 1 + std::max({coords[0], coords[1], coords[2], coords[3]});
+  const uint32_t n = 1 + *std::max_element(coords, coords + nmaps);
   std::vector<uint32_t> gens(n, 0);
   gens[0] = 0x1EBC40;
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < nmaps; ++i) {
     if (coords[i] < pm.texgen.size()) {
       gens[coords[i]] = pm.texgen[coords[i]];
     }
@@ -1494,6 +1604,12 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     // And the same with retail's alpha test, for a Remastered cutout.
     lit.flags |= 0x20;
     retail.mats.push_back(lit);
+    // And as retail's blended surfaces are: drawn in the sorted pass over what
+    // is behind them, tested against the depth buffer without writing to it.
+    lit.flags = 0x1013;
+    lit.blendSrc = 4;  // GX_BL_SRCALPHA, GX_BL_INVSRCALPHA
+    lit.blendDst = 5;
+    retail.mats.push_back(lit);
   } else {
     if (!io.retail(FourCC('C', 'M', 'D', 'L'), opt.retail, retail.data)) {
       throw Fail{"retail model " + Hex8(opt.retail) + " is not on the disc"};
@@ -1578,6 +1694,13 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
         b.uv.emplace_back(uv.size() == b.n * 2 ? std::vector<double>(uv.begin(), uv.end()) : std::vector<double>());
       }
       b.skinned = vb.joints.size() == b.n * 4 && vb.weights.size() == b.n * 4;
+      b.C.assign(b.n * 4, 255);
+      if (vb.colors.size() == b.n * 4) {
+        for (size_t i = 0; i < b.n * 4; ++i) {
+          b.C[i] = uint8_t(std::clamp(vb.colors[i], 0.0f, 1.0f) * 255.0f + 0.5f);
+        }
+        b.colored = true;
+      }
     }
     Prim p;
     p.buffer = mesh.vertexBuffer;
@@ -1617,7 +1740,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   }
   for (Prim& p : prims) {
     if (opt.standalone) {
-      p.rmat = mats[p.mat].cutout ? 1 : 0;
+      p.rmat = mats[p.mat].cutout ? 1 : mats[p.mat].blended ? 2 : 0;
       continue;
     }
     if (opt.material >= 0) {
@@ -1718,6 +1841,35 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       i += uint32_t(buffers[p.buffer].offset);
     }
   }
+  // Vertex colours, for a room's own materials that are tinted by them. The
+  // alpha is an opacity only on a blended surface (on an opaque one it weighs
+  // the material's layers), so a vertex no blended surface uses is opaque.
+  std::vector<uint8_t> C;
+  bool useColor = false;
+  if (opt.standalone) {
+    for (const Prim& p : prims) {
+      useColor = useColor || (mats[p.mat].tinted && buffers[p.buffer].colored);
+    }
+  }
+  if (useColor) {
+    C.reserve(n * 4);
+    for (uint32_t bi : bufOrder) {
+      C.insert(C.end(), buffers[bi].C.begin(), buffers[bi].C.end());
+    }
+    std::vector<bool> keepAlpha(n, false);
+    for (const Prim& p : prims) {
+      if ((mats[p.mat].blended || mats[p.mat].layered) && mats[p.mat].tinted) {
+        for (uint32_t i : p.I) {
+          keepAlpha[i] = true;
+        }
+      }
+    }
+    for (size_t v = 0; v < n; ++v) {
+      if (!keepAlpha[v]) {
+        C[v * 4 + 3] = 255;
+      }
+    }
+  }
 
   // Output materials: one per (retail material, Remastered material) pair, in
   // every material set.
@@ -1789,6 +1941,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     return uint32_t(it - setTex[si].begin());
   };
   std::vector<std::vector<uint32_t>> dlAttrs;  // per output material: the uv array of each texcoord attribute
+  std::vector<bool> dlColor;                   // and whether a colour index comes before them
   for (const auto& key : keys) {
     const int rmat = key.first;
     const RetailMaterial& pm = retail.mats[rmat];
@@ -1798,6 +1951,8 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     if (Lower(rem.name).find("missilelock") != std::string::npos) {
       rem.maps[kEmissive].has = false;
     }
+    // A retail material's vertices have no layer weight.
+    rem.layered = rem.layered && opt.standalone && useColor && rem.tinted;
     const MapRef* rt = rem.maps;
     // A retail descriptor with no texcoord slot at all cannot feed a material
     // that samples texcoord 0, so one is declared: bits 8..23 are the eight
@@ -1811,18 +1966,32 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       vtx |= 3u << 8;
       ntexattr = 1;
     }
+    // Bits 4 and 5 are colour 0. Only a tinted material declares it: the port's
+    // PBR shader tints by whatever colour the descriptor has.
+    const bool tinted = useColor && rem.tinted;
+    if (tinted) {
+      vtx |= 3u << 4;
+    }
+    dlColor.push_back(tinted);
     // PBR needs a base map and an opaque retail material: blended effects keep
     // their TEV.
     // Only a room's own material asks for a cutout: a retail material's alpha
     // test says nothing about what the Remastered map's alpha holds.
-    const char* const baseAlpha = opt.standalone && rem.cutout ? "punch" : "";
-    const bool usePbr =
-        opt.pbr && rt[kBase].has && !IsFx(pm) && Get("pbr:base", rt, baseAlpha, opt).has_value();
+    const char* const baseAlpha =
+        !opt.standalone ? "" : rem.cutout ? "punch" : rem.mask || rem.layered ? "mask" : rem.blended ? "blend" : "";
+    const bool usePbr = opt.pbr && rt[kBase].has && (opt.standalone || !IsFx(pm)) &&
+                        Get("pbr:base", rt, baseAlpha, opt).has_value();
     if (usePbr) {
       ++pbr;
-      uint32_t tids[kMaps];
-      for (int k = 0; k < kMaps; ++k) {
-        tids[k] = *Get(std::string("pbr:") + kMapName[k], rt, k == kBase ? baseAlpha : "", opt);
+      // A layered material's base alphas are the two heights the blend compares.
+      const int nmaps = rem.layered ? kLayeredMaps : kMaps;
+      MapRef both[kLayeredMaps + 1];
+      std::copy(rt, rt + kMaps, both);
+      std::copy(rem.layer, rem.layer + 3, both + kMaps);
+      uint32_t tids[kLayeredMaps];
+      for (int k = 0; k < nmaps; ++k) {
+        const int m = k % kMaps;
+        tids[k] = *Get(std::string("pbr:") + kMapName[m], both + (k - m), m == kBase ? baseAlpha : "", opt);
       }
       // Each map keeps the texcoord set it was authored on. The descriptor
       // fixes how many texcoord attributes exist, and a coord past it cannot be
@@ -1830,14 +1999,14 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       // is past it too, onto 0, which the descriptor always has.
       size_t bset = std::min<size_t>(rt[kBase].coord, maxuv);
       bset = bset < ntexattr ? bset : 0;
-      uint32_t coords[kMaps];
-      for (int k = 0; k < kMaps; ++k) {
-        const size_t c = std::min<size_t>(rt[k].has ? rt[k].coord : bset, maxuv);
+      uint32_t coords[kLayeredMaps];
+      for (int k = 0; k < nmaps; ++k) {
+        const size_t c = std::min<size_t>(both[k].has ? both[k].coord : bset, maxuv);
         coords[k] = uint32_t(c < ntexattr ? c : bset);
       }
       std::vector<uint32_t> attrs(ntexattr, 0xFFFFFFFFu);
-      for (uint32_t c : coords) {
-        attrs[c] = uvIndex(c, nullptr);
+      for (int k = 0; k < nmaps; ++k) {
+        attrs[coords[k]] = uvIndex(coords[k], nullptr);
       }
       const uint32_t zero = uvIndex(0, nullptr);
       for (uint32_t& a : attrs) {
@@ -1846,8 +2015,8 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       dlAttrs.push_back(attrs);
       const uint32_t group = 0x40000000u | uint32_t(dlAttrs.size() - 1);
       for (size_t si = 0; si < retail.nmat; ++si) {
-        uint32_t idx[kMaps];
-        for (int k = 0; k < kMaps; ++k) {
+        uint32_t idx[kLayeredMaps];
+        for (int k = 0; k < nmaps; ++k) {
           idx[k] = texIndex(si, tids[k]);
         }
         setBlobs[si].push_back(PbrMaterial(pm, vtx, idx, group, coords, rem));
@@ -1974,7 +2143,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   // UV arrays, weight group) become one, so this is lossless; the first of
   // each keeps its place.
   {
-    const size_t width = (6 + uvArrays.size() * 2) * 4 + 4;
+    const size_t width = (6 + uvArrays.size() * 2) * 4 + 4 + 4;
     std::unordered_map<std::string, uint32_t> seen;
     seen.reserve(n * 2);
     std::vector<uint32_t> vmap(n), rep;
@@ -1998,6 +2167,9 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       }
       const int32_t wid = hasSkin ? weights[v] : 0;
       std::memcpy(out, &wid, 4);
+      if (useColor) {
+        std::memcpy(out + 4, &C[v * 4], 4);
+      }
       const auto it = seen.emplace(keyBytes, uint32_t(rep.size()));
       if (it.second) {
         rep.push_back(uint32_t(v));
@@ -2020,6 +2192,13 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     take(N, 3);
     for (auto& a : uvArrays) {
       take(a, 2);
+    }
+    if (useColor) {
+      std::vector<uint8_t> c(rep.size() * 4);
+      for (size_t i = 0; i < rep.size(); ++i) {
+        std::copy(C.begin() + size_t(rep[i]) * 4, C.begin() + size_t(rep[i]) * 4 + 4, c.begin() + i * 4);
+      }
+      C = std::move(c);
     }
     if (hasSkin) {
       std::vector<int> w(rep.size());
@@ -2044,7 +2223,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   };
 
   std::vector<Blob> surfs;
-  Blob secP, secN, secUV;
+  Blob secP, secN, secC, secUV;
   double lo[3] = {0, 0, 0}, hi[3] = {0, 0, 0};
   bool haveBounds = false;
   auto bound = [&](const double* p) {
@@ -2131,6 +2310,9 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
             chi[c] = i ? std::max(chi[c], pos[c]) : pos[c];
           }
           bound(pos);
+          if (useColor) {
+            secC.insert(secC.end(), C.begin() + size_t(cv[i]) * 4, C.begin() + size_t(cv[i]) * 4 + 4);
+          }
           for (const auto& a : uvArrays) {
             PF(secUV, a[size_t(cv[i]) * 2]);
             PF(secUV, a[size_t(cv[i]) * 2 + 1]);
@@ -2149,6 +2331,9 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
             const uint32_t j = uint32_t(local[tris[i]]);
             P16(dl, j);
             P16(dl, j);
+            if (dlColor[p.omat]) {
+              P16(dl, j);
+            }
             for (uint32_t a : attrs) {
               P16(dl, uint32_t(j * k + a));
             }
@@ -2169,7 +2354,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
         P32(s, 0x50424958);  // 'PBIX': position, normal, colour, uv, packed uv bases
         P32(s, uint32_t(start));
         P32(s, uint32_t(start));
-        P32(s, 0);
+        P32(s, useColor ? uint32_t(start) : 0);
         P32(s, uint32_t(start * k));
         P32(s, 0);
         s.resize(s.size() + 16, 0);
@@ -2222,6 +2407,9 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
         PF(secP, pos[c]);
         PF(secN, N[size_t(order[i]) * 3 + c]);
       }
+      if (useColor) {
+        secC.insert(secC.end(), C.begin() + size_t(order[i]) * 4, C.begin() + size_t(order[i]) * 4 + 4);
+      }
     }
     for (const auto& a : uvArrays) {
       for (size_t i = 0; i < n; ++i) {
@@ -2242,6 +2430,9 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
           mark[j] = 1;
           P16(dl, j);
           P16(dl, j);
+          if (dlColor[p.omat]) {
+            P16(dl, j);
+          }
           for (uint32_t a : attrs) {
             P16(dl, uint32_t(j + a * n));
           }
@@ -2273,6 +2464,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   }
   Pad(secP);
   Pad(secN);
+  Pad(secC);
   Pad(secUV);
 
   std::vector<Blob> secs;
@@ -2296,7 +2488,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   }
   secs.push_back(std::move(secP));
   secs.push_back(std::move(secN));
-  secs.emplace_back();  // colours
+  secs.push_back(std::move(secC));  // colours
   secs.push_back(std::move(secUV));
   secs.emplace_back();  // packed texcoords
   {

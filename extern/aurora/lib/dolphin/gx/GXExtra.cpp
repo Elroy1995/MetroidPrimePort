@@ -62,13 +62,22 @@ void GXSetPBRProbe(const f32 viewToProbe[3][3], f32 weight) {
   }
 }
 
-void GXSetPBRMaterial(const f32 emissive[3], const f32 backlight[3]) {
+void GXSetPBRMaterial(const f32 emissive[3], const f32 backlight[3], f32 heightBlend, f32 mode, const f32 layer[5]) {
   GX_WRITE_AURORA(GX_AURORA_SET_PBR_MATERIAL);
-  for (const f32* v : {emissive, backlight}) {
-    GX_WRITE_F32(v[0]);
-    GX_WRITE_F32(v[1]);
-    GX_WRITE_F32(v[2]);
-    GX_WRITE_F32(0.f);
+  GX_WRITE_F32(emissive[0]);
+  GX_WRITE_F32(emissive[1]);
+  GX_WRITE_F32(emissive[2]);
+  GX_WRITE_F32(heightBlend);
+  GX_WRITE_F32(backlight[0]);
+  GX_WRITE_F32(backlight[1]);
+  GX_WRITE_F32(backlight[2]);
+  GX_WRITE_F32(mode);
+  GX_WRITE_F32(layer[0]);
+  GX_WRITE_F32(0.f);
+  GX_WRITE_F32(0.f);
+  GX_WRITE_F32(0.f);
+  for (int i = 1; i < 5; ++i) {
+    GX_WRITE_F32(layer[i]);
   }
 }
 

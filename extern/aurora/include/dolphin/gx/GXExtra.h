@@ -29,8 +29,14 @@ void GXSetPBR(GXBool enable);
 void GXCopyProbeFace(u32 face);
 void GXSetPBRProbe(const f32 viewToProbe[3][3], f32 weight);
 // Aurora extension: the emissive multiplier and backlight weight of the following PBR
-// draws (see GX_AURORA_SET_PBR_MATERIAL).
-void GXSetPBRMaterial(const f32 emissive[3], const f32 backlight[3]);
+// draws (see GX_AURORA_SET_PBR_MATERIAL). `heightBlend` above 0 is the threshold of a
+// height-blended alpha (0: the base map's alpha is the opacity), and `mode` 1 draws the
+// surface's own colour with no lighting, 2 has the base map's alpha mask the glow instead
+// of being the opacity, 3 both. `layer` is the blend of a second layer (texture maps 4-6:
+// base, MR, normal) over the first by the vertex alpha and the two base maps' alphas: the
+// width of its edge, then the scale and offset of the first layer's height and of the
+// second's. A width of 0 is no second layer.
+void GXSetPBRMaterial(const f32 emissive[3], const f32 backlight[3], f32 heightBlend, f32 mode, const f32 layer[5]);
 // Aurora extension: room cubes (see GX_AURORA_CREATE_PBR_CUBE). `texels` is RGBA16Float,
 // every mip of face 0 from the largest down, then face 1 and so on; it is copied.
 void GXCreatePBRCube(u32 id, u32 size, u32 mipCount, const void* texels, u32 length);

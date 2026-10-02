@@ -882,7 +882,9 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
 // to a constant). With channel 0 unlit there are no lights to sum and the channel's material
 // colour, which is all an unlit surface shows, is the ambient; the game draws a model that
 // way when no light reaches it, and a room lit by an ambient volume always. A material
-// without channel 0 keeps its TEV result.
+// without channel 0 keeps its TEV result. A vertex colour, where the vertex format has
+// one, multiplies the diffuse albedo (not the specular) as a linear value, and its alpha
+// the output's: that is what Remastered's shader does with it.
 auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& vtxOutAttrs,
               std::string& vtxXfrAttrs, size_t& vtxOutIdx) -> std::string {
   const auto& cc = config.colorChannels[GX_COLOR0];
@@ -890,7 +892,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     return {};
   }
   const bool lit = info.lightingEnabled && cc.lightingEnabled;
-  std::array<int, 4> mapStage{-1, -1, -1, -1};
+  std::array<int, 7> mapStage{-1, -1, -1, -1, -1, -1, -1};
   for (int i = 0; i < config.tevStageCount; ++i) {
     const auto& stage = config.tevStages[i];
     const u32 map = underlying(stage.texMapId);
@@ -908,7 +910,48 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
   vtxOutAttrs += fmt::format("\n    @location({}) pbr_pos: vec3f,", vtxOutIdx++);
   vtxOutAttrs += fmt::format("\n    @location({}) pbr_nrm: vec3f,", vtxOutIdx++);
   vtxXfrAttrs += "\n    out.pbr_pos = mv_pos;\n    out.pbr_nrm = mv_nrm;";
+  // A vertex colour is the surface's tint whatever the channel does with it: the game
+  // points an unlit channel at its material register, which would lose it.
+  std::string tint, tintAlpha;
+  if (config.attrs[GX_VA_CLR0].attrType != GX_NONE) {
+    vtxOutAttrs += fmt::format("\n    @location({}) pbr_vclr: vec4f,", vtxOutIdx++);
+    vtxXfrAttrs += fmt::format("\n    out.pbr_vclr = {};", vtx_attr(config, GX_VA_CLR0));
+    tint = " * in.pbr_vclr.rgb";
+    tintAlpha = " * in.pbr_vclr.a";
+  }
 
+  // A second layer (maps 4-6: base, MR, normal) over the first. The vertex alpha says
+  // where, and the two base maps' alphas are heights that decide which layer shows
+  // through first across the edge: this is Remastered's blend.
+  const bool layered = mapStage[4] != -1;
+  std::string layer, base = sampled(0, ""), orm = sampled(1, "vec4f(1.0, 0.6, 0.0, 1.0)");
+  std::string normalXy = mapStage[2] == -1 ? std::string() : fmt::format("sampled{}.rg", mapStage[2]);
+  if (layered) {
+    layer = fmt::format(R"""(
+      var pbr_ls = 0.0;
+      if (ubuf.pbr_layer.x > 0.0) {{
+          let pbr_lw = {1} * 2.0 - 1.0;
+          let pbr_lh = clamp(sampled{2}.a * ubuf.pbr_layer_height.z + ubuf.pbr_layer_height.w, 0.0, 1.0) -
+                       clamp({0}.a * ubuf.pbr_layer_height.x + ubuf.pbr_layer_height.y, 0.0, 1.0);
+          let pbr_lt = ubuf.pbr_layer.x;
+          let pbr_lx = clamp((pbr_lh + pbr_lw * pbr_lt + pbr_lw + pbr_lt) * 0.5 / pbr_lt, 0.0, 1.0);
+          pbr_ls = pbr_lx * pbr_lx * (3.0 - 2.0 * pbr_lx);
+      }})""",
+                        base, tintAlpha.empty() ? "1.0" : "in.pbr_vclr.a", mapStage[4]);
+    if (mapStage[5] != -1) {
+      orm = fmt::format("mix({}, sampled{}, pbr_ls)", orm, mapStage[5]);
+    }
+    if (mapStage[6] != -1 && mapStage[2] != -1) {
+      normalXy = fmt::format("mix({}, sampled{}.rg, pbr_ls)", normalXy, mapStage[6]);
+    }
+    // The vertex alpha is the layers' weight there and no opacity.
+    tintAlpha.clear();
+  }
+  const std::string baseRgb =
+      layered ? fmt::format("mix(pow(max({0}.rgb, vec3f(0.0)), vec3f(2.2)), pow(max(sampled{1}.rgb, vec3f(0.0)), "
+                            "vec3f(2.2)), pbr_ls)",
+                            base, mapStage[4])
+              : fmt::format("pow(max({}.rgb, vec3f(0.0)), vec3f(2.2))", base);
   std::string normal;
   if (mapStage[2] != -1) {
     // Cotangent frame (Schüler). glTF normal maps are +Y up with V running down the image,
@@ -916,7 +959,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     // WebGPU's framebuffer Y runs down, so the Y derivatives are negated to get GL's (view
     // space Y up) orientation.
     normal = fmt::format(R"""(
-      let pbr_ts = sampled{0}.rg * 2.0 - 1.0;
+      let pbr_ts = {0} * 2.0 - 1.0;
       let pbr_tn = vec3f(pbr_ts, sqrt(max(0.0, 1.0 - dot(pbr_ts, pbr_ts))));
       let pbr_dp1 = dpdx(in.pbr_pos);
       let pbr_dp2 = -dpdy(in.pbr_pos);
@@ -931,7 +974,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
         let pbr_s = inverseSqrt(pbr_tlen);
         pbr_n = normalize(pbr_t * (pbr_s * pbr_tn.x) - pbr_b * (pbr_s * pbr_tn.y) + pbr_ng * pbr_tn.z);
       }})""",
-                         mapStage[2], underlying(config.tevStages[mapStage[2]].texCoordId));
+                         normalXy, underlying(config.tevStages[mapStage[2]].texCoordId));
   }
   std::string attn;
   if (cc.attnFn == GX_AF_SPOT) {
@@ -948,8 +991,8 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
   std::string source = fmt::format(R"""(
     // PBR (GX_AURORA_SET_PBR)
     {{
-      let pbr_pi = 3.14159265;
-      let pbr_base = pow(max({0}.rgb, vec3f(0.0)), vec3f(2.2));
+      let pbr_pi = 3.14159265;{10}
+      let pbr_base = {11};
       let pbr_orm = {1}.rgb;
       let pbr_ao = pbr_orm.r;
       let pbr_rough = clamp(pbr_orm.g, 0.02, 1.0);
@@ -960,7 +1003,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_v = normalize(-in.pbr_pos);
       let pbr_nv = max(dot(pbr_n, pbr_v), 1e-4);
       let pbr_f0 = mix(vec3f(0.04), pbr_base, pbr_metal);
-      let pbr_diff = pbr_base * (1.0 - pbr_metal);
+      let pbr_diff = pbr_base * (1.0 - pbr_metal){8};
       let pbr_a2 = pow(pbr_rough, 4.0);
       let pbr_k = pbr_rough * pbr_rough * 0.5;
       // A normal-mapped reflection can point into the surface; lift it back to the horizon
@@ -1064,8 +1107,12 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
                                     dot(pbr_vrn, pbr_vb.xyz * 2.0 - 1.0)) * 0.5 + 0.5, vec3f(0.0), vec3f(1.0));
           pbr_envspec = max(pbr_vmean - pbr_vlobe + 2.0 * pbr_vlobe * (1.0 + pbr_vs) * pow(pbr_vrq, 1.0 + 2.0 * pbr_vs),
                             vec3f(0.0)) * ubuf.pbr_volume[3].w;
-          // Diagnostics (w of row 5): 1 the texture coordinates, 2 the light alone.
+          // Diagnostics (w of row 5): 1 the texture coordinates, 2 the light alone, 3 the
+          // normal.
           pbr_vdiag = select(pbr_ambd, pbr_vuv, ubuf.pbr_volume[5].w < 1.5);
+          if (ubuf.pbr_volume[5].w > 2.5) {{
+              pbr_vdiag = pbr_n * 0.5 + 0.5;
+          }}
       }}
       pbr_lo += (pbr_ambd * pbr_diff + pbr_envspec * (pbr_f0 * pbr_ab.x + pbr_ab.y)) * pbr_ao;
       // Backlight (GX_AURORA_SET_PBR_MATERIAL): a rim on the edges turned away from the
@@ -1077,9 +1124,31 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
                 (pbr_rim * pbr_rim * pbr_ao);
       // Highlights roll off into white instead of clipping: unchanged up to 0.6, and the
       // rest of the range (a room cube's lamps are many times brighter than 1) approaches 1.
-      let pbr_out = max(pbr_lo + pbr_emissive, vec3f(0.0));
+      // The material's alpha and shading modes (w of the GX_AURORA_SET_PBR_MATERIAL rows).
+      var pbr_glow = pbr_emissive;
+      var pbr_alpha = {12}{9};
+      if (ubuf.pbr_emissive.w > 0.0) {{
+          // A height blend (snow and ice laid over rock): the base map's alpha lifts the
+          // vertex alpha, and a smoothstep as wide as the threshold cuts the edge.
+          let pbr_hx = clamp(({0}.a + 1.0){9} * 2.0 - 1.0, 0.0, 1.0);
+          let pbr_hs = clamp((pbr_hx - 0.5 + ubuf.pbr_emissive.w) / (2.0 * ubuf.pbr_emissive.w), 0.0, 1.0);
+          pbr_alpha = pbr_hs * pbr_hs * (3.0 - 2.0 * pbr_hs);
+      }}
+      // 1 = unlit, 2 = the base map's alpha masks the glow, 3 = both.
+      let pbr_mode = ubuf.pbr_backlight.w;
+      if (pbr_mode > 1.5) {{
+          // The base map's alpha is how much of the glow shows, and no opacity: the
+          // vertex alpha alone is.
+          pbr_glow = pbr_emissive * {0}.a;
+          pbr_alpha = 1.0{9};
+      }}
+      if ((pbr_mode > 0.5 && pbr_mode < 1.5) || pbr_mode > 2.5) {{
+          // Unlit (screens, holograms): the surface's own colour and its glow.
+          pbr_lo = pbr_diff * pbr_ao;
+      }}
+      let pbr_out = max(pbr_lo + pbr_glow, vec3f(0.0));
       let pbr_tm = min(pbr_out, vec3f(0.6)) + 0.4 * (1.0 - exp(-max(pbr_out - 0.6, vec3f(0.0)) / 0.4));
-      prev = vec4f(pow(pbr_tm, vec3f(1.0 / 2.2)), prev.a);
+      prev = vec4f(pow(pbr_tm, vec3f(1.0 / 2.2)), pbr_alpha);
       if (ubuf.pbr_volume[5].w > 0.5) {{
           prev = vec4f(clamp(pbr_vdiag, vec3f(0.0), vec3f(1.0)), prev.a);
       }}
@@ -1096,8 +1165,8 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
                               pbr_hdr > 0.0), prev.a);
       }}
     }})""",
-                     sampled(0, ""), sampled(1, "vec4f(1.0, 0.6, 0.0, 1.0)"), sampled(3, "vec4f(0.0)"), normal,
-                     GX::MaxLights, attn, amb, gfx::probe::MipCount - 1);
+                     base, orm, sampled(3, "vec4f(0.0)"), normal, GX::MaxLights, attn, amb,
+                     gfx::probe::MipCount - 1, tint, tintAlpha, layer, baseRgb, layered ? "1.0" : "prev.a");
   if (!lit) {
     // The uniform block has no lights then.
     const size_t begin = source.find("// pbr-lights-begin");
@@ -1769,6 +1838,8 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     uniBufAttrs += "\n    pbr_probe: mat3x4f,";
     uniBufAttrs += "\n    pbr_emissive: vec4f,";
     uniBufAttrs += "\n    pbr_backlight: vec4f,";
+    uniBufAttrs += "\n    pbr_layer: vec4f,";
+    uniBufAttrs += "\n    pbr_layer_height: vec4f,";
     uniBufAttrs += "\n    pbr_cube: vec4f,";
     uniBufAttrs += "\n    pbr_ambient: array<vec4f, 6>,";
     uniBufAttrs += "\n    pbr_volume: array<vec4f, 6>,";
