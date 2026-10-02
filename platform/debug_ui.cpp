@@ -1392,8 +1392,8 @@ int OrientationQuarters(SDL_DisplayOrientation orientation) {
   }
 }
 
-// Pitch (x, positive tilts the far edge up) and yaw rates in rad/s from the
-// chosen source; false when there is none.
+// Pitch (x, positive tilts the far edge up) and yaw (positive turns right)
+// rates in rad/s from the chosen source; false when there is none.
 bool ReadGyroRates(float& pitch, float& yaw) {
   if (sGyroOverride) {
     pitch = sGyroOverridePitch;
@@ -1414,8 +1414,9 @@ bool ReadGyroRates(float& pitch, float& yaw) {
         }
         float data[3];
         if (SDL_GetGamepadSensorData(pad, SDL_SENSOR_GYRO, data, 3)) {
-          // Radians per second; x is pitch, y is yaw.
-          yaw = data[1];
+          // Radians per second; x is pitch, y is yaw. Sensor rates are
+          // counter-clockwise positive, so a positive y turns left.
+          yaw = -data[1];
           pitch = data[0];
           haveRates = true;
           sGyroStatus = "controller";
@@ -1443,7 +1444,8 @@ bool ReadGyroRates(float& pitch, float& yaw) {
       if (SDL_GetSensorData(sPhoneGyro, data, 3)) {
         // The phone reports its own axes (x right, y up in its natural
         // orientation), so turn them to the screen's, as SDL does for its
-        // accelerometer: landscape would otherwise swap pitch and yaw.
+        // accelerometer: landscape would otherwise swap pitch and yaw. The
+        // rate about the screen's up axis is negated, as for a pad.
         const SDL_DisplayID display = SDL_GetPrimaryDisplay();
         const int quarters = (OrientationQuarters(SDL_GetCurrentDisplayOrientation(display)) -
                               OrientationQuarters(SDL_GetNaturalDisplayOrientation(display)) + 4) %
@@ -1451,19 +1453,19 @@ bool ReadGyroRates(float& pitch, float& yaw) {
         switch (quarters) {
         case 1:
           pitch = -data[1];
-          yaw = data[0];
+          yaw = -data[0];
           break;
         case 2:
           pitch = -data[0];
-          yaw = -data[1];
+          yaw = data[1];
           break;
         case 3:
           pitch = data[1];
-          yaw = -data[0];
+          yaw = data[0];
           break;
         default:
           pitch = data[0];
-          yaw = data[1];
+          yaw = -data[1];
           break;
         }
         haveRates = true;
