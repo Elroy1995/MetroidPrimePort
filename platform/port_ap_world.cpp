@@ -251,6 +251,21 @@ void Parse(const PortJson::Value& data, Layout& layout) {
   layout.doorColorRandomization = colorOption != nullptr && colorOption->IsNumber()
                                       ? colorOption->AsInt() != 0
                                       : layout.hasDoorColors;
+  // Options arrive as numbers; Text() and older servers may say true/false.
+  const auto flag = [&data](const char* name) {
+    const PortJson::Value* value = data.Find(name);
+    if (value == nullptr)
+      return false;
+    return value->IsBool() ? value->AsBool() : value->IsNumber() && value->AsInt() != 0;
+  };
+  layout.removeHiveMecha = flag("remove_hive_mecha");
+  layout.backwardsLowerMines = flag("backwards_lower_mines");
+  layout.flaahgraPowerBombs = flag("flaahgra_power_bombs");
+  const PortJson::Value* capacity = data.Find("etank_capacity");
+  if (capacity != nullptr && capacity->IsNumber()) {
+    const int64_t value = capacity->AsInt();
+    layout.etankCapacity = value >= 1 && value <= 1000 ? static_cast< int >(value) : 100;
+  }
   const PortJson::Value* shields = data.Find("blast_shield_mapping");
   if (shields != nullptr && shields->IsObject()) {
     layout.hasShields = true;
@@ -289,7 +304,11 @@ std::string Text(const Layout& layout) {
     }
     text << '}';
   }
-  text << "},\"door_color_randomization\":" << (layout.doorColorRandomization ? 1 : 0);
+  text << "},\"door_color_randomization\":" << (layout.doorColorRandomization ? 1 : 0)
+       << ",\"remove_hive_mecha\":" << (layout.removeHiveMecha ? 1 : 0)
+       << ",\"backwards_lower_mines\":" << (layout.backwardsLowerMines ? 1 : 0)
+       << ",\"flaahgra_power_bombs\":" << (layout.flaahgraPowerBombs ? 1 : 0)
+       << ",\"etank_capacity\":" << layout.etankCapacity;
   if (layout.hasDoorColors) {
     text << ",\"door_color_mapping\":{";
     firstArea = true;
@@ -454,6 +473,143 @@ std::vector< uint8_t > TempleOps(const Layout& layout) {
       conn(4, kAfterIntro, kZero, kDeactivate, 0x04100170 + i);        // hologram
       conn(4, kAfterIntro, kZero, kDeactivate, 0x0410001C + i * 0x13); // blue lines
     }
+  }
+  return ops;
+}
+
+namespace {
+
+const uint32_t kChozoWorld = 0x83F6FF6F;
+const uint32_t kHiveTotem = 0xC8309DF6;
+const uint32_t kSunchamberLobby = 0x18AB6106;      // 08_courtyard
+const uint32_t kProcessingCenterAccess = 0xED6DE73B;
+const uint32_t kEliteQuartersAccess = 0x71343C3F;
+const uint32_t kMetroidQuarantineA = 0xFB051F5A;
+const uint32_t kMetroidQuarantineB = 0xBB3AFC4E;
+const uint32_t kEliteControl = 0xC50AF17A;
+const uint32_t kCentralDynamo = 0xFEA372E2;
+
+} // namespace
+
+std::vector< LayerChange > Layers(const Layout& layout) {
+  std::vector< LayerChange > out;
+  if (layout.removeHiveMecha) {
+    LayerChange firstPass; // "1st pass": the Hive Mecha and its wasps
+    firstPass.mlvl = kChozoWorld;
+    firstPass.mrea = kHiveTotem;
+    firstPass.area = 0x24;
+    firstPass.layer = 1;
+    firstPass.active = false;
+    out.push_back(firstPass);
+  }
+  return out;
+}
+
+std::vector< uint8_t > RoomOps(const Layout& layout, uint32_t mrea,
+                               const std::vector< PortSkipCutscenes::ScriptObject >& objects) {
+  std::vector< uint8_t > ops;
+  auto u16 = [&](uint32_t v) {
+    ops.push_back(uint8_t(v >> 8));
+    ops.push_back(uint8_t(v));
+  };
+  auto u32 = [&](uint32_t v) {
+    for (int shift = 24; shift >= 0; shift -= 8)
+      ops.push_back(uint8_t(v >> shift));
+  };
+  // The object, when it is of that type and has `size` bytes of properties
+  // after its name.
+  auto has = [&](uint32_t id, uint8_t type, size_t size) {
+    for (const PortSkipCutscenes::ScriptObject& o : objects) {
+      if (o.id != id)
+        continue;
+      const size_t start = o.props.size() > 4
+                               ? static_cast< size_t >(std::find(o.props.begin() + 4, o.props.end(), 0) -
+                                                       o.props.begin()) + 1
+                               : 0;
+      return o.type == type && start != 0 && o.props.size() >= start + size;
+    }
+    return false;
+  };
+  auto edit = [&](uint32_t id, uint32_t off, std::initializer_list< uint8_t > data) {
+    ops.push_back(2);
+    u32(id);
+    u16(0);
+    u16(1);
+    u16(off);
+    u16(static_cast< uint32_t >(data.size()));
+    ops.insert(ops.end(), data);
+  };
+  auto remove = [&](uint32_t id) {
+    ops.push_back(6);
+    u32(id);
+  };
+  enum { kActor = 0x00, kTrigger = 0x04, kTimer = 0x05, kPlatform = 0x08, kRelay = 0x15,
+         kDamageableTrigger = 0x1A };
+  enum { kEntered = 3, kZero = 9 };
+  enum { kSetToZero = 13 };
+  // An actor's visor parameters: whether a lock-on passes through it.
+  const uint32_t kActorPassthrough = 325;
+  const size_t kActorSize = 354;
+
+  if (layout.removeHiveMecha && mrea == kHiveTotem) {
+    const uint32_t kVisited = 0x0024008C; // Relay - Make Room Already Visited
+    const uint32_t kStart = 0x00246FF0;   // below the ids DoorOps hands out
+    if (has(kVisited, kRelay, 1) && !has(kStart, kTimer, 0)) {
+      // A timer that fires the relay as the room loads: the room is as the
+      // fight leaves it.
+      static const char kName[] = "Auto start relay";
+      ops.push_back(5);
+      ops.push_back(0); // layer
+      ops.push_back(kTimer);
+      u32(kStart);
+      u16(1);
+      u32(kZero);
+      u32(kSetToZero);
+      u32(kVisited);
+      u32(4 + sizeof(kName) + 11);
+      u32(6);
+      ops.insert(ops.end(), kName, kName + sizeof(kName));
+      for (uint8_t b : {0x3A, 0x83, 0x12, 0x6F}) // 0.001 s
+        ops.push_back(b);
+      u32(0); // no random time
+      ops.push_back(0); // looping
+      ops.push_back(1); // starts at once
+      ops.push_back(1); // active
+    }
+  }
+
+  if (layout.flaahgraPowerBombs && mrea == kSunchamberLobby) {
+    // The sandstone's vulnerability to power bombs: reflect -> normal.
+    const uint32_t kSandstone = 0x001300D7;
+    if (has(kSandstone, kDamageableTrigger, 170))
+      edit(kSandstone, 56, {0, 0, 0, 1});
+  }
+
+  if (layout.backwardsLowerMines) {
+    // The pins and the ice that close the way from the far side are platforms.
+    if (mrea == kProcessingCenterAccess || mrea == kEliteQuartersAccess) {
+      for (const PortSkipCutscenes::ScriptObject& o : objects) {
+        if (o.type == kPlatform)
+          remove(o.id);
+      }
+    }
+    // The force fields can be shot through from behind.
+    if (mrea == kMetroidQuarantineB && has(0x081F0018, kActor, kActorSize))
+      edit(0x081F0018, kActorPassthrough, {1});
+    if (mrea == kEliteControl && has(0x04100086, kActor, kActorSize))
+      edit(0x04100086, kActorPassthrough, {1});
+    // Walking in from the far side runs what the near side's entrance does.
+    if (mrea == kMetroidQuarantineA && has(0x00200214, kTrigger, 63) &&
+        has(0x00200464, kRelay, 1)) {
+      ops.push_back(4);
+      u32(0x00200214);
+      u32(kEntered);
+      u32(kSetToZero);
+      u32(0x00200464);
+    }
+    // The block behind Central Dynamo's door.
+    if (mrea == kCentralDynamo && has(0x001B065F, kActor, kActorSize))
+      remove(0x001B065F);
   }
   return ops;
 }

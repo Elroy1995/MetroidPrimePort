@@ -149,6 +149,8 @@ public:
   void SetPickup(const EItemType type, const int amount);
   static float GetEnergyTankCapacity();
   static float GetBaseHealthCapacity();
+  // Port: the energy a tank holds (100 on the disc); the suit's own is one less.
+  static void PortSetEnergyTankCapacity(float capacity);
   const float CalculateHealth();
   void InitializePowerUp(CPlayerState::EItemType type, int capacity);
   void SetPowerUp(CPlayerState::EItemType type, int capacity);

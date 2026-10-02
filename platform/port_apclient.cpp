@@ -455,9 +455,22 @@ void ApplyBuiltinWorld(Runtime& runtime, CStateManager& mgr, CPlayerState& playe
   namespace Prime = MetroidPrime;
   bool unlimitedMissiles = false;
   bool unlimitedPowerBombs = false;
+  PortApWorld::Layout layout;
   {
     std::lock_guard<std::mutex> lock(runtime.mutex);
-    if (!runtime.config.builtin || runtime.session == nullptr)
+    const bool builtin = runtime.config.builtin && runtime.session != nullptr;
+    if (builtin && runtime.session->GetState().hasWorld)
+      layout = runtime.session->GetState().world;
+    // The seed's tank capacity; a game outside Archipelago has the disc's.
+    const float capacity = static_cast<float>(layout.etankCapacity);
+    if (CPlayerState::GetEnergyTankCapacity() != capacity) {
+      // Full health stays full under the new capacity.
+      const bool full = player.GetHealthInfo().GetHP() >= player.CalculateHealth();
+      CPlayerState::PortSetEnergyTankCapacity(capacity);
+      if (full)
+        player.HealthInfo()->SetHP(player.CalculateHealth());
+    }
+    if (!builtin)
       return;
     unlimitedMissiles =
         runtime.session->ReceivedCount(Prime::kItemBase + Prime::kUnlimitedMissiles) > 0;
@@ -486,6 +499,18 @@ void ApplyBuiltinWorld(Runtime& runtime, CStateManager& mgr, CPlayerState& playe
   const CWorld* world = mgr.GetWorld();
   if (world != nullptr && world->IGetWorldAssetId() == Prime::kTallonWorld)
     temple = world->IGetAreaId(Prime::kArtifactTempleArea);
+  // The layers the seed keeps on or off.
+  for (const PortApWorld::LayerChange& change : PortApWorld::Layers(layout)) {
+    CScriptLayerManager* state = gpGameState->StateForWorld(change.mlvl).GetLayerState().GetPtr();
+    TAreaId area(change.area);
+    if (world != nullptr && world->IGetWorldAssetId() == change.mlvl)
+      area = world->IGetAreaId(change.mrea);
+    if (state == nullptr || area.Value() < 0 ||
+        static_cast<size_t>(area.Value()) >= state->GetAreaLayers().size())
+      continue;
+    if (state->IsLayerActive(area, TLayerId(change.layer)) != change.active)
+      state->SetLayerActive(area, TLayerId(change.layer), change.active);
+  }
   if (layers == nullptr || temple.Value() < 0 ||
       static_cast<size_t>(temple.Value()) >= layers->GetAreaLayers().size())
     return;
@@ -1751,6 +1776,21 @@ void WatchShields(CStateManager& mgr, CGameState::ApProgress& progress) {
       send(trigger + 2, kSM_SetToZero);
       shields.erase(shields.begin() + i);
     }
+  }
+}
+
+bool RoomOps(uint32_t mrea, const uint8_t* scly, size_t size, std::vector< uint8_t >& ops) {
+  try {
+    PortApWorld::Layout layout;
+    if (!SeedLayout(layout))
+      return false;
+    std::vector< PortSkipCutscenes::ScriptObject > objects;
+    if (!PortSkipCutscenes::ScanObjects(scly, size, objects))
+      return false;
+    ops = PortApWorld::RoomOps(layout, mrea, objects);
+    return !ops.empty();
+  } catch (...) {
+    return false;
   }
 }
 

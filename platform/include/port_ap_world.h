@@ -38,13 +38,25 @@ struct Layout {
   // has one, the disc's own blast shields are gone.
   bool hasShields = false;
   std::map< std::string, std::map< std::string, std::map< int, std::string > > > shields;
+  // remove_hive_mecha: the Hive Totem's fight is over before it starts.
+  bool removeHiveMecha = false;
+  // backwards_lower_mines: the Phazon Mines' lower half can be entered from
+  // its far end.
+  bool backwardsLowerMines = false;
+  // flaahgra_power_bombs: a power bomb breaks the Sunchamber Lobby's sandstone.
+  bool flaahgraPowerBombs = false;
+  // etank_capacity: the energy an energy tank holds.
+  int etankCapacity = 100;
 
   bool operator==(const Layout& other) const {
     return startRoom == other.startRoom && finalBosses == other.finalBosses &&
            requiredArtifacts == other.requiredArtifacts && elevators == other.elevators &&
            doorColorRandomization == other.doorColorRandomization &&
            hasDoorColors == other.hasDoorColors && doorColors == other.doorColors &&
-           hasShields == other.hasShields && shields == other.shields;
+           hasShields == other.hasShields && shields == other.shields &&
+           removeHiveMecha == other.removeHiveMecha &&
+           backwardsLowerMines == other.backwardsLowerMines &&
+           flaahgraPowerBombs == other.flaahgraPowerBombs && etankCapacity == other.etankCapacity;
   }
   bool operator!=(const Layout& other) const { return !(*this == other); }
 };
@@ -77,6 +89,25 @@ bool SkipsRidley(const Layout& layout);
 // and patch_artifact_temple_activate_portal_conditions). Empty for a retail
 // temple.
 std::vector< uint8_t > TempleOps(const Layout& layout);
+
+// What the seed's smaller options change in room `mrea`'s script, as an op
+// list for PortSkipCutscenes::ApplyOps: randomprime's patch_hive_mecha,
+// patch_backwards_lower_mines_* and patch_arboretum_sandstone. `objects` is
+// the room's script; a room that isn't the disc's is left alone. Empty for no
+// change.
+std::vector< uint8_t > RoomOps(const Layout& layout, uint32_t mrea,
+                               const std::vector< PortSkipCutscenes::ScriptObject >& objects);
+
+// A script layer the seed keeps on or off for the whole game.
+struct LayerChange {
+  uint32_t mlvl = 0;
+  uint32_t mrea = 0;
+  // The area's index in its world, for when the world isn't the loaded one.
+  int area = 0;
+  int layer = 0;
+  bool active = false;
+};
+std::vector< LayerChange > Layers(const Layout& layout);
 
 // A door the seed changes, as the apworld would have told randomprime
 // (RoomData.get_door_config_data, after the region pass that mirrors a blast

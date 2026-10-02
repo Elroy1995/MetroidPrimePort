@@ -44,8 +44,9 @@ static const char* kVisorNames[] = {
     "ThermalVisor",
 };
 
-static const float kEnergyTankCapacity = 100.f;
-static const float kBaseHealthCapacity = 99.f;
+// Port: not constants, an Archipelago seed may set a tank's capacity.
+static float kEnergyTankCapacity = 100.f;
+static float kBaseHealthCapacity = 99.f;
 
 static const float kDefaultKnockbackResistance = 50.f;
 static const float kMaxVisorTransitionFactor = 0.2f;
@@ -376,6 +377,11 @@ bool CPlayerState::GetIsVisorTransitioning() const {
 float CPlayerState::GetBaseHealthCapacity() { return kBaseHealthCapacity; }
 
 float CPlayerState::GetEnergyTankCapacity() { return kEnergyTankCapacity; }
+
+void CPlayerState::PortSetEnergyTankCapacity(float capacity) {
+  kEnergyTankCapacity = capacity;
+  kBaseHealthCapacity = capacity - 1.f;
+}
 
 void CPlayerState::InitializeScanTimes() {
   if (x170_scanTimes.size())

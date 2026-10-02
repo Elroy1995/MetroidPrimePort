@@ -105,12 +105,17 @@ With the built-in tables, the client does what the AP ISO patch would:
   the Vault ledge gets none either (randomprime's two-way door is not
   ported). The models are the disc's missile shield with its glow and metal
   tinted per weapon, so they are not randomprime's painted ones.
-- Seed options the port does not implement are named once on connect as
-  `Seed option not supported: ...`: Hive Mecha
-  removal, backwards Lower Mines,
-  Flaahgra power bombs, removed X-Ray or Thermal requirements, and a changed
-  energy tank capacity.
-  Such a seed can expect a door the game does not have.
+- The smaller options change the game as randomprime does: `remove_hive_mecha`
+  leaves the Hive Totem as it is after the fight, `backwards_lower_mines`
+  opens the lower Phazon Mines from their far end (the pins and the ice in the
+  two access halls are gone, the force fields in Metroid Quarantine B and
+  Elite Control let shots through, Central Dynamo's door is not blocked),
+  `flaahgra_power_bombs` lets a power bomb break the Sunchamber Lobby's
+  sandstone, and `etank_capacity` is the energy a tank holds (the suit's own
+  is one less). `remove_xray_requirements` and `remove_thermal_requirements`
+  only change the seed's logic.
+- A start room the port's tables don't have is named once on connect as
+  `Seed option not supported: ...`.
 - Spring Ball (C-stick up in morph ball) follows the seed's `spring_ball`: with
   the Morph Ball Bombs (the default), as its own item (Spring Ball), as the
   first Progressive Bomb, or off. The port's own Spring Ball setting is ignored

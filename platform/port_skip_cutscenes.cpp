@@ -165,6 +165,17 @@ bool PatchArea(uint32_t mreaId, const uint8_t* scly, size_t size, std::vector< u
     else
       PortLog::Write("archipelago: the seed's Artifact Temple patch doesn't match, left as is\n");
   }
+  std::vector< uint8_t > roomOps;
+  if (PortAp::RoomOps(mreaId, out.empty() ? scly : out.data(), out.empty() ? size : out.size(),
+                      roomOps)) {
+    // The seed's smaller options.
+    std::vector< uint8_t > changed;
+    if (ApplyOps(out.empty() ? scly : out.data(), out.empty() ? size : out.size(), roomOps.data(),
+                 roomOps.size(), changed) == 0)
+      out.swap(changed);
+    else
+      PortLog::Write("archipelago: room %08X's option patch doesn't match, left as is\n", mreaId);
+  }
   std::vector< uint8_t > doorOps;
   const bool patched = !out.empty();
   if (PortAp::DoorOps(mreaId, patched ? out.data() : scly, patched ? out.size() : size, doorOps)) {

@@ -177,6 +177,11 @@ bool TeleporterDestination(uint32_t world, uint32_t editorId, uint32_t& destWorl
 // when the temple is the retail one.
 bool TempleOps(std::vector< uint8_t >& ops);
 
+// What the seed's smaller options change in a room's script (no Hive Mecha,
+// backwards Lower Mines, Flaahgra power bombs), as an op list for
+// PortSkipCutscenes::ApplyOps over its script `scly`. False for no change.
+bool RoomOps(uint32_t mrea, const uint8_t* scly, size_t size, std::vector< uint8_t >& ops);
+
 // The seed's door types (colours, locked doors) for a room, as an op list for
 // PortSkipCutscenes::ApplyOps over its script `scly`. False for no change.
 bool DoorOps(uint32_t mrea, const uint8_t* scly, size_t size, std::vector< uint8_t >& ops);

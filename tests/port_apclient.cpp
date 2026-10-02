@@ -856,9 +856,12 @@ int main() {
               session.GetState().logic.preScanElevators &&
               session.GetState().logic.trickDifficulty == -1,
           "slot_data fills the logic options");
-    Check(slot.warnings.size() == 1 && Contains(slot.warnings[0], "Hive Mecha") &&
-              session.GetState().hasWorld && session.GetState().world.startRoom == "Arboretum",
-          "only the unsupported option is warned about");
+    Check(slot.warnings.empty() && session.GetState().hasWorld &&
+              session.GetState().world.startRoom == "Arboretum" &&
+              session.GetState().world.removeHiveMecha &&
+              !session.GetState().world.backwardsLowerMines &&
+              session.GetState().world.etankCapacity == 100,
+          "the seed's options are taken without a warning");
     Check(session.GetConfig().deathLink && outgoing.size() == 4 &&
               Contains(outgoing[0], "ConnectUpdate") && Contains(outgoing[0], "DeathLink"),
           "the seed's DeathLink option adds the tag");
@@ -1285,6 +1288,56 @@ int main() {
       Check(placed.empty() &&
                 std::search(kept.begin(), kept.end(), removal, removal + 5) == kept.end(),
             "the disc's missile shield serves where the seed wants one");
+    }
+    {
+      // The smaller options, over stand-ins for the disc's objects.
+      const auto object = [](uint8_t type, uint32_t id, size_t rest) {
+        PortSkipCutscenes::ScriptObject o;
+        o.type = type;
+        o.id = id;
+        o.props.assign(6 + rest, 0);
+        o.props[4] = 'x';
+        return o;
+      };
+      PortApWorld::Layout options;
+      const std::vector< PortSkipCutscenes::ScriptObject > totem = {object(0x15, 0x0024008C, 1)};
+      Check(PortApWorld::RoomOps(options, 0xC8309DF6, totem).empty() &&
+                PortApWorld::Layers(options).empty(),
+            "a seed without the options leaves the rooms alone");
+      options.removeHiveMecha = true;
+      options.backwardsLowerMines = true;
+      options.flaahgraPowerBombs = true;
+      PortApWorld::Layout copy;
+      PortJson::Value text;
+      size_t textOffset = 0;
+      const char* textReason = nullptr;
+      if (PortJson::Parse(PortApWorld::Text(options), text, textOffset, &textReason))
+        PortApWorld::Parse(text, copy);
+      Check(copy == options, "the options survive the layout's text");
+      const std::vector< uint8_t > mecha = PortApWorld::RoomOps(options, 0xC8309DF6, totem);
+      const std::vector< PortApWorld::LayerChange > layers = PortApWorld::Layers(options);
+      Check(mecha.size() > 8 && mecha[0] == 5 && mecha[2] == 0x05 && layers.size() == 1 &&
+                layers[0].mrea == 0xC8309DF6 && layers[0].layer == 1 && !layers[0].active,
+            "no Hive Mecha: a timer ends the fight and its layer is off");
+      Check(PortApWorld::RoomOps(options, 0xC8309DF6, {object(0x15, 0x0024008C, 0)}).empty(),
+            "a Hive Totem that isn't the disc's is left alone");
+      const std::vector< uint8_t > stone =
+          PortApWorld::RoomOps(options, 0x18AB6106, {object(0x1A, 0x001300D7, 180)});
+      const uint8_t wanted[] = {2, 0x00, 0x13, 0x00, 0xD7, 0, 0, 0, 1, 0, 56, 0, 4, 0, 0, 0, 1};
+      Check(stone == std::vector< uint8_t >(wanted, wanted + sizeof(wanted)),
+            "Flaahgra power bombs: the sandstone takes power bomb damage");
+      const std::vector< uint8_t > pins = PortApWorld::RoomOps(
+          options, 0xED6DE73B,
+          {object(0x08, 0x00160075, 352), object(0x00, 0x00160001, 354),
+           object(0x08, 0x00160076, 352)});
+      const uint8_t gone[] = {6, 0x00, 0x16, 0x00, 0x75, 6, 0x00, 0x16, 0x00, 0x76};
+      Check(pins == std::vector< uint8_t >(gone, gone + sizeof(gone)),
+            "backwards Lower Mines: the access hall's platforms are removed");
+      const std::vector< uint8_t > field =
+          PortApWorld::RoomOps(options, 0xC50AF17A, {object(0x00, 0x04100086, 354)});
+      Check(field.size() == 14 && field[0] == 2 && field[9] == 0x01 && field[10] == 0x45 &&
+                field[13] == 1,
+            "backwards Lower Mines: Elite Control's force field lets shots through");
     }
     std::vector< PortSkipCutscenes::ScriptObject > hatch = objects;
     if (!hatch.empty()) {

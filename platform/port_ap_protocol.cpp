@@ -391,10 +391,10 @@ std::string LogicOptionsText(const PortApLogic::Options& logic) {
   return text.str();
 }
 
-// Reads a Metroid Prime slot_data object. The options it names as unsupported
-// are ones the AP ISO patches into the game and the port does not; a seed
-// generated with them can expect a door, an elevator or a start the port does
-// not have, so the player is told up front rather than stuck later.
+// Reads a Metroid Prime slot_data object. What it names as unsupported is
+// something the AP ISO patches into the game and the port does not; a seed
+// generated with it can expect a start the port does not have, so the player
+// is told up front rather than stuck later.
 void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
   slot = SlotData();
   slot.received = true;
@@ -413,23 +413,6 @@ void ParseSlotData(const PortJson::Value& data, SlotData& slot) {
   slot.variaOnlyHeat = number("non_varia_heat_damage", 0) > 0;
   slot.preScanElevators = number("pre_scan_elevators", 0) > 0;
 
-  struct Unsupported {
-    const char* key;
-    int64_t vanilla;
-    const char* text;
-  };
-  static const Unsupported kUnsupported[] = {
-      {"remove_hive_mecha", 0, "Hive Mecha removal"},
-      {"backwards_lower_mines", 0, "backwards Lower Mines"},
-      {"flaahgra_power_bombs", 0, "Flaahgra power bombs"},
-      {"remove_xray_requirements", 0, "removed X-Ray requirements"},
-      {"remove_thermal_requirements", 0, "removed Thermal requirements"},
-      {"etank_capacity", 100, "a changed energy tank capacity"},
-  };
-  for (const Unsupported& option : kUnsupported) {
-    if (number(option.key, option.vanilla) != option.vanilla)
-      slot.warnings.push_back(std::string("not supported: ") + option.text);
-  }
   slot.springBall = static_cast< int >(std::clamp< int64_t >(number("spring_ball", 0), 0, 3));
   const PortJson::Value* room = Member(data, "starting_room_name");
   if (room != nullptr && room->IsString()) {
