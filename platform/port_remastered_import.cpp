@@ -31,6 +31,16 @@
 #include "port_remastered_txtr.h"
 #include "port_ws.h"
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
+
 namespace PortRemastered {
 namespace {
 
@@ -86,6 +96,16 @@ bool WantsGeometry(const std::string& room) {
     at = comma + 1;
   }
   return false;
+}
+
+// The import runs beside the game on nearly every core: its threads only take
+// the time the game leaves, or the game stutters for as long as it runs.
+void YieldToGame() {
+#if defined(_WIN32)
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+#elif defined(__linux__)
+  setpriority(PRIO_PROCESS, id_t(syscall(SYS_gettid)), 19);
+#endif
 }
 
 std::mutex sStateMutex;
@@ -543,6 +563,7 @@ int ImportMovies(const Remastered& remastered, const fs::path& folder, const Mov
 // Only the movies, into the mod an earlier import made: for a player who had
 // no ffmpeg at the time.
 void RunMovies(std::string nspPath, std::string keysPath, fs::path mod) {
+  YieldToGame();
   SetMessage("Opening the image");
   std::string error;
   Remastered remastered;
@@ -566,6 +587,7 @@ void RunMovies(std::string nspPath, std::string keysPath, fs::path mod) {
 }
 
 void Run(std::string nspPath, std::string keysPath, int threads, fs::path staging) {
+  YieldToGame();
   std::error_code ec;
   fs::remove_all(staging, ec);
   fs::create_directories(staging, ec);
@@ -642,6 +664,7 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     return io;
   };
   auto work = [&](int worker) {
+    YieldToGame();
     Converter converter(makeIO(worker, staging));
     for (size_t i = next++; i < count && !sCancel; i = next++) {
       const TableEntry& entry = table[i];
@@ -727,6 +750,7 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     return true;
   };
   auto roomWork = [&] {
+    YieldToGame();
     for (size_t i = nextWorld++; i < worlds.size() && !sCancel; i = nextWorld++) {
       RoomPak master;
       std::vector<RoomPak> rooms;
@@ -774,6 +798,7 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     std::mutex claimMutex;
     std::unordered_set<uint32_t> claimed;
     auto geometryWork = [&](int worker) {
+      YieldToGame();
       ConvertIO io = makeIO(worker, geometryFolder);
       // A texture never takes a geometry model's id either.
       io.retailId = [&](uint32_t id) { return retail.HasId(id) || modelIds.count(id) != 0; };
