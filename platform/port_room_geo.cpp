@@ -8,6 +8,8 @@
 #include "port_room_env.h"
 
 #include "Kyoto/CResFactory.hpp"
+#include "Kyoto/Graphics/CGraphics.hpp"
+#include "Kyoto/Graphics/CModel.hpp"
 #include "Kyoto/Graphics/CModelFlags.hpp"
 #include "Kyoto/Math/CAABox.hpp"
 #include "Kyoto/Math/CFrustumPlanes.hpp"
@@ -15,6 +17,7 @@
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CModelData.hpp"
 #include "MetroidPrime/CStateManager.hpp"
+#include "MetaRender/CCubeRenderer.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -43,6 +46,7 @@ struct Placed {
   bool bounded = false;
   std::unique_ptr< CActorLights > lights;
   bool areaLit = false; // `lights` holds the area's lights
+  uint32_t volume = 0;  // the area whose baked ambient lights it, 0 for none
 };
 
 struct Area {
@@ -51,6 +55,7 @@ struct Area {
   std::vector< Instance > instances;
   std::vector< Model > models;
   std::vector< Placed > items;
+  std::vector< const Placed* > sorted; // this frame's, with blended surfaces still to draw
   size_t loaded = 0;
 };
 
@@ -142,6 +147,10 @@ void SetLoadedAreas(const uint32_t* mreas, size_t count) {
       Load(mreas[i], areas[mreas[i]]);
     }
   }
+  // A frame Draw sits out (the thermal and X-ray visors) must not queue the last one's.
+  for (auto& [mrea, area] : areas) {
+    area.sorted.clear();
+  }
   sDrawnLast = sDrawn;
   sDrawn = 0;
 }
@@ -156,6 +165,7 @@ bool Draw(const CStateManager& mgr, const CGameArea& gameArea, const CFrustumPla
     return false;
   }
   Area& area = found->second;
+  area.sorted.clear();
   if (!area.placed) {
     for (Placed& item : area.items) {
       item.xf = gameArea.GetTM() * item.xf;
@@ -212,13 +222,68 @@ bool Draw(const CStateManager& mgr, const CGameArea& gameArea, const CFrustumPla
       item.lights->BuildAreaLightList(mgr, gameArea, item.bounds);
     }
     item.lights->BuildDynamicLightList(mgr, item.bounds);
-    model.data->Render(CModelData::kWM_Normal, item.xf, item.lights.get(), CModelFlags::Normal());
+    item.volume = baked ? gameArea.GetAreaAssetId() : 0;
+    // Blended surfaces (glass, decals) wait for the sorted pass, where they are drawn
+    // back to front among the actors.
+    const CModel& cmodel = **model.data->PickStaticModel(CModelData::kWM_Normal);
+    gpRender->SetModelMatrix(item.xf);
+    item.lights->ActivateLights();
+    cmodel.DrawUnsortedParts(CModelFlags::Normal());
+    if (!cmodel.IsDefinitelyOpaque()) {
+      area.sorted.push_back(&item);
+    }
     ++sDrawn;
   }
+  gpRender->SetAmbientColor(CColor::White());
+  CGraphics::DisableAllLights();
   if (baked) {
     PortRoomEnv::ClearVolumeHint();
   }
   return GetMode() == Mode::Replace;
+}
+
+void AddSorted(const CGameArea& gameArea) {
+  const auto found = Areas().find(gameArea.GetAreaAssetId());
+  if (found == Areas().end()) {
+    return;
+  }
+  const CVector3f forward = CGraphics::GetViewMatrix().GetForward();
+  for (const Placed* item : found->second.sorted) {
+    gpRender->AddDrawable(item, item->bounds.ClosestPointAlongVector(forward), item->bounds, kDrawableType,
+                          IRenderer::kDS_SortedCallback);
+  }
+}
+
+void DrawSorted(const void* drawable) {
+  const Placed& item = *static_cast< const Placed* >(drawable);
+  // The models of the area it was added for are still there: the list is rebuilt by Draw
+  // every frame, and an area's models only go between frames.
+  Area* owner = nullptr;
+  for (auto& [mrea, area] : Areas()) {
+    if (!area.items.empty() && &item >= area.items.data() && &item < area.items.data() + area.items.size()) {
+      owner = &area;
+    }
+  }
+  if (owner == nullptr) {
+    return;
+  }
+  const Model& model = owner->models[item.model];
+  if (!model.loaded) {
+    return;
+  }
+  if (item.volume != 0) {
+    const CVector3f centre = item.bounds.GetCenterPoint();
+    const float at[3] = {centre.GetX(), centre.GetY(), centre.GetZ()};
+    PortRoomEnv::SetVolumeHint(item.volume, at);
+  }
+  gpRender->SetModelMatrix(item.xf);
+  item.lights->ActivateLights();
+  (**model.data->PickStaticModel(CModelData::kWM_Normal)).DrawSortedParts(CModelFlags::Normal());
+  gpRender->SetAmbientColor(CColor::White());
+  CGraphics::DisableAllLights();
+  if (item.volume != 0) {
+    PortRoomEnv::ClearVolumeHint();
+  }
 }
 
 bool sReplacingArea = false;

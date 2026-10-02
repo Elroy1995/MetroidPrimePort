@@ -2331,6 +2331,11 @@ void CStateManager::RendererDrawCallback(const void* drawable, const void* conte
   case 2:
     static_cast< const CDecal* >(drawable)->Render();
     break;
+#ifdef TARGET_PC
+  case PortRoomGeo::kDrawableType:
+    PortRoomGeo::DrawSorted(drawable);
+    break;
+#endif
   }
 }
 
@@ -2825,6 +2830,11 @@ void CStateManager::DrawWorld() const {
       }
     }
 
+#ifdef TARGET_PC
+    if (portRoomGeo[i] || PortRoomGeo::GetMode() == PortRoomGeo::Mode::Overlay) {
+      PortRoomGeo::AddSorted(area);
+    }
+#endif
     if (isVisArea && !thermal) {
       CDecalManager::AddToRenderer(frustum, *this);
       x884_actorModelParticles->AddStragglersToRenderer(*this);

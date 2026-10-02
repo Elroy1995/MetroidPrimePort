@@ -40,6 +40,12 @@ void SetLoadedAreas(const uint32_t* mreas, size_t count);
 // Draws the area's room geometry. True when it stands in for the area's own, which is
 // when the area has a file, the mode says so and every model of it has loaded.
 bool Draw(const CStateManager& mgr, const CGameArea& area, const CFrustumPlanes& frustum);
+// Queues the blended surfaces of what Draw drew for the area this frame in the renderer's
+// sorted pass; the renderer hands each back to DrawSorted through the state manager's
+// drawable callback, as type kDrawableType.
+enum { kDrawableType = 3 };
+void AddSorted(const CGameArea& area);
+void DrawSorted(const void* drawable);
 // Set around the renderer's sorted pass for an area Draw stood in for, so that pass
 // draws the actors and leaves the area's own surfaces out.
 extern bool sReplacingArea;
