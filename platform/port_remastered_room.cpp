@@ -36,6 +36,7 @@ constexpr uint32_t kReflectionProbe = 0x27807e39;
 constexpr uint32_t kAutoExposureHint = 0x98694074;
 constexpr uint32_t kDoorMP1 = 0x564a1641;
 constexpr uint32_t kModCon = 0x451740eb;
+constexpr uint32_t kActorMP1 = 0xb6200be6;
 
 // Property ids.
 constexpr uint32_t kPropRoomId = 0x30a4d63d;
@@ -48,6 +49,10 @@ constexpr uint32_t kPropHintMax = 0x839d334c;
 constexpr uint32_t kPropHintMode = 0x590d6843;
 constexpr uint32_t kPropHintBias = 0x038f85da;
 constexpr uint32_t kPropModConMcon = 0xa8e2ba93;
+constexpr uint32_t kPropActorModel = 0xcb1c52f6;
+// Unnamed in retrotool's templates; what they mean is read off which actors carry them.
+constexpr uint32_t kPropActorAdded = 0x9a25df3b;
+constexpr uint32_t kPropActorAttached = 0x1285da4d;
 
 constexpr size_t kMaxChunks = 1u << 20;
 constexpr size_t kMaxVolumeFloats = size_t(1) << 28;
@@ -1226,6 +1231,61 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
       ++count;
     }
   }
+  // Scenery Remastered added as actors rather than as room geometry: the frame around each
+  // door, and pieces of the room itself that sit on its "RS" layer. They carry kPropActorAdded,
+  // which no actor that retail also has does. One that also has kPropActorAttached may follow
+  // another object (platforms carry them), so it is left out rather than drawn where it starts.
+  std::map<Id16, uint32_t> actorModels;  // 0 when the model did not convert
+  size_t actors = 0, attached = 0;
+  for (const Component* c : r.room.Of(kActorMP1)) {
+    const auto f = r.room.Flat(*c);
+    const auto prop = f.find(kPropActorModel);
+    Vec3 pos, rot, scale;
+    if (f.find(kPropActorAdded) == f.end() || prop == f.end() || prop->second.size != 16 ||
+        !r.room.Xform(*c, pos, rot, scale)) {
+      continue;
+    }
+    if (f.find(kPropActorAttached) != f.end()) {
+      ++attached;
+      continue;
+    }
+    const Id16 model = SwapUuid(r.room.Bytes(prop->second));
+    if (model == Id16{}) {
+      continue;
+    }
+    auto known = actorModels.find(model);
+    if (known == actorModels.end()) {
+      if (m_io.cancelled && m_io.cancelled()) {
+        return;
+      }
+      uint32_t id = 0;
+      known = actorModels.emplace(model, m_io.model(model, id) ? id : 0).first;
+    }
+    if (known->second == 0) {
+      ++dropped;
+      continue;
+    }
+    // Rz * Ry * Rx of the entity's angles, as retail builds an editor transform.
+    double s[3], k[3];
+    for (int i = 0; i < 3; ++i) {
+      s[i] = std::sin(rot[i] * (3.14159265358979323846 / 180.0));
+      k[i] = std::cos(rot[i] * (3.14159265358979323846 / 180.0));
+    }
+    const double m[3][3] = {
+        {k[2] * k[1], k[2] * s[1] * s[0] - s[2] * k[0], k[2] * s[1] * k[0] + s[2] * s[0]},
+        {s[2] * k[1], s[2] * s[1] * s[0] + k[2] * k[0], s[2] * s[1] * k[0] - k[2] * s[0]},
+        {-s[1], k[1] * s[0], k[1] * k[0]},
+    };
+    PutLe32(body, known->second);
+    for (int row = 0; row < 3; ++row) {
+      for (int col = 0; col < 3; ++col) {
+        PutFloat(body, kSign[row] * kSign[col] * m[kAxis[row]][kAxis[col]] * scale[kAxis[col]]);
+      }
+      PutFloat(body, kSign[row] * pos[kAxis[row]]);
+    }
+    ++count;
+    ++actors;
+  }
   if (count == 0) {
     return;
   }
@@ -1240,8 +1300,9 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
     Log("  " + r.name + ": could not write " + file);
     return;
   }
-  char line[96];
-  std::snprintf(line, sizeof line, "  %s: %u instances, %zu dropped", r.name.c_str(), count, dropped);
+  char line[160];
+  std::snprintf(line, sizeof line, "  %s: %u instances (%zu actors, %zu attached ones left out), %zu dropped",
+                r.name.c_str(), count, actors, attached, dropped);
   Log(line);
 }
 
