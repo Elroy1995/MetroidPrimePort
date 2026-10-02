@@ -2715,6 +2715,8 @@ void DrawRemasteredImport() {
     return;
   }
   const PortRemastered::ImportState state = PortRemastered::ImportStatus();
+  ImGui::TextWrapped("Very experimental and currently unsupported: expect wrong or missing models, crashes and "
+                     "heavy memory use. Remove mods/remastered-models to get the retail game back.");
   ImGui::TextWrapped("Converts the models of your own copy of Metroid Prime Remastered into a mod. It needs the "
                      "game's .nsp and your console's key file (prod.keys), and takes a few minutes.");
   ImGui::BeginDisabled(state.running);

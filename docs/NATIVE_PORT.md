@@ -496,6 +496,13 @@ alone, so a script should pass it on to its children. Desktop only.
 
 #### Metroid Prime Remastered models
 
+**Very experimental and currently unsupported.** The import, the room
+environments and above all room geometry are work in progress: expect wrong
+or missing models, lighting that is off, crashes and heavy memory use, and a
+re-import after most updates. Bug reports about a game running with this mod
+are not handled for now; remove `mods/remastered-models` to get the retail
+game back.
+
 The port can build a model mod from your own copy of Metroid Prime Remastered;
 nothing of it ships. F1 > Extras > Mods > "Metroid Prime Remastered models"
 takes the game's `.nsp` and your console's key file (`~/.switch/prod.keys` is
