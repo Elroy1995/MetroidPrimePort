@@ -601,7 +601,12 @@ to be installed.
 
 Measured on the development machine: 342 models and 275 room environments, 44
 seconds on 16 threads, 2.3 GB of memory at the peak, 1.1 GB on disk (half of it
-the room environments). Desktop only.
+the room environments).
+
+On Android the panel has two buttons that open the system's file picker, one
+for the `.nsp` and one for the key file. Neither file is copied: the import
+reads them where they are. It runs on two threads there to keep its memory
+down. Not yet run on a device.
 
 ### Platforms
 

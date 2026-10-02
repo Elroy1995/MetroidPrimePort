@@ -64,6 +64,8 @@
 #include <android/log.h>
 #include <SDL3/SDL_joystick.h>
 #include <SDL3/SDL_system.h>
+#include <cctype>
+#include <unistd.h>
 #endif
 
 #include <algorithm>
@@ -2673,7 +2675,6 @@ void DrawMemoryCard() {
       "folder.");
 }
 
-#if !defined(__ANDROID__)
 // The Remastered import (port_remastered_import.h): the user's own image and
 // key file, converted here into the remastered-models mod.
 std::mutex sRemasteredPickMutex;
@@ -2690,15 +2691,63 @@ void OpenRemasteredDialog(int which) {
       sRemasteredPicks.emplace_back(int(reinterpret_cast< intptr_t >(userdata)), files[0]);
     }
   };
+#if defined(__ANDROID__)
+  // Android turns filters into MIME types, and neither file has one of its own.
+  SDL_ShowOpenFileDialog(done, reinterpret_cast< void* >(static_cast< intptr_t >(which)), window, nullptr, 0, nullptr,
+                         false);
+#else
   static const SDL_DialogFileFilter imageFilters[] = {{"Switch images (.nsp)", "nsp"}, {"All files", "*"}};
   static const SDL_DialogFileFilter keyFilters[] = {{"Key files (.keys)", "keys"}, {"All files", "*"}};
   SDL_ShowOpenFileDialog(done, reinterpret_cast< void* >(static_cast< intptr_t >(which)), window,
                          which == 0 ? imageFilters : keyFilters, 2, nullptr, false);
+#endif
 }
+
+#if defined(__ANDROID__)
+// Android's picker gives a content:// address, which only the system can open.
+// The image is several GB, so it is not copied as the disc is: the file is
+// opened here and the import reads it through the descriptor ("fd:<n>", see
+// SourceFile). One descriptor per field, closed when another file is picked.
+std::string OpenRemasteredPick(int which, const std::string& uri) {
+  static int sHeld[2] = {-1, -1};
+  if (sHeld[which] >= 0) {
+    close(sHeld[which]);
+    sHeld[which] = -1;
+  }
+  SDL_IOStream* io = SDL_IOFromFile(uri.c_str(), "rb");
+  if (io == nullptr) {
+    PortLog::Write("metroid_prime_port: could not open the picked file: %s: %s\n", uri.c_str(), SDL_GetError());
+    return {};
+  }
+  const int fd = int(SDL_GetNumberProperty(SDL_GetIOProperties(io), SDL_PROP_IOSTREAM_FILE_DESCRIPTOR_NUMBER, -1));
+  sHeld[which] = fd >= 0 ? dup(fd) : -1;
+  SDL_CloseIO(io);
+  return sHeld[which] >= 0 ? "fd:" + std::to_string(sHeld[which]) : std::string();
+}
+
+// "content://.../document/primary%3ADownload%2Fgame.nsp" -> "game.nsp".
+std::string RemasteredPickName(const std::string& uri) {
+  std::string text;
+  for (size_t i = 0; i < uri.size(); ++i) {
+    if (uri[i] == '%' && i + 2 < uri.size() && std::isxdigit(static_cast< unsigned char >(uri[i + 1])) &&
+        std::isxdigit(static_cast< unsigned char >(uri[i + 2]))) {
+      text += char(std::stoi(uri.substr(i + 1, 2), nullptr, 16));
+      i += 2;
+    } else {
+      text += uri[i];
+    }
+  }
+  const size_t cut = text.find_last_of("/:");
+  return cut == std::string::npos ? text : text.substr(cut + 1);
+}
+#endif
 
 void DrawRemasteredImport() {
   static char sImage[1024] = "";
   static char sKeys[1024] = "";
+#if defined(__ANDROID__)
+  static std::string sPickNames[2];
+#endif
   static bool sFilled = false;
   if (!sFilled) {
     sFilled = true;
@@ -2706,9 +2755,17 @@ void DrawRemasteredImport() {
   }
   {
     std::lock_guard lock(sRemasteredPickMutex);
+#if defined(__ANDROID__)
+    for (const auto& [which, path] : sRemasteredPicks) {
+      const std::string opened = OpenRemasteredPick(which, path);
+      std::snprintf(which == 0 ? sImage : sKeys, sizeof(sImage), "%s", opened.c_str());
+      sPickNames[which] = opened.empty() ? "could not be opened" : RemasteredPickName(path);
+    }
+#else
     for (const auto& [which, path] : sRemasteredPicks) {
       std::snprintf(which == 0 ? sImage : sKeys, sizeof(sImage), "%s", path.c_str());
     }
+#endif
     sRemasteredPicks.clear();
   }
   if (!ImGui::CollapsingHeader("Metroid Prime Remastered models")) {
@@ -2720,6 +2777,19 @@ void DrawRemasteredImport() {
   ImGui::TextWrapped("Converts the models of your own copy of Metroid Prime Remastered into a mod. It needs the "
                      "game's .nsp and your console's key file (prod.keys), and takes a few minutes.");
   ImGui::BeginDisabled(state.running);
+#if defined(__ANDROID__)
+  // No path to type here: the files are picked, and shown by name.
+  if (ImGui::Button("Pick the .nsp...##remastered-image")) {
+    OpenRemasteredDialog(0);
+  }
+  ImGui::SameLine();
+  ImGui::TextUnformatted(sPickNames[0].empty() ? "Metroid Prime Remastered .nsp" : sPickNames[0].c_str());
+  if (ImGui::Button("Pick the keys...##remastered-keys")) {
+    OpenRemasteredDialog(1);
+  }
+  ImGui::SameLine();
+  ImGui::TextUnformatted(sPickNames[1].empty() ? "prod.keys" : sPickNames[1].c_str());
+#else
   ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
   ImGui::InputTextWithHint("##remastered-image", "Metroid Prime Remastered .nsp", sImage, sizeof(sImage));
   ImGui::SameLine();
@@ -2732,6 +2802,7 @@ void DrawRemasteredImport() {
   if (ImGui::Button("Browse...##remastered-keys")) {
     OpenRemasteredDialog(1);
   }
+#endif
   ImGui::EndDisabled();
   if (state.running) {
     ImGui::ProgressBar(state.total > 0 ? float(state.done) / float(state.total) : 0.f, ImVec2(-1.f, 0.f),
@@ -2742,14 +2813,24 @@ void DrawRemasteredImport() {
   } else {
     ImGui::BeginDisabled(sImage[0] == '\0' || sKeys[0] == '\0');
     if (ImGui::Button("Import##remastered")) {
+#if defined(__ANDROID__)
+      // Each worker holds a world's models while it converts them; a phone has
+      // the memory for two of those, not for one per core.
+      PortRemastered::StartImport(sImage, sKeys, 2);
+#else
       PortRemastered::StartImport(sImage, sKeys);
+#endif
     }
     ImGui::SameLine();
     if (ImGui::Button("Import movies##remastered")) {
       PortRemastered::StartMovieImport(sImage, sKeys);
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+#if defined(__ANDROID__)
+      ImGui::SetTooltip("Only the menu movies, added to the mod already imported.");
+#else
       ImGui::SetTooltip("Only the menu movies, added to the mod already imported. Needs ffmpeg.");
+#endif
     }
     ImGui::EndDisabled();
     if (state.finished && state.ok) {
@@ -2777,6 +2858,7 @@ void DrawRemasteredImport() {
   }
 }
 
+#if !defined(__ANDROID__)
 // Importers (port_importers.h): the user's own programs that build a mod.
 // Nothing is drawn until the importers folder holds one.
 void DrawImporters() {
@@ -2896,8 +2978,8 @@ void DrawMods() {
       "Each folder in the mods folder is a mod; later names win. A file at a disc path "
       "(Metroid1.pak, Audio/..., Video/...) replaces that file, and a resource named "
       "by id and type (1A2B3C4D.TXTR) replaces it in every PAK. Mods load at startup.");
-#if !defined(__ANDROID__)
   DrawRemasteredImport();
+#if !defined(__ANDROID__)
   DrawImporters();
 #endif
 }
