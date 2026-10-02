@@ -148,13 +148,11 @@ void create_cube(uint32_t id, uint32_t size, uint32_t mipCount, const uint8_t* t
           .mipLevel = m,
           .origin = {0, 0, f},
       };
-      const wgpu::TexelCopyBufferLayout layout{
-          .bytesPerRow = edge * texelSize,
-          .rowsPerImage = edge,
-      };
       const wgpu::Extent3D extent{edge, edge, 1};
       const size_t bytes = size_t(edge) * edge * texelSize;
-      webgpu::g_queue.WriteTexture(&dst, in, bytes, &layout, &extent);
+      // Through the frame's uploads: the render worker may be submitting the last frame, and the queue is not
+      // safe to write from here meanwhile.
+      queue_texture_upload_data(in, edge * texelSize, edge, dst, extent);
       in += bytes;
     }
   }
