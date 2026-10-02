@@ -231,6 +231,9 @@ TextureHandle face(uint32_t face) { return {}; }
 void create_cube(uint32_t id, uint32_t size, uint32_t mipCount, const uint8_t* texels, size_t length) {}
 void destroy_cube(uint32_t id) {}
 bool has_cube(uint32_t id) { return false; }
+void create_volume(uint32_t id, uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, const uint8_t* texels, size_t length) {}
+void destroy_volume(uint32_t id) {}
+bool has_volume(uint32_t id) { return false; }
 } // namespace probe
 void begin_offscreen(uint32_t width, uint32_t height) {
   testing::offscreenWidth.store(width, std::memory_order_relaxed);
