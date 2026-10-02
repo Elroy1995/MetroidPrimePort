@@ -128,7 +128,8 @@ With the built-in tables, the client does what the AP ISO patch would:
 - Not ported from randomprime: the fixes for crashes only the console has,
   the ones for other disc revisions, moved spawn points, the item capacities
   above the game's own (250 missiles, 8 power bombs, 14 energy tanks), and
-  the seed's line on the main menu and in the credits.
+  two texts the server never sends: the apworld version on the main menu and
+  the list of major item locations in the credits.
 - Warp to start: at a save station, hold L and R while answering No and the
   game takes you to the seed's starting room. It happens at once, without
   randomprime's three-second message. The save prompt says so.
@@ -136,7 +137,8 @@ With the built-in tables, the client does what the AP ISO patch would:
   where the elevator leads (`Transport to Tallon Overworld West (Root Cave)`),
   and the Temple Security Station's objective scan says how many artifacts and
   which bosses the seed asks for. They are set when the room loads, so a
-  layout first learned in that room shows after the next load.
+  layout first learned in that room shows after the next load. The completion
+  screen names the seed and the slot above "Percentage Complete".
 - A start room the port's tables don't have is named once on connect as
   `Seed option not supported: ...`.
 - Spring Ball (C-stick up in morph ball) follows the seed's `spring_ball`: with

@@ -181,6 +181,13 @@ const CFactoryFnReturn FStringTableFactory(const SObjectTag& tag, CInputStream& 
                            static_cast< int >(text.size()));
     }
   }
+  // The completion screen names the seed (STRG_CompletionScreen, string 1).
+  std::string resultsLine;
+  if (tag.GetId() == 0x95019A7A && PortAp::SeedResultsLine(resultsLine)) {
+    const std::u16string text = PortCustomRes::Utf16(resultsLine + "\nPercentage Complete");
+    table->PortSetString(1, reinterpret_cast< const unsigned short* >(text.data()),
+                         static_cast< int >(text.size()));
+  }
   return table;
 #else
   return rs_new CStringTable(in);

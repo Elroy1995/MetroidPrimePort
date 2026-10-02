@@ -1704,6 +1704,22 @@ bool SeedStrings(uint32_t strg, std::vector< std::string >& out) {
   }
 }
 
+bool SeedResultsLine(std::string& out) {
+  try {
+    EnsureLoaded();
+    Runtime& runtime = GetRuntime();
+    std::lock_guard<std::mutex> lock(runtime.mutex);
+    if (!runtime.enabled || runtime.session == nullptr || !runtime.session->GetConfig().builtin ||
+        !runtime.session->GetState().hasWorld || runtime.session->GetState().seed.empty())
+      return false;
+    out = "Archipelago | " + runtime.session->GetState().seed + " | " +
+          runtime.session->GetConfig().slot;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 bool SeedGivesStartItems() {
   try {
     PortApWorld::Layout layout;

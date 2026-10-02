@@ -171,6 +171,11 @@ bool WarpToStart(uint32_t& world, uint32_t& area);
 // table, and without a seed layout.
 bool SeedStrings(uint32_t strg, std::vector< std::string >& out);
 
+// The line naming the seed and the slot that the completion screen shows above
+// "Percentage Complete" (randomprime's resultsString). False without a seed
+// layout.
+bool SeedResultsLine(std::string& out);
+
 // The seed's layout is known, so the server hands out everything Samus starts
 // with (the starting beam, the Scan Visor unless shuffled, the start room's
 // loadout) and a spawn point gives only the Combat Visor and Power Suit.
