@@ -126,6 +126,7 @@ set(MP_PORT_SOURCES
     platform/port_hud_bars.cpp
     platform/port_hud_bars_file.cpp
     platform/port_remastered_font.cpp
+    platform/port_remastered_hud.cpp
     platform/port_room_env.cpp
     platform/port_room_env_file.cpp
     platform/port_room_geo.cpp
@@ -363,6 +364,8 @@ if(MP_BUILD_TESTS)
     target_include_directories(port_hd_font_tests PRIVATE platform/include)
     add_executable(port_hud_bars_tests tests/port_hud_bars.cpp platform/port_hud_bars_file.cpp)
     target_include_directories(port_hud_bars_tests PRIVATE platform/include)
+    add_executable(port_remastered_hud_tests tests/port_remastered_hud.cpp platform/port_remastered_hud.cpp platform/port_hud_bars_file.cpp platform/port_remastered_image.cpp platform/port_remastered_pak.cpp)
+    target_include_directories(port_remastered_hud_tests PRIVATE platform/include)
     add_executable(port_importers_tests tests/port_importers.cpp platform/port_importers_lines.cpp)
     target_include_directories(port_importers_tests PRIVATE platform/include)
     add_executable(port_custom_res_tests tests/port_custom_res.cpp platform/port_custom_res.cpp)
@@ -396,7 +399,7 @@ if(MP_BUILD_TESTS)
     add_test(NAME port_gci_tests COMMAND port_gci_tests)
     set_tests_properties(port_gci_tests PROPERTIES TIMEOUT 15 LABELS port)
     aurora_copy_runtime_dlls(port_gci_tests)
-    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_ap_logic_tests port_musyx_tests port_disc_tests port_mouse_tests port_touch_pad_tests port_json_tests port_ws_tests port_mods_tests port_room_env_tests port_hd_font_tests port_hud_bars_tests port_importers_tests port_custom_res_tests port_hold_toggle_tests port_tick_pair_tests port_livesplit_tests port_discord_tests port_savestate_tests port_timing_tests port_audio_math_tests)
+    foreach(test IN ITEMS port_buffer_tests port_ai_tests port_randomizer_tests port_apclient_tests port_ap_logic_tests port_musyx_tests port_disc_tests port_mouse_tests port_touch_pad_tests port_json_tests port_ws_tests port_mods_tests port_room_env_tests port_hd_font_tests port_hud_bars_tests port_remastered_hud_tests port_importers_tests port_custom_res_tests port_hold_toggle_tests port_tick_pair_tests port_livesplit_tests port_discord_tests port_savestate_tests port_timing_tests port_audio_math_tests)
         add_test(NAME ${test} COMMAND ${test})
         set_tests_properties(${test} PROPERTIES TIMEOUT 15 LABELS port)
         aurora_copy_runtime_dlls(${test})

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -21,6 +22,7 @@
 #include "port_remastered_cmdl.h"
 #include "port_remastered_convert.h"
 #include "port_remastered_font.h"
+#include "port_remastered_hud.h"
 #include "port_remastered_nsp.h"
 #include "port_remastered_pak.h"
 #include "port_remastered_room.h"
@@ -40,6 +42,8 @@ constexpr uint32_t kTXTR = 0x54585452;
 constexpr uint32_t kMLVL = 0x4D4C564C;
 constexpr uint32_t kMREA = 0x4D524541;
 constexpr uint32_t kFONT = 0x464F4E54;
+constexpr uint32_t kGUIF = 0x47554946;
+constexpr uint32_t kFRME = 0x46524D45;
 
 constexpr const char* kStagingName = ".remastered-models.importing";
 // Written last, so a staging folder without it is an import that was cut short.
@@ -48,6 +52,7 @@ constexpr const char* kRoomFolder = "roomenv";
 constexpr const char* kGeometryFolder = "roomgeo";
 constexpr const char* kFontFolder = "font";
 constexpr const char* kFontName = "deface.sdfont";
+constexpr const char* kHudFolder = "hud";
 // Largest edge of a room geometry texture: there are thousands of them.
 constexpr int kGeometryTexture = 1024;
 
@@ -103,9 +108,15 @@ void Finish(bool ok, const std::string& message) {
 }
 
 
+// MP_REMASTERED_HUD=0 leaves the disc's HUD alone.
+bool WantsHud() {
+  const char* env = std::getenv("MP_REMASTERED_HUD");
+  return env == nullptr || std::strcmp(env, "0") != 0;
+}
+
 // --- The retail disc ----------------------------------------------------------
 
-// The CMDL, CSKR, TXTR, MLVL and MREA resources of the unmodded disc, and every id on it.
+// The CMDL, CSKR, TXTR, MLVL, MREA and FRME resources of the unmodded disc, and every id on it.
 class Retail {
 public:
   ~Retail() {
@@ -145,7 +156,8 @@ public:
       }
       for (const PortMods::PakResource& res : table.resources) {
         m_ids.insert(res.id);
-        if (res.type == kCMDL || res.type == kCSKR || res.type == kTXTR || res.type == kMLVL || res.type == kMREA) {
+        if (res.type == kCMDL || res.type == kCSKR || res.type == kTXTR || res.type == kMLVL || res.type == kMREA ||
+            res.type == kFRME) {
           m_resources.emplace(Key(res.type, res.id), Where{entry, res.offset, res.size, res.compressed != 0});
         }
       }
@@ -266,6 +278,10 @@ public:
           m_textures.emplace(assets[a].id, Where{m_paks.size(), a});
         } else if (type == kFONT) {
           m_fonts.emplace(assets[a].id, Where{m_paks.size(), a});
+        } else if (type == kGUIF) {
+          for (const std::string& name : assets[a].names) {
+            m_frames.emplace(FrameKey(name), Where{m_paks.size(), a});
+          }
         }
       }
       m_paks.push_back(std::move(pak));
@@ -296,6 +312,17 @@ public:
   }
   bool ReadFont(const ModelUuid& id, std::vector<uint8_t>& out, std::string& error) const {
     return Read(m_fonts, id, out, error);
+  }
+
+  // A GUI frame by its asset name ("FRME_CombatHud"), whatever folder and case the pak has it under.
+  bool ReadFrame(const std::string& name, std::vector<uint8_t>& out, std::string& error) const {
+    const auto found = m_frames.find(FrameKey(name));
+    if (found == m_frames.end()) {
+      error = "not in the image";
+      return false;
+    }
+    const Pak& pak = *m_paks[found->second.pak];
+    return pak.ReadAsset(pak.Assets()[found->second.asset], out, error);
   }
 
 
@@ -332,6 +359,16 @@ private:
   };
   using Index = std::unordered_map<std::array<uint8_t, 16>, Where, PakIdHash>;
 
+  static std::string FrameKey(const std::string& name) {
+    const size_t slash = name.find_last_of("/\\");
+    std::string key = name.substr(slash == std::string::npos ? 0 : slash + 1);
+    key = key.substr(0, key.find('.'));
+    for (char& c : key) {
+      c = char(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return key;
+  }
+
   bool Read(const Index& index, const ModelUuid& id, std::vector<uint8_t>& out, std::string& error) const {
     const auto found = index.find(id);
     if (found == index.end()) {
@@ -350,6 +387,7 @@ private:
   Index m_models;
   Index m_textures;
   Index m_fonts;
+  std::unordered_map<std::string, Where> m_frames;  // GUIF, by FrameKey
 };
 
 // --- The import ------------------------------------------------------------------
@@ -681,6 +719,34 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
       }
     }
   }
+  // Remastered's HUD: the disc's frames laid out and drawn as its own.
+  int hudFrames = 0;
+  if (WantsHud() && !sCancel) {
+    SetMessage("Converting the HUD");
+    const fs::path hudFolder = staging / kHudFolder;
+    fs::create_directories(hudFolder, ec);
+    HudConverter converter(makeIO(0, hudFolder));
+    HudCounts counts;
+    for (const HudFrame& frame : HudFrames()) {
+      std::vector<uint8_t> raw;
+      std::vector<uint8_t> rawModel;
+      ModelUuid modelId{};
+      Model model;
+      std::string hudError;
+      if (!remastered.ReadFrame(frame.name, raw, hudError) ||
+          !(HudFrameModel(raw.data(), raw.size(), modelId) || (hudError = "not a frame", false)) ||
+          !remastered.ReadModel(modelId, rawModel, hudError) ||
+          !ParseModel(rawModel.data(), rawModel.size(), model, hudError) ||
+          !converter.Convert(frame.retail, raw.data(), raw.size(), model, counts, hudError)) {
+        AddLine(std::string(frame.name) + ": " + hudError);
+        continue;
+      }
+      ++hudFrames;
+    }
+    if (hudFrames == 0) {
+      fs::remove_all(hudFolder, ec);
+    }
+  }
   {
     std::ofstream marker(staging / kMarkerName);
     if (!marker) {
@@ -699,6 +765,9 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
   }
   if (fontWritten) {
     message += ", the font";
+  }
+  if (hudFrames != 0) {
+    message += ", " + std::to_string(hudFrames) + " HUD frames";
   }
   Finish(true, message + ".");
 }

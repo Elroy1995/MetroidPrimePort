@@ -567,6 +567,16 @@ blended materials are drawn opaque.
 The import also writes Remastered's typeface as `font/deface.sdfont` (see above): the
 FONT asset with the most characters, its first face.
 
+The in-game HUD is carried over as well, into the mod's `hud` folder: the
+combat, scan, thermal, X-ray, ball and base frames. The disc's frame stays the
+skeleton, so every widget the game looks up by name is still there; a widget
+Remastered has under the same name takes its placement, colour and model from
+there, and the models and pictures Remastered added are placed under their
+parents. Each frame is written as `<id>.FRME` with its models (`.CMDL`), its
+pictures (a small `.TXTR` and, above 64 px, a `.dds`) and, for the energy,
+missile and threat bars, a `.hudbars`. `MP_REMASTERED_HUD=0` leaves the HUD
+out. Experimental: the pause, map and message screens are still the disc's.
+
 Measured on the development machine: 342 models and 275 room environments, 44
 seconds on 16 threads, 2.3 GB of memory at the peak, 1.1 GB on disk (half of it
 the room environments). Desktop only.
