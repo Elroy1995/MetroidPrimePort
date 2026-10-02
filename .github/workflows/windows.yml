@@ -19,6 +19,16 @@ jobs:
         with:
           key: ${{ runner.os }}-clangcl
 
+      # Configure downloads and unpacks about a dozen dependencies. Keep the
+      # unpacked sources and the stamps that say they are current; the build
+      # directories beside them are left out, since ccache covers those.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            build-win/_deps/*-src
+            build-win/_deps/*-subbuild
+          key: deps-windows-${{ hashFiles('CMakeLists.txt', 'extern/aurora/**/CMakeLists.txt', 'extern/aurora/**/*.cmake') }}
+
       - name: Configure
         run: >
           cmake -S . -B build-win -G Ninja
