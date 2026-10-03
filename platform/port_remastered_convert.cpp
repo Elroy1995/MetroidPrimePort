@@ -873,6 +873,7 @@ struct Converter::State {
     std::string tag;
     int ncap = 0;  // largest edge of the native .dds, 0 for none
     int k = -1;    // the PBR map, on that path
+    bool surface = true;  // the PBR base's normal map has a surface to it
     Bake bake;
     if (role.rfind("pbr:", 0) == 0) {
       for (int i = 0; i < kMaps; ++i) {
@@ -889,6 +890,14 @@ struct Converter::State {
         }
         if (k == kMr && !src->raw) {
           tag += ":mmax=" + FormatG(kPbrMetalMax);
+        }
+        // Only a retail model has a retail texture to fall back on.
+        if (k == kBase && !opt.standalone) {
+          surface = rt[kNormal].has && !rt[kNormal].mean && [&] {
+            const Image& n = Open(rt[kNormal]);
+            return n.width > 4 || n.height > 4;
+          }();
+          tag += surface ? "" : ":bare";
         }
       } else {
         tag = std::string("const:") + kMapNeutral[k];
@@ -1007,7 +1016,9 @@ struct Converter::State {
       // On the TEV path the retail texture is kept, which beats writing a flat
       // grey over a textured model. On the PBR path a flat albedo is fine: the
       // normal and MR maps carry the surface, so the material gets a solid base.
-      if (k != kBase) {
+      // Unless the normal map is a placeholder texel too (the Eyon's 9E5BDD71,
+      // every map 1x1): then Remastered gives nothing, and it drew a grey ball.
+      if (k != kBase || !surface) {
         ids[tag] = std::nullopt;
         return std::nullopt;
       }
