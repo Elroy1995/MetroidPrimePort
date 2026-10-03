@@ -1113,6 +1113,14 @@ struct BloomData {
   std::vector<float> tints; // RGBA
 };
 
+// A global ColorGrade: the retail layer it is on (-1 = always), its hint's fades, the LUT
+// (33^3 RGBA8, red fastest).
+struct GradeData {
+  int32_t layer = -1;
+  float fadeIn = 0, fadeOut = 0;
+  std::vector<uint8_t> lut;
+};
+
 struct Placement {
   Vec3 pos{};  // GameCube world coordinates, once the world shift is added
 };
@@ -1127,14 +1135,6 @@ public:
 
 private:
   void Log(const std::string& line) const {
-// A global ColorGrade: the retail layer it is on (-1 = always), its hint's fades, the LUT
-// (33^3 RGBA8, red fastest).
-struct GradeData {
-  int32_t layer = -1;
-  float fadeIn = 0, fadeOut = 0;
-  std::vector<uint8_t> lut;
-};
-
     if (m_io.log) {
       m_io.log(line);
     }
@@ -1164,6 +1164,8 @@ struct GradeData {
   void Tonemap(const RoomData& r, float out[5]) const;
   void Exposure(const RoomData& r, float out[5]) const;
   void ReadBloom(const RoomData& r, BloomData& out) const;
+  // The room's global ColorGrades in component order; `area` gives their retail layers.
+  void ReadGrades(const RoomData& r, const Area* area, std::vector<GradeData>& out) const;
   bool Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>& check, std::vector<uint8_t>& out,
             std::string& note) const;
   // The room's static geometry (its ModCon components), as "<MREA id>.roomgeo".
@@ -1179,8 +1181,6 @@ struct GradeData {
   const std::vector<RoomPak>& m_others;
   const RoomIO& m_io;
   std::vector<Area> m_areas;
-  // The room's global ColorGrades in component order; `area` gives their retail layers.
-  void ReadGrades(const RoomData& r, const Area* area, std::vector<GradeData>& out) const;
 };
 
 double Spread(const std::vector<Vec3>& a, const std::vector<Vec3>& b) {
@@ -1417,20 +1417,6 @@ void Writer::ReadBloom(const RoomData& r, BloomData& out) const {
   }
 }
 
-// One decoded LTPB texture, placed in the room's grid of 64x64x16 blocks.
-struct GridTexture {
-  int32_t bx, by, bz;
-  uint32_t index, kind, format, w, h, depth;
-  std::vector<float> rgba;
-};
-
-bool Writer::Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>& check, std::vector<uint8_t>& out,
-                  std::string& note) const {
-  out.clear();
-  const PakAsset* asset = FirstOfType(*rp.pak, Tag("LTPB"));
-  if (asset == nullptr) {
-    note = "no grid";
-    return false;
 void Writer::ReadGrades(const RoomData& r, const Area* area, std::vector<GradeData>& out) const {
   const std::vector<const Component*> grades = r.room.Of(kColorGrade);
   if (grades.empty()) {
@@ -1486,6 +1472,20 @@ void Writer::ReadGrades(const RoomData& r, const Area* area, std::vector<GradeDa
   }
 }
 
+// One decoded LTPB texture, placed in the room's grid of 64x64x16 blocks.
+struct GridTexture {
+  int32_t bx, by, bz;
+  uint32_t index, kind, format, w, h, depth;
+  std::vector<float> rgba;
+};
+
+bool Writer::Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>& check, std::vector<uint8_t>& out,
+                  std::string& note) const {
+  out.clear();
+  const PakAsset* asset = FirstOfType(*rp.pak, Tag("LTPB"));
+  if (asset == nullptr) {
+    note = "no grid";
+    return false;
   }
   std::vector<uint8_t> d;
   std::string error;
@@ -2361,6 +2361,9 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
   Tonemap(master, tonemap);
   BloomData bloom;
   ReadBloom(master, bloom);
+  // The world's global grade sits under the room's own (the last active one is drawn).
+  std::vector<GradeData> grades;
+  ReadGrades(master, nullptr, grades);
   std::map<std::string, std::string> seen;
   for (const auto& r : rooms) {
     if (m_io.cancelled && m_io.cancelled()) {
@@ -2380,9 +2383,6 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
   }
   Log(std::to_string(seen.size()) + " of " + std::to_string(m_areas.size()) + " areas");
   return true;
-  // The world's global grade sits under the room's own (the last active one is drawn).
-  std::vector<GradeData> grades;
-  ReadGrades(master, nullptr, grades);
 }
 
 }  // namespace
