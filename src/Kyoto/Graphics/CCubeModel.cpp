@@ -244,8 +244,9 @@ void CCubeModel::PortSetPBRMaterial(const int idx) const {
     }
   }
   // A liquid's surface (kinds 5 and 6) moves: its first parameter is a rate, and the
-  // shader gets the phase. So does falling water (kind 7); glass (8) does not move.
-  if (values[13] > 4.5f && values[13] < 7.5f) {
+  // shader gets the phase. So do falling water (kind 7) and the beam glow (9); glass (8)
+  // does not move.
+  if ((values[13] > 4.5f && values[13] < 7.5f) || (values[13] > 8.5f && values[13] < 9.5f)) {
     values[15] *= CGraphics::GetSecondsMod900();
   }
   // World up as the shader sees it: view space is right, up, -forward.

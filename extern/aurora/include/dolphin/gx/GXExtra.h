@@ -44,7 +44,11 @@ void GXSetPBRProbe(const f32 viewToProbe[3][3], f32 weight);
 // multiplied into the base, 3 scales the glow by the vertex alpha (lava), 4 is ice: map 4
 // is seen inside the surface, at a depth of the base map's alpha times the fourth
 // parameter, through a fresnel of power and weight the first two; the third scales the
-// normal map and the strength is the inside's glow.
+// normal map and the strength is the inside's glow. Kinds 5-8 are liquids, falling water
+// and glass (see shader.cpp). 9 is a beam's glow: map 4's channels are noise scrolling at
+// the layer's four scale/offset values (red, green) and the second and third parameters
+// (blue) times the first (the time); their sum less twice the vertex colour's, plus the
+// fourth, picks the glow from map 5, a ramp whose row is the vertex alpha, times the strength.
 void GXSetPBRMaterial(const f32 emissive[3], const f32 backlight[3], f32 heightBlend, f32 mode, const f32 layer[5],
                       const f32 kind[6], const f32 up[3]);
 // Aurora extension: room cubes (see GX_AURORA_CREATE_PBR_CUBE). `texels` is RGBA16Float,

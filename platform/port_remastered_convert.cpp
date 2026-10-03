@@ -567,6 +567,7 @@ struct MapRef {
   ModelUuid id{};
   uint32_t coord = 0;
   std::string src;  // how the texture is named in a tag
+  bool raw = false;  // a shader's own data (a ramp, noise): every texel and channel kept as it is
   bool mean = false;  // drawn as its colour times alpha, averaged: one colour
 };
 
@@ -877,12 +878,12 @@ struct Converter::State {
       }
       if (rt[k].has && (k != kEmissive || rt[k].mean || PbrEmissive(rt))) {
         src = &rt[k];
-        tag = std::string("pbr:") + kMapName[k] + ":" + src->src + (src->mean ? ":mean" : "");
+        tag = std::string("pbr:") + kMapName[k] + ":" + src->src + (src->raw ? ":raw" : src->mean ? ":mean" : "");
         // Named fields, not positional: the size and the alpha follow them.
-        if (k == kEmissive && !src->mean) {
+        if (k == kEmissive && !src->raw && !src->mean) {
           tag += ":escale=" + FormatG(kPbrEmissive);
         }
-        if (k == kMr) {
+        if (k == kMr && !src->raw) {
           tag += ":mmax=" + FormatG(kPbrMetalMax);
         }
       } else {
@@ -925,13 +926,14 @@ struct Converter::State {
     if (role == "reflect" && alpha == "punch") {
       alpha = "none";  // the reflectivity map's alpha is 0 by construction
     }
+    const bool raw = src && src->raw;
     int cap;
     if (k >= 0) {
       // The albedo is what shows and can be CMPR; AO/roughness/metal would
       // blotch and the normals would tilt, so the normal map stays RGBA8.
       // A cutout's base is the exception: its alpha is the shape.
       // A blended surface's base keeps its whole alpha, which is its opacity.
-      alpha = k == kNormal ? "rgba" : k == kBase && (alpha == "punch" || alpha == "blend" || alpha == "mask") ? alpha : "none";
+      alpha = k == kNormal || raw ? "rgba" : k == kBase && (alpha == "punch" || alpha == "blend" || alpha == "mask") ? alpha : "none";
       cap = kPbrMax[k];
       if (src) {
         ncap = opt.nativeMax > 0 ? std::min(kPbrNative[k], opt.nativeMax) : kPbrNative[k];
@@ -997,7 +999,7 @@ struct Converter::State {
         img.rgba[i * 4 + 3] = uint8_t((a * a + 127) / 255);
       }
     }
-    if (isBase && alpha != "punch" && alpha != "blend" && alpha != "mask" && FlatBase(img)) {
+    if (isBase && !raw && alpha != "punch" && alpha != "blend" && alpha != "mask" && FlatBase(img)) {
       // On the TEV path the retail texture is kept, which beats writing a flat
       // grey over a textured model. On the PBR path a flat albedo is fine: the
       // normal and MR maps carry the surface, so the material gets a solid base.
@@ -1023,7 +1025,7 @@ struct Converter::State {
     }
     // A ramp's mean is already the glow's level, which an emissive map's texels
     // (lit spots on a dark map) are not.
-    if (k == kEmissive && !src->mean) {
+    if (k == kEmissive && !raw && !src->mean) {
       const float scale = float(kPbrEmissive);
       for (size_t i = 0; i < count; ++i) {
         for (int c = 0; c < 3; ++c) {
@@ -1031,7 +1033,7 @@ struct Converter::State {
         }
       }
     }
-    if (k == kMr) {
+    if (k == kMr && !raw) {
       const uint8_t ceiling = uint8_t(std::nearbyint(float(kPbrMetalMax * 255.0)));
       for (size_t i = 0; i < count; ++i) {
         img.rgba[i * 4 + 2] = std::min(img.rgba[i * 4 + 2], ceiling);
@@ -1049,7 +1051,7 @@ struct Converter::State {
     if (ncap) {
       const int w = std::max(8, std::min(ncap, NextPow2(img.width)));
       const int h = std::max(8, std::min(ncap, NextPow2(img.height)));
-      if (k == kBase && alpha != "punch" && alpha != "blend" && alpha != "mask") {
+      if (k == kBase && !raw && alpha != "punch" && alpha != "blend" && alpha != "mask") {
         for (size_t i = 0; i < count; ++i) {
           img.rgba[i * 4 + 3] = 255;  // alpha "none", as the stub's CMPR
         }
@@ -1107,10 +1109,10 @@ constexpr uint32_t kShaderGlass = 0x231F8383;
 // carried along TCH2's flow map in two phases that TCH1's noise offsets, CCH0 the flow's
 // strength, its period in seconds and the brightness, CCH1 the maps' scales.
 constexpr uint32_t kShaderLavaPool[] = {0x3ADE58B7, 0xB9C24545};
-// The arm cannon's beam glow (Wave, Plasma): TCH0's three channels scroll at
-// CCH1's and CCH2's speeds and, less the vertex colour, pick a colour from
-// TCH1, a ramp whose row is the vertex alpha and whose alpha scales it, times
-// CCH0.z. It is drawn as the ramp's mean, a glow that does not move.
+// The arm cannon's beam glow (Wave, Plasma), over a lit surface: TCH0's three
+// channels scroll at CCH1's and CCH2.xy's speeds (times CCH0.y) and, less twice
+// the vertex colour, plus CCH0.w, pick a colour from TCH1, a ramp whose row is
+// the vertex alpha and whose alpha scales it, times CCH0.z.
 constexpr uint32_t kShaderGunGlow[] = {0xA13D6235, 0x62F671E0};
 // A shader with parameters of its own (TCHn, CCHn) reads the vertex colour as
 // it likes: masks for its extra maps, a colour seen through ice. These are the
@@ -1384,10 +1386,24 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     }
   }
   if (std::find(std::begin(kShaderGunGlow), std::end(kShaderGunGlow), shader) != std::end(kShaderGunGlow) &&
-      tch[1] && cch[0] && !out.maps[kEmissive].has) {
-    set(kEmissive, tch[1]->texture);
-    out.maps[kEmissive].mean = true;
-    out.emissive = ShortestDouble(cch[0]->color[2]);
+      out.maps[kBase].has && tch[0] && tch[1] && cch[0] && cch[1] && cch[2]) {
+    out.kind = 9;
+    out.vcolor = true;
+    // The noise and the ramp are bound as the second layer's base and MR. The ramp is
+    // read where the noise says, so its own texcoord is never used.
+    set(kBase, tch[0]->texture, &out.layer[kBase]);
+    set(kMr, tch[1]->texture, &out.layer[kMr]);
+    out.layer[kBase].raw = out.layer[kMr].raw = true;
+    out.layer[kMr].coord = out.layer[kBase].coord;
+    for (int i = 0; i < 4; ++i) {
+      out.layerHeight[i] = ShortestDouble(cch[1]->color[i]);
+    }
+    out.kindParam[0] = ShortestDouble(cch[0]->color[1]);  // the game multiplies it by the time
+    out.kindParam[1] = ShortestDouble(cch[2]->color[0]);
+    out.kindParam[2] = ShortestDouble(cch[2]->color[1]);
+    out.kindParam[3] = ShortestDouble(cch[0]->color[3]);
+    // An HDR strength (10-15) meant for Remastered's bloom, compressed like the emissive one.
+    out.kindStrength = std::sqrt(std::min(std::max(ShortestDouble(cch[0]->color[2]), 0.0), kPbrEmissiveMax));
   }
   // BKLT is a parameter vector like CCHn, not a colour: x is the strength (0 to
   // 2), what y means is not known and it is not used.
@@ -1420,6 +1436,13 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     out.emissive = 1.0;
     out.backlight = 0.0;
     out.maps[kMr].has = out.maps[kEmissive].has = false;
+  }
+  if (out.kind == 9) {
+    // The glow is all the shader's; the vertex alpha picks the ramp's row and is no
+    // opacity, and there is no edge between layers.
+    out.layered = true;
+    out.blended = out.cutout = out.tinted = out.mask = out.unlit = false;
+    out.height = 0.0;
   }
   // All but lava draw with the second layer's maps.
   if (out.kind != 3 && !out.layered) {
@@ -2188,14 +2211,16 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   // alpha is an opacity only on a blended surface (on an opaque one it weighs
   // the material's layers), so a vertex no blended surface uses is opaque.
   // On a retail model, only a glow that is all vertex colour reads them: an
-  // unlit Remastered surface over a retail effect (a door shield's cyan rim).
+  // unlit Remastered surface over a retail effect (a door shield's cyan rim),
+  // and the arm cannon's beam glow (kind 9), which is all vertex colour and ramp.
   auto ownGlow = [&](const RemMaterial& m, const RetailMaterial& pm) {
     return !opt.standalone && m.unlit && m.tinted && IsFx(pm);
   };
   std::vector<uint8_t> C;
   bool useColor = false;
   for (const Prim& p : prims) {
-    const bool reads = opt.standalone ? mats[p.mat].tinted || mats[p.mat].vcolor : ownGlow(mats[p.mat], retail.mats[p.rmat]);
+    const bool reads = opt.standalone ? mats[p.mat].tinted || mats[p.mat].vcolor
+                                      : ownGlow(mats[p.mat], retail.mats[p.rmat]) || mats[p.mat].kind == 9;
     useColor = useColor || (reads && buffers[p.buffer].colored);
   }
   if (useColor) {
@@ -2304,11 +2329,27 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     // A retail material's vertices have no layer weight.
     // A shader of its own needs none: without colours the up-facing one goes by
     // the normal alone.
-    if (!opt.standalone) {
+    // The beam glow is the exception: it is the vertex colour's, on the gun's own vertices.
+    // Without the colours (the inventory and cinematic guns) it is drawn as the ramp's mean,
+    // a glow that does not move.
+    const bool gunGlow = rem.kind == 9 && useColor;
+    if (rem.kind == 9 && !gunGlow) {
+      if (!rem.maps[kEmissive].has) {
+        rem.maps[kEmissive] = rem.layer[kMr];
+        rem.maps[kEmissive].raw = false;
+        rem.maps[kEmissive].mean = true;
+        rem.maps[kEmissive].coord = 0;  // one colour: any texcoord does
+        rem.emissive = rem.kindStrength * rem.kindStrength;
+      }
+      rem.kind = 0;
+      rem.vcolor = false;
+      rem.layered = false;
+    }
+    if (!opt.standalone && !gunGlow) {
       rem.kind = 0;
       rem.vcolor = false;
     }
-    rem.layered = rem.layered && opt.standalone && (rem.kind != 0 || (useColor && rem.tinted));
+    rem.layered = rem.layered && (gunGlow || (opt.standalone && (rem.kind != 0 || (useColor && rem.tinted))));
     // Nor do the alpha and shading modes belong on one: what they say is about the
     // Remastered surface, and a retail model keeps the retail material's
     // (bar a glow of its own, whose colour and fade are all in it).
@@ -2330,8 +2371,15 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       vtx |= 3u << 8;
       ntexattr = 1;
     }
+    // The beam glow's noise is on a texcoord of its own, which a retail gun lacks.
+    if (gunGlow) {
+      const size_t want = std::min<size_t>(std::min<size_t>(rem.layer[kBase].coord, maxuv) + 1, 8);
+      for (; ntexattr < want; ++ntexattr) {
+        vtx |= 3u << (8 + 2 * ntexattr);
+      }
+    }
     // Bits 4 and 5 are colour 0. Only a material that reads it declares it.
-    const bool colored = useColor && (opt.standalone ? rem.tinted || rem.vcolor : glow);
+    const bool colored = useColor && (opt.standalone ? rem.tinted || rem.vcolor : glow || gunGlow);
     rem.tinted = colored && rem.tinted;
     if (colored) {
       vtx |= 3u << 4;
