@@ -479,7 +479,9 @@ skipped. Inside a mod:
   bytes. Their materials carry a `PBR4` record of kind 5 (water, poison: a
   colour, an opacity and two moving normal maps) or 6 (a lava pool: a pattern
   carried along a flow map, coloured by a ramp).
-  The Thermal and X-Ray visors draw the retail plane. `MP_ROOM_LIQUID=0` or the
+  The Thermal and X-Ray visors show the surface too: the Thermal visor's passes
+  shade it as they shade a fluid plane (the hot pass adds it), and the X-Ray
+  visor draws it unchanged. `MP_ROOM_LIQUID=0` or the
   console's `roomliquid off` draws the retail planes instead.
 - a PBR material (flag bit 14) may end in a 28-byte record: six big-endian floats
   (emissive multiplier rgb, backlight weight rgb) and the tag `PBRM`, inside the

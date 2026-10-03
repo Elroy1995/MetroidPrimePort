@@ -8,6 +8,7 @@
 #include "port_room_env.h"
 
 #include "Kyoto/CResFactory.hpp"
+#include "Kyoto/Graphics/CCubeMaterial.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Graphics/CModel.hpp"
 #include "Kyoto/Graphics/CModelFlags.hpp"
@@ -257,12 +258,22 @@ bool Draw(const CStateManager& mgr, const CGameArea& gameArea, uint32_t uid, con
   }
   item.lights->BuildDynamicLightList(mgr, bounds);
   // The object is drawn in the sorted pass, so both halves go here: lava is opaque, water
-  // blended.
+  // blended. The thermal visor's passes take the fluid plane's whole shader too (the hot
+  // one adds it), so the surface keeps its own; the X-Ray visor draws it as it is.
+  const EThermalDrawFlag thermal = mgr.GetThermalDrawFlag();
+  CCubeMaterial::sPortPBRThermal = thermal == kTD_Hot    ? CCubeMaterial::kPT_Additive
+                                   : thermal == kTD_Cold ? CCubeMaterial::kPT_Cold
+                                                         : CCubeMaterial::kPT_None;
   const CModel& model = **item.data->PickStaticModel(CModelData::kWM_Normal);
   gpRender->SetModelMatrix(xf);
   item.lights->ActivateLights();
   model.DrawUnsortedParts(CModelFlags::Normal());
   model.DrawSortedParts(CModelFlags::Normal());
+  if (CCubeMaterial::sPortPBRThermal == CCubeMaterial::kPT_Additive) {
+    // The blend was set past the material cache.
+    CCubeMaterial::ResetCachedMaterials();
+  }
+  CCubeMaterial::sPortPBRThermal = CCubeMaterial::kPT_None;
   gpRender->SetAmbientColor(CColor::White());
   CGraphics::DisableAllLights();
   if (baked) {

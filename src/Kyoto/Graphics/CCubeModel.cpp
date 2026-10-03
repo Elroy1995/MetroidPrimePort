@@ -346,6 +346,11 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     GXSetPBR(GX_TRUE);
     ++CCubeMaterial::sPortPBRDraws;
   }
+  if (CCubeMaterial::sPortPBRThermal == CCubeMaterial::kPT_Additive) {
+    // As CFluidPlaneCPU::RenderSetup in the thermal visor's hot pass (a TEV fallback too).
+    CGX::SetBlendMode(GX_BM_BLEND, GX_BL_ONE, GX_BL_ONE, GX_LO_CLEAR);
+    CGX::SetZMode(true, GX_LEQUAL, false);
+  }
 #endif
   surface.CallDisplayList();
 #ifdef TARGET_PC

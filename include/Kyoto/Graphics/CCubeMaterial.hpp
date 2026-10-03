@@ -52,6 +52,10 @@ public:
   // 0 off, 1 on, 2 mirror, 3 window; -1 takes it from MP_PBR_PROBE on first use.
   static int sPortPBRProbeMode;
   static uint sPortPBRDraws;
+  // Port: a draw that keeps PBR under the thermal visor, as the fluid planes keep their own
+  // shader there (port_room_liquid.cpp); additive is the hot pass's blend.
+  enum EPortPBRThermal { kPT_None, kPT_Cold, kPT_Additive };
+  static EPortPBRThermal sPortPBRThermal;
 #endif
   uint GetTextureCount() const {
     return CBasics::SwapBytes(*reinterpret_cast< const uint* >(GetData() + 4));
