@@ -36,6 +36,8 @@ public final class MetroidPrimeActivity extends SDLActivity {
     // Distinct from SDL's own dialog request codes, which count up from 0.
     private static final int REQUEST_TEXTURE_PACK = 0x7e57;
     private static final int REQUEST_STORAGE = 0x7e58;
+    // The Remastered import's .nsp (+0) and prod.keys (+1).
+    private static final int REQUEST_REMASTERED = 0x7e59;
     private TouchControlsView touchControls;
     private final AtomicBoolean texturePackCopying = new AtomicBoolean();
     // The data folder the texture pack being picked is copied into.
@@ -44,6 +46,7 @@ public final class MetroidPrimeActivity extends SDLActivity {
     // Implemented in platform/debug_ui.cpp.
     private static native void nativeTexturePackStatus(String status);
     private static native void nativeTexturePackReady();
+    private static native void nativeRemasteredPicked(int which, String uri);
 
     @Override
     protected String[] getLibraries() {
@@ -171,12 +174,52 @@ public final class MetroidPrimeActivity extends SDLActivity {
         });
     }
 
+    // Called from the debug overlay, on the SDL thread: picks the Remastered
+    // .nsp (which 0) or prod.keys (which 1). Neither has a MIME type of its own.
+    public void pickRemasteredFile(int which) {
+        runOnUiThread(() -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("*/*");
+            try {
+                startActivityForResult(intent, REQUEST_REMASTERED + which);
+            } catch (android.content.ActivityNotFoundException e) {
+                Log.w(TAG, "No document picker", e);
+            }
+        });
+    }
+
+    // The pick is written down before native hears of it: the game is often
+    // killed behind the picker for its memory, and then this runs in a new
+    // process whose overlay reads the file (RemasteredPickFile in debug_ui.cpp).
+    private void rememberRemasteredPick(int which, Uri uri) {
+        persistUri(uri);
+        File file = new File(getFilesDir(), "remastered_pick_" + which + ".txt");
+        try (FileOutputStream out = new FileOutputStream(file)) {
+            out.write((uri.toString() + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            Log.w(TAG, "Could not write " + file, e);
+        }
+        try {
+            nativeRemasteredPicked(which, uri.toString());
+        } catch (UnsatisfiedLinkError e) {
+            // The library did not load; the file is read once it does.
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == REQUEST_TEXTURE_PACK) {
             Uri tree = data != null && resultCode == RESULT_OK ? data.getData() : null;
             if (tree != null) {
                 copyTexturePack(tree);
+            }
+            return;
+        }
+        if (requestCode == REQUEST_REMASTERED || requestCode == REQUEST_REMASTERED + 1) {
+            Uri uri = data != null && resultCode == RESULT_OK ? data.getData() : null;
+            if (uri != null) {
+                rememberRemasteredPick(requestCode - REQUEST_REMASTERED, uri);
             }
             return;
         }

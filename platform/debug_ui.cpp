@@ -2926,6 +2926,45 @@ void DrawMemoryCard() {
 std::mutex sRemasteredPickMutex;
 std::vector<std::pair<int, std::string>> sRemasteredPicks;
 
+#if defined(__ANDROID__)
+// Not SDL_ShowOpenFileDialog: Android often kills the game behind the picker
+// for its memory (seen on a tablet: the pick came back to a new process), and
+// SDL's callback dies with it. MetroidPrimeActivity.pickRemasteredFile writes
+// the picked address to this file, which the panel reads, in this process or
+// the next one.
+std::string RemasteredPickFile(int which) {
+  const char* root = SDL_GetAndroidInternalStoragePath();
+  return std::string(root != nullptr ? root : ".") + "/remastered_pick_" + std::to_string(which) + ".txt";
+}
+
+void TakeRemasteredPickFiles() {
+  for (int which = 0; which < 2; ++which) {
+    std::ifstream in(RemasteredPickFile(which));
+    std::string uri;
+    if (std::getline(in, uri) && !uri.empty()) {
+      sRemasteredPicks.emplace_back(which, uri);
+    }
+  }
+}
+
+void OpenRemasteredDialog(int which) {
+  JNIEnv* env = static_cast< JNIEnv* >(SDL_GetAndroidJNIEnv());
+  jobject activity = static_cast< jobject >(SDL_GetAndroidActivity());
+  if (env == nullptr || activity == nullptr) {
+    return;
+  }
+  jclass cls = env->GetObjectClass(activity);
+  jmethodID method = env->GetMethodID(cls, "pickRemasteredFile", "(I)V");
+  if (method != nullptr) {
+    env->CallVoidMethod(activity, method, jint(which));
+  }
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+  }
+  env->DeleteLocalRef(cls);
+  env->DeleteLocalRef(activity);
+}
+#else
 void OpenRemasteredDialog(int which) {
   int windowCount = 0;
   SDL_Window** windows = SDL_GetWindows(&windowCount);
@@ -2937,17 +2976,12 @@ void OpenRemasteredDialog(int which) {
       sRemasteredPicks.emplace_back(int(reinterpret_cast< intptr_t >(userdata)), files[0]);
     }
   };
-#if defined(__ANDROID__)
-  // Android turns filters into MIME types, and neither file has one of its own.
-  SDL_ShowOpenFileDialog(done, reinterpret_cast< void* >(static_cast< intptr_t >(which)), window, nullptr, 0, nullptr,
-                         false);
-#else
   static const SDL_DialogFileFilter imageFilters[] = {{"Switch images (.nsp)", "nsp"}, {"All files", "*"}};
   static const SDL_DialogFileFilter keyFilters[] = {{"Key files (.keys)", "keys"}, {"All files", "*"}};
   SDL_ShowOpenFileDialog(done, reinterpret_cast< void* >(static_cast< intptr_t >(which)), window,
                          which == 0 ? imageFilters : keyFilters, 2, nullptr, false);
-#endif
 }
+#endif
 
 #if defined(__ANDROID__)
 // Android's picker gives a content:// address, which only the system can open.
@@ -3023,6 +3057,8 @@ void DrawRemasteredImport() {
     if (!sRemasteredKeysPath.empty()) {
       sRemasteredPicks.emplace_back(1, sRemasteredKeysPath);
     }
+    // A pick the previous process never saw: after the remembered ones, so it wins.
+    TakeRemasteredPickFiles();
 #else
     if (!sRemasteredImagePath.empty()) {
       std::snprintf(sImage, sizeof(sImage), "%s", sRemasteredImagePath.c_str());
@@ -3042,6 +3078,7 @@ void DrawRemasteredImport() {
       if (!opened.empty()) {
         remember(which, path);
       }
+      std::remove(RemasteredPickFile(which).c_str());
     }
 #else
     for (const auto& [which, path] : sRemasteredPicks) {
@@ -3072,6 +3109,9 @@ void DrawRemasteredImport() {
   }
   ImGui::SameLine();
   ImGui::TextUnformatted(sPickNames[1].empty() ? "prod.keys" : sPickNames[1].c_str());
+  ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+  ImGui::TextWrapped("Android may close the game while you pick a file. The pick is kept: open this page again.");
+  ImGui::PopStyleColor();
 #else
   ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
   ImGui::InputTextWithHint("##remastered-image", "Metroid Prime Remastered .nsp", sImage, sizeof(sImage));
@@ -5201,6 +5241,19 @@ Java_org_metroidprime_port_MetroidPrimeActivity_nativeTexturePackStatus(JNIEnv* 
 extern "C" JNIEXPORT void JNICALL
 Java_org_metroidprime_port_MetroidPrimeActivity_nativeTexturePackReady(JNIEnv*, jclass) {
   PortTextures::RequestUserPackReload();
+}
+
+// A file picked for the Remastered import, while this process lived. The
+// address is also in RemasteredPickFile, for when it did not.
+extern "C" JNIEXPORT void JNICALL
+Java_org_metroidprime_port_MetroidPrimeActivity_nativeRemasteredPicked(JNIEnv* env, jclass, jint which,
+                                                                      jstring uri) {
+  const char* chars = env->GetStringUTFChars(uri, nullptr);
+  if (chars != nullptr) {
+    std::lock_guard lock(PortDebug::sRemasteredPickMutex);
+    PortDebug::sRemasteredPicks.emplace_back(int(which), chars);
+    env->ReleaseStringUTFChars(uri, chars);
+  }
 }
 
 // Whether a real pad, keyboard or mouse was used since the last call.
