@@ -1367,6 +1367,9 @@ void RunFrame() {
       } else if (arg == "exposure" && sCmd.args.size() > 2 &&
                  (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
         PortRoomEnv::SetRoomExposed(Lower(sCmd.args[2]) == "on");
+      } else if (arg == "auto" && sCmd.args.size() > 2 &&
+                 (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
+        PortRoomEnv::SetAutoExposure(Lower(sCmd.args[2]) == "on");
       } else if (arg == "bloom" && sCmd.args.size() > 2 &&
                  (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
         PortRoomEnv::SetBloomEnabled(Lower(sCmd.args[2]) == "on");
@@ -1385,7 +1388,8 @@ void RunFrame() {
                   Lower(sCmd.args[2]) == "light")) {
         PortRoomEnv::SetVolumeView(Lower(sCmd.args[2]) == "off" ? 0 : Lower(sCmd.args[2]) == "coords" ? 1 : 2);
       } else {
-        return Finish("usage: roomenv [on|off|info [<x> <y> <z>]|exposure on|off|bloom on|off|grade on|off|"
+        return Finish("usage: roomenv [on|off|info [<x> <y> <z>]|exposure on|off|auto on|off|bloom on|off|"
+                      "grade on|off|"
                       "volume on|off|ambient <scale>|"
                       "show off|coords|light]");
       }
@@ -1397,9 +1401,10 @@ void RunFrame() {
     PortRoomEnv::Stats(areas, probes, cubes, grids);
     static const char* const kViews[] = {"off", "coords", "light"};
     Out("roomenv %s: %d area(s), %d probe(s), %d cube(s) loaded, %d ambient grid(s), exposure by %s, "
-        "bloom %s, grade %s, volume %s, ambient %g, show %s",
+        "auto %s, bloom %s, grade %s, volume %s, ambient %g, show %s",
         PortRoomEnv::Enabled() ? "on" : "off", areas, probes, cubes, grids,
-        PortRoomEnv::RoomExposed() ? "room" : "cube", PortRoomEnv::BloomEnabled() ? "on" : "off",
+        PortRoomEnv::RoomExposed() ? "room" : "cube", PortRoomEnv::AutoExposure() ? "on" : "off",
+        PortRoomEnv::BloomEnabled() ? "on" : "off",
         PortRoomEnv::ColorGradeEnabled() ? "on" : "off", PortRoomEnv::VolumesEnabled() ? "on" : "off",
         PortRoomEnv::AmbientScale(), kViews[std::clamp(PortRoomEnv::VolumeView(), 0, 2)]);
     Finish();

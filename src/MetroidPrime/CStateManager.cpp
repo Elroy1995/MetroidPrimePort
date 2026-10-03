@@ -2662,6 +2662,13 @@ void CStateManager::PortCaptureProbeFace() const {
   }
   PortRoomGeo::SetLoadedAreas(mreas, mreaCount);
   PortRoomLiquid::SetLoadedAreas(mreas, mreaCount);
+  {
+    // The frame's exposure eases on; it is measured from the picture only while room
+    // geometry, which follows it, is on screen.
+    int geoAreas, instances, models, loaded, drawn;
+    PortRoomGeo::Stats(geoAreas, instances, models, loaded, drawn);
+    PortRoomEnv::UpdateFrame(PortRoomGeo::GetMode() != PortRoomGeo::Mode::Off && drawn > 0);
+  }
   static uint lastDraws = 0;
   static int face = 0;
   static int filled = 0;

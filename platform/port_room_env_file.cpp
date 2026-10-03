@@ -1,6 +1,7 @@
 // The .roomenv file: parsing, and picking the probe for a point. See port_room_env.h.
 #include "port_room_env.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -8,7 +9,7 @@ namespace PortRoomEnv {
 namespace {
 
 constexpr uint32_t kMagic = 0x5645504D; // 'MPEV'
-constexpr uint32_t kVersion = 6;
+constexpr uint32_t kVersion = 7;
 constexpr uint32_t kMaxGrades = 64;
 constexpr size_t kHeaderSize = 32;
 constexpr size_t kProbeSize = 100;
@@ -316,8 +317,58 @@ bool Parse(std::vector<uint8_t>&& data, File& out, std::string& error) {
       at = grade.offset + kGradeLutBytes;
     }
   }
+  if (version >= 7) {
+    if (data.size() - at < 8) {
+      error = "cut short";
+      return false;
+    }
+    out.exposureSigma = GetFloat(data.data() + at);
+    out.staticLerp = GetFloat(data.data() + at + 4);
+    if (!(out.exposureSigma >= 0.f && out.exposureSigma < 10000.f)) {
+      out.exposureSigma = 32.f;
+    }
+    if (!(out.staticLerp >= 0.f && out.staticLerp <= 1.f)) {
+      out.staticLerp = 0.5f;
+    }
+    at += 8;
+  }
   out.data = std::move(data);
   return true;
+}
+
+void Convergence::SetSigma(float sigma) {
+  // The coefficients of CGaussianConvergence's constructor.
+  const double s = sigma;
+  double q;
+  if (s >= 2.5) {
+    q = 0.98711 * s - 0.96330;
+  } else if (s >= 0.5) {
+    q = 3.97156 - 4.14554 * std::sqrt(std::max(1.0 - 0.26891 * s, 1e-35));
+  } else {
+    q = s * 0.1147 * 2.0;
+  }
+  const double q2 = q * q;
+  const double q3 = q2 * q;
+  const double b0 = 1.57825 + 2.44413 * q + 1.4281 * q2 + 0.422205 * q3;
+  const double b1 = 2.44413 * q + 2.85619 * q2 + 1.26661 * q3;
+  const double b2 = -(1.4281 * q2 + 1.26661 * q3);
+  const double b3 = 0.422205 * q3;
+  coeff[0] = 1.0 - (b1 + b2 + b3) / b0;
+  coeff[1] = b1 / b0;
+  coeff[2] = b2 / b0;
+  coeff[3] = b3 / b0;
+}
+
+void Convergence::SetValue(float v) {
+  value = history[0] = history[1] = history[2] = v;
+}
+
+void Convergence::Step(float target) {
+  const double next = coeff[0] * target + coeff[1] * history[0] + coeff[2] * history[1] + coeff[3] * history[2];
+  history[2] = history[1];
+  history[1] = history[0];
+  history[0] = next;
+  value = float(next);
 }
 
 Pick PickProbe(const File& file, const float pos[3]) {

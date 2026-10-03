@@ -13,7 +13,7 @@
 // ambient colour.
 //
 // The file is little endian:
-//   'MPEV', u32 version (1 to 6), f32 tonemap[4], u32 probes, u32 cubes
+//   'MPEV', u32 version (1 to 7), f32 tonemap[4], u32 probes, u32 cubes
 //   probe: f32 worldToBox[12], f32 worldToCube[9], s32 layer, u32 cube, f32 scale, f32 blend
 //   cube:  u32 size, u32 mips, u32 signed, u32 bytes, then BC6H blocks, every face of
 //          mip 0, then of mip 1 and so on
@@ -39,6 +39,11 @@
 //          grade LUT of 33^3 RGBA8, red fastest, blue slowest; the frame's tonemapped
 //          colour looks itself up in it. Of the grades whose layer is active, the last
 //          one is the room's.
+// Version 7 goes on:
+//   f32 sigma, of the Gaussian that eases the auto exposure towards what it measures, in
+//          frames at 60 Hz
+//   f32 static lerp, where in the hint's range the exposure value of emissive and unlit
+//          surfaces sits (0 the lowest, 1 the highest)
 // The tonemap is Remastered's: the exposure value without auto exposure, the radiance
 // that comes out as middle grey once exposed, and how far the curve's toe and shoulder
 // are pulled in.
@@ -88,6 +93,8 @@ struct File {
   float tonemap[4] = {};
   float exposure[2] = {}; // EV range; both 0 when the room has no auto exposure
   float exposureBias = 0.f;
+  float exposureSigma = 32.f; // Remastered's default
+  float staticLerp = 0.5f;
   float contrast = 0.f;
   float bloomThreshold = 0.9f;
   std::vector<float> bloomTints; // RGBA; empty: the room has no bloom
@@ -132,6 +139,22 @@ struct Ambient {
 };
 // Blends the points around `pos`, skipping the empty ones; false when there are none.
 bool SampleGrid(const File& file, const Grid& grid, const float pos[3], Ambient& out);
+
+// Remastered's CGaussianConvergence: a recursive Gaussian (Young and van Vliet) that a
+// value follows its target through, one step a 60 Hz frame,
+//   y = B x + b1 y1 + b2 y2 + b3 y3
+// so a step in the target becomes an S curve about `sigma` frames long.
+struct Convergence {
+  float value = 0.f;
+  // Doubles: with sigma 32, B is ~1e-4 against feedback terms near 3, so float rounding
+  // leaves the value short of its target.
+  double history[3] = {}; // the last three values, newest first
+  double coeff[4] = {1.0, 0.0, 0.0, 0.0}; // B, b1, b2, b3
+  void SetSigma(float sigma);
+  // Jumps there, with no easing.
+  void SetValue(float v);
+  void Step(float target);
+};
 
 // --- The game side (port_room_env.cpp) -----------------------------------------
 
@@ -211,6 +234,21 @@ void SetColorGradeEnabled(bool on);
 bool ColorGradeEnabled();
 // The area the camera is in: its exposure and tone curve are the frame's.
 void SetViewArea(uint32_t mrea);
+// Once a frame, after SetViewArea: moves the frame's exposure and tone curve on
+// (CPostFXManager::UpdateTonemapping). The tonemap moves linearly to the camera room's
+// over a second; with an auto exposure hint, the exposure value eases through a
+// Convergence towards the one measured from the last frames' average radiance
+// (GXPortFrameRadiance) when `roomGeoDrawing` (only then does the picture follow the
+// exposure, so measuring it can settle), else towards the one of the room's probes. It
+// jumps when the camera's previous room is gone (a world load or a teleport).
+void UpdateFrame(bool roomGeoDrawing);
+// The exposure to measure the frame at, for GXPortPostProcess; 0 when nothing would use
+// the measurement.
+float MeasureExposure();
+// Whether the exposure follows the frame (MP_ROOM_ENV_AUTO_EXPOSURE, the console's
+// `roomenv auto`); otherwise it follows the room's probes.
+void SetAutoExposure(bool on);
+bool AutoExposure();
 // The frame's tone curve, for GXSetPBRTone; false when rooms are not exposed or the
 // camera's room has no environment.
 bool Tone(float rows[3][4]);

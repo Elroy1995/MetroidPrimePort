@@ -255,7 +255,8 @@ void CMFGame::Draw() const {
       float threshold = 0.f;
       float tints[5][3] = {};
       float tone[3][4] = {};
-      const bool bloom = PortRoomEnv::Bloom(threshold, tints) && PortRoomEnv::Tone(tone);
+      const bool toned = PortRoomEnv::Tone(tone);
+      const bool bloom = toned && PortRoomEnv::Bloom(threshold, tints);
       struct Layers {
         CScriptLayerManager* layers;
         TAreaId area;
@@ -270,7 +271,9 @@ void CMFGame::Draw() const {
                    l.layers->IsLayerActive(l.area, TLayerId(layer));
           },
           &layers, gradeA, gradeB, gradeWeight);
-      GXPortPostProcess(bloom, threshold, tints, tone, gradeA, gradeB, gradeWeight);
+      // The picture is measured for the next frames' auto exposure (UpdateFrame).
+      GXPortPostProcess(bloom, threshold, tints, tone, gradeA, gradeB, gradeWeight,
+                        toned ? PortRoomEnv::MeasureExposure() : 0.f);
     }
 #endif
   }

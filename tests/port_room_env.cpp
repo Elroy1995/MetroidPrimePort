@@ -206,6 +206,51 @@ void TestGrid() {
             file.grades[1].layer == 3 && file.grades[1].fadeIn == 0.f && file.grades[1].fadeOut == 0.5f &&
             file.grades[1].id != 0,
         "grade: layers, fades, the identity's id is 0");
+  Check(file.exposureSigma == 32.f && file.staticLerp == 0.5f, "convergence: version 6 has the defaults");
+
+  // Version 7 adds the exposure's convergence sigma and the static exposure's lerp.
+  std::vector<uint8_t> v7 = v6;
+  v7[4] = 7;
+  Check(!PortRoomEnv::Parse(std::vector<uint8_t>(v7), file, error), "convergence: cut short");
+  PutFloat(v7, 12.f);
+  PutFloat(v7, 0.25f);
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(v7), file, error) && file.exposureSigma == 12.f &&
+            file.staticLerp == 0.25f,
+        "convergence: sigma and lerp");
+  v7.resize(v7.size() - 8);
+  PutFloat(v7, -1.f);
+  PutFloat(v7, 2.f);
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(v7), file, error) && file.exposureSigma == 32.f &&
+            file.staticLerp == 0.5f,
+        "convergence: out of range values fall back");
+
+  {
+    PortRoomEnv::Convergence c;
+    c.SetSigma(32.f);
+    c.SetValue(4.f);
+    for (int i = 0; i < 100; ++i) {
+      c.Step(4.f);
+    }
+    Check(Near(c.value, 4.f), "convergence: a constant stays put");
+    // The recursive filter's step response is an S curve with a small ripple near the top
+    // (~0.004 in 6, around frame 130), never past the target.
+    float prev = c.value;
+    bool smooth = true;
+    float atSigma = 0.f;
+    for (int i = 0; i < 600; ++i) {
+      c.Step(10.f);
+      smooth = smooth && c.value >= prev - 0.01f && c.value <= 10.f + 1e-3f;
+      prev = c.value;
+      if (i == 31) {
+        atSigma = c.value;
+      }
+    }
+    Check(smooth && atSigma > 5.f && atSigma < 9.f && Near(c.value, 10.f), "convergence: a step settles on the target");
+    c.SetValue(-2.f);
+    Check(c.value == -2.f, "convergence: SetValue snaps");
+    c.Step(-2.f);
+    Check(Near(c.value, -2.f), "convergence: snapped history");
+  }
   v6.pop_back();
   Check(!PortRoomEnv::Parse(std::vector<uint8_t>(v6), file, error), "grade: LUT cut short");
   Check(PortRoomEnv::Parse(std::vector<uint8_t>(good), file, error), "grid: parse once more");

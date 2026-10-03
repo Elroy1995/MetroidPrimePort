@@ -39,7 +39,35 @@ struct Area {
   std::vector<GpuVolume> volumes; // one a grid
   float exposure = 0.f; // what takes the room's radiance to the display's range; 0: unknown
   float tone[3][4] = {}; // its tone curve
+  bool hasGeo = false;   // the mod replaces its geometry
 };
+
+// The frame's exposure and tone curve, as CPostFXManager::UpdateTonemapping moves them.
+struct FrameState {
+  bool started = false;
+  uint32_t area = 0; // the camera's room last frame
+  std::vector<uint32_t> loaded; // the areas in memory last frame
+  Convergence ev;
+  float sigma = -1.f;
+  float targetEv = 0.f;
+  bool measuring = false; // this frame is measured (MeasureExposure)
+  bool measured = false;  // targetEv is a measurement
+  float measuredEv = 0.f;
+  uint32_t serial = 0;      // of the last measurement seen
+  uint32_t ignoreUntil = 0; // measurements up to here are of before a jump
+  // The tonemap's EV, mid, contrast, toe and shoulder, moving linearly from `from` to `to`.
+  float from[5] = {};
+  float to[5] = {};
+  float shown[5] = {};
+  std::chrono::steady_clock::time_point start;
+  std::chrono::steady_clock::time_point last;
+  float carry = 0.f; // seconds not stepped yet
+  float exposure = 0.f; // 2^(3 - EV); 0: none yet
+  bool hasTone = false;
+  float tone[3][4] = {};
+};
+FrameState sFrame;
+int sAuto = -1;
 
 // Areas in memory; one without a file has an empty File.
 std::unordered_map<uint32_t, Area> sAreas;
@@ -298,6 +326,7 @@ float RoomExposure(const Area& area) {
 }
 
 void Load(uint32_t mrea, Area& area) {
+  area.hasGeo = !PortMods::RoomGeoPath(mrea).empty();
   const std::string path = PortMods::RoomEnvPath(mrea);
   if (path.empty()) {
     return;
@@ -328,11 +357,10 @@ void Load(uint32_t mrea, Area& area) {
                  t[3]);
 }
 
-// The frame's exposure, for radiance from `area`: that of the room the camera is in, as
-// one exposure covers the whole picture, or the area's own when that room has none.
+// The frame's exposure, for radiance from `area`: one exposure covers the whole picture
+// (see UpdateFrame), or the area's own before the frame has one.
 float FrameExposure(const Area& area) {
-  const auto view = sAreas.find(sViewArea);
-  return view != sAreas.end() && view->second.exposure > 0.f ? view->second.exposure : area.exposure;
+  return sFrame.exposure > 0.f ? sFrame.exposure : area.exposure;
 }
 
 // Decodes a cube and hands it to the GPU.
@@ -396,13 +424,128 @@ bool Tone(float rows[3][4]) {
   if (!Enabled() || !RoomExposed()) {
     return false;
   }
-  const auto view = sAreas.find(sViewArea);
-  if (view == sAreas.end() || !(view->second.tone[1][0] > 0.f)) {
+  if (!sFrame.hasTone) {
     return false;
   }
-  std::memcpy(rows, view->second.tone, sizeof(view->second.tone));
+  std::memcpy(rows, sFrame.tone, sizeof(sFrame.tone));
   return true;
 }
+
+void UpdateFrame(bool roomGeoDrawing) {
+  constexpr float kGrey = 0.2158605f; // sRGB 128, linear
+  constexpr uint32_t kInFlight = 3;   // readbacks Aurora may have queued
+  using Clock = std::chrono::steady_clock;
+  // The exposure moves every frame, so a model's last answer is stale.
+  sLastValid = false;
+  FrameState& f = sFrame;
+  const auto now = Clock::now();
+  std::vector<uint32_t> loaded;
+  loaded.reserve(sAreas.size());
+  for (const auto& entry : sAreas) {
+    loaded.push_back(entry.first);
+  }
+  const auto view = sAreas.find(sViewArea);
+  if (view == sAreas.end() || view->second.file.data.empty()) {
+    // A room without an environment keeps the frame as it was, unless the one it came from
+    // is gone too.
+    if (f.started && f.area != sViewArea && sAreas.find(f.area) == sAreas.end()) {
+      f = {};
+    }
+    f.last = now;
+    f.loaded = std::move(loaded);
+    return;
+  }
+  const Area& area = view->second;
+  const File& file = area.file;
+  const float* const t = file.tonemap;
+  const float target[5] = {t[0], t[1], file.contrast, t[2], t[3]};
+  float radiance[3] = {};
+  uint32_t serial = 0;
+  const bool hasRadiance = GXPortFrameRadiance(radiance, &serial);
+  // Walking into a room that was already loaded eases, even when the room left is gone at
+  // once; arriving in one that wasn't (a world load, a warp) starts there.
+  const bool jump = !f.started || (f.area != sViewArea &&
+                                   std::find(f.loaded.begin(), f.loaded.end(), sViewArea) == f.loaded.end());
+  f.loaded = std::move(loaded);
+  if (jump) {
+    f.started = true;
+    std::memcpy(f.from, target, sizeof(target));
+    std::memcpy(f.to, target, sizeof(target));
+    f.start = f.last = now;
+    f.carry = 0.f;
+    f.measured = false;
+    f.ignoreUntil = serial + kInFlight;
+  } else if (std::memcmp(target, f.to, sizeof(target)) != 0) {
+    std::memcpy(f.from, f.shown, sizeof(f.shown));
+    std::memcpy(f.to, target, sizeof(target));
+    f.start = now;
+  }
+  f.area = sViewArea;
+  const float moved = std::min(std::chrono::duration<float>(now - f.start).count(), 1.f);
+  for (int i = 0; i < 5; ++i) {
+    f.shown[i] = f.from[i] + (f.to[i] - f.from[i]) * moved;
+  }
+  if (f.sigma != file.exposureSigma) {
+    f.sigma = file.exposureSigma;
+    f.ev.SetSigma(f.sigma);
+  }
+  const bool hint = file.exposure[0] != 0.f || file.exposure[1] != 0.f;
+  // Measuring settles only where the picture follows the exposure: room geometry, lit by
+  // the room's own light. The retail world keeps its level whatever the exposure, and
+  // measuring it would push the exposure to an end of the hint's range.
+  f.measuring = hint && roomGeoDrawing && area.hasGeo && AutoExposure() && Enabled() && RoomExposed();
+  if (hasRadiance && serial != f.serial) {
+    f.serial = serial;
+    const float peak = std::max(std::max(radiance[0], radiance[1]), radiance[2]);
+    if (f.measuring && int32_t(serial - f.ignoreUntil) > 0 && peak > 0.f && std::isfinite(peak)) {
+      const float ev = std::log2(peak / kGrey) + 3.f + file.exposureBias;
+      f.measuredEv = std::min(std::max(ev, file.exposure[0]), file.exposure[1]);
+      f.measured = true;
+    }
+  }
+  if (!f.measuring) {
+    f.measured = false;
+  }
+  if (!hint) {
+    f.targetEv = f.shown[0];
+  } else if (f.measured) {
+    f.targetEv = f.measuredEv;
+  } else {
+    f.targetEv = area.exposure > 0.f ? 3.f - std::log2(area.exposure) : f.shown[0];
+  }
+  // Without a hint the exposure is the tonemap's, moving linearly with it; with one it eases
+  // through the Gaussian, a step every 60th of a second.
+  f.carry += std::chrono::duration<float>(now - f.last).count();
+  f.last = now;
+  if (jump || !hint) {
+    f.ev.SetValue(f.targetEv);
+    f.carry = 0.f;
+  } else {
+    const int steps = int(f.carry * 60.f);
+    f.carry -= float(steps) / 60.f;
+    for (int i = std::min(steps, 30); i > 0; --i) {
+      f.ev.Step(f.targetEv);
+    }
+  }
+  const float exposure = std::exp2(3.f - f.ev.value);
+  f.exposure = std::isfinite(exposure) && exposure > 0.f ? exposure : 0.f;
+  f.hasTone = f.exposure > 0.f && f.shown[1] > 0.f && f.shown[1] < 1.f;
+  if (f.hasTone) {
+    BuildTone(f.shown[1], f.shown[2], f.shown[3], f.shown[4], f.tone);
+  }
+}
+
+float MeasureExposure() { return sFrame.measuring ? sFrame.exposure : 0.f; }
+
+bool AutoExposure() {
+  if (sAuto < 0) {
+    const char* const env = std::getenv("MP_ROOM_ENV_AUTO_EXPOSURE");
+    sAuto = env != nullptr && env[0] == '0' ? 0 : 1;
+  }
+  return sAuto != 0;
+}
+
+void SetAutoExposure(bool on) { sAuto = on ? 1 : 0; }
 
 bool BloomEnabled() {
   if (sBloom < 0) {
@@ -600,6 +743,7 @@ void Reset() {
     Free(area);
   }
   sAreas.clear();
+  sFrame = {};
   sLastValid = false;
 }
 
@@ -783,6 +927,15 @@ void Stats(int& areas, int& probes, int& cubes, int& grids) {
 std::string Info(const float pos[3]) {
   std::string out;
   char line[320];
+  if (sFrame.started) {
+    const FrameState& f = sFrame;
+    std::snprintf(line, sizeof(line),
+                  "frame: EV %g towards %g (%s), exposure %g, sigma %g, measurement %u%s, tone EV %g mid %g "
+                  "contrast %g toe %g shoulder %g\n",
+                  f.ev.value, f.targetEv, f.measured ? "measured" : "probes", f.exposure, f.sigma, f.serial,
+                  f.measuring ? " (measuring)" : "", f.shown[0], f.shown[1], f.shown[2], f.shown[3], f.shown[4]);
+    out += line;
+  }
   for (const auto& [mrea, area] : sAreas) {
     const File& file = area.file;
     if (file.probes.empty() && file.grids.empty()) {

@@ -62,6 +62,8 @@ constexpr uint32_t kPropHintMin = 0x682f8a1f;
 constexpr uint32_t kPropHintMax = 0x839d334c;
 constexpr uint32_t kPropHintMode = 0x590d6843;
 constexpr uint32_t kPropHintBias = 0x038f85da;
+constexpr uint32_t kPropHintSigma = 0x3dace129;
+constexpr uint32_t kPropHintStaticLerp = 0xb9f6606a;
 constexpr uint32_t kPropModConMcon = 0xa8e2ba93;
 constexpr uint32_t kPropActorModel = 0xcb1c52f6;
 // Unnamed in retrotool's templates; what they mean is read off which actors carry them.
@@ -1160,7 +1162,7 @@ struct GradeData {
   };
   bool MatchRoom(const RoomData& r, const std::map<std::string, Placement>& placed, Match& out) const;
   void Tonemap(const RoomData& r, float out[5]) const;
-  void Exposure(const RoomData& r, float out[3]) const;
+  void Exposure(const RoomData& r, float out[5]) const;
   void ReadBloom(const RoomData& r, BloomData& out) const;
   bool Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>& check, std::vector<uint8_t>& out,
             std::string& note) const;
@@ -1351,13 +1353,16 @@ void Writer::Tonemap(const RoomData& r, float out[5]) const {
   }
 }
 
-// The range of exposure values the room's auto exposure is held to and the bias it adds,
-// or 0, 0, 0 for a room without auto exposure. A room can have several hints: the plain
+// The range of exposure values the room's auto exposure is held to, the bias it adds, the
+// sigma it eases by and where in the range the static exposure sits, or 0, 0, 0, 32, 0.5
+// for a room without auto exposure. A room can have several hints: the plain
 // one for the whole room is wanted, not those with a mode (they are for a state of the
 // room, such as a cutscene) or a volume of their own. A value the hint leaves out is
 // SLdrAutoExposureHint's default.
-void Writer::Exposure(const RoomData& r, float out[3]) const {
+void Writer::Exposure(const RoomData& r, float out[5]) const {
   out[0] = out[1] = out[2] = 0.f;
+  out[3] = 32.f;
+  out[4] = 0.5f;
   int best = 0;
   for (const Component* c : r.room.Of(kAutoExposureHint)) {
     const auto f = r.room.Flat(*c);
@@ -1367,6 +1372,8 @@ void Writer::Exposure(const RoomData& r, float out[3]) const {
     };
     const float range[2] = {value(kPropHintMin, -24.f), value(kPropHintMax, 24.f)};
     const float bias = value(kPropHintBias, 0.f);
+    const float sigma = value(kPropHintSigma, 32.f);
+    const float lerp = value(kPropHintStaticLerp, 0.5f);
     if (!std::isfinite(range[0]) || !std::isfinite(range[1]) || range[1] < range[0]) {
       continue;
     }
@@ -1380,6 +1387,8 @@ void Writer::Exposure(const RoomData& r, float out[3]) const {
       out[0] = range[0];
       out[1] = range[1];
       out[2] = std::isfinite(bias) ? bias : 0.f;
+      out[3] = sigma >= 0.f && sigma < 10000.f ? sigma : 32.f;
+      out[4] = lerp >= 0.f && lerp <= 1.f ? lerp : 0.5f;
     }
   }
 }
@@ -2194,7 +2203,7 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   }
 
   std::vector<uint8_t> out = {'M', 'P', 'E', 'V'};
-  PutLe32(out, 6);
+  PutLe32(out, 7);
   float tone[5];
   std::copy(tonemap, tonemap + 5, tone);
   Tonemap(r, tone);
@@ -2209,7 +2218,7 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   }
   PutLe32(out, grid.empty() ? 0 : 1);
   out.insert(out.end(), grid.begin(), grid.end());
-  float exposure[3];
+  float exposure[5];
   Exposure(r, exposure);
   PutFloat(out, exposure[0]);
   PutFloat(out, exposure[1]);
@@ -2224,6 +2233,17 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
       PutFloat(out, v);
     }
   }
+  std::vector<GradeData> grades = worldGrades;
+  ReadGrades(r, m.area, grades);
+  PutLe32(out, uint32_t(grades.size()));
+  for (const GradeData& g : grades) {
+    PutLe32(out, uint32_t(g.layer));
+    PutFloat(out, g.fadeIn);
+    PutFloat(out, g.fadeOut);
+    out.insert(out.end(), g.lut.begin(), g.lut.end());
+  }
+  PutFloat(out, exposure[3]);
+  PutFloat(out, exposure[4]);
   char file[32];
   std::snprintf(file, sizeof file, "%08X.roomenv", m.mrea);
   if (!m_io.write || !m_io.write(file, out)) {
@@ -2243,15 +2263,6 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
   if (m_master.pak == nullptr) {
     error = "no master pak";
     return false;
-  std::vector<GradeData> grades = worldGrades;
-  ReadGrades(r, m.area, grades);
-  PutLe32(out, uint32_t(grades.size()));
-  for (const GradeData& g : grades) {
-    PutLe32(out, uint32_t(g.layer));
-    PutFloat(out, g.fadeIn);
-    PutFloat(out, g.fadeOut);
-    out.insert(out.end(), g.lut.begin(), g.lut.end());
-  }
   }
   if (!LoadAreas(mlvl, error)) {
     return false;
