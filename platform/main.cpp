@@ -264,6 +264,9 @@ std::string CopyDiscFromContentUri(const std::string& uri) {
             break;
         }
         done += static_cast<Sint64>(got);
+        // The copy takes minutes on a device, long enough for the screen to go
+        // off; as in AskForDiscImage, nothing else drops a destroyed surface.
+        aurora_release_lost_surface();
         if (total > 0) {
             const int percent = static_cast<int>(done * 100 / total);
             // Every 5% rather than every chunk: a 1.5 GB image would otherwise
@@ -374,6 +377,11 @@ std::string AskForDiscImage() {
             PortLog::Write( "metroid_prime_port: disc selection timed out\n");
             return {};
         }
+        // Android's picker covers the app and destroys its surface. Nothing
+        // draws a frame here, so drop the swapchain now or it stays attached to
+        // the dead window, which can lose the device (the likely cause of a
+        // crash reported on the first launch, the one that asks for the disc).
+        aurora_release_lost_surface();
         SDL_Delay(10);
     }
     if (!chosen.empty()) {

@@ -138,6 +138,11 @@ void aurora_shutdown();
 const AuroraEvent* aurora_update();
 bool aurora_begin_frame();
 void aurora_end_frame();
+// Drops the swapchain if the window's surface went away, without starting a frame.
+// For a main thread that waits outside the frame loop (a file dialog, a long copy):
+// Android's surfaceDestroyed waits for this, and a swapchain left on a destroyed
+// window can lose the device. Cheap when nothing changed.
+void aurora_release_lost_surface();
 
 void aurora_set_log_level(AuroraLogLevel level);
 void aurora_set_pause_on_focus_lost(bool value);
