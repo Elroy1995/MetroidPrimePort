@@ -1130,6 +1130,12 @@ a temporary directory instead of mounting.
   cube on its own instead of the frame by the camera's room, and drops the
   room's tone curve. Files older than version 4 lack the exposure bias and
   the curve's contrast, so re-import to get the right levels.
+  While room geometry is on screen the exposure follows the drawn picture's
+  average, held to the room's AutoExposureHint range and eased by its sigma
+  (Remastered's rule); a room change eases, a world load or warp snaps.
+  `MP_ROOM_ENV_AUTO_EXPOSURE=0` (console `roomenv auto on|off`) keeps the
+  probe-based exposure. Version 7 adds the hint's sigma and static lerp; older
+  files use 32 and 0.5.
   `MP_BLOOM=0` (console `roomenv bloom on|off`) drops Remastered's bloom
   (version 5: the room's BloomEffect, else the world's), and `MP_COLOR_GRADE=0`
   (console `roomenv grade on|off`) its colour grade (version 6: the world's and
