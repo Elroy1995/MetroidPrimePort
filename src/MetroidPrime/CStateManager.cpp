@@ -1,6 +1,7 @@
 #define CSTATEMANAGER_OUT_OF_LINE_GETPLAYER
 #include "MetroidPrime/CStateManager.hpp"
 #include "port_apclient.h"
+#include "port_collision_view.h"
 #include "port_debug.h"
 #include "port_freecam.h"
 #include "port_discord.h"
@@ -2806,6 +2807,8 @@ void CStateManager::DrawWorld() const {
   gpRender->SetThermalColdScale(xf28_thermColdScale2 + xf24_thermColdScale1);
 #ifdef TARGET_PC
   bool portRoomGeo[10] = {};
+  // Collision view "only": the world draws nothing but Samus (port_collision_view.h).
+  const bool portCollisionOnly = !thermal && PortCollisionView::Only();
 #endif
   for (int i = areas.size() - 1; i >= 0; --i) {
     const CGameArea& area = *areas[i];
@@ -2814,6 +2817,10 @@ void CStateManager::DrawWorld() const {
     gpRender->EnablePVS(&visibility[i], id.Value());
     gpRender->SetWorldLightFadeLevel(area.GetPostConstructed()->x1128_worldLightingLevel);
 #ifdef TARGET_PC
+    if (portCollisionOnly) {
+      portRoomGeo[i] = true;
+      continue;
+    }
     // A mod's room geometry stands in for the area's own (port_room_geo.h).
     portRoomGeo[i] = !thermal && visor != CPlayerState::kPV_XRay && PortRoomGeo::Draw(*this, area, frustum);
     if (portRoomGeo[i]) {
@@ -2826,12 +2833,20 @@ void CStateManager::DrawWorld() const {
   if (!SetupFogForDraw()) {
     gpRender->SetWorldFog(kRFM_None, 0.f, 1.f, CColor::Black());
   }
-  x850_world->DrawSky(CTransform4f::Translate(backupViewMatrix.GetTranslation()));
+#ifdef TARGET_PC
+  if (!portCollisionOnly)
+#endif
+    x850_world->DrawSky(CTransform4f::Translate(backupViewMatrix.GetTranslation()));
   if (!areas.empty()) {
     SetupFogForArea(*areas.back());
   }
 
   for (const TUniqueId* it = renderFirst.begin(); it != renderFirst.end(); ++it) {
+#ifdef TARGET_PC
+    if (portCollisionOnly) {
+      break;
+    }
+#endif
     if (const CActor* actor = static_cast< const CActor* >(GetObjectById(*it))) {
       if (!thermal || (actor->GetThermalFlags() & 1) != 0) {
 #ifdef TARGET_PC
@@ -2873,6 +2888,11 @@ void CStateManager::DrawWorld() const {
             }
           }
         } else {
+#ifdef TARGET_PC
+          if (portCollisionOnly) {
+            continue;
+          }
+#endif
           if (!thermal || (actor->GetThermalFlags() & 1) != 0) {
 #ifdef TARGET_PC
             CPortActorRenderScope presented(*actor);
@@ -2887,11 +2907,14 @@ void CStateManager::DrawWorld() const {
     }
 
 #ifdef TARGET_PC
-    if (portRoomGeo[i] || PortRoomGeo::GetMode() == PortRoomGeo::Mode::Overlay) {
+    if (!portCollisionOnly &&
+        (portRoomGeo[i] || PortRoomGeo::GetMode() == PortRoomGeo::Mode::Overlay)) {
       PortRoomGeo::AddSorted(area);
     }
-#endif
+    if (isVisArea && !thermal && !portCollisionOnly) {
+#else
     if (isVisArea && !thermal) {
+#endif
       CDecalManager::AddToRenderer(frustum, *this);
       x884_actorModelParticles->AddStragglersToRenderer(*this);
     }
@@ -2918,7 +2941,13 @@ void CStateManager::DrawWorld() const {
 #endif
   }
 
-  x880_envFxManager->Render(*this);
+#ifdef TARGET_PC
+  if (!thermal) {
+    PortCollisionView::Draw(*this, areas.begin(), areas.size());
+  }
+  if (!portCollisionOnly)
+#endif
+    x880_envFxManager->Render(*this);
   if (morphingPlayerVisible) {
 #ifdef TARGET_PC
     CPortActorRenderScope presented(*x84c_player);

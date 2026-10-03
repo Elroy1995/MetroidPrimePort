@@ -2,6 +2,7 @@
 // is already initialized and rendered every presented frame, so this only has
 // to build the windows between aurora_begin_frame and aurora_end_frame.
 
+#include "port_collision_view.h"
 #include "port_debug.h"
 #include "port_freecam.h"
 #include "port_hd_font.h"
@@ -4269,11 +4270,20 @@ void DrawCheats() {
   ImGui::Text("Current area: %d of %d", current, areaCount);
   for (int i = 0; i < areaCount; ++i) {
     ImGui::PushID(i);
+    // Only loaded areas (the current one and its neighbours) can be entered
+    // in place; any other area reloads the world straight into it.
+    const bool loaded = world->GetArea(TAreaId(i))->IsPostConstructed();
     if (ImGui::Button(i == current ? "Reload" : "Go")) {
-      PortDebug::RequestTeleport(i);
+      if (loaded || gpGameState == nullptr) {
+        PortDebug::RequestTeleport(i);
+      } else {
+        PortDebug::RequestWorldTeleport(
+            static_cast< uint32_t >(gpGameState->CurrentWorldAssetId()),
+            static_cast< uint32_t >(world->IGetAreaAlways(TAreaId(i))->IGetAreaAssetId()));
+      }
     }
     ImGui::SameLine();
-    ImGui::Text("Area %d", i);
+    ImGui::Text(loaded ? "Area %d" : "Area %d (reloads world)", i);
     ImGui::PopID();
   }
 
@@ -4386,6 +4396,14 @@ void DrawRendering() {
   if (ImGui::Checkbox("HD font", &font)) {
     PortHdFont::SetEnabled(font);
   }
+
+  static const char* const kCollisionModes[] = {"off", "on top of the world", "only (hide the world)"};
+  int collision = int(PortCollisionView::GetMode());
+  if (ImGui::Combo("Collision", &collision, kCollisionModes, 3)) {
+    PortCollisionView::SetMode(PortCollisionView::Mode(collision));
+  }
+  ImGui::SetItemTooltip("Draws what Samus collides with: walls grey, floors blue, ceilings red,\n"
+                        "lava orange, grates yellow, solid objects as orange boxes.");
 
   static const char* const kModes[] = {"off", "in place of the room", "on top of the room"};
   int mode = int(PortRoomGeo::GetMode());

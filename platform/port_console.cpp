@@ -5,6 +5,7 @@
 // the client. Commands that touch the game run inside the state manager's
 // tick, where every object pointer is live; the rest run once per frame.
 #include "port_apclient.h"
+#include "port_collision_view.h"
 #include "port_debug.h"
 #include "port_discord.h"
 #include "port_freecam.h"
@@ -44,6 +45,7 @@
 #include "MetroidPrime/Player/CPlayerGun.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/TCastTo.hpp"
+#include "WorldFormat/CAreaOctTree.hpp"
 #include <aurora/gfx.h>
 #include <dolphin/pad.h>
 #include <algorithm>
@@ -429,6 +431,8 @@ void CmdHelp() {
   Out("probe [off|on|mirror|window]   the PBR reflection probe, or what PBR surfaces show of it");
   Out("roomgeo [on|off|overlay]  the room geometry mods supply, in place of the area's own or on top of it");
   Out("roomgeo at <x> <y> <z> [margin] | hide <cmdl> | show [cmdl]   its instances at a point; stop drawing one");
+  Out("colldump <x0> <y0> <z0> <x1> <y1> <z1> <file.obj>   the area's collision triangles in a box");
+  Out("collision [off|overlay|only]    draw collision (only: hide the world's surfaces)");
   Out("roomliquid [on|off]       the water, poison and lava surfaces mods supply, in place of the game's");
   Out("roomgeo lights on|off     light it with the area's lights even where the room has baked light");
   Out("roomgeo pick              the instances the middle of the view looks through, nearest first, and the");
@@ -946,6 +950,19 @@ void CmdView() {
   Finish();
 }
 
+// collision [off|overlay|only]: draw what Samus collides with (port_collision_view.h).
+void CmdCollision() {
+  if (sCmd.args.size() > 1) {
+    PortCollisionView::Mode mode;
+    if (!PortCollisionView::ParseMode(Lower(sCmd.args[1]).c_str(), mode)) {
+      return Finish("usage: collision [off|overlay|only]");
+    }
+    PortCollisionView::SetMode(mode);
+  }
+  Out("collision %s", PortCollisionView::ModeName(PortCollisionView::GetMode()));
+  Finish();
+}
+
 // touchpad [attach|detach|stick <x> <y>]: the touch overlay's kind of virtual gamepad, for
 // testing how controllers share the ports with it on any platform.
 void CmdTouchPad() {
@@ -972,6 +989,68 @@ void CmdTouchPad() {
   } else {
     Out("touchpad detached");
   }
+  Finish();
+}
+
+// colldump <x0> <y0> <z0> <x1> <y1> <z1> <file>: the current area's static collision triangles
+// that touch the box, as an OBJ (material bits in a comment per face), for comparing with what
+// a mod draws there.
+void CmdCollDump() {
+  static const char* const usage = "usage: colldump <x0> <y0> <z0> <x1> <y1> <z1> <file.obj>";
+  const CStateManager* mgr = PortDebug::StateManager();
+  if (mgr == nullptr || mgr->GetWorld() == nullptr) {
+    return Finish("not in a world");
+  }
+  float box[6];
+  if (sCmd.args.size() != 8) {
+    return Finish(usage);
+  }
+  for (int i = 0; i < 6; ++i) {
+    if (!ParseFloat(sCmd.args[1 + i], box[i])) {
+      return Finish(usage);
+    }
+  }
+  const CWorld& world = *mgr->GetWorld();
+  const CGameArea& area = world.GetAreaAlways(world.GetCurrentAreaId());
+  if (!area.IsPostConstructed() || area.GetPostConstructed()->x0_collision.get() == nullptr) {
+    return Finish("the current area has no collision loaded");
+  }
+  const CAreaOctTree& tree = area.GetOctTree();
+  FILE* file = std::fopen(sCmd.args[7].c_str(), "w");
+  if (file == nullptr) {
+    return Finish("colldump: cannot write that file");
+  }
+  int written = 0;
+  for (uint tri = 0; tri < tree.PortTriangleCount(); ++tri) {
+    ushort index[3];
+    tree.GetTriangleVertexIndices(ushort(tri), index);
+    float lo[3] = {3.4e38f, 3.4e38f, 3.4e38f};
+    float hi[3] = {-3.4e38f, -3.4e38f, -3.4e38f};
+    for (int v = 0; v < 3; ++v) {
+      const CVector3f& p = tree.GetVert(index[v]);
+      const float c[3] = {p.GetX(), p.GetY(), p.GetZ()};
+      for (int a = 0; a < 3; ++a) {
+        lo[a] = std::min(lo[a], c[a]);
+        hi[a] = std::max(hi[a], c[a]);
+      }
+    }
+    bool inside = true;
+    for (int a = 0; a < 3; ++a) {
+      inside = inside && hi[a] >= std::min(box[a], box[3 + a]) && lo[a] <= std::max(box[a], box[3 + a]);
+    }
+    if (!inside) {
+      continue;
+    }
+    for (int v = 0; v < 3; ++v) {
+      const CVector3f& p = tree.GetVert(index[v]);
+      std::fprintf(file, "v %.4f %.4f %.4f\n", p.GetX(), p.GetY(), p.GetZ());
+    }
+    std::fprintf(file, "# m %08X\nf %d %d %d\n", tree.GetTriangleMaterial(int(tri)), written * 3 + 1,
+                 written * 3 + 2, written * 3 + 3);
+    ++written;
+  }
+  std::fclose(file);
+  Out("%d of %u triangles written", written, tree.PortTriangleCount());
   Finish();
 }
 
@@ -1245,6 +1324,10 @@ void RunFrame() {
     Finish();
   } else if (name == "freecam") {
     CmdFreeCam();
+  } else if (name == "colldump") {
+    CmdCollDump();
+  } else if (name == "collision") {
+    CmdCollision();
   } else if (name == "view") {
     CmdView();
   } else if (name == "stats") {
