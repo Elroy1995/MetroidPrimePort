@@ -120,6 +120,12 @@ unsigned sTimingFrames = 0, sTimingTicks = 0;
 double sActualFps = 0.0, sActualTps = 0.0;
 double sThroughputFps = 0.0;
 bool sVsyncEnabled = false;
+// Android hides the status and navigation bars by default; a desktop starts windowed.
+#if defined(__ANDROID__)
+bool sFullscreen = true;
+#else
+bool sFullscreen = false;
+#endif
 bool sOverlayWindowed = false; // desktop: the old floating tabbed window
 float sRenderScale = 1.f;
 PortDebug::EAspectMode sAspectMode = PortDebug::kAspect_4_3;
@@ -227,6 +233,11 @@ bool sResetRequested = false;
 std::atomic< bool > sToggleRequested{false};
 // F5 = 1 (save), F9 = 2 (load), from the event watch; handled on the game thread.
 std::atomic< int > sSaveStateHotkey{0};
+// F11 asks for a fullscreen toggle; DrawUI applies it on the main thread.
+std::atomic< bool > sFullscreenHotkey{false};
+// The window's own fullscreen state as SDL last reported it (-1 = no report
+// yet), so leaving fullscreen through the window manager updates the setting.
+std::atomic< int > sWindowFullscreen{-1};
 // Mirrors sVisible for readers on other threads, so they never touch the lazy
 // initialization or the ImGui state owned by the game thread.
 std::atomic< bool > sOverlayVisible{false};
@@ -338,6 +349,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sFrameLimitEnabled = ParseBool(value);
   } else if (key == "vsync") {
     sVsyncEnabled = ParseBool(value);
+  } else if (key == "fullscreen") {
+    sFullscreen = ParseBool(value);
   } else if (key == "overlay_windowed") {
     sOverlayWindowed = ParseBool(value);
   } else if (key == "disc_path") {
@@ -614,6 +627,7 @@ void SaveSettings() {
   file << "mods=" << (sModsEnabled ? 1 : 0) << '\n';
   file << "mods_disabled=" << sModsDisabled << '\n';
   file << "vsync=" << (sVsyncEnabled ? 1 : 0) << '\n';
+  file << "fullscreen=" << (sFullscreen ? 1 : 0) << '\n';
   file << "overlay_windowed=" << (sOverlayWindowed ? 1 : 0) << '\n';
   file << "render_scale=" << sRenderScale << '\n';
   file << "frame_limit=" << (sFrameLimitEnabled ? 1 : 0) << '\n';
@@ -731,6 +745,15 @@ bool SDLCALL debug_event_watch(void*, SDL_Event* event) {
       (event->key.scancode == SDL_SCANCODE_F5 || event->key.scancode == SDL_SCANCODE_F9)) {
     sSaveStateHotkey.store(event->key.scancode == SDL_SCANCODE_F5 ? 1 : 2,
                            std::memory_order_release);
+  }
+  if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat &&
+      event->key.scancode == SDL_SCANCODE_F11) {
+    sFullscreenHotkey.store(true, std::memory_order_release);
+  }
+  if (event->type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN ||
+      event->type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) {
+    sWindowFullscreen.store(event->type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN ? 1 : 0,
+                            std::memory_order_release);
   }
   if (IsPhysicalInput(*event)) {
     sPhysicalInput.store(true, std::memory_order_release);
@@ -990,6 +1013,21 @@ void SetVsyncEnabled(bool enabled) {
   // frame), which made the first toggle a no-op.
   sVsyncEnabled = enabled;
   aurora_enable_vsync(enabled);
+}
+
+bool Fullscreen() {
+  EnsureInitialized();
+  return sFullscreen;
+}
+
+void SetFullscreen(bool enabled) {
+  EnsureInitialized();
+  if (sFullscreen != enabled) {
+    sFullscreen = enabled;
+    MarkDirty();
+  }
+  PortLog::Write("metroid_prime_port: fullscreen %s\n", enabled ? "on" : "off");
+  VISetWindowFullscreen(enabled);
 }
 
 float RenderScale() {
@@ -3435,6 +3473,14 @@ void DrawRenderTab() {
     MarkDirty();
   }
 #endif
+  bool fullscreen = sFullscreen;
+#if defined(__ANDROID__)
+  if (ImGui::Checkbox("Fullscreen (hide the status and navigation bars)", &fullscreen)) {
+#else
+  if (ImGui::Checkbox("Fullscreen (F11)", &fullscreen)) {
+#endif
+    SetFullscreen(fullscreen);
+  }
   bool vsync = sVsyncEnabled;
   if (ImGui::Checkbox("Vsync", &vsync)) {
     SetVsyncEnabled(vsync);
@@ -4949,6 +4995,16 @@ void DrawUI() {
     sPresentationSettingsApplied = true;
     aurora_enable_vsync(sVsyncEnabled && !sTurbo);
   }
+  if (sFullscreenHotkey.exchange(false, std::memory_order_acq_rel)) {
+    SetFullscreen(!VIGetWindowFullscreen());
+  }
+#if !defined(__ANDROID__)
+  else if (const int window = sWindowFullscreen.exchange(-1, std::memory_order_acq_rel);
+           window >= 0 && (window != 0) != sFullscreen) {
+    sFullscreen = window != 0;
+    MarkDirty();
+  }
+#endif
   DrawSpeedrunTimer();
   ProcessCardPicks();
 #if !defined(__ANDROID__)

@@ -728,7 +728,12 @@ a temporary directory instead of mounting.
 - Keyboard defaults: WASD / IJKL for sticks, X/Z/C/V for A/B/X/Y, Return for
   Start, arrows for D-pad, Q/E for L/R, and F for Z. Existing mappings take
   precedence. SDL controllers are supported.
-- F1: debug overlay. F10: 60 FPS cap/unlimited presentation. F12: screenshot.
+- F1: debug overlay. F10: 60 FPS cap/unlimited presentation. F11: fullscreen.
+  F12: screenshot.
+- Fullscreen (F1 > Render, persisted as `fullscreen`): a borderless window over
+  the whole screen on desktop, toggled with F11; on Android it hides the status
+  and navigation bars (on by default there; a swipe from the edge shows them
+  for a moment).
 - Settings changed in the F1 overlay (aspect, vsync, render scale, frame limit,
   mouse aim/inversion/sensitivity, audio mutes) are saved to
   `port_settings.ini` in the user folder (next to the executable, see above) and restored on the next launch. The Session tab shows the

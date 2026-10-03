@@ -120,6 +120,11 @@ void SetFrameLimitEnabled(bool enabled);
 void RecordFrame(uint64_t durationNs, unsigned ticks, bool presented);
 bool VsyncEnabled();
 void SetVsyncEnabled(bool enabled);
+// Setting `fullscreen`: a borderless fullscreen window on desktop (F11 toggles
+// it), the status and navigation bars hidden on Android. Applied at window
+// creation; Set changes the live window too.
+bool Fullscreen();
+void SetFullscreen(bool enabled);
 // 0 = auto (native, driven by the display scale), otherwise a fixed multiplier.
 float RenderScale();
 void SetRenderScale(float scale);

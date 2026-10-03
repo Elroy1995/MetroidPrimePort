@@ -546,6 +546,7 @@ int main(int argc, char** argv) {
     config.iconWidth = 64;
     config.iconHeight = 64;
 #endif
+    config.startFullscreen = PortDebug::Fullscreen();
     config.msaa = static_cast<uint32_t>(PortDebug::Msaa());
     config.maxTextureAnisotropy = static_cast<uint16_t>(PortDebug::Anisotropy());
 
