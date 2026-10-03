@@ -88,7 +88,8 @@ void GXSetPBRDebugView(u32 view);
 // Aurora extension: a three-piece tone curve over the lit colour x, which is taken as
 // already exposed (see GX_AURORA_SET_PBR_TONE). Row 0 is the toe, (a x + b) x^2 + c x below
 // z of row 1; row 1 the line S x + y0 (x, y) from there to its w; row 2 the shoulder
-// x t / (1 + t) + w with t = y x + z. Null, or a slope of 0, is no curve.
+// x t / (1 + t) + w with t = y x + z. Null, or a slope of 0, is no curve. With a curve,
+// w of row 0 multiplies the glow and unlit colour before it (0 is taken as 1).
 void GXSetPBRTone(const f32 rows[3][4]);
 
 // Aurora extension: Remastered's bloom over what the EFB holds now (see lib/gfx/bloom.cpp).

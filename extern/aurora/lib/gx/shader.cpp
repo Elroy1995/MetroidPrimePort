@@ -1412,6 +1412,13 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       if ((pbr_mode > 0.5 && pbr_mode < 1.5) || pbr_mode > 2.5) {{
           // Unlit (screens, holograms): the surface's own colour and its glow.
           pbr_lo = pbr_diff * pbr_ao;
+      }}
+      // Emitted light is at the room's static exposure, not the frame's (w of tone row 0).
+      if (ubuf.pbr_tone[1].x > 0.0 && ubuf.pbr_tone[0].w > 0.0) {{
+          pbr_glow *= ubuf.pbr_tone[0].w;
+          if ((pbr_mode > 0.5 && pbr_mode < 1.5) || pbr_mode > 2.5) {{
+              pbr_lo *= ubuf.pbr_tone[0].w;
+          }}
       }}{14}
       let pbr_out = max(pbr_lo + pbr_glow, vec3f(0.0));
       // Highlights roll off into white instead of clipping: unchanged up to 0.6, and the
