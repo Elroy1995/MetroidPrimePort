@@ -19,6 +19,7 @@
 #include "port_savestate.h"
 #include "port_tracker.h"
 #include "port_viewmodel.h"
+#include "touch_pad.h"
 #include "Kyoto/CResFactory.hpp"
 #include "Kyoto/CSimplePool.hpp"
 #include "Kyoto/Graphics/CCubeMaterial.hpp"
@@ -445,6 +446,7 @@ void CmdHelp() {
   Out("                           the baked light per pixel; the baked ambient's weight (0: the game's);");
   Out("                           draw the volume's coordinates or its light alone on room geometry");
   Out("hdfont [on|off]            the distance-field font mods supply, in place of the disc's glyphs");
+  Out("touchpad [attach|detach|stick <x> <y>]  a virtual gamepad like Android's touch overlay");
   Out("freecam [on|off|freeze on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]");
   Out("                           fly the view away from the player (HUD hidden; freeze holds the game still)");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
@@ -938,6 +940,35 @@ void CmdView() {
   Finish();
 }
 
+// touchpad [attach|detach|stick <x> <y>]: the touch overlay's kind of virtual gamepad, for
+// testing how controllers share the ports with it on any platform.
+void CmdTouchPad() {
+  static PortTouchPad::Pad pad;
+  float x = 0.f;
+  float y = 0.f;
+  const std::string arg = sCmd.args.size() > 1 ? Lower(sCmd.args[1]) : std::string();
+  if (arg == "attach") {
+    if (!pad.ok()) {
+      pad = PortTouchPad::Attach();
+    }
+  } else if (arg == "detach") {
+    PortTouchPad::Detach(pad);
+  } else if (arg == "stick" && sCmd.args.size() > 3 && ParseFloat(sCmd.args[2], x) && ParseFloat(sCmd.args[3], y) &&
+             pad.ok()) {
+    SDL_SetJoystickVirtualAxis(pad.handle, SDL_GAMEPAD_AXIS_LEFTX, PortTouchPad::AxisValue(x));
+    SDL_SetJoystickVirtualAxis(pad.handle, SDL_GAMEPAD_AXIS_LEFTY, PortTouchPad::AxisValue(y));
+  } else if (!arg.empty()) {
+    return Finish("usage: touchpad [attach|detach|stick <x> <y>] (stick needs an attached pad)");
+  }
+  if (pad.ok()) {
+    Out("touchpad attached (joystick %u, port %d)", static_cast< unsigned >(pad.id),
+        SDL_GetJoystickPlayerIndex(pad.handle));
+  } else {
+    Out("touchpad detached");
+  }
+  Finish();
+}
+
 // freecam [on|off|freeze on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]
 void CmdFreeCam() {
   static const char* const usage =
@@ -1209,6 +1240,8 @@ void RunFrame() {
     CmdView();
   } else if (name == "stats") {
     CmdStats();
+  } else if (name == "touchpad") {
+    CmdTouchPad();
   } else if (name == "hdfont") {
     if (sCmd.args.size() > 1) {
       const std::string arg = Lower(sCmd.args[1]);
