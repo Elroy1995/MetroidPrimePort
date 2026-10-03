@@ -757,6 +757,18 @@ a temporary directory instead of mounting.
   button or trigger, default none, because Aurora maps LB on many pads to L), and
   it can go on a mouse button. Twin stick keeps its own modifier (L, LB or left
   shift) as well.
+- Control presets (Controls tab). Keyboard: **Classic** (the first-run layout)
+  and **Mouse & keyboard** (WASD, E fire, Space jump, left ctrl/C morph, F
+  missile, Q lock on, left alt free look, Tab/M map, 1-4 beams and 5-8 visors
+  through whichever C-stick direction or D-pad button the disc's tweak gives
+  each, arrows on the D-pad too; turns mouse aim on and twin stick off, since
+  twin stick takes the C-stick). Both also reset the mouse buttons and the beam
+  shift keys. Controller: **GameCube** (Aurora's default), **Remastered**
+  (Remastered's Dual Stick: RT fire, LT lock on, bottom face button jump, top
+  morph, RB missile, Back map, right stick click free look, left face button as
+  the pad beam shift; twin stick on), **Modern** and **Southpaw**. Only
+  Remastered sets `shift_pad`; the others clear it. Remastered and Modern are
+  off for a GameCube adapter.
 - Fast Morph (Input tab and pause Options > Controller, persisted as
   `fast_morph`, off by default): morph ball transitions in the style of Metroid
   Prime 4. Morphing takes 0.2 s instead of 1 s and unmorphing is instant; both
@@ -932,8 +944,8 @@ a temporary directory instead of mounting.
   `mouse_x1`, `mouse_x2`: none, a pad button, a D-pad direction or the beam
   shift). By default **left-click fires / holds a charge / releases a charged
   shot** (A), **right-click holds lock-on** (L) and **middle-click fires
-  missiles** (Y); the side buttons are unset. "Restore keyboard defaults"
-  restores them too. They feed the normal PAD/gun input path, preserving charge
+  missiles** (Y); the side buttons are unset. Either keyboard
+  preset restores them too. They feed the normal PAD/gun input path, preserving charge
   timing and weapon cooldowns, and L/R also press the analog trigger fully.
   Keyboard/controller bindings still work alongside them.
   `MP_DISABLE_MOUSE_BUTTONS=1` opts out. Outside playable first person (morph
