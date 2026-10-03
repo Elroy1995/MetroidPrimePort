@@ -1136,6 +1136,12 @@ a temporary directory instead of mounting.
   `MP_ROOM_ENV_AUTO_EXPOSURE=0` (console `roomenv auto on|off`) keeps the
   probe-based exposure. Version 7 adds the hint's sigma and static lerp; older
   files use 32 and 0.5.
+  Opaque PBR models' glow and unlit colour are drawn at the room's static
+  exposure (the hint range at its static lerp), as Remastered's opaque pass
+  does, so they scale by 2^(static EV - frame EV); blended surfaces keep the
+  frame's exposure. `MP_ROOM_ENV_STATIC_EXPOSURE=0` (console `roomenv static
+  on|off`) draws every glow at the frame's exposure; `roomenv info` prints the
+  static EV and the scale.
   `MP_BLOOM=0` (console `roomenv bloom on|off`) drops Remastered's bloom
   (version 5: the room's BloomEffect, else the world's), and `MP_COLOR_GRADE=0`
   (console `roomenv grade on|off`) its colour grade (version 6: the world's and
