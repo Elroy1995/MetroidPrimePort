@@ -10,7 +10,7 @@ constexpr uint32_t GradeLutSize = 33;
 struct Params {
   float threshold;
   float tints[5][3];
-  float tone[3][4];
+  float tone[3][4];   // [0][3]: the exposure to measure the frame at (0: don't)
   uint32_t bloom;     // 0: grade only
   uint32_t gradeA;    // LUT ids from set_grade_lut; 0 is the identity
   uint32_t gradeB;
@@ -22,5 +22,10 @@ static_assert(sizeof(Params) <= 128);
 bool push(const Params& params);
 // Stores a 33^3 RGBA8 LUT (red fastest) under id (non-zero), uploaded before its next use.
 void set_grade_lut(uint32_t id, const uint8_t* rgba);
+// Maps the readbacks of the frame average that the last submit carried.
+void after_submit() noexcept;
+// The radiance (the average undone by its exposure) of the latest frame read back, and a
+// count that goes up with every new one; false before the first.
+bool frame_radiance(float out[3], uint32_t& serial);
 void shutdown();
 } // namespace aurora::gfx::bloom

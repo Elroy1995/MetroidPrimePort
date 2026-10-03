@@ -730,7 +730,10 @@ void end_frame(EndFrameCallback callback) {
 
 uint32_t current_frame() noexcept { return g_frameIndex; }
 
-void after_submit() noexcept { depth_peek::after_submit(); }
+void after_submit() noexcept {
+  depth_peek::after_submit();
+  bloom::after_submit();
+}
 
 void gpu_synchronize() { render_worker::synchronize(); }
 

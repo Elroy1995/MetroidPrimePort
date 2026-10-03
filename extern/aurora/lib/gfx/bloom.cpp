@@ -24,6 +24,9 @@
 // The colour grade follows in the same composite, as Remastered's tonemap shader does it right
 // after its tone curve: a 33^3 LUT over the tone-mapped linear colour, sampled at
 // c * 32/33 + 0.5/33; two LUTs mixed while a grade fades into another.
+// Before either, the frame's average for auto exposure: Remastered takes the smallest mip of
+// its HDR frame; here a 16x16 grid of tiles, each the mean of 8x8 exposed samples, read back
+// a few frames later and divided by the exposure the frame was drawn at.
 namespace aurora::gfx::bloom {
 namespace {
 Module Log("aurora::gfx::bloom");
@@ -33,6 +36,11 @@ constexpr uint32_t Levels = 5;
 constexpr uint32_t PassCount = 1 + (Levels - 1) * 2 + 1;
 constexpr uint64_t SlotSize = 256;
 constexpr auto LevelFormat = wgpu::TextureFormat::RGBA16Float;
+constexpr uint32_t AverageSize = 16;
+constexpr auto AverageFormat = wgpu::TextureFormat::RGBA32Float;
+constexpr uint32_t AverageRowBytes = AverageSize * 16; // a multiple of 256, as copies need
+constexpr uint64_t AverageBytes = uint64_t(AverageRowBytes) * AverageSize;
+constexpr size_t ReadbackCount = 3;
 
 struct Uniform {
   float texel[4];
@@ -129,6 +137,23 @@ fn fs_bright(in: VertexOutput) -> @location(0) vec4f {
   return vec4f(sum / 16.0 * p.tint.rgb, 1.0);
 }
 
+const AverageSize = 16.0;
+
+@fragment
+fn fs_average(in: VertexOutput) -> @location(0) vec4f {
+  let size = vec2i(textureDimensions(src));
+  let tile = floor(in.pos.xy);
+  var sum = vec3f(0.0);
+  for (var y = 0; y < 8; y++) {
+    for (var x = 0; x < 8; x++) {
+      let uv = (tile + (vec2f(f32(x), f32(y)) + 0.5) / 8.0) / AverageSize;
+      let at = min(vec2i(uv * vec2f(size)), size - vec2i(1));
+      sum += exposed(textureLoad(src, at, 0).rgb);
+    }
+  }
+  return vec4f(sum / 64.0, 1.0);
+}
+
 @fragment
 fn fs_down(in: VertexOutput) -> @location(0) vec4f {
   let t = p.texel.xy;
@@ -203,8 +228,54 @@ struct State {
   // Grade LUTs by id, and a 1^3 stand-in bound where a pass draws none.
   std::unordered_map<uint32_t, wgpu::TextureView> luts;
   wgpu::TextureView noLut;
+  // The frame's average, rendered here and copied into a readback buffer.
+  wgpu::RenderPipeline average;
+  wgpu::Texture averageTexture;
+  wgpu::TextureView averageView;
 };
 State g_state;
+
+// Readbacks of the average. Each slot goes Available -> CopySubmitted (encoded) -> MapPending
+// (after the submit) -> Available (mapped and read), the last under g_readMutex.
+enum class SlotState { Available, CopySubmitted, MapPending };
+struct Readback {
+  wgpu::Buffer buffer;
+  SlotState state = SlotState::Available;
+  float exposure = 0.f; // the frame's, to undo
+};
+std::mutex g_readMutex;
+std::array<Readback, ReadbackCount> g_readbacks;
+size_t g_nextReadback = 0;
+float g_radiance[3] = {};
+uint32_t g_radianceSerial = 0;
+
+void complete_readback(size_t index, wgpu::MapAsyncStatus status, wgpu::StringView message) {
+  std::lock_guard lock(g_readMutex);
+  auto& slot = g_readbacks[index];
+  if (status == wgpu::MapAsyncStatus::Success && slot.buffer) {
+    const auto* texels = static_cast<const float*>(slot.buffer.GetConstMappedRange(0, AverageBytes));
+    if (texels != nullptr && slot.exposure > 0.f) {
+      double sum[3] = {};
+      for (uint32_t y = 0; y < AverageSize; ++y) {
+        const float* row = texels + size_t(y) * AverageRowBytes / sizeof(float);
+        for (uint32_t x = 0; x < AverageSize; ++x) {
+          for (int c = 0; c < 3; ++c) {
+            sum[c] += row[x * 4 + c];
+          }
+        }
+      }
+      for (int c = 0; c < 3; ++c) {
+        g_radiance[c] = float(sum[c] / (AverageSize * AverageSize) / slot.exposure);
+      }
+      ++g_radianceSerial;
+    }
+    slot.buffer.Unmap();
+  } else if (status != wgpu::MapAsyncStatus::Success && status != wgpu::MapAsyncStatus::CallbackCancelled &&
+             status != wgpu::MapAsyncStatus::Aborted) {
+    Log.warn("frame average readback failed: {}", message);
+  }
+  slot.state = SlotState::Available;
+}
 
 // LUTs set by the game thread, uploaded by the next encode.
 std::mutex g_pendingMutex;
@@ -351,6 +422,15 @@ void ensure_pipelines() {
                 .dstFactor = wgpu::BlendFactor::One},
   };
   g_state.up = make_pipeline("Bloom Upsample", "fs_up", LevelFormat, 1, &add);
+  g_state.average = make_pipeline("Frame Average", "fs_average", AverageFormat, 1, nullptr);
+  const wgpu::TextureDescriptor averageDescriptor{
+      .label = "Frame Average",
+      .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc,
+      .size = {AverageSize, AverageSize, 1},
+      .format = AverageFormat,
+  };
+  g_state.averageTexture = g_device.CreateTexture(&averageDescriptor);
+  g_state.averageView = g_state.averageTexture.CreateView();
 }
 
 void ensure_targets(uint32_t width, uint32_t height, wgpu::TextureFormat format) {
@@ -423,6 +503,44 @@ void draw(const wgpu::CommandEncoder& cmd, const wgpu::RenderPipeline& pipeline,
   pass.End();
 }
 
+// The frame copy's average into a free readback slot; none free skips this frame.
+void encode_average(const wgpu::CommandEncoder& cmd, float exposure) {
+  wgpu::Buffer buffer;
+  {
+    std::lock_guard lock(g_readMutex);
+    for (size_t i = 0; i < g_readbacks.size() && !buffer; ++i) {
+      const size_t index = (g_nextReadback + i) % g_readbacks.size();
+      auto& slot = g_readbacks[index];
+      if (slot.state != SlotState::Available) {
+        continue;
+      }
+      if (!slot.buffer) {
+        const wgpu::BufferDescriptor descriptor{
+            .label = "Frame Average Readback",
+            .usage = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopyDst,
+            .size = AverageBytes,
+        };
+        slot.buffer = g_device.CreateBuffer(&descriptor);
+      }
+      slot.state = SlotState::CopySubmitted;
+      slot.exposure = exposure;
+      buffer = slot.buffer;
+      g_nextReadback = (index + 1) % g_readbacks.size();
+    }
+  }
+  if (!buffer) {
+    return;
+  }
+  draw(cmd, g_state.average, 0, g_state.frameView, g_state.frameView, g_state.averageView, false);
+  const wgpu::TexelCopyTextureInfo source{.texture = g_state.averageTexture};
+  const wgpu::TexelCopyBufferInfo target{
+      .layout = {.bytesPerRow = AverageRowBytes, .rowsPerImage = AverageSize},
+      .buffer = buffer,
+  };
+  const wgpu::Extent3D size{AverageSize, AverageSize, 1};
+  cmd.CopyTextureToBuffer(&source, &target, &size);
+}
+
 void encode(const EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd, const void* payload, size_t payloadSize,
             void*) {
   if (payloadSize != sizeof(Params)) {
@@ -445,7 +563,12 @@ void encode(const EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd, cons
   const auto lutA = find_lut(params.gradeA);
   const auto lutB = find_lut(params.gradeB);
   const bool bloom = params.bloom != 0;
-  if (!bloom && !lutA && !lutB) {
+  // tone[0][3] carries the exposure to measure at; the curve has no use for it.
+  const float exposure = params.tone[0][3];
+  params.tone[0][3] = 0.f;
+  const bool measure = exposure > 0.f && params.tone[1][0] > 0.f;
+  const bool post = bloom || lutA || lutB;
+  if (!post && !measure) {
     return;
   }
   if (!g_state.composite || g_state.compositeFormat != format || g_state.compositeSamples != samples) {
@@ -489,6 +612,12 @@ void encode(const EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd, cons
   const wgpu::Extent3D copySize{width, height, 1};
   cmd.CopyTextureToTexture(&copySource, &copyTarget, &copySize);
 
+  if (measure) {
+    encode_average(cmd, exposure);
+  }
+  if (!post) {
+    return;
+  }
   slot = 0;
   auto& levels = g_state.levels;
   if (bloom) {
@@ -526,7 +655,45 @@ void set_grade_lut(uint32_t id, const uint8_t* rgba) {
   g_pendingLuts[id].assign(rgba, rgba + size_t(GradeLutSize) * GradeLutSize * GradeLutSize * 4);
 }
 
+void after_submit() noexcept {
+  std::array<wgpu::Buffer, ReadbackCount> maps;
+  {
+    std::lock_guard lock(g_readMutex);
+    for (size_t i = 0; i < g_readbacks.size(); ++i) {
+      if (g_readbacks[i].state == SlotState::CopySubmitted) {
+        g_readbacks[i].state = SlotState::MapPending;
+        maps[i] = g_readbacks[i].buffer;
+      }
+    }
+  }
+  for (size_t i = 0; i < maps.size(); ++i) {
+    if (maps[i]) {
+      maps[i].MapAsync(wgpu::MapMode::Read, 0, AverageBytes, wgpu::CallbackMode::AllowSpontaneous,
+                       [i](wgpu::MapAsyncStatus status, wgpu::StringView message) {
+                         complete_readback(i, status, message);
+                       });
+    }
+  }
+}
+
+bool frame_radiance(float out[3], uint32_t& serial) {
+  std::lock_guard lock(g_readMutex);
+  serial = g_radianceSerial;
+  if (g_radianceSerial == 0) {
+    return false;
+  }
+  std::memcpy(out, g_radiance, sizeof(g_radiance));
+  return true;
+}
+
 void shutdown() {
+  {
+    std::lock_guard lock(g_readMutex);
+    for (auto& slot : g_readbacks) {
+      slot = {};
+    }
+    g_radianceSerial = 0;
+  }
   const auto task = g_state.task;
   g_state = {};
   {

@@ -98,10 +98,16 @@ void GXSetPBRTone(const f32 rows[3][4]);
 // could not be recorded. Then the colour grade: the LUTs gradeA and gradeB (ids from
 // GXPortColorGradeLut, 0 = none) over the tone-mapped colour, mixed by gradeWeight (1 = B).
 // Without bloom (bloom false) only the grade runs, and nothing when there is none either.
+// Before both, with an `exposure` above 0 (and a tone curve), the frame is averaged for auto
+// exposure: the mean exposed level, undone by the curve and divided by `exposure`, comes
+// back through GXPortFrameRadiance a few frames later.
 GXBool GXPortPostProcess(GXBool bloom, f32 threshold, const f32 tints[5][3], const f32 tone[3][4], u32 gradeA,
-                         u32 gradeB, f32 gradeWeight);
+                         u32 gradeB, f32 gradeWeight, f32 exposure);
 // Stores a 33x33x33 RGBA8 colour grade LUT (red fastest) under a non-zero id.
 void GXPortColorGradeLut(u32 id, const u8* rgba);
+// The average radiance (linear rgb) of the latest frame measured by GXPortPostProcess, and a
+// count that goes up with each new one. False before the first.
+GXBool GXPortFrameRadiance(f32 out[3], u32* serial);
 
 void GXColor4f32(float r, float g, float b, float a);
 

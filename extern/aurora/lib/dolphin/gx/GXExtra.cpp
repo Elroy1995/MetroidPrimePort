@@ -8,7 +8,7 @@
 
 extern "C" {
 GXBool GXPortPostProcess(GXBool bloom, f32 threshold, const f32 tints[5][3], const f32 tone[3][4], u32 gradeA,
-                         u32 gradeB, f32 gradeWeight) {
+                         u32 gradeB, f32 gradeWeight, f32 exposure) {
   aurora::gfx::bloom::Params params{};
   params.bloom = bloom ? 1 : 0;
   params.threshold = threshold;
@@ -21,13 +21,24 @@ GXBool GXPortPostProcess(GXBool bloom, f32 threshold, const f32 tints[5][3], con
   params.gradeA = gradeA;
   params.gradeB = gradeB;
   params.gradeWeight = gradeWeight;
-  if (!params.bloom && gradeA == 0 && gradeB == 0) {
+  // The curve's toe has no use for row 0's w; it carries the exposure (see bloom.hpp).
+  params.tone[0][3] = tone != nullptr && exposure > 0.f ? exposure : 0.f;
+  if (!params.bloom && gradeA == 0 && gradeB == 0 && params.tone[0][3] == 0.f) {
     return true;
   }
   return aurora::gfx::bloom::push(params);
 }
 
 void GXPortColorGradeLut(u32 id, const u8* rgba) { aurora::gfx::bloom::set_grade_lut(id, rgba); }
+
+GXBool GXPortFrameRadiance(f32 out[3], u32* serial) {
+  uint32_t count = 0;
+  const bool ok = aurora::gfx::bloom::frame_radiance(out, count);
+  if (serial != nullptr) {
+    *serial = count;
+  }
+  return ok;
+}
 
 void GXDestroyTexObj(GXTexObj* obj_) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
