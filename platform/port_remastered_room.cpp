@@ -2116,6 +2116,7 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
     trans[i] = m.a[size_t(i)][3];
   }
 
+  const SceneryScripts scripts = MatchScripts(r.room, *m.area);
   std::vector<uint8_t> probes;
   size_t probeCount = 0;
   std::vector<std::vector<uint8_t>> cubes;
@@ -2229,7 +2230,9 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
       return p != f.end() && p->second.size >= 4 ? LeFloat(r.room.Bytes(p->second)) : fallback;
     };
     const auto priority = f.find(kPropProbePriority);
-    PutLe32(probes, uint32_t(c->layer));
+    // The retail layer its own layer is drawn on (MatchScripts), as for colour grades.
+    const auto layer = scripts.layer.find(c->entity);
+    PutLe32(probes, uint32_t(layer != scripts.layer.end() ? int32_t(layer->second) : -1));
     PutLe32(probes, uint32_t(index[txtrId]));
     PutFloat(probes, probeScale);
     PutFloat(probes, prop(kPropProbePadding, 1.0f));
@@ -2251,7 +2254,7 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   }
 
   std::vector<uint8_t> out = {'M', 'P', 'E', 'V'};
-  PutLe32(out, 8);
+  PutLe32(out, 9);
   float tone[5];
   std::copy(tonemap, tonemap + 5, tone);
   Tonemap(r, tone);
