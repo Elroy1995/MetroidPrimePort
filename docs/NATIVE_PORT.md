@@ -93,7 +93,19 @@ is used only when:
   executable's folder has none. Move its contents next to the executable to make
   that install portable.
 
-Android always uses the app's own storage. `MP_USER_PATH` overrides the folder
+On Android the folder starts in the app's own storage, which other apps and file
+managers cannot reach. F1 > Extras > Data folder moves it to
+`/storage/emulated/0/MetroidPrime/` (the shared storage root): it asks for "All
+files access" (Android 11+; storage permission on 9/10), copies saves, settings,
+mods, save states, the texture pack and the copied disc there with a progress
+bar (built-in textures and the pipeline cache stay behind), then restarts the
+game. If the shared folder already holds data, it offers to use that data or to
+copy over it. The choice is kept in `data_folder.txt` in app storage; "Move
+back to app storage" reverses it, and "Delete the old copy" frees the space the
+old folder still takes. If access is revoked later, the game starts from app
+storage and says so, with buttons to grant access again or stay there.
+
+`MP_USER_PATH` overrides the folder
 and `MP_CACHE_PATH` the caches alone; use separate directories for automated
 testing so runs do not share normal saves/settings (the memory card stays with
 the executable either way). Screenshots are written to `screenshots/` in the
@@ -331,7 +343,7 @@ in the Flatpak, `%APPDATA%\Metroid Prime\` on Windows), or wherever
 `MP_USER_TEXTURES` points, so updates never touch it; the overlay's Render page
 has a Reload button. On Android, Render > Texture pack > Choose texture pack
 folder opens the system folder picker and copies the folder's `.png`/`.dds`
-files into app storage (pick it again after changing it; Remove deletes the
+files into the data folder (pick it again after changing it; Remove deletes the
 copy). The copy lands in `user_textures.new` and is swapped in on the next
 frame, or at the next start if the app closed first. Priorities: built-in 0,
 user pack 1, binding icons 2, so a remapped action still shows its binding.
@@ -512,7 +524,8 @@ checkbox per mod (`mods_disabled`, `/`-separated names); both take effect on
 the next start. `tools/extract_textures.py`'s `disc_files`/`pak_resources` get
 a resource's original bytes to edit. Checked with a `0552A456.STRG` (the file
 select's "New Game") read from the disc and from a whole-file `MiscData.pak`
-mod. On Android the folder is in app storage with no picker yet.
+mod. On Android `mods/` is in the data folder; move that to shared storage
+(F1 > Extras > Data folder) to add mods with a file manager.
 
 #### Reloading without a restart
 

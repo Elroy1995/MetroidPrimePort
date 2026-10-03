@@ -143,6 +143,7 @@ set(MP_PORT_SOURCES
     platform/port_skip_cutscenes.cpp
     platform/port_skip_cutscenes_ops.cpp
     platform/port_gci.cpp
+    platform/port_data_folder.cpp
     platform/port_mods.cpp
     platform/port_mods_pak.cpp
     platform/port_importers.cpp
@@ -423,6 +424,12 @@ if(MP_BUILD_TESTS)
     add_test(NAME port_input_map_tests COMMAND port_input_map_tests)
     set_tests_properties(port_input_map_tests PROPERTIES TIMEOUT 15 LABELS port)
     aurora_copy_runtime_dlls(port_input_map_tests)
+    add_executable(port_data_folder_tests tests/port_data_folder.cpp platform/port_data_folder.cpp)
+    target_include_directories(port_data_folder_tests PRIVATE platform/include)
+    target_link_libraries(port_data_folder_tests PRIVATE ${AURORA_SDL3_TARGET})
+    add_test(NAME port_data_folder_tests COMMAND port_data_folder_tests "${CMAKE_CURRENT_BINARY_DIR}/data-folder-test")
+    set_tests_properties(port_data_folder_tests PROPERTIES TIMEOUT 15 LABELS port)
+    aurora_copy_runtime_dlls(port_data_folder_tests)
     add_executable(port_discord_tests tests/port_discord.cpp platform/port_json.cpp)
     target_include_directories(port_discord_tests PRIVATE platform/include)
     target_compile_definitions(port_discord_tests PRIVATE TARGET_PC)

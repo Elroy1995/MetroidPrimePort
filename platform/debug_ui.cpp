@@ -11,6 +11,7 @@
 #include "port_paths.h"
 #include "port_apclient.h"
 #include "port_controls.h"
+#include "port_data_folder.h"
 #include "port_gci.h"
 #include "port_mods.h"
 #include "port_importers.h"
@@ -3422,6 +3423,9 @@ void DrawExtrasTab() {
         "Application ID here.");
   }
 
+#if defined(__ANDROID__)
+  PortDataFolder::DrawPanel();
+#endif
   DrawMemoryCard();
   DrawMods();
 }
@@ -3452,9 +3456,12 @@ void PickTexturePack() {
     return;
   }
   jclass cls = env->GetObjectClass(activity);
-  jmethodID method = env->GetMethodID(cls, "pickTexturePack", "()V");
+  jmethodID method = env->GetMethodID(cls, "pickTexturePack", "(Ljava/lang/String;)V");
   if (method != nullptr) {
-    env->CallVoidMethod(activity, method);
+    // The pack is copied into the data folder, wherever that is.
+    jstring folder = env->NewStringUTF(PortPaths::UserFolder().c_str());
+    env->CallVoidMethod(activity, method, folder);
+    env->DeleteLocalRef(folder);
   }
   if (env->ExceptionCheck()) {
     env->ExceptionClear();
@@ -3578,7 +3585,7 @@ void DrawRenderTab() {
 
 // The user's texture pack, layered over the built-in set (see port_textures.h).
 // On Android the folder is picked with the system folder picker and copied into
-// app storage; on the desktop the player fills the folder themselves.
+// the data folder; on the desktop the player fills the folder themselves.
 void DrawTexturePack() {
   ImGui::SeparatorText("Texture pack");
   const char* root = PortTextures::UserRoot();
@@ -3606,7 +3613,7 @@ void DrawTexturePack() {
     SetTexturePackStatus("Texture pack removed.");
   }
   ImGui::TextWrapped(
-      "The folder is copied into the app, so it keeps working if the original is "
+      "The folder is copied into the data folder, so it keeps working if the original is "
       "moved. Pick it again after changing it.");
 #else
   ImGui::TextWrapped("Folder: %s", root);

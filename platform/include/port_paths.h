@@ -6,7 +6,9 @@
 // The folder is the one holding the executable, so a copied build carries its
 // data with it. In order:
 //   1. MP_USER_PATH, when set.
-//   2. Android: the app's own storage (the executable is inside the APK).
+//   2. Android: the folder in shared storage the player moved the data to
+//      (F1 > Extras > Data folder, port_data_folder.h) when it can be written
+//      to, else the app's private storage (the executable is inside the APK).
 //   3. The executable's folder - for an AppImage, the folder the .AppImage file
 //      is in - when it can be written to. One exception: an install from
 //      before this, whose settings are still in the per-user folder and which
@@ -56,6 +58,49 @@ inline std::string PrefFolder() {
   return dir;
 }
 
+inline bool Writable(const std::string& dir) {
+  const std::filesystem::path probe = FromUtf8(dir) / ".port_write_test";
+  {
+    std::ofstream file(probe, std::ios::binary);
+    if (!file) {
+      return false;
+    }
+  }
+  std::error_code ec;
+  std::filesystem::remove(probe, ec);
+  return true;
+}
+
+#if defined(__ANDROID__)
+// The app's private storage (getFilesDir). The built-in textures and the
+// initial pipeline cache are always here, whatever folder the data is in.
+inline std::string PrivateFolder() {
+  return WithSeparator(PrefFolder());
+}
+
+// Names the folder the data was moved to (port_data_folder.h); absent while
+// the data is in private storage.
+inline std::string MarkerPath() {
+  const std::string priv = PrivateFolder();
+  return priv.empty() ? std::string() : priv + "data_folder.txt";
+}
+
+inline std::string ReadMarker() {
+  const std::string marker = MarkerPath();
+  if (marker.empty()) {
+    return {};
+  }
+  std::ifstream file(FromUtf8(marker), std::ios::binary);
+  std::string dir;
+  std::getline(file, dir);
+  while (!dir.empty() && (dir.back() == '\r' || dir.back() == '\n' || dir.back() == ' ')) {
+    dir.pop_back();
+  }
+  // Only an absolute path: anything else would land in the working directory.
+  return dir.empty() || dir[0] != '/' ? std::string() : WithSeparator(dir);
+}
+#endif
+
 #if !defined(__ANDROID__)
 // The per-user folder SDL_GetPrefPath would answer with, worked out by hand
 // because asking SDL creates it, and a portable copy should leave no trace.
@@ -91,19 +136,6 @@ inline std::string ExecutableFolder() {
   const char* base = SDL_GetBasePath();
   return base != nullptr ? WithSeparator(base) : std::string();
 }
-
-inline bool Writable(const std::string& dir) {
-  const std::filesystem::path probe = FromUtf8(dir) / ".port_write_test";
-  {
-    std::ofstream file(probe, std::ios::binary);
-    if (!file) {
-      return false;
-    }
-  }
-  std::error_code ec;
-  std::filesystem::remove(probe, ec);
-  return true;
-}
 #endif
 
 inline std::string Resolve() {
@@ -111,7 +143,17 @@ inline std::string Resolve() {
     return WithSeparator(env);
   }
 #if defined(__ANDROID__)
-  return WithSeparator(PrefFolder());
+  // A folder in shared storage the player moved the data to, as long as it
+  // can still be written: without the storage permission (revoked, or a
+  // reinstall) the private folder is used, and UnavailableFolder says so.
+  if (const std::string chosen = ReadMarker(); !chosen.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(FromUtf8(chosen), ec);
+    if (Writable(chosen)) {
+      return chosen;
+    }
+  }
+  return PrivateFolder();
 #else
   const std::string exe = ExecutableFolder();
   if (!exe.empty() && Writable(exe)) {
@@ -150,14 +192,27 @@ inline std::string CardFolder() {
   return UserFolder();
 }
 
-// True when the data is kept next to the executable.
+// True when the data is kept next to the executable or, on Android, outside
+// the app's private storage.
 inline bool IsPortable() {
-#if defined(__ANDROID__)
-  return false;
-#else
   const std::string& folder = UserFolder();
+#if defined(__ANDROID__)
+  return !folder.empty() && folder != detail::PrivateFolder();
+#else
   return !folder.empty() && folder == detail::ExecutableFolder();
 #endif
 }
+
+#if defined(__ANDROID__)
+// The data folder the player chose but this run could not use (no storage
+// permission), or empty.
+inline std::string UnavailableFolder() {
+  const std::string chosen = detail::ReadMarker();
+  if (chosen.empty() || chosen == UserFolder() || std::getenv("MP_USER_PATH") != nullptr) {
+    return {};
+  }
+  return chosen;
+}
+#endif
 
 } // namespace PortPaths

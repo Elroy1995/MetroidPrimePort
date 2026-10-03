@@ -152,18 +152,27 @@ const char* ResolveDiscPath(int argc, char** argv) {
             // A URI from before the copy existed. Prefer the local copy, which
             // needs no permission grant; fall back to the URI if it is not there
             // yet, since the grant may still be live.
-            char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime");
-            if (pref != nullptr) {
-                const std::string local = (std::filesystem::path(pref) / "disc.iso").string();
-                SDL_free(pref);
-                std::error_code ec;
-                static const std::string sLocal =
-                    std::filesystem::exists(local, ec) ? local : std::string();
-                if (!sLocal.empty()) {
-                    return sLocal.c_str();
-                }
+            const std::string local = PortPaths::UserFolder() + "disc.iso";
+            std::error_code ec;
+            static const std::string sLocal =
+                !PortPaths::UserFolder().empty() && std::filesystem::exists(local, ec) ? local : std::string();
+            if (!sLocal.empty()) {
+                return sLocal.c_str();
             }
             return saved;
+        }
+        // The copy made from a picked file sits in the data folder, which may
+        // have moved since (port_data_folder.h): prefer the copy in the folder
+        // in use, so deleting the old one loses nothing.
+        if (const char* name = std::strrchr(saved, '/'); name != nullptr && std::strcmp(name, "/disc.iso") == 0) {
+            const std::string moved = PortPaths::UserFolder() + "disc.iso";
+            std::error_code ec;
+            static const std::string sMoved =
+                !PortPaths::UserFolder().empty() && moved != saved && std::filesystem::exists(moved, ec) ? moved
+                                                                                                         : std::string();
+            if (!sMoved.empty()) {
+                return sMoved.c_str();
+            }
         }
 #endif
         // The error_code overload: the throwing one would end the program on a
@@ -214,17 +223,16 @@ void ReportDiscOpenFailure(const char* path) {
 //
 // Returns the local copy's path, or an empty string if the copy failed.
 std::string CopyDiscFromContentUri(const std::string& uri) {
-    char* pref = SDL_GetPrefPath(nullptr, "Metroid Prime");
-    if (pref == nullptr) {
-        PortLog::Write( "metroid_prime_port: no pref path to copy the disc into\n");
+    const std::string& folder = PortPaths::UserFolder();
+    if (folder.empty()) {
+        PortLog::Write( "metroid_prime_port: no data folder to copy the disc into\n");
         return {};
     }
-    const std::filesystem::path target = std::filesystem::path(pref) / "disc.iso";
+    const std::filesystem::path target = std::filesystem::path(folder) / "disc.iso";
     // Copied under another name and renamed when complete: a copy killed part
     // way (the app closed during a multi-minute copy) must not leave a
     // truncated disc.iso, which ResolveDiscPath would prefer on every launch.
-    const std::filesystem::path partial = std::filesystem::path(pref) / "disc.iso.part";
-    SDL_free(pref);
+    const std::filesystem::path partial = std::filesystem::path(folder) / "disc.iso.part";
 
     SDL_IOStream* in = SDL_IOFromFile(uri.c_str(), "rb");
     if (in == nullptr) {
@@ -517,9 +525,20 @@ int main(int argc, char** argv) {
     // executable when that folder can be written to (port_paths.h).
     const std::string& userFolder = PortPaths::UserFolder();
     const char* cacheEnv = std::getenv("MP_CACHE_PATH");
-    const std::string cacheFolder = cacheEnv != nullptr && cacheEnv[0] != '\0' ? cacheEnv : userFolder;
+#if defined(__ANDROID__)
+    // The shader caches stay in app storage when the data moves to shared
+    // storage: they are disposable, and SQLite is slow on the shared mount.
+    const std::string defaultCache = PortPaths::detail::PrivateFolder();
+#else
+    const std::string& defaultCache = userFolder;
+#endif
+    const std::string cacheFolder = cacheEnv != nullptr && cacheEnv[0] != '\0' ? cacheEnv : defaultCache;
     PortLog::Write("port: user folder %s%s\n", userFolder.empty() ? "(none)" : userFolder.c_str(),
+#if defined(__ANDROID__)
+                   PortPaths::IsPortable() ? " (shared storage)" : "");
+#else
                    PortPaths::IsPortable() ? " (next to the executable)" : "");
+#endif
     AuroraConfig config = {
         .appName = "Metroid Prime",
         .userPath = userFolder.empty() ? nullptr : userFolder.c_str(),
