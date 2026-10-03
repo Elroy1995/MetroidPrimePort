@@ -261,12 +261,27 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     return;
   }
 
-  material.SetCurrent(modelFlags, surface, *this);
 #ifdef TARGET_PC
+  // Port: an alpha blend at full, untinted alpha draws as opaque, so a PBR material takes it
+  // (the arm cannon is always drawn alpha blended for its fade). The PBR shader's alpha is
+  // the base map's, which a blend would show through; TEV materials keep the retail path.
+  const CModelFlags opaqueFlags(CModelFlags::kT_Opaque, static_cast< uchar >(modelFlags.GetShaderSet()),
+                                static_cast< CModelFlags::EFlags >(modelFlags.GetOtherFlags()),
+                                modelFlags.GetColorRef());
+  const bool solidBlend = modelFlags.GetTrans() == CModelFlags::kT_Blend &&
+                          modelFlags.GetColorRef() == CColor::White() &&
+                          material.IsFlagSet(kStateFlag_PortPBR) &&
+                          CCubeMaterial::PortPBRAllowed(opaqueFlags);
+  const CModelFlags& drawFlags = solidBlend ? opaqueFlags : modelFlags;
+  material.SetCurrent(drawFlags, surface, *this);
   // Port: PBR mod materials. The fallback TEV set above stays valid for the
   // paths PortPBRAllowed rejects.
   const bool pbr =
-      material.IsFlagSet(kStateFlag_PortPBR) && CCubeMaterial::PortPBRAllowed(modelFlags);
+      material.IsFlagSet(kStateFlag_PortPBR) && CCubeMaterial::PortPBRAllowed(drawFlags);
+#else
+  material.SetCurrent(modelFlags, surface, *this);
+#endif
+#ifdef TARGET_PC
   if (pbr) {
     // The probe is in world space with Y and Z swapped (world Z-up to cube Y-up), and the
     // shader's reflection vector is in view space: right, up, -forward.

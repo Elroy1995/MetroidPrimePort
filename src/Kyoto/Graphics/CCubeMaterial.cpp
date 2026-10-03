@@ -886,7 +886,7 @@ uint CCubeMaterial::sPortPBRDraws = 0;
 CCubeMaterial::EPortPBRThermal CCubeMaterial::sPortPBRThermal = CCubeMaterial::kPT_None;
 
 bool CCubeMaterial::PortPBRAllowed(const CModelFlags& flags) {
-  return !sbRenderModelBlack && !sbRenderModelShadow &&
+  return !sbRenderModelBlack &&
          (!CCubeRenderer::That()->GetThermal() || sPortPBRThermal != kPT_None) &&
          flags.GetTrans() == CModelFlags::kT_Opaque;
 }

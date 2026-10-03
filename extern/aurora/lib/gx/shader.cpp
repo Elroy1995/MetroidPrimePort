@@ -878,9 +878,9 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
 // TEV must reference all four; a missing map gets a neutral default. The tangent frame
 // comes from screen-space derivatives, so no tangent attribute is needed. Maths is done
 // on linearised colours and converted back, since the rest of the pipeline is gamma.
-// Channel 1's lights and a vertex-sourced ambient are not used (vertex ambient falls back
-// to a constant). With channel 0 unlit there are no lights to sum and the channel's material
-// colour, which is all an unlit surface shows, is the ambient; the game draws a model that
+// Channel 1's lights (bar the model shadow's, below) and a vertex-sourced ambient are not
+// used (vertex ambient falls back to a constant). With channel 0 unlit there are no lights
+// to sum and the channel's material colour, which is all an unlit surface shows, is the ambient; the game draws a model that
 // way when no light reaches it, and a room lit by an ambient volume always. A material
 // without channel 0 keeps its TEV result. A vertex colour, where the vertex format has
 // one, multiplies the diffuse albedo (not the specular) as a linear value, and its alpha
@@ -892,8 +892,15 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     return {};
   }
   const bool lit = info.lightingEnabled && cc.lightingEnabled;
+  // The game's projected shadow (CCubeMaterial's model shadow) takes the first stage:
+  // channel 1, lit by the shadow-casting light alone, times the shadow map. That light
+  // is then summed with channel 0's lights, scaled by the map's sample.
+  const bool shadowed = config.tevStageCount > 2 && config.tevStages[0].channelId == GX_COLOR1A1 &&
+                        config.tevStages[0].texMapId != GX_TEXMAP_NULL &&
+                        config.tevStages[0].texCoordId != GX_TEXCOORD_NULL &&
+                        config.colorChannels[GX_COLOR1].lightingEnabled;
   std::array<int, 7> mapStage{-1, -1, -1, -1, -1, -1, -1};
-  for (int i = 0; i < config.tevStageCount; ++i) {
+  for (int i = shadowed ? 1 : 0; i < config.tevStageCount; ++i) {
     const auto& stage = config.tevStages[i];
     const u32 map = underlying(stage.texMapId);
     if (map < mapStage.size() && mapStage[map] == -1 && uses_texture_sample(stage) &&
@@ -1190,7 +1197,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       var pbr_lsum = vec3f(0.0);
       // pbr-lights-begin
       for (var i = 0u; i < {4}u; i++) {{
-          if ((ubuf.lightState0 & (1u << i)) == 0u) {{ continue; }}
+          if (({15} & (1u << i)) == 0u) {{ continue; }}
           let light = ubuf.lights[i];
           var ldir = light.pos - in.pbr_pos;
           let dist2 = dot(ldir, ldir);
@@ -1207,7 +1214,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           let spec = d * vis * f;
           // GX lights are unnormalised (colour * N.L is full brightness), so Lambert has no
           // 1/pi and the specular lobe is scaled by pi to match.
-          let rad = pow(max(light.color.rgb, vec3f(0.0)), vec3f(2.2)) * attn;
+          let rad = pow(max(light.color.rgb, vec3f(0.0)), vec3f(2.2)) * attn{16};
           pbr_lo += (pbr_diff * pbr_ao + spec * pbr_pi) * rad * nl;
           // Stand-in environment: the surroundings as a soft hemisphere lit by this light,
           // seen along the reflection vector.
@@ -1381,7 +1388,9 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       }}
     }})""",
                      base, orm, sampled(3, "vec4f(0.0)"), normal, GX::MaxLights, attn, amb,
-                     gfx::probe::MipCount - 1, tint, tintAlpha, layer, baseRgb, layered ? "1.0" : "prev.a", kinds, liquid);
+                     gfx::probe::MipCount - 1, tint, tintAlpha, layer, baseRgb, layered ? "1.0" : "prev.a", kinds, liquid,
+                     shadowed ? "(ubuf.lightState0 | ubuf.lightState1)" : "ubuf.lightState0",
+                     shadowed ? " * select(vec3f(1.0), sampled0.rgb, (ubuf.lightState0 & (1u << i)) == 0u)" : "");
   if (!lit) {
     // The uniform block has no lights then.
     const size_t begin = source.find("// pbr-lights-begin");
