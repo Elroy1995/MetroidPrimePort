@@ -221,6 +221,10 @@ void SetTwinStick(bool enabled);
 // 0 when twin-stick is off (the game input still carries it then).
 float TwinStickRightY();
 void SetTwinStickRightY(float y);
+// The bound beam shift is held in game this poll (no overlay, window focused),
+// which springs the Spring Ball in morph ball, as X does in Remastered.
+bool BeamShiftHeld();
+void SetBeamShiftHeld(bool held);
 // Spring Ball (C-stick up in morph ball, as in Metroid Prime Trilogy) once the
 // Morph Ball Bombs are held. A connected Archipelago seed overrides it.
 bool SpringBall();
@@ -228,6 +232,10 @@ void SetSpringBall(bool enabled);
 // Spring Ball also on the jump button (a tap, with the Boost Ball), on by default.
 bool SpringBallJump();
 void SetSpringBallJump(bool enabled);
+// The Scan and X-Ray visors trade D-pad directions (Remastered's Dual Sticks
+// layout), off by default.
+bool SwapScanXray();
+void SetSwapScanXray(bool enabled);
 // The beam shift's bindings (PortControls::ShiftHeld): slots 0 and 1 are keys
 // or mouse buttons (scancode or PAD_KEY_MOUSE_*), slot 2 a controller button
 // (SDL gamepad button or PAD_NATIVE_BUTTON_TRIGGER_*); -1 for none.

@@ -135,6 +135,7 @@ void CDolphinController::ReadDevices() {
     }
   }
   memcpy(x4_status, status, sizeof(status));
+  PortDebug::SetBeamShiftHeld(shiftHeld && inputFocused && !PortDebug::Visible());
 
   // Twin-stick: feed the right stick into the first-person aim and consume it,
   // so it does not also drive the game's own free-look.
@@ -168,8 +169,10 @@ void CDolphinController::ReadDevices() {
   }
 
   // Start+Back is the debug overlay chord; do not also pause the game with it.
+  // Either alone may be bound to Start (the Remastered preset pauses on Back).
   if (SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0)) {
-    if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_BACK)) {
+    if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_BACK) &&
+        SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_START)) {
       x4_status[0].button &= ~PAD_BUTTON_START;
     }
   }

@@ -764,11 +764,17 @@ a temporary directory instead of mounting.
   each, arrows on the D-pad too; turns mouse aim on and twin stick off, since
   twin stick takes the C-stick). Both also reset the mouse buttons and the beam
   shift keys. Controller: **GameCube** (Aurora's default), **Remastered**
-  (Remastered's Dual Stick: RT fire, LT lock on, bottom face button jump, top
-  morph, RB missile, Back map, right stick click free look, left face button as
-  the pad beam shift; twin stick on), **Modern** and **Southpaw**. Only
-  Remastered sets `shift_pad`; the others clear it. Remastered and Modern are
-  off for a GameCube adapter.
+  (Remastered's Dual Sticks: RT fire, LT lock on, bottom face button jump, left
+  morph, RB missile, Start map, Back pause, right stick click free look, top
+  face button as the pad beam shift (which springs in morph ball, as any bound
+  beam shift does), Scan and X-Ray swapped; twin stick on; the
+  right face button doesn't fire too, since a PAD button takes one pad button),
+  **Modern** and **Southpaw**. Only Remastered sets `shift_pad` and
+  `swap_scan_xray`; the others clear them. Remastered and Modern are off for a
+  GameCube adapter.
+- Swap the Scan and X-Ray visor buttons (Input tab, persisted as
+  `swap_scan_xray`, off by default): each visor takes the other's D-pad
+  direction, as in Remastered (D-pad right Scan, left X-Ray).
 - Fast Morph (Input tab and pause Options > Controller, persisted as
   `fast_morph`, off by default): morph ball transitions in the style of Metroid
   Prime 4. Morphing takes 0.2 s instead of 1 s and unmorphing is instant; both

@@ -434,6 +434,7 @@ namespace {
 float sSpringBallCooldown = 0.f;
 // Spring Ball on the jump button too (the spring_ball_jump setting).
 PortInputMap::SpringTap sSpringTap;
+bool sSpringShiftHeld = true;
 
 bool SpringBallUnlocked(const CStateManager& mgr) {
   const bool bombs = mgr.GetPlayerState()->HasPowerUp(CPlayerState::kIT_MorphBallBombs);
@@ -457,12 +458,17 @@ void CMorphBall::ComputeBallMovement(const CFinalInput& input, CStateManager& mg
   // when that option is on, counts as well. So does the jump button, which is
   // also the Boost Ball's charge: once that is owned only a tap shorter than
   // the boost's minimum charge springs, on release, so a tap never does both.
+  // Pressing the beam shift springs too (beams don't change in morph ball), as
+  // the same button, X, does in Remastered's Dual Sticks layout.
   bool jumpSpring = false;
   if (input.Time() > 0.f) {
     const bool jumpHeld = ControlMapper::GetDigitalInput(ControlMapper::kC_JumpOrBoost, input);
     const bool boost = mgr.GetPlayerState()->HasPowerUp(CPlayerState::kIT_BoostBall);
     jumpSpring = sSpringTap.Update(jumpHeld, boost, dt, gpTweakBall->GetBoostBallMinChargeTime() - dt) &&
                  PortDebug::SpringBallJump();
+    const bool shiftHeld = PortDebug::BeamShiftHeld();
+    jumpSpring = jumpSpring || (shiftHeld && !sSpringShiftHeld);
+    sSpringShiftHeld = shiftHeld;
   } else {
     sSpringTap.Reset();
   }
@@ -1416,6 +1422,8 @@ void CMorphBall::EnterMorphBallState(CStateManager& mgr) {
 #ifdef TARGET_PC
   sSpringBallCooldown = 0.f;
   sSpringTap.Reset();
+  // A shift still held from before needs a fresh press.
+  sSpringShiftHeld = true;
 #endif
 }
 

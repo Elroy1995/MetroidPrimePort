@@ -775,27 +775,32 @@ void ApplyPadPreset(EPadPreset preset) {
   // back on. Only Remastered has a pad button for the beam shift.
   PortDebug::SetTwinStick(false);
   PortDebug::SetShiftBinding(2, -1);
+  PortDebug::SetSwapScanXray(false);
   switch (preset) {
   case EPadPreset::kGameCube:
     break;
   case EPadPreset::kRemastered: {
-    // Remastered's Dual Stick scheme: fire on RT, lock on with LT (the default
-    // L), missile on RB, jump on the bottom face button, morph on the top one,
-    // map on Back, free look on the right stick click, and the left face
-    // button held with the D-pad picks beams.
+    // Remastered's Dual Sticks scheme: fire on RT, lock on with LT (the default
+    // L), missile on RB, jump on the bottom face button, morph on the left one,
+    // map on Start, pause on Back, and the top face button held with the D-pad
+    // picks beams. Remastered also fires with the right face button, but a PAD
+    // button takes one pad button, so that one stays free. Free look (no
+    // Remastered equivalent) goes on the right stick click.
     const PADButtonMapping buttons[] = {
         {PAD_NATIVE_BUTTON_TRIGGER_RIGHT, PAD_BUTTON_A},
         {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_B},
-        {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_X},
+        {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
         {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_BUTTON_Y},
-        {SDL_GAMEPAD_BUTTON_BACK, PAD_TRIGGER_Z},
+        {SDL_GAMEPAD_BUTTON_START, PAD_TRIGGER_Z},
+        {SDL_GAMEPAD_BUTTON_BACK, PAD_BUTTON_START},
         {SDL_GAMEPAD_BUTTON_RIGHT_STICK, PAD_TRIGGER_R},
     };
     for (const PADButtonMapping& mapping : buttons) {
       PADSetButtonMapping(kControlPort, mapping);
     }
     PADSetAxisMapping(kControlPort, {{-1, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_RIGHT_STICK, PAD_AXIS_TRIGGER_R});
-    PortDebug::SetShiftBinding(2, SDL_GAMEPAD_BUTTON_WEST);
+    PortDebug::SetShiftBinding(2, SDL_GAMEPAD_BUTTON_NORTH);
+    PortDebug::SetSwapScanXray(true);
     PortDebug::SetTwinStick(true);
     break;
   }
@@ -995,8 +1000,8 @@ void ApplyKeyPreset(EKeyPreset preset) {
         {ControlMapper::kC_PlasmaBeam, ControlMapper::kFL_RightStickLeft, SDL_SCANCODE_4},
         {ControlMapper::kC_NoVisor, ControlMapper::kFL_DPadUp, SDL_SCANCODE_5},
         {ControlMapper::kC_EnviroVisor, ControlMapper::kFL_DPadLeft, SDL_SCANCODE_6},
-        {ControlMapper::kC_ThermoVisor, ControlMapper::kFL_DPadRight, SDL_SCANCODE_7},
-        {ControlMapper::kC_XrayVisor, ControlMapper::kFL_DPadDown, SDL_SCANCODE_8},
+        {ControlMapper::kC_ThermoVisor, ControlMapper::kFL_DPadDown, SDL_SCANCODE_7},
+        {ControlMapper::kC_XrayVisor, ControlMapper::kFL_DPadRight, SDL_SCANCODE_8},
     };
     for (const auto& entry : direct) {
       layout.Bind(CommandFunction(entry.command, entry.fallback), entry.key);
@@ -1252,10 +1257,12 @@ void DrawTab() {
       // A GameCube pad has no right stick click for free look.
       ImGui::BeginDisabled(PADIsGCAdapter(kControlPort));
       presetButton("Remastered", EPadPreset::kRemastered,
-                   "Metroid Prime Remastered's Dual Stick scheme: RT fire, LT lock on,\n"
-                   "A jump, Y morph ball, RB missile, Back map, right stick click free\n"
-                   "look; hold X and press the D-pad to change beams (Xbox labels).\n"
-                   "Turns on Twin Stick Aim.");
+                   "Metroid Prime Remastered's Dual Sticks scheme (Xbox labels): RT fire,\n"
+                   "LT lock on, A jump, X morph ball, RB missile, Menu map, View pause,\n"
+                   "right stick click free look. D-pad: up Combat, right Scan, left X-Ray,\n"
+                   "down Thermal visor; hold Y for up Power, right Wave, left Plasma,\n"
+                   "down Ice beam; in morph ball Y springs (with Spring Ball on). B doesn't\n"
+                   "fire as well. Turns on Twin Stick Aim and the Scan/X-Ray swap.");
       ImGui::SameLine();
       presetButton("Modern", EPadPreset::kModern,
                    "RT fire, LT lock on, A jump, B morph ball, RB missile, Y map,\n"

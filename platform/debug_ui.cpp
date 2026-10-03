@@ -137,8 +137,10 @@ bool sSaveStateHotkeys = true;
 bool sMouseAim = false;
 bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
+bool sBeamShiftHeld = false;
 bool sSpringBall = false;
 bool sSpringBallJump = true;
+bool sSwapScanXray = false;
 bool sFastMorph = false;
 bool sInvulnerable = false;
 // MP_GODMODE, for this run only: -1 unset, else 0 or 1. Never saved, and changing the
@@ -435,6 +437,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sSpringBall = ParseBool(value);
   } else if (key == "spring_ball_jump") {
     sSpringBallJump = ParseBool(value);
+  } else if (key == "swap_scan_xray") {
+    sSwapScanXray = ParseBool(value);
   } else if (key == "shift_key" || key == "shift_key_alt" || key == "shift_pad") {
     const int slot = key == "shift_key" ? 0 : key == "shift_key_alt" ? 1 : 2;
     // A number, or the value is ignored (atoi would read junk as scancode 0).
@@ -598,6 +602,7 @@ void SaveSettings() {
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
   file << "spring_ball_jump=" << (sSpringBallJump ? 1 : 0) << '\n';
+  file << "swap_scan_xray=" << (sSwapScanXray ? 1 : 0) << '\n';
   file << "shift_key=" << sShiftBindings[0] << '\n';
   file << "shift_key_alt=" << sShiftBindings[1] << '\n';
   file << "shift_pad=" << sShiftBindings[2] << '\n';
@@ -1177,6 +1182,10 @@ float TwinStickRightY() { return sTwinStickRightY; }
 
 void SetTwinStickRightY(float y) { sTwinStickRightY = y; }
 
+bool BeamShiftHeld() { return sBeamShiftHeld; }
+
+void SetBeamShiftHeld(bool held) { sBeamShiftHeld = held; }
+
 bool SpringBall() {
   EnsureInitialized();
   return sSpringBall;
@@ -1196,6 +1205,17 @@ bool SpringBallJump() {
 void SetSpringBallJump(bool enabled) {
   EnsureInitialized();
   sSpringBallJump = enabled;
+  MarkDirty();
+}
+
+bool SwapScanXray() {
+  EnsureInitialized();
+  return sSwapScanXray;
+}
+
+void SetSwapScanXray(bool enabled) {
+  EnsureInitialized();
+  sSwapScanXray = enabled;
   MarkDirty();
 }
 
@@ -3529,6 +3549,15 @@ void DrawInputTab() {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
     ImGui::SetTooltip("Jump in morph ball springs, once Spring Ball is unlocked. With the\n"
                       "Boost Ball, a tap springs and a hold charges a boost.");
+  }
+  bool swapScanXray = sSwapScanXray;
+  if (ImGui::Checkbox("Swap the Scan and X-Ray visor buttons", &swapScanXray)) {
+    SetSwapScanXray(swapScanXray);
+  }
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+    ImGui::SetTooltip("Each takes the other's D-pad direction, as in Metroid Prime\n"
+                      "Remastered's Dual Sticks layout. The Remastered controller preset\n"
+                      "turns it on and the other presets off.");
   }
   if (springRule >= 0) {
     ImGui::TextWrapped("Set by the connected Archipelago seed: %s.",
