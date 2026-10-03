@@ -29,6 +29,12 @@ For Windows, run from an MSVC developer shell and add
 `-DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl` to configure.
 Plain MSVC `cl.exe`, MinGW, macOS, and ARM builds are not currently validated.
 
+If `ccache` is installed, configure compiles through it, and on Linux `mold`
+links when it is installed. Turn them off with `-DMP_USE_CCACHE=OFF` /
+`-DMP_USE_MOLD=OFF`. The cache is shared between build directories in the same
+checkout, so a new `build/<name>` mostly fills from it instead of recompiling.
+One configuration takes about 0.5 GB of cache (`ccache -M` sets the limit).
+
 No disc or generated game-asset headers are needed to compile. The two embedded
 default-font resources are read from the mounted retail DOL at runtime, using
 the addresses in `config/GM8E01_00/symbols.txt`. Native builds do not depend on

@@ -9,6 +9,32 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_COLOR_DIAGNOSTICS ON)
+
+# Build speed, used only when the tools are installed. ccache makes recompiling
+# unchanged sources nearly free (stashing or setting edits aside rewrites mtimes)
+# and lets a fresh build directory fill from the cache: base_dir rewrites paths
+# under the source tree to relative ones and hash_dir=false drops the build
+# directory from the hash, so sibling build/<name> directories share entries.
+# The sloppiness lets SDL3's precompiled-header sources be cached at all.
+# mold cuts the link of the 230 MB RelWithDebInfo binary.
+option(MP_USE_CCACHE "Compile through ccache when it is installed" ON)
+option(MP_USE_MOLD "Link with mold when it is installed (Linux hosts)" ON)
+if(MP_USE_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER AND NOT MSVC)
+    find_program(MP_CCACHE ccache)
+    if(MP_CCACHE)
+        set(_mp_ccache "${MP_CCACHE}" "base_dir=${CMAKE_SOURCE_DIR}" "hash_dir=false"
+            "sloppiness=pch_defines,time_macros")
+        set(CMAKE_C_COMPILER_LAUNCHER ${_mp_ccache})
+        set(CMAKE_CXX_COMPILER_LAUNCHER ${_mp_ccache})
+    endif()
+endif()
+if(MP_USE_MOLD AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_LINKER_TYPE)
+    find_program(MP_MOLD mold)
+    if(MP_MOLD)
+        set(CMAKE_LINKER_TYPE MOLD)
+    endif()
+endif()
+
 include(CTest)
 option(MP_BUILD_TESTS "Build native-port regression tests" ON)
 option(MP_ENABLE_SMOKE_DRIVER "Enable the opt-in real-disc lifecycle test driver" OFF)
