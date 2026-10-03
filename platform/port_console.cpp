@@ -447,7 +447,7 @@ void CmdHelp() {
   Out("                           draw the volume's coordinates or its light alone on room geometry");
   Out("hdfont [on|off]            the distance-field font mods supply, in place of the disc's glyphs");
   Out("touchpad [attach|detach|stick <x> <y>]  a virtual gamepad like Android's touch overlay");
-  Out("freecam [on|off|freeze on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]");
+  Out("freecam [on|off|freeze on|off|player on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]");
   Out("                           fly the view away from the player (HUD hidden; freeze holds the game still)");
   Out("aspect <4:3|16:9|window>   switch the rendering aspect, as the Options row does");
   Out("fov <45..90>               first-person vertical FOV, as the Options row does");
@@ -969,10 +969,10 @@ void CmdTouchPad() {
   Finish();
 }
 
-// freecam [on|off|freeze on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]
+// freecam [on|off|freeze on|off|player on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]
 void CmdFreeCam() {
   static const char* const usage =
-      "usage: freecam [on|off|freeze on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]";
+      "usage: freecam [on|off|freeze on|off|player on|off|speed <n>|pos <x> <y> <z>|look <yaw> <pitch>]";
   const CStateManager* mgr = PortDebug::StateManager();
   if (sCmd.args.size() > 1) {
     const std::string arg = Lower(sCmd.args[1]);
@@ -986,6 +986,8 @@ void CmdFreeCam() {
       PortFreeCam::SetActive(arg == "on", mgr);
     } else if (arg == "freeze" && (value == "on" || value == "off")) {
       PortFreeCam::SetFrozen(value == "on");
+    } else if (arg == "player" && (value == "on" || value == "off")) {
+      PortFreeCam::SetShowPlayer(value == "on");
     } else if (arg == "speed" && sCmd.args.size() > 2 && ParseFloat(sCmd.args[2], number)) {
       PortFreeCam::SetSpeed(number);
     } else if (arg == "pos" && sCmd.args.size() > 4 && ParseFloat(sCmd.args[2], pose.x) &&
@@ -999,8 +1001,9 @@ void CmdFreeCam() {
     }
   }
   const PortFreeCam::Pose pose = PortFreeCam::GetPose();
-  Out("freecam %s%s speed %.1f pos %.2f %.2f %.2f yaw %.1f pitch %.1f",
+  Out("freecam %s%s%s speed %.1f pos %.2f %.2f %.2f yaw %.1f pitch %.1f",
       PortFreeCam::Active() ? "on" : "off", PortFreeCam::Frozen() ? " (frozen)" : "",
+      PortFreeCam::ShowPlayer() ? " (player shown)" : "",
       PortFreeCam::Speed(), pose.x, pose.y, pose.z, pose.yaw, pose.pitch);
   Finish();
 }

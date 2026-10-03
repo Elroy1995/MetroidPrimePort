@@ -18,6 +18,10 @@ void SetFrozen(bool frozen);
 // Metres per second at a full stick; the right trigger multiplies it by four.
 float Speed();
 void SetSpeed(float speed);
+// Samus's body is drawn where the player stands (on by default); the game leaves it
+// out in first person. True only while the camera is on.
+bool ShowPlayer();
+void SetShowPlayer(bool show);
 
 struct Pose {
   float x, y, z;

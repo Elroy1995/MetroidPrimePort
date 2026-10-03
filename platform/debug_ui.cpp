@@ -4248,6 +4248,11 @@ void DrawFreeCam() {
   if (ImGui::Checkbox("Freeze the game", &frozen)) {
     PortFreeCam::SetFrozen(frozen);
   }
+  ImGui::SameLine();
+  bool showPlayer = PortFreeCam::ShowPlayer();
+  if (ImGui::Checkbox("Show Samus", &showPlayer)) {
+    PortFreeCam::SetShowPlayer(showPlayer);
+  }
   float speed = PortFreeCam::Speed();
   if (ImGui::SliderFloat("Speed", &speed, 1.f, 100.f, "%.0f m/s", ImGuiSliderFlags_Logarithmic)) {
     PortFreeCam::SetSpeed(speed);

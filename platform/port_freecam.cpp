@@ -21,6 +21,7 @@ constexpr float kPitchLimit = 89.f;
 bool sActive = false;
 bool sFrozen = false;
 float sSpeed = 10.f;
+bool sShowPlayer = true;
 Pose sPose{0.f, 0.f, 0.f, 0.f, 0.f};
 
 CTransform4f Rotation() {
@@ -55,6 +56,9 @@ void SetSpeed(float speed) {
     sSpeed = std::clamp(speed, 0.1f, 500.f);
   }
 }
+
+bool ShowPlayer() { return sActive && sShowPlayer; }
+void SetShowPlayer(bool show) { sShowPlayer = show; }
 
 Pose GetPose() { return sPose; }
 
