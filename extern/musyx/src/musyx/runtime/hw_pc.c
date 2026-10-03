@@ -640,6 +640,20 @@ void salCtrlDsp(s16* dest) {
 
         /* New voice initialization (mirrors salBuildCommandList state==1 path) */
         if (vp->state == 1) {
+          /* As Dolphin's salBuildCommandList: a voice broken in the frame it started
+           * (startupBreak) never plays. Without this, a break written to changed[0]
+           * for a voice that starts at a later subframe was skipped by the loop below,
+           * and a looping sound (the charge beam hum) played on with no synth voice
+           * left to stop it. Otherwise a break bit in changed[0] was carried over by
+           * hwInitSamplePlayback from the slot's previous voice, not meant for this one. */
+          if (vp->startupBreak) {
+            vp->startupBreak = 0;
+            salDeactivateVoice(vp);
+            vp = nextVp;
+            continue;
+          }
+          vp->changed[0] &= ~0x20;
+
           if (adsrSetup(&vp->adsr) != 0) {
             salSynthSendMessage(vp, 0);
             salDeactivateVoice(vp);
