@@ -569,6 +569,13 @@ std::string vtx_attr(const ShaderConfig& config, GXAttr attr) {
     if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
       return "vec4f(0.0, 0.0, 0.0, 0.0)"s;
     }
+    if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
+      // A texgen reading a UV set the vertices don't carry (seen with a mod model): draw
+      // it with zero UVs rather than abort the game. Shaders are cached, so this logs once
+      // per shader.
+      Log.warn("unmapped vtx attr {} (texcoord {}), using zero UVs", underlying(attr), attr - GX_VA_TEX0);
+      return "vec2f(0.0, 0.0)"s;
+    }
     UNLIKELY FATAL("unmapped vtx attr {}", underlying(attr));
   }
   if (attr == GX_VA_POS) {
