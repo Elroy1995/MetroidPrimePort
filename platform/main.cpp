@@ -32,6 +32,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_iostream.h>
+#include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_timer.h>
 
 #if defined(__ANDROID__)
@@ -103,11 +104,46 @@ bool IsDiscImage(const std::filesystem::path& path) {
     return false;
 }
 
+// How well a file next to the executable fits as the disc: plain images (.iso,
+// .gcm, NKit's .nkit.iso) start with the disc header, so the wrong game or
+// region can be skipped before it fails to boot; the compressed formats keep
+// it elsewhere and are taken on trust, after any plain image that matched.
+enum class DiscMatch { No, Maybe, Yes };
+
+DiscMatch MatchDiscImage(const std::filesystem::path& path) {
+    if (!IsDiscImage(path)) {
+        return DiscMatch::No;
+    }
+    const std::string ext = LowerExtension(path);
+    if (ext != ".iso" && ext != ".gcm") {
+        return DiscMatch::Maybe;
+    }
+    // Through SDL with a UTF-8 name: std::fopen on Windows takes the ANSI code
+    // page, which cannot name every folder a user might unpack the game into.
+    SDL_IOStream* file = SDL_IOFromFile(PortPaths::detail::ToUtf8(path).c_str(), "rb");
+    if (file == nullptr) {
+        return DiscMatch::No;
+    }
+    Uint8 header[8] = {};
+    const size_t got = SDL_ReadIO(file, header, sizeof(header));
+    SDL_CloseIO(file);
+    // Game id, maker, disc number, revision: GM8E01, disc 0, v1.00.
+    return got == sizeof(header) && std::memcmp(header, "GM8E01", 6) == 0 && header[6] == 0 && header[7] == 0
+               ? DiscMatch::Yes
+               : DiscMatch::No;
+}
+
 // Looks for a disc image next to the executable (and in its immediate
-// subdirectories) so a copied build is self-contained.
+// subdirectories) so a copied build is self-contained and starts without
+// asking. For an AppImage that is the folder the .AppImage file is in.
 std::string FindDiscNextToExecutable() {
-    const char* base = SDL_GetBasePath();
-    if (base == nullptr) {
+#if defined(__ANDROID__)
+    const char* rawBase = SDL_GetBasePath();
+    const std::string base = rawBase != nullptr ? rawBase : "";
+#else
+    const std::string base = PortPaths::detail::ExecutableFolder();
+#endif
+    if (base.empty()) {
         return {};
     }
     namespace fs = std::filesystem;
@@ -119,7 +155,7 @@ std::string FindDiscNextToExecutable() {
     // and this runs before anything that could report it, so nothing escapes.
     try {
         std::error_code ec;
-        const fs::path baseDir(base);
+        const fs::path baseDir = PortPaths::detail::FromUtf8(base);
         std::vector<fs::path> dirs{baseDir};
         for (fs::directory_iterator it(baseDir, ec), end; !ec && it != end; it.increment(ec)) {
             std::error_code entryEc;
@@ -127,13 +163,31 @@ std::string FindDiscNextToExecutable() {
                 dirs.push_back(it->path());
             }
         }
+        // Directory order is the file system's; sorted, the same image wins on
+        // every launch when there are several.
+        std::sort(dirs.begin() + 1, dirs.end());
+        std::string maybe;
         for (const fs::path& dir : dirs) {
+            std::vector<fs::path> files;
             for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
                 std::error_code entryEc;
                 if (it->is_regular_file(entryEc) && IsDiscImage(it->path())) {
-                    return it->path().string();
+                    files.push_back(it->path());
                 }
             }
+            std::sort(files.begin(), files.end());
+            for (const fs::path& file : files) {
+                const DiscMatch match = MatchDiscImage(file);
+                if (match == DiscMatch::Yes) {
+                    return PortPaths::detail::ToUtf8(file);
+                }
+                if (match == DiscMatch::Maybe && maybe.empty()) {
+                    maybe = PortPaths::detail::ToUtf8(file);
+                }
+            }
+        }
+        if (!maybe.empty()) {
+            return maybe;
         }
     } catch (const std::exception& e) {
         PortLog::Write("metroid_prime_port: searching for a disc image failed: %s\n", e.what());
@@ -187,7 +241,11 @@ const char* ResolveDiscPath(int argc, char** argv) {
         }
     }
     static const std::string sFound = FindDiscNextToExecutable();
-    return sFound.empty() ? nullptr : sFound.c_str();
+    if (sFound.empty()) {
+        return nullptr;
+    }
+    PortLog::Write("metroid_prime_port: using the disc image next to the executable: %s\n", sFound.c_str());
+    return sFound.c_str();
 }
 
 // aurora_dvd_open reports failure for three different reasons - the file would
@@ -345,8 +403,10 @@ std::string AskForDiscImage() {
     // from it can still be pending here.
     answered.store(false);
     chosen.clear();
-    const SDL_DialogFileFilter filters[] = {
-        {"GameCube disc image", "iso;gcm;rvz;wbfs;ciso;nkit"},
+    // Static: SDL reads the filters until the dialog closes, which can be after
+    // a timed-out wait has returned.
+    static const SDL_DialogFileFilter filters[] = {
+        {"Metroid Prime disc image (iso, gcm, rvz, wbfs, ciso, nkit)", "iso;gcm;rvz;wbfs;ciso;nkit"},
         {"All files", "*"},
     };
     if (const char* env = std::getenv("MP_NO_DISC_DIALOG"); env != nullptr && env[0] == '1') {
@@ -366,14 +426,24 @@ std::string AskForDiscImage() {
         return {};
     }
     PortLog::Write( "metroid_prime_port: no disc image found; asking for one\n");
-    SDL_ShowOpenFileDialog(
+    // A titled dialog: an untitled file picker on first launch does not say
+    // what it wants. (Android's picker shows no title.)
+    const SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetPointerProperty(props, SDL_PROP_FILE_DIALOG_FILTERS_POINTER, const_cast<SDL_DialogFileFilter*>(filters));
+    SDL_SetNumberProperty(props, SDL_PROP_FILE_DIALOG_NFILTERS_NUMBER, 2);
+    SDL_SetPointerProperty(props, SDL_PROP_FILE_DIALOG_WINDOW_POINTER, window);
+    SDL_SetStringProperty(props, SDL_PROP_FILE_DIALOG_TITLE_STRING,
+                          "Select your Metroid Prime disc image (GameCube, USA, v1.00)");
+    SDL_ShowFileDialogWithProperties(
+        SDL_FILEDIALOG_OPENFILE,
         [](void*, const char* const* files, int) {
             if (files != nullptr && files[0] != nullptr) {
                 chosen = files[0];
             }
             answered.store(true);
         },
-        nullptr, window, filters, 2, nullptr, false);
+        nullptr, props);
+    SDL_DestroyProperties(props);
     // Wait for the answer, but not forever: a dialog that never calls back
     // would otherwise hang a scripted or headless run.
     const Uint64 deadline = SDL_GetTicks() + 5 * 60 * 1000;

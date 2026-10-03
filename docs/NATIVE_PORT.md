@@ -61,8 +61,12 @@ path. Preserve the accompanying dependency licenses/notices.
 ./build/native/metroid_prime_port "/path/to/Metroid Prime (USA) (v1.00).iso"
 ```
 
-Alternatively set `MP_DISC`, keep the image beside the executable, or let the
-port ask for it: when no disc is found it opens the platform's file dialog and
+Alternatively set `MP_DISC`, keep the image beside the executable (or in a
+folder beside it; for an AppImage, beside the `.AppImage` file), which starts
+the game with no prompt, or let the port ask for it. A plain `.iso`/`.gcm` there
+is only taken when its header says GM8E01 v1.00, so another game's image next to
+it is skipped; compressed formats are taken as found, after a matching plain
+image. Otherwise, when no disc is found it opens the platform's file dialog and
 remembers the answer as `disc_path` in the settings file. There is no prompt
 when the port has no window to show one on, or with `MP_NO_DISC_DIALOG=1`
 (for scripted runs that do have a window, as on a build runner). The disc must

@@ -224,6 +224,7 @@ struct RetailMaterial {
   std::vector<Tev> tev;
   std::vector<std::array<uint8_t, 4>> tevTex;
   std::vector<uint32_t> texgen;
+  std::vector<uint8_t> uvAnim;  // the section as it is: its size, the count and the animations
 };
 
 RetailMaterial ParseMaterial(Span m) {
@@ -267,6 +268,14 @@ RetailMaterial ParseMaterial(Span m) {
   o += 4;
   for (uint32_t i = 0; i < ntg; ++i, o += 4) {
     out.texgen.push_back(R32(m, o));
+  }
+  // The UV animations load the matrices those texgens name: without them a texgen
+  // reads whatever matrix the material drawn before left.
+  if (o <= m.n && m.n - o >= 8) {
+    const Span anim = Slice(m, o, 4 + size_t(R32(m, o)));
+    if (anim.n >= 8 && anim.n == 4 + size_t(R32(m, o))) {
+      out.uvAnim.assign(anim.p, anim.p + anim.n);
+    }
   }
   return out;
 }
@@ -1510,23 +1519,36 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
     P8(b, uint8_t(i < nmaps ? i : 7));
     P8(b, uint8_t(i < nmaps ? coords[i] : 0));
   }
-  // One texgen per texcoord the maps use, taken from retail so an animated or
-  // projected coordinate still drives the maps. A coord retail has no texgen
-  // for gets the identity default (TEX0, GX_TG_MTX3x3).
+  // One texgen per texcoord the maps use. Each reads its own texcoord through the
+  // identity (GX_TG_MTX3x4, TEXi, GX_IDENTITY, GX_PTIDENTITY): texgen word 0 would be
+  // position through GX_TEXMTX0, a projection by whatever matrix the last animated
+  // material loaded, which slid Magmoor's room rock along with the lava. Where
+  // retail's texgen for the coord reads that same texcoord it is kept, with retail's
+  // UV animations, so an animated coordinate still drives the maps; one over position
+  // or normal (an env map) says nothing about a Remastered texcoord.
   const uint32_t n = 1 + *std::max_element(coords, coords + nmaps);
-  std::vector<uint32_t> gens(n, 0);
-  gens[0] = 0x1EBC40;
+  std::vector<uint32_t> gens(n);
+  for (uint32_t i = 0; i < n; ++i) {
+    gens[i] = 0x1EBC00 | ((4 + i) << 4);
+  }
+  bool retailGens = false;
   for (int i = 0; i < nmaps; ++i) {
-    if (coords[i] < pm.texgen.size()) {
-      gens[coords[i]] = pm.texgen[coords[i]];
+    const uint32_t c = coords[i];
+    if (c < pm.texgen.size() && ((pm.texgen[c] >> 4) & 31) == 4 + c) {
+      gens[c] = pm.texgen[c];
+      retailGens = true;
     }
   }
   P32(b, n);
   for (uint32_t g : gens) {
     P32(b, g);
   }
-  P32(b, 4);  // no UV animations
-  P32(b, 0);
+  if (retailGens && !pm.uvAnim.empty()) {
+    b.insert(b.end(), pm.uvAnim.begin(), pm.uvAnim.end());
+  } else {
+    P32(b, 4);  // no UV animations
+    P32(b, 0);
+  }
   PbrRecord(b, rem);
   return b;
 }
