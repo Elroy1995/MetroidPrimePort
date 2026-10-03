@@ -58,41 +58,6 @@ int main() {
   ShiftDPadToCStick(buttons, x, y);
   Check(buttons == kPadB && x == 40 && y == -40, "no direction");
 
-  // Spring Ball on jump, no Boost Ball: the press springs, once.
-  const float dt = 1.f / 60.f;
-  SpringTap tap;
-  Check(tap.Update(true, false, dt), "press springs");
-  Check(!tap.Update(true, false, dt), "hold does not repeat");
-  Check(!tap.Update(false, false, dt), "release does nothing");
-
-  // With the Boost Ball: a tap springs on release, a held charge does not.
-  Check(!tap.Update(true, true, dt), "press waits");
-  Check(!tap.Update(true, true, dt), "still waiting");
-  Check(tap.Update(false, true, dt), "tap springs on release");
-  Check(!tap.Update(false, true, dt), "idle");
-  Check(!tap.Update(true, true, dt), "charge press");
-  for (int i = 0; i < 30; ++i) {
-    Check(!tap.Update(true, true, dt), "charging");
-  }
-  Check(!tap.Update(false, true, dt), "a released charge is not a tap");
-
-  // A reset while held (controls frozen) forgets the press.
-  tap.Update(true, true, dt);
-  tap.Reset();
-  Check(!tap.Update(false, true, dt), "reset forgets the press");
-
-  // A button held through a reset (into morph ball) waits for its release.
-  tap.Reset();
-  Check(!tap.Update(true, false, dt), "held into the ball does not spring");
-  Check(!tap.Update(false, false, dt), "its release does nothing");
-  Check(tap.Update(true, false, dt), "the next press springs");
-
-  // The game's tap time is the boost's minimum charge: a release at it is a boost.
-  tap.Update(false, true, dt);
-  tap.Update(true, true, dt);
-  tap.Update(true, true, 0.1f);
-  Check(!tap.Update(false, true, dt, 0.1f), "a release at the tap time is not a tap");
-
   std::puts("input map tests passed");
   return 0;
 }

@@ -125,36 +125,4 @@ inline void ShiftDPadToCStick(unsigned& buttons, int& substickX, int& substickY)
   buttons &= ~kPadDirections;
 }
 
-// Spring Ball on the jump button, which is also the Boost Ball's charge. With
-// no Boost Ball the press springs. With it, only a tap does (on release), so a
-// held charge never starts with a hop. The game passes the Boost Ball's minimum
-// charge as tapTime: a release shorter than that boosts nothing.
-class SpringTap {
-public:
-  static constexpr float kTapTime = 0.2f;
-  // Waits for a release first, so a button held into morph ball (or through
-  // frozen controls) doesn't spring.
-  void Reset() {
-    mHeld = true;
-    mHeldTime = 1e9f;
-  }
-  bool Update(bool held, bool chargeOnHold, float dt, float tapTime = kTapTime) {
-    bool spring = false;
-    if (held && !mHeld) {
-      mHeldTime = 0.f;
-      spring = !chargeOnHold;
-    } else if (held) {
-      mHeldTime += dt;
-    } else if (mHeld) {
-      spring = chargeOnHold && mHeldTime < tapTime;
-    }
-    mHeld = held;
-    return spring;
-  }
-
-private:
-  bool mHeld = false;
-  float mHeldTime = 0.f;
-};
-
 } // namespace PortInputMap

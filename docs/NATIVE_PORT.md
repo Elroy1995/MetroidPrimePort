@@ -785,12 +785,9 @@ a temporary directory instead of mounting.
   to 0.2 s before landing still counts. It reads the gyro aim's source but works
   with gyro aim off. The phone's gyro is turned to the screen's orientation, so
   pitch and yaw stay right in landscape.
-  **Spring Ball on the jump button too** (`spring_ball_jump`, on by default, so
-  only Spring Ball itself has to be turned on) also springs on a tap of jump (B)
-  in morph ball. With the Boost Ball, B also charges a boost, so a tap shorter
-  than the boost's minimum charge springs on release and a longer hold boosts,
-  never both; without it the spring is on the press. A B held from before the
-  ball formed has to be let go first.
+  A press of the beam shift springs too (beams don't change in morph ball), as
+  X does in Remastered; jump (B) stays the Boost Ball's alone. A shift held from
+  before the ball formed has to be let go first.
 - Beam shift (Controls tab): while it is held, the D-pad picks beams the way the
   C-stick does, and visors stay on the plain D-pad, so both are reachable without
   a C-stick. It has two key slots (`shift_key`, `shift_key_alt`; default left

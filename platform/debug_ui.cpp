@@ -146,7 +146,6 @@ bool sTwinStick = false;
 float sTwinStickRightY = 0.f;
 bool sBeamShiftHeld = false;
 bool sSpringBall = false;
-bool sSpringBallJump = true;
 bool sSwapScanXray = false;
 bool sFastMorph = false;
 bool sInvulnerable = false;
@@ -461,8 +460,6 @@ void ApplySetting(const std::string& key, const std::string& value) {
     }
   } else if (key == "spring_ball") {
     sSpringBall = ParseBool(value);
-  } else if (key == "spring_ball_jump") {
-    sSpringBallJump = ParseBool(value);
   } else if (key == "swap_scan_xray") {
     sSwapScanXray = ParseBool(value);
   } else if (key == "shift_key" || key == "shift_key_alt" || key == "shift_pad") {
@@ -641,7 +638,6 @@ void SaveSettings() {
   file << "mouse_aim=" << (sMouseAim ? 1 : 0) << '\n';
   file << "twin_stick=" << (sTwinStick ? 1 : 0) << '\n';
   file << "spring_ball=" << (sSpringBall ? 1 : 0) << '\n';
-  file << "spring_ball_jump=" << (sSpringBallJump ? 1 : 0) << '\n';
   file << "swap_scan_xray=" << (sSwapScanXray ? 1 : 0) << '\n';
   file << "shift_key=" << sShiftBindings[0] << '\n';
   file << "shift_key_alt=" << sShiftBindings[1] << '\n';
@@ -1269,17 +1265,6 @@ bool SpringBall() {
 void SetSpringBall(bool enabled) {
   EnsureInitialized();
   sSpringBall = enabled;
-  MarkDirty();
-}
-
-bool SpringBallJump() {
-  EnsureInitialized();
-  return sSpringBallJump;
-}
-
-void SetSpringBallJump(bool enabled) {
-  EnsureInitialized();
-  sSpringBallJump = enabled;
   MarkDirty();
 }
 
@@ -3683,14 +3668,6 @@ void DrawInputTab() {
     SetSpringBall(springBall);
   }
   ImGui::EndDisabled();
-  bool springJump = sSpringBallJump;
-  if (ImGui::Checkbox("Spring Ball on the jump button too", &springJump)) {
-    SetSpringBallJump(springJump);
-  }
-  if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
-    ImGui::SetTooltip("Jump in morph ball springs, once Spring Ball is unlocked. With the\n"
-                      "Boost Ball, a tap springs and a hold charges a boost.");
-  }
   bool swapScanXray = sSwapScanXray;
   if (ImGui::Checkbox("Swap the Scan and X-Ray visor buttons", &swapScanXray)) {
     SetSwapScanXray(swapScanXray);
@@ -3708,7 +3685,8 @@ void DrawInputTab() {
   } else {
     ImGui::TextWrapped(
         "A small jump in morph ball, as in Metroid Prime Trilogy, once the Morph "
-        "Ball Bombs are held. Twin stick still passes the right stick up to it.");
+        "Ball Bombs are held. Twin stick still passes the right stick up to it, "
+        "and the beam shift (X in the Remastered preset) springs too.");
   }
   bool springFlick = sSpringFlick;
   if (ImGui::Checkbox("Spring Ball on gyro flick", &springFlick)) {

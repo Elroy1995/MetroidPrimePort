@@ -40,7 +40,6 @@
 #include "Kyoto/Math/CMath.hpp"
 #include "port_apclient.h"
 #include "port_debug.h"
-#include "port_input_map.h"
 #include "Kyoto/Math/CPlane.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
@@ -432,8 +431,6 @@ namespace {
 // Time left before the next Spring Ball: randomprime's 40 frames. Seconds, as
 // the port's tick rate varies. There is one morph ball, so a static will do.
 float sSpringBallCooldown = 0.f;
-// Spring Ball on the jump button too (the spring_ball_jump setting).
-PortInputMap::SpringTap sSpringTap;
 bool sSpringShiftHeld = true;
 
 bool SpringBallUnlocked(const CStateManager& mgr) {
@@ -455,26 +452,18 @@ void CMorphBall::ComputeBallMovement(const CFinalInput& input, CStateManager& mg
   // Twin stick consumes the C-stick, so its raw right stick counts too, but not
   // in the frozen-controls calls, whose blank input has no time. (It is the
   // clamped pad value over 127, so full tilt reads about 0.46.) A gyro flick,
-  // when that option is on, counts as well. So does the jump button, which is
-  // also the Boost Ball's charge: once that is owned only a tap shorter than
-  // the boost's minimum charge springs, on release, so a tap never does both.
-  // Pressing the beam shift springs too (beams don't change in morph ball), as
-  // the same button, X, does in Remastered's Dual Sticks layout.
-  bool jumpSpring = false;
+  // when that option is on, counts as well. So does pressing the beam shift
+  // (beams don't change in morph ball), as the same button, X, does in
+  // Remastered's Dual Sticks layout. Jump stays the Boost Ball's alone.
+  bool shiftSpring = false;
   if (input.Time() > 0.f) {
-    const bool jumpHeld = ControlMapper::GetDigitalInput(ControlMapper::kC_JumpOrBoost, input);
-    const bool boost = mgr.GetPlayerState()->HasPowerUp(CPlayerState::kIT_BoostBall);
-    jumpSpring = sSpringTap.Update(jumpHeld, boost, dt, gpTweakBall->GetBoostBallMinChargeTime() - dt) &&
-                 PortDebug::SpringBallJump();
     const bool shiftHeld = PortDebug::BeamShiftHeld();
-    jumpSpring = jumpSpring || (shiftHeld && !sSpringShiftHeld);
+    shiftSpring = shiftHeld && !sSpringShiftHeld;
     sSpringShiftHeld = shiftHeld;
-  } else {
-    sSpringTap.Reset();
   }
   if (sSpringBallCooldown > 0.f) {
     sSpringBallCooldown -= dt;
-  } else if ((input.ARAUp() > 0.f || jumpSpring ||
+  } else if ((input.ARAUp() > 0.f || shiftSpring ||
               (input.Time() > 0.f && (PortDebug::TwinStickRightY() > 0.25f ||
                                       PortDebug::SpringBallFlickPending()))) &&
              x0_player.GetPlayerMovementState() == NPlayer::kMS_OnGround &&
@@ -1421,7 +1410,6 @@ void CMorphBall::EnterMorphBallState(CStateManager& mgr) {
   x2c_tireLeanAngle = 0.f;
 #ifdef TARGET_PC
   sSpringBallCooldown = 0.f;
-  sSpringTap.Reset();
   // A shift still held from before needs a fresh press.
   sSpringShiftHeld = true;
 #endif
@@ -1430,7 +1418,6 @@ void CMorphBall::EnterMorphBallState(CStateManager& mgr) {
 void CMorphBall::LeaveMorphBallState(CStateManager&) {
 #ifdef TARGET_PC
   sSpringBallCooldown = 0.f;
-  sSpringTap.Reset();
 #endif
   LeaveBoosting();
   CancelBoosting();

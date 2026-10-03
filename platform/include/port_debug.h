@@ -234,9 +234,6 @@ void SetBeamShiftHeld(bool held);
 // Morph Ball Bombs are held. A connected Archipelago seed overrides it.
 bool SpringBall();
 void SetSpringBall(bool enabled);
-// Spring Ball also on the jump button (a tap, with the Boost Ball), on by default.
-bool SpringBallJump();
-void SetSpringBallJump(bool enabled);
 // The Scan and X-Ray visors trade D-pad directions (Remastered's Dual Sticks
 // layout), off by default.
 bool SwapScanXray();
