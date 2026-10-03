@@ -28,7 +28,10 @@
 #include "Kyoto/Alloc/CMemorySys.hpp"
 #include "Kyoto/Alloc/IAllocator.hpp"
 #include "Kyoto/Text/CStringTable.hpp"
+#include "Kyoto/Animation/CSkinnedModel.hpp"
 #include "MetroidPrime/CActor.hpp"
+#include "MetroidPrime/CAnimData.hpp"
+#include "MetroidPrime/CModelData.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CObjectList.hpp"
@@ -610,6 +613,17 @@ void CmdObj(CStateManager& mgr) {
     if (actor->HasModelData()) {
       Out("%s", actor->GetPreRenderClipped() ? "outside the view frustum (not animated or drawn)"
                                              : "inside the view frustum");
+      const CModelData* model = actor->GetModelData();
+      if (const CAnimData* anim = model->GetAnimationData()) {
+        Out("model CMDL %08X (animated)", anim->GetModelData()->GetModel().GetTag().GetId());
+      } else if (model->HasNormalModel()) {
+        Out("model CMDL %08X", model->PickStaticModel(CModelData::kWM_Normal).GetTag().GetId());
+      }
+      const CModelFlags& flags = actor->GetModelFlags();
+      const CColor color = flags.GetColor();
+      Out("draw flags: blend %d, set %d, flags 0x%x, colour (%.2f, %.2f, %.2f, %.2f)", flags.GetBlendMode(),
+          flags.GetShaderSet(), flags.GetOtherFlags(), color.GetRed(), color.GetGreen(), color.GetBlue(),
+          color.GetAlpha());
     }
     if (const CHealthInfo* health = actor->GetHealthInfo(mgr)) {
       Out("hp %.2f", health->GetHP());
