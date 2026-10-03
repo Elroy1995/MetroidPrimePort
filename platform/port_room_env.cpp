@@ -70,6 +70,7 @@ struct FrameState {
 FrameState sFrame;
 int sAuto = -1;
 int sStatic = -1;
+int sAreaLights = -1;
 
 // Areas in memory; one without a file has an empty File.
 std::unordered_map<uint32_t, Area> sAreas;
@@ -562,6 +563,16 @@ bool StaticExposure() {
   GlowScale();
   return sStatic != 0;
 }
+
+bool AreaLights() {
+  if (sAreaLights < 0) {
+    const char* const env = std::getenv("MP_ROOM_ENV_AREA_LIGHTS");
+    sAreaLights = env != nullptr && env[0] == '1' ? 1 : 0;
+  }
+  return sAreaLights != 0;
+}
+
+void SetAreaLights(bool on) { sAreaLights = on ? 1 : 0; }
 
 bool AutoExposure() {
   if (sAuto < 0) {

@@ -1277,7 +1277,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       var pbr_lsum = vec3f(0.0);
       // pbr-lights-begin
       for (var i = 0u; i < {4}u; i++) {{
-          if (({15} & (1u << i)) == 0u) {{ continue; }}
+          if (({15} & ~u32(ubuf.pbr_light_skip.x) & (1u << i)) == 0u) {{ continue; }}
           let light = ubuf.lights[i];
           var ldir = light.pos - in.pbr_pos;
           let dist2 = dot(ldir, ldir);
@@ -2172,6 +2172,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     uniBufAttrs += "\n    pbr_ambient: array<vec4f, 6>,";
     uniBufAttrs += "\n    pbr_volume: array<vec4f, 6>,";
     uniBufAttrs += "\n    pbr_tone: array<vec4f, 3>,";
+    uniBufAttrs += "\n    pbr_light_skip: vec4f,";
     const auto pbr = pbr_func(config, info, vtxOutAttrs, vtxXfrAttrs, vtxOutIdx);
     if (!pbr.empty()) {
       fragmentFn += pbr;

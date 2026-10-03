@@ -918,6 +918,12 @@ void handle_aurora(ByteReader& reader) noexcept {
       g_gxState.pbrTone = rows;
       g_gxState.dirty |= DirtyUniform;
     }
+  } else if (subCmd == GX_AURORA_SET_PBR_LIGHT_SKIP) {
+    const Vec4<float> value{static_cast<f32>(reader.read<u32>() & 0xFF), 0.f, 0.f, 0.f};
+    if (g_gxState.pbrLightSkip != value) {
+      g_gxState.pbrLightSkip = value;
+      g_gxState.dirty |= DirtyUniform;
+    }
   } else if (subCmd == GX_AURORA_SET_PBR_MATERIAL) {
     for (Vec4<float>* v :
          {&g_gxState.pbrEmissive, &g_gxState.pbrBacklight, &g_gxState.pbrLayer, &g_gxState.pbrLayerHeight,

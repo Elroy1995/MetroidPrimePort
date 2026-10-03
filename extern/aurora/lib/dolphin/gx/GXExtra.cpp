@@ -207,4 +207,9 @@ void GXSetPBRTone(const f32 rows[3][4]) {
     }
   }
 }
+
+void GXSetPBRLightSkip(u32 mask) {
+  GX_WRITE_AURORA(GX_AURORA_SET_PBR_LIGHT_SKIP);
+  GX_WRITE_U32(mask);
+}
 }

@@ -198,6 +198,12 @@ extern "C" {
 //   u32 asset id, u32 model index, u32 material
 #define GX_AURORA_SET_DRAW_TAG 0x0050
 
+// Lights the following PBR draws leave out (see GXSetPBRLightSkip). Stays in effect until
+// changed.
+// Payload:
+//   u32 mask (bit n: GX_LIGHTn)
+#define GX_AURORA_SET_PBR_LIGHT_SKIP 0x0051
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

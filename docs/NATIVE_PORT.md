@@ -1142,6 +1142,12 @@ a temporary directory instead of mounting.
   frame's exposure. `MP_ROOM_ENV_STATIC_EXPOSURE=0` (console `roomenv static
   on|off`) draws every glow at the frame's exposure; `roomenv info` prints the
   static EV and the scale.
+  A PBR model lit by the bake (room exposure on, or the per-pixel volume)
+  leaves out the area's lights and keeps only the runtime ones (gun light,
+  ball glow, projectiles), as Remastered, which bakes the area's light into
+  the grid; adding them as well blew actors out near lamps.
+  `MP_ROOM_ENV_AREA_LIGHTS=1` (console `roomenv arealights on|off`) adds them
+  back. This also applies to room geometry under `MP_ROOM_GEO_AREA_LIGHTS=1`.
   `MP_BLOOM=0` (console `roomenv bloom on|off`) drops Remastered's bloom
   (version 5: the room's BloomEffect, else the world's), and `MP_COLOR_GRADE=0`
   (console `roomenv grade on|off`) its colour grade (version 6: the world's and

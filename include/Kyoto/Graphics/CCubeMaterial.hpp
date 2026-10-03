@@ -59,6 +59,10 @@ public:
   // shader there (port_room_liquid.cpp); additive is the hot pass's blend.
   enum EPortPBRThermal { kPT_None, kPT_Cold, kPT_Additive };
   static EPortPBRThermal sPortPBRThermal;
+  // Port: the light slots holding area lights (CActorLights::ActivateLights; CGraphics::
+  // LoadLight clears a slot it loads). A PBR draw lit by a room's baked light leaves them
+  // out, as Remastered lights actors by the bake and runtime lights alone.
+  static uint sPortAreaLights;
 #endif
   uint GetTextureCount() const {
     return CBasics::SwapBytes(*reinterpret_cast< const uint* >(GetData() + 4));

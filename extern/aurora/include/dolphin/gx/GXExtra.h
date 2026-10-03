@@ -91,6 +91,10 @@ void GXSetPBRDebugView(u32 view);
 // x t / (1 + t) + w with t = y x + z. Null, or a slope of 0, is no curve. With a curve,
 // w of row 0 multiplies the glow and unlit colour before it (0 is taken as 1).
 void GXSetPBRTone(const f32 rows[3][4]);
+// Aurora extension: lights the following PBR draws leave out although the channel enables
+// them (bit n: GX_LIGHTn), such as lights whose light a baked ambient already holds. 0 for
+// none.
+void GXSetPBRLightSkip(u32 mask);
 
 // Aurora extension: Remastered's bloom over what the EFB holds now (see lib/gfx/bloom.cpp).
 // The EFB is taken as drawn through the tone curve `tone` (as GXSetPBRTone); light above

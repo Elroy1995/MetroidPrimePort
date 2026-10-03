@@ -258,6 +258,12 @@ bool AutoExposure();
 float GlowScale();
 void SetStaticExposure(bool on);
 bool StaticExposure();
+// Whether a model lit by the baked light (an absolute ambient or a volume) also takes the
+// area's lights. Remastered's actors have none: the bake holds that light, and only runtime
+// lights (beam, projectiles, the ball's glow) are added. Off unless MP_ROOM_ENV_AREA_LIGHTS=1
+// (the console's `roomenv arealights`).
+void SetAreaLights(bool on);
+bool AreaLights();
 // The frame's tone curve, for GXSetPBRTone; false when rooms are not exposed or the
 // camera's room has no environment.
 bool Tone(float rows[3][4]);

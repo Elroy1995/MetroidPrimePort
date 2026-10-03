@@ -30,6 +30,7 @@ void AuroraFrameEnd() {
 #include "Kyoto/Basics/COsContext.hpp"
 #include "Kyoto/Basics/CStopwatch.hpp"
 #include "Kyoto/CFrameDelayedKiller.hpp"
+#include "Kyoto/Graphics/CCubeMaterial.hpp"
 #include "Kyoto/Graphics/CGX.hpp"
 #include "Kyoto/Graphics/CGraphicsSys.hpp"
 #include "Kyoto/Graphics/CTexture.hpp"
@@ -521,6 +522,9 @@ void CGraphics::LoadLight(ERglLight light, const CLight& info) {
   GXInitLightColor(&mLightObj[light], info.GetColor().GetGXColor());
   GXLoadLightObjImm(&mLightObj[light], lightId);
   mLightTypes[light] = info.GetType();
+#ifdef TARGET_PC
+  CCubeMaterial::sPortAreaLights &= ~(1u << light);
+#endif
 }
 
 void CGraphics::DisableAllLights() {

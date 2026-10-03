@@ -884,6 +884,7 @@ float CCubeMaterial::sPortPBRProbeWeight = 0.f;
 int CCubeMaterial::sPortPBRProbeMode = -1;
 uint CCubeMaterial::sPortPBRDraws = 0;
 CCubeMaterial::EPortPBRThermal CCubeMaterial::sPortPBRThermal = CCubeMaterial::kPT_None;
+uint CCubeMaterial::sPortAreaLights = 0;
 
 bool CCubeMaterial::PortPBRAllowed(const CModelFlags& flags) {
   return !sbRenderModelBlack &&

@@ -355,6 +355,9 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     } else {
       GXSetPBRVolume(0, nullptr);
     }
+    // Lit by the bake, which holds the area's light, a model keeps only the runtime lights.
+    const bool baked = found && ((env.hasAmbient && env.ambientAbsolute) || env.volume != 0);
+    GXSetPBRLightSkip(baked && !PortRoomEnv::AreaLights() ? CCubeMaterial::sPortAreaLights : 0u);
     // The frame's tone curve, when rooms are exposed as Remastered exposes them. Remastered
     // draws the opaque pass's emitted light at the room's static exposure and the sorted
     // pass's at the frame's (CGameRenderJob::RenderPrimaryPass).
