@@ -97,6 +97,7 @@ void evict_copy_texture(const void* dest) noexcept {
     }
   }
 }
+void trim_copy_sizes(const void* dest, size_t keep) noexcept {}
 void shutdown() noexcept {}
 Vec2<uint32_t> logical_fb_size() noexcept { return {640, 480}; }
 gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcept { return logicalViewport; }

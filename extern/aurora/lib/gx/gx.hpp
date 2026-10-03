@@ -314,6 +314,8 @@ struct GXState {
     // Logical (unscaled) GXSetTexCopyDst size of the latest copy to this dest.
     u32 width = 0;
     u32 height = 0;
+    // copy_tex call that last wrote this pooled texture (trim_copy_sizes keeps the newest).
+    u64 lastCopy = 0;
 
     operator bool() const noexcept { return handle.operator bool(); }
   };
@@ -459,6 +461,7 @@ void clear_static_texture_cache() noexcept;
 void clear_copy_texture_cache() noexcept;
 void trim_copy_texture_cache() noexcept;
 void evict_copy_texture(const void* dest) noexcept;
+void trim_copy_sizes(const void* dest, size_t keep) noexcept;
 void evict_texture_object(u32 texObjId) noexcept;
 void evict_tlut_object(u32 tlutObjId) noexcept;
 Vec2<uint32_t> logical_fb_size() noexcept;
