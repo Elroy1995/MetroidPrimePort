@@ -355,9 +355,17 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     } else {
       GXSetPBRVolume(0, nullptr);
     }
-    // The frame's tone curve, when rooms are exposed as Remastered exposes them.
+    // The frame's tone curve, when rooms are exposed as Remastered exposes them. Remastered
+    // draws the opaque pass's emitted light at the room's static exposure and the sorted
+    // pass's at the frame's (CGameRenderJob::RenderPrimaryPass).
     f32 tone[3][4];
-    GXSetPBRTone(PortRoomEnv::Tone(tone) ? tone : nullptr);
+    const bool hasTone = PortRoomEnv::Tone(tone);
+    if (hasTone) {
+      const bool sorted = drawFlags.GetTrans() >= CModelFlags::kT_Blend ||
+                          material.IsFlagSet(kStateFlag_DepthSorting);
+      tone[0][3] = sorted ? 1.f : PortRoomEnv::GlowScale();
+    }
+    GXSetPBRTone(hasTone ? tone : nullptr);
     PortSetPBRMaterial(surface.GetMaterialIndex());
     // Glass (kind 8) sees what is behind it: the screen so far, copied into map 7 as the
     // refracting particles copy it (CElementGen).

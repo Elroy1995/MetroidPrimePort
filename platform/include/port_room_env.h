@@ -249,6 +249,15 @@ float MeasureExposure();
 // `roomenv auto`); otherwise it follows the room's probes.
 void SetAutoExposure(bool on);
 bool AutoExposure();
+// What emissive and unlit light in the opaque pass is multiplied by: Remastered draws it
+// at the room's static exposure (its InverseTonemapExposure, CSceneTonemapParams' static
+// value: the hint's range at the static lerp) while the frame is exposed at the moving
+// one, so it is 2^(static EV - frame EV); the sorted pass uses the frame's, so 1 there.
+// 1 when rooms are not exposed or MP_ROOM_ENV_STATIC_EXPOSURE=0 (the console's `roomenv
+// static`).
+float GlowScale();
+void SetStaticExposure(bool on);
+bool StaticExposure();
 // The frame's tone curve, for GXSetPBRTone; false when rooms are not exposed or the
 // camera's room has no environment.
 bool Tone(float rows[3][4]);

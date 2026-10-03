@@ -55,10 +55,11 @@ struct FrameState {
   float measuredEv = 0.f;
   uint32_t serial = 0;      // of the last measurement seen
   uint32_t ignoreUntil = 0; // measurements up to here are of before a jump
-  // The tonemap's EV, mid, contrast, toe and shoulder, moving linearly from `from` to `to`.
-  float from[5] = {};
-  float to[5] = {};
-  float shown[5] = {};
+  // The tonemap's EV, mid, contrast, toe and shoulder, and the static EV (see GlowScale),
+  // moving linearly from `from` to `to`.
+  float from[6] = {};
+  float to[6] = {};
+  float shown[6] = {};
   std::chrono::steady_clock::time_point start;
   std::chrono::steady_clock::time_point last;
   float carry = 0.f; // seconds not stepped yet
@@ -68,6 +69,7 @@ struct FrameState {
 };
 FrameState sFrame;
 int sAuto = -1;
+int sStatic = -1;
 
 // Areas in memory; one without a file has an empty File.
 std::unordered_map<uint32_t, Area> sAreas;
@@ -458,7 +460,11 @@ void UpdateFrame(bool roomGeoDrawing) {
   const Area& area = view->second;
   const File& file = area.file;
   const float* const t = file.tonemap;
-  const float target[5] = {t[0], t[1], file.contrast, t[2], t[3]};
+  const bool hint = file.exposure[0] != 0.f || file.exposure[1] != 0.f;
+  // CSceneTonemapParams' static exposure: a fixed point in the hint's range, or the
+  // tonemap's own EV without one.
+  const float staticEv = hint ? file.exposure[0] + (file.exposure[1] - file.exposure[0]) * file.staticLerp : t[0];
+  const float target[6] = {t[0], t[1], file.contrast, t[2], t[3], staticEv};
   float radiance[3] = {};
   uint32_t serial = 0;
   const bool hasRadiance = GXPortFrameRadiance(radiance, &serial);
@@ -482,14 +488,13 @@ void UpdateFrame(bool roomGeoDrawing) {
   }
   f.area = sViewArea;
   const float moved = std::min(std::chrono::duration<float>(now - f.start).count(), 1.f);
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < 6; ++i) {
     f.shown[i] = f.from[i] + (f.to[i] - f.from[i]) * moved;
   }
   if (f.sigma != file.exposureSigma) {
     f.sigma = file.exposureSigma;
     f.ev.SetSigma(f.sigma);
   }
-  const bool hint = file.exposure[0] != 0.f || file.exposure[1] != 0.f;
   // Measuring settles only where the picture follows the exposure: room geometry, lit by
   // the room's own light. The retail world keeps its level whatever the exposure, and
   // measuring it would push the exposure to an end of the hint's range.
@@ -536,6 +541,27 @@ void UpdateFrame(bool roomGeoDrawing) {
 }
 
 float MeasureExposure() { return sFrame.measuring ? sFrame.exposure : 0.f; }
+
+float GlowScale() {
+  if (sStatic < 0) {
+    const char* const env = std::getenv("MP_ROOM_ENV_STATIC_EXPOSURE");
+    sStatic = env != nullptr && env[0] == '0' ? 0 : 1;
+  }
+  if (sStatic == 0 || !sFrame.hasTone || !Enabled() || !RoomExposed()) {
+    return 1.f;
+  }
+  // The light is divided by the static exposure and the frame then multiplied by its own:
+  // 2^(3 - EV) / 2^(3 - static EV).
+  const float scale = std::exp2(sFrame.shown[5] - sFrame.ev.value);
+  return std::isfinite(scale) && scale > 0.f ? scale : 1.f;
+}
+
+void SetStaticExposure(bool on) { sStatic = on ? 1 : 0; }
+
+bool StaticExposure() {
+  GlowScale();
+  return sStatic != 0;
+}
 
 bool AutoExposure() {
   if (sAuto < 0) {
@@ -931,9 +957,10 @@ std::string Info(const float pos[3]) {
     const FrameState& f = sFrame;
     std::snprintf(line, sizeof(line),
                   "frame: EV %g towards %g (%s), exposure %g, sigma %g, measurement %u%s, tone EV %g mid %g "
-                  "contrast %g toe %g shoulder %g\n",
+                  "contrast %g toe %g shoulder %g, static EV %g (glow x%g)\n",
                   f.ev.value, f.targetEv, f.measured ? "measured" : "probes", f.exposure, f.sigma, f.serial,
-                  f.measuring ? " (measuring)" : "", f.shown[0], f.shown[1], f.shown[2], f.shown[3], f.shown[4]);
+                  f.measuring ? " (measuring)" : "", f.shown[0], f.shown[1], f.shown[2], f.shown[3], f.shown[4],
+                  f.shown[5], GlowScale());
     out += line;
   }
   for (const auto& [mrea, area] : sAreas) {
