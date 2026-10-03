@@ -256,6 +256,10 @@ CStateManager* sStateManager = nullptr;
 int sPendingTeleport = -1;
 bool sHasWorldTeleport = false;
 std::string sDiscPath;
+// The Remastered import's image and key file as last used: paths, or on Android
+// the picked content:// addresses (the picker keeps their read grant).
+std::string sRemasteredImagePath;
+std::string sRemasteredKeysPath;
 uint32_t sWorldTeleportWorld = 0;
 uint32_t sWorldTeleportArea = 0;
 bool sWorldSweepRequested = false;
@@ -338,6 +342,10 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sOverlayWindowed = ParseBool(value);
   } else if (key == "disc_path") {
     sDiscPath = value;
+  } else if (key == "remastered_nsp") {
+    sRemasteredImagePath = value;
+  } else if (key == "remastered_keys") {
+    sRemasteredKeysPath = value;
   } else if (key == "render_scale") {
     const float f = static_cast< float >(std::atof(value.c_str()));
     if (std::isfinite(f) && f >= 0.f && f <= 4.f) {
@@ -650,6 +658,12 @@ void SaveSettings() {
   file << "mouse_sensitivity=" << sMouseSensitivity << '\n';
   if (!sDiscPath.empty()) {
     file << "disc_path=" << sDiscPath << '\n';
+  }
+  if (!sRemasteredImagePath.empty()) {
+    file << "remastered_nsp=" << sRemasteredImagePath << '\n';
+  }
+  if (!sRemasteredKeysPath.empty()) {
+    file << "remastered_keys=" << sRemasteredKeysPath << '\n';
   }
   file << "ai_audio=" << (sAiAudioEnabled ? 1 : 0) << '\n';
   file << "musyx_audio=" << (sMusyxAudioEnabled ? 1 : 0) << '\n';
@@ -2950,9 +2964,33 @@ void DrawRemasteredImport() {
   static std::string sPickNames[2];
 #endif
   static bool sFilled = false;
+  const auto remember = [](int which, const std::string& path) {
+    std::string& saved = which == 0 ? sRemasteredImagePath : sRemasteredKeysPath;
+    if (!path.empty() && saved != path) {
+      saved = path;
+      MarkDirty();
+    }
+  };
   if (!sFilled) {
     sFilled = true;
     std::snprintf(sKeys, sizeof(sKeys), "%s", PortRemastered::DefaultKeysPath().c_str());
+#if defined(__ANDROID__)
+    // The files picked last time open again as if picked now.
+    std::lock_guard lock(sRemasteredPickMutex);
+    if (!sRemasteredImagePath.empty()) {
+      sRemasteredPicks.emplace_back(0, sRemasteredImagePath);
+    }
+    if (!sRemasteredKeysPath.empty()) {
+      sRemasteredPicks.emplace_back(1, sRemasteredKeysPath);
+    }
+#else
+    if (!sRemasteredImagePath.empty()) {
+      std::snprintf(sImage, sizeof(sImage), "%s", sRemasteredImagePath.c_str());
+    }
+    if (!sRemasteredKeysPath.empty()) {
+      std::snprintf(sKeys, sizeof(sKeys), "%s", sRemasteredKeysPath.c_str());
+    }
+#endif
   }
   {
     std::lock_guard lock(sRemasteredPickMutex);
@@ -2961,10 +2999,14 @@ void DrawRemasteredImport() {
       const std::string opened = OpenRemasteredPick(which, path);
       std::snprintf(which == 0 ? sImage : sKeys, sizeof(sImage), "%s", opened.c_str());
       sPickNames[which] = opened.empty() ? "could not be opened" : RemasteredPickName(path);
+      if (!opened.empty()) {
+        remember(which, path);
+      }
     }
 #else
     for (const auto& [which, path] : sRemasteredPicks) {
       std::snprintf(which == 0 ? sImage : sKeys, sizeof(sImage), "%s", path.c_str());
+      remember(which, path);
     }
 #endif
     sRemasteredPicks.clear();
@@ -3021,7 +3063,17 @@ void DrawRemasteredImport() {
     }
   } else {
     ImGui::BeginDisabled(sImage[0] == '\0' || sKeys[0] == '\0');
+#if !defined(__ANDROID__)
+    // A typed path is kept once it is used (Android keeps what was picked).
+    const auto rememberTyped = [&] {
+      remember(0, sImage);
+      remember(1, sKeys);
+    };
+#else
+    const auto rememberTyped = [] {};
+#endif
     if (ImGui::Button("Import##remastered")) {
+      rememberTyped();
 #if defined(__ANDROID__)
       // Each worker holds a world's models while it converts them; a phone has
       // the memory for two of those, not for one per core.
@@ -3032,6 +3084,7 @@ void DrawRemasteredImport() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Import movies##remastered")) {
+      rememberTyped();
       PortRemastered::StartMovieImport(sImage, sKeys);
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {

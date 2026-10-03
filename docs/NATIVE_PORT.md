@@ -549,7 +549,9 @@ game back.
 The port can build a model mod from your own copy of Metroid Prime Remastered;
 nothing of it ships. F1 > Extras > Mods > "Metroid Prime Remastered models"
 takes the game's `.nsp` and your console's key file (`~/.switch/prod.keys` is
-filled in when it exists), and Import converts in the background while the game
+filled in when it exists). The panel remembers both files once they are picked
+or used, as `remastered_nsp` and `remastered_keys` in the settings file (on
+Android, the picked documents). Import converts in the background while the game
 runs, on all but two cores. The result is staged in `mods/.remastered-models.importing`
 and becomes `mods/remastered-models` when you press Load it now (a mod reload,
 above) or at the next start, replacing an older one;
