@@ -4080,6 +4080,27 @@ void DrawSessionTab() {
   if (ImGui::Button("Screenshot (F12)")) {
     aurora::request_screenshot();
   }
+  ImGui::SameLine();
+  if (ImGui::Button("Exit game")) {
+    ImGui::OpenPopup("Exit game?");
+  }
+  if (ImGui::BeginPopupModal("Exit game?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::TextUnformatted("Progress since the last save station is lost.");
+    if (ImGui::Button("Exit")) {
+      // The same path as closing the window: the main loop sees AURORA_EXIT
+      // and shuts down cleanly.
+      SaveSettings();
+      SDL_Event quit{};
+      quit.type = SDL_EVENT_QUIT;
+      SDL_PushEvent(&quit);
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
   ImGui::Separator();
   ImGui::TextUnformatted("Settings are saved automatically when changed.");
   const std::string path = SettingsFilePath();
