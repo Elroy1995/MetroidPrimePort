@@ -567,6 +567,7 @@ struct MapRef {
   ModelUuid id{};
   uint32_t coord = 0;
   std::string src;  // how the texture is named in a tag
+  bool mean = false;  // drawn as its colour times alpha, averaged: one colour
 };
 
 struct RemMaterial {
@@ -874,11 +875,11 @@ struct Converter::State {
           k = i;
         }
       }
-      if (rt[k].has && (k != kEmissive || PbrEmissive(rt))) {
+      if (rt[k].has && (k != kEmissive || rt[k].mean || PbrEmissive(rt))) {
         src = &rt[k];
-        tag = std::string("pbr:") + kMapName[k] + ":" + src->src;
+        tag = std::string("pbr:") + kMapName[k] + ":" + src->src + (src->mean ? ":mean" : "");
         // Named fields, not positional: the size and the alpha follow them.
-        if (k == kEmissive) {
+        if (k == kEmissive && !src->mean) {
           tag += ":escale=" + FormatG(kPbrEmissive);
         }
         if (k == kMr) {
@@ -970,6 +971,17 @@ struct Converter::State {
       return tid;
     }
     Image img = Open(*src);
+    if (src->mean) {
+      double sum[3] = {0.0, 0.0, 0.0};
+      const size_t n = img.rgba.size() / 4;
+      for (size_t i = 0; i < n; ++i) {
+        for (int c = 0; c < 3; ++c) {
+          sum[c] += double(img.rgba[i * 4 + c]) * double(img.rgba[i * 4 + 3]) / 255.0;
+        }
+      }
+      img = Solid(uint8_t(std::nearbyint(sum[0] / double(n))), uint8_t(std::nearbyint(sum[1] / double(n))),
+                  uint8_t(std::nearbyint(sum[2] / double(n))));
+    }
     const size_t count = img.rgba.size() / 4;
     const bool isBase = k == kBase || role == "diffuse";
     if (k == kNormal) {
@@ -1009,7 +1021,9 @@ struct Converter::State {
     if (bake.on) {
       img = Baked(img, bake);
     }
-    if (k == kEmissive) {
+    // A ramp's mean is already the glow's level, which an emissive map's texels
+    // (lit spots on a dark map) are not.
+    if (k == kEmissive && !src->mean) {
       const float scale = float(kPbrEmissive);
       for (size_t i = 0; i < count; ++i) {
         for (int c = 0; c < 3; ++c) {
@@ -1093,6 +1107,11 @@ constexpr uint32_t kShaderGlass = 0x231F8383;
 // carried along TCH2's flow map in two phases that TCH1's noise offsets, CCH0 the flow's
 // strength, its period in seconds and the brightness, CCH1 the maps' scales.
 constexpr uint32_t kShaderLavaPool[] = {0x3ADE58B7, 0xB9C24545};
+// The arm cannon's beam glow (Wave, Plasma): TCH0's three channels scroll at
+// CCH1's and CCH2's speeds and, less the vertex colour, pick a colour from
+// TCH1, a ramp whose row is the vertex alpha and whose alpha scales it, times
+// CCH0.z. It is drawn as the ramp's mean, a glow that does not move.
+constexpr uint32_t kShaderGunGlow[] = {0xA13D6235, 0x62F671E0};
 // A shader with parameters of its own (TCHn, CCHn) reads the vertex colour as
 // it likes: masks for its extra maps, a colour seen through ice. These are the
 // ones read that multiply the albedo by it, as the standard shader does
@@ -1363,6 +1382,12 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     for (int i = 0; i < 3; ++i) {
       out.kindParam[i] = ShortestDouble(cch[0]->color[i]);
     }
+  }
+  if (std::find(std::begin(kShaderGunGlow), std::end(kShaderGunGlow), shader) != std::end(kShaderGunGlow) &&
+      tch[1] && cch[0] && !out.maps[kEmissive].has) {
+    set(kEmissive, tch[1]->texture);
+    out.maps[kEmissive].mean = true;
+    out.emissive = ShortestDouble(cch[0]->color[2]);
   }
   // BKLT is a parameter vector like CCHn, not a colour: x is the strength (0 to
   // 2), what y means is not known and it is not used.
@@ -2554,7 +2579,13 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   auto writeCskr = [&](const std::vector<std::pair<const WeightKey*, uint32_t>>& runs, size_t total) {
     const Blob cskr = CskrBytes(runs, total);
     for (uint32_t s : skins) {
-      Write(Hex8(s) + ".CSKR", cskr);
+      uint32_t id = s;
+      for (size_t i = 0; i < opt.outputSkins.size() && i < opt.skins.size(); ++i) {
+        if (opt.skins[i] == s) {
+          id = opt.outputSkins[i];
+        }
+      }
+      Write(Hex8(id) + ".CSKR", cskr);
     }
   };
 
@@ -2863,8 +2894,9 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   for (const Blob& s : secs) {
     Append(out, s);
   }
-  Write(Hex8(opt.retail) + ".CMDL", out);
-  Log("  wrote " + Hex8(opt.retail) + ".CMDL: " + std::to_string(n) + " verts, " + std::to_string(tris) + " tris, " +
+  const uint32_t outputModel = opt.outputModel != 0 ? opt.outputModel : opt.retail;
+  Write(Hex8(outputModel) + ".CMDL", out);
+  Log("  wrote " + Hex8(outputModel) + ".CMDL: " + std::to_string(n) + " verts, " + std::to_string(tris) + " tris, " +
       std::to_string(keys.size()) + " materials, " + std::to_string(nsurf) + " surfaces");
 }
 

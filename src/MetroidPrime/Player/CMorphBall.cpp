@@ -40,6 +40,7 @@
 #include "Kyoto/Math/CMath.hpp"
 #include "port_apclient.h"
 #include "port_debug.h"
+#include "port_model_variant.h"
 #include "Kyoto/Math/CPlane.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
@@ -2685,14 +2686,29 @@ void CMorphBall::LoadMorphBallModel(CStateManager& mgr) {
     x4_loadedModelId = loadModelId;
     if (spiderBall) {
       x58_ballModel =
-          GetMorphBallModel(rstl::string_l(skSpiderBallCharacter[modelIdx].x0_name), xc_radius);
+          GetMorphBallModel(rstl::string_l(skSpiderBallCharacter[modelIdx].x0_name), xc_radius
+#ifdef TARGET_PC
+                            ,
+                            modelIdx
+#endif
+          );
       x5c_ballModelShader = skSpiderBallCharacter[modelIdx].x4_shader;
       x68_lowPolyBallModel =
-          GetMorphBallModel(rstl::string_l(skSpiderBallLowPoly[modelIdx].x0_name), xc_radius);
+          GetMorphBallModel(rstl::string_l(skSpiderBallLowPoly[modelIdx].x0_name), xc_radius
+#ifdef TARGET_PC
+                            ,
+                            modelIdx
+#endif
+          );
       x6c_lowPolyBallModelShader = skSpiderBallLowPoly[modelIdx].x4_shader;
       if (skSpiderBallGlass[modelIdx].x0_name != nullptr) {
         x60_spiderBallGlassModel =
-            GetMorphBallModel(rstl::string_l(skSpiderBallGlass[modelIdx].x0_name), xc_radius);
+            GetMorphBallModel(rstl::string_l(skSpiderBallGlass[modelIdx].x0_name), xc_radius
+#ifdef TARGET_PC
+                            ,
+                            modelIdx
+#endif
+          );
         x64_spiderBallGlassModelShader = skSpiderBallGlass[modelIdx].x4_shader;
       } else {
         x60_spiderBallGlassModel = nullptr;
@@ -2701,10 +2717,20 @@ void CMorphBall::LoadMorphBallModel(CStateManager& mgr) {
       x8_ballGlowColorIdx = skSpiderBallGlowColorIdx[modelIdx];
     } else {
       x58_ballModel =
-          GetMorphBallModel(rstl::string_l(skBallCharacter[modelIdx].x0_name), xc_radius);
+          GetMorphBallModel(rstl::string_l(skBallCharacter[modelIdx].x0_name), xc_radius
+#ifdef TARGET_PC
+                            ,
+                            modelIdx
+#endif
+          );
       x5c_ballModelShader = skBallCharacter[modelIdx].x4_shader;
       x68_lowPolyBallModel =
-          GetMorphBallModel(rstl::string_l(skBallLowPoly[modelIdx].x0_name), xc_radius);
+          GetMorphBallModel(rstl::string_l(skBallLowPoly[modelIdx].x0_name), xc_radius
+#ifdef TARGET_PC
+                            ,
+                            modelIdx
+#endif
+          );
       x6c_lowPolyBallModelShader = skBallLowPoly[modelIdx].x4_shader;
       x8_ballGlowColorIdx = skBallGlowColorIdx[modelIdx];
     }
@@ -2714,11 +2740,24 @@ void CMorphBall::LoadMorphBallModel(CStateManager& mgr) {
   }
 }
 
+#ifdef TARGET_PC
+CAssetId CMorphBall::PortSuitVariant(CAssetId id, FourCC type, int suit) {
+  const CAssetId variant = PortModelVariant::Id(id, suit);
+  return gpResourceFactory->GetResourceTypeById(variant) == type ? variant : id;
+}
+
+CModelData* CMorphBall::GetMorphBallModel(const rstl::string& name, float radius, int suit) {
+#else
 CModelData* CMorphBall::GetMorphBallModel(const rstl::string& name, float radius) {
+#endif
   const SObjectTag* tag = gpResourceFactory->GetResourceIdByName(name.data());
 
   // Keep a copy of the resolved resource ID while allocating the model.
+#ifdef TARGET_PC
+  const CAssetId& id = PortSuitVariant(tag->GetId(), tag->GetType(), suit);
+#else
   const CAssetId& id = CAssetId(tag->GetId());
+#endif
   const FourCC& type = tag->GetType();
   const FourCC* const typePtr = &type;
 

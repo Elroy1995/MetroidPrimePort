@@ -21,6 +21,7 @@
 #include <aurora/dvd.h>
 
 #include "port_map_icons.h"
+#include "port_model_variant.h"
 #include "port_mods.h"
 #include "port_remastered_cmdl.h"
 #include "port_remastered_convert.h"
@@ -55,6 +56,7 @@ constexpr uint32_t kCMDL = 0x434D444C;
 constexpr uint32_t kSMDL = 0x534D444C;
 constexpr uint32_t kWMDL = 0x574D444C;  // a liquid's surface
 constexpr uint32_t kCSKR = 0x43534B52;
+constexpr uint32_t kANCS = 0x414E4353;
 constexpr uint32_t kTXTR = 0x54585452;
 constexpr uint32_t kMLVL = 0x4D4C564C;
 constexpr uint32_t kMREA = 0x4D524541;
@@ -222,8 +224,8 @@ public:
       }
       for (const PortMods::PakResource& res : table.resources) {
         m_ids.insert(res.id);
-        if (res.type == kCMDL || res.type == kCSKR || res.type == kTXTR || res.type == kMLVL || res.type == kMREA ||
-            res.type == kSTRG || res.type == kFRME || res.type == kMAPA || res.type == kMAPW) {
+        if (res.type == kCMDL || res.type == kCSKR || res.type == kANCS || res.type == kTXTR || res.type == kMLVL ||
+            res.type == kMREA || res.type == kSTRG || res.type == kFRME || res.type == kMAPA || res.type == kMAPW) {
           m_resources.emplace(Key(res.type, res.id), Where{entry, res.offset, res.size, res.compressed != 0});
         }
       }
@@ -743,19 +745,141 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     };
     return io;
   };
+  // Second looks of a retail model (TableEntry::ancs, key) are written under
+  // ids of their own, given out here before anything is written so that they
+  // come out the same in every import.
+  struct Look {
+    bool ok = true;
+    std::string error;
+    uint32_t model = 0;  // the CMDL's id, 0 for the retail one
+    std::vector<uint32_t> skins;  // the CSKRs' ids, empty for the retail ones
+    uint32_t ancs = 0;            // the ANCS copy's id, 0 for none
+    std::vector<uint8_t> ancsData;
+  };
+  std::vector<Look> looks(count);
+  {
+    auto hex = [](uint32_t id) {
+      char name[16];
+      std::snprintf(name, sizeof(name), "%08X", id);
+      return std::string(name);
+    };
+    auto variant = [&](Look& look, uint32_t id, int key) {
+      const uint32_t out = PortModelVariant::Id(id, key);
+      if (retail.HasId(out) || taken.count(out) != 0) {
+        look.ok = false;
+        look.error = "the id for look " + std::to_string(key) + " of " + hex(id) + " is taken";
+      }
+      taken.insert(out);
+      return out;
+    };
+    for (size_t i = 0; i < count; ++i) {
+      const TableEntry& entry = table[i];
+      Look& look = looks[i];
+      if (entry.ancs == 0 && entry.key >= 0) {
+        look.model = variant(look, entry.retail, entry.key);
+      } else if (entry.ancs != 0) {
+        look.ancs = entry.key >= 0 ? variant(look, entry.ancs, entry.key) : entry.ancs;
+        if (entry.skinCount != 1) {
+          look.ok = false;
+          look.error = "a character's look needs exactly one skin";
+        }
+      }
+    }
+    // The new models and skins of the looks: hashed, then moved past every id
+    // the disc or this import has.
+    auto fresh = [&](uint32_t seed) {
+      uint32_t id = 0x811C9DC5u;  // FNV-1a
+      for (int i = 0; i < 4; ++i) {
+        id = (id ^ ((seed >> (i * 8)) & 0xFFu)) * 0x01000193u;
+      }
+      while (id == 0 || id == 0xFFFFFFFFu || retail.HasId(id) || taken.count(id) != 0) {
+        ++id;
+      }
+      taken.insert(id);
+      return id;
+    };
+    for (size_t i = 0; i < count; ++i) {
+      const TableEntry& entry = table[i];
+      Look& look = looks[i];
+      if (entry.ancs != 0 || entry.key < 0 || !look.ok) {
+        continue;
+      }
+      // A static look of a skinned model (the low-poly and glass balls) is
+      // drawn without its skin, but the converter still writes one; it must
+      // not land on the retail model's.
+      const uint32_t* skins = TableSkins(entry);
+      for (int s = 0; s < entry.skinCount; ++s) {
+        look.skins.push_back(fresh(look.model ^ skins[s] * 0x9E3779B1u));
+      }
+    }
+    for (size_t i = 0; i < count; ++i) {
+      const TableEntry& entry = table[i];
+      Look& look = looks[i];
+      if (entry.ancs == 0 || !look.ok) {
+        continue;
+      }
+      // The copy binds the new pair where the retail one binds the old: one
+      // character's model and skin ids, big-endian and side by side.
+      const uint32_t skin = TableSkins(entry)[0];
+      if (!retail.Read(kANCS, entry.ancs, look.ancsData)) {
+        look.ok = false;
+        look.error = "character " + hex(entry.ancs) + " is not on the disc";
+        continue;
+      }
+      const uint8_t pair[8] = {uint8_t(entry.retail >> 24), uint8_t(entry.retail >> 16), uint8_t(entry.retail >> 8),
+                               uint8_t(entry.retail),       uint8_t(skin >> 24),         uint8_t(skin >> 16),
+                               uint8_t(skin >> 8),          uint8_t(skin)};
+      std::vector<uint8_t>& data = look.ancsData;
+      size_t at = data.size();
+      int found = 0;
+      for (auto it = std::search(data.begin(), data.end(), pair, pair + 8); it != data.end();
+           it = std::search(it + 1, data.end(), pair, pair + 8)) {
+        at = size_t(it - data.begin());
+        ++found;
+      }
+      if (found != 1) {
+        look.ok = false;
+        look.error = "character " + hex(entry.ancs) + " binds " + hex(entry.retail) + " " + std::to_string(found) +
+                     " times";
+        continue;
+      }
+      const uint32_t seed = entry.ancs * 0x9E3779B1u ^ entry.retail ^ uint32_t(entry.key + 1) * 0x85EBCA6Bu;
+      look.model = fresh(seed);
+      look.skins = {fresh(seed ^ 0x534B494Eu)};
+      for (int b = 0; b < 4; ++b) {
+        data[at + b] = uint8_t(look.model >> (24 - b * 8));
+        data[at + 4 + b] = uint8_t(look.skins[0] >> (24 - b * 8));
+      }
+    }
+  }
   auto work = [&](int worker) {
     YieldToGame();
-    Converter converter(makeIO(worker, staging));
+    ConvertIO io = makeIO(worker, staging);
+    const auto write = io.write;
+    Converter converter(std::move(io));
     for (size_t i = next++; i < count && !sCancel; i = next++) {
       const TableEntry& entry = table[i];
+      const Look& look = looks[i];
       ModelUuid id;
       std::memcpy(id.data(), entry.rem, 16);
-      std::string modelError;
+      std::string modelError = look.error;
       std::vector<uint8_t> raw;
       Model model;
-      const bool ok = remastered.ReadModel(id, raw, modelError) &&
-                      ParseModel(raw.data(), raw.size(), model, modelError) &&
-                      converter.Convert(model, OptionsFor(entry), modelError);
+      ConvertOptions options = OptionsFor(entry);
+      options.outputModel = look.model;
+      options.outputSkins = look.skins;
+      bool ok = look.ok && remastered.ReadModel(id, raw, modelError) &&
+                ParseModel(raw.data(), raw.size(), model, modelError) &&
+                converter.Convert(model, options, modelError);
+      // The character copy last, so that it never names a model that failed.
+      if (ok && look.ancs != 0) {
+        char name[16];
+        std::snprintf(name, sizeof(name), "%08X", look.ancs);
+        ok = write(std::string(name) + ".ANCS", look.ancsData);
+        if (!ok) {
+          modelError = "could not write " + std::string(name) + ".ANCS";
+        }
+      }
       if (ok) {
         ++converted;
       } else {
