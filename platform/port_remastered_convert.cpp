@@ -598,6 +598,9 @@ struct RemMaterial {
   double tint[3] = {0.0, 0.0, 0.0};  // kinds 5 and 7: the liquid's colour; 8: what is seen through it
   bool hidden = false;  // not drawn: the game has its own
   double scroll[2] = {0.0, 0.0};  // the base map's texcoord, per second
+  // ColorUnlit's colour: twice the vertex colour linearised, times the base map
+  // and CCH0.x x CCH1.x (kept in backlight, which an unlit surface has no use for).
+  bool colorUnlit = false;
 };
 
 struct Buffer {
@@ -1116,7 +1119,10 @@ constexpr uint32_t kShaderLavaPool[] = {0x3ADE58B7, 0xB9C24545};
 // the vertex alpha and whose alpha scales it, times CCH0.z.
 constexpr uint32_t kShaderGunGlow[] = {0xA13D6235, 0x62F671E0};
 // Unlit, the vertex colour times the base map (a door shield's noise), which
-// scrolls at (CCH0.y, -CCH0.z) a second over texcoords scaled by CCH1.yz.
+// scrolls at (CCH0.y, -CCH0.z) a second over texcoords scaled by CCH1.yz. Its
+// vertex shader linearises the colour and doubles it (2 pow(|c|, 2.2)), the base
+// map is sRGB, and the pixel shader scales the product by CCH0.x x CCH1.x; the
+// alpha is the base map's times the vertex's, not squared.
 constexpr uint32_t kShaderColorUnlit = 0x992941B7;
 // A shader with parameters of its own (TCHn, CCHn) reads the vertex colour as
 // it likes: masks for its extra maps, a colour seen through ice. These are the
@@ -1418,6 +1424,10 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   // BKLT is a parameter vector like CCHn, not a colour: x is the strength (0 to
   // 2), what y means is not known and it is not used.
   out.backlight = bklt ? ShortestDouble(bklt->color[0]) : 0.0;
+  if (shader == kShaderColorUnlit) {
+    out.colorUnlit = true;
+    out.backlight = (cch[0] ? ShortestDouble(cch[0]->color[0]) : 1.0) * (cch[1] ? ShortestDouble(cch[1]->color[0]) : 1.0);
+  }
   // Both layers' base maps and an edge width make a blend; the shader's own
   // floor on the width is not known, so a zero one is the thinnest edge.
   out.layered = out.maps[kBase].has && out.layer[kBase].has && !out.cutout && !out.blended;
@@ -1472,9 +1482,16 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
 // Remastered's emissive strengths are HDR values meant for its bloom, and the
 // port's output is 8-bit with none, so the strength is compressed (square
 // root, capped) around 1, where the map is drawn as converted.
+// A ColorUnlit surface drawn by its own rule (mode 8): one whose vertex colour
+// the port keeps and lights nothing with.
+bool ColorUnlitDraw(const RemMaterial& m) { return m.colorUnlit && m.unlit && m.tinted; }
+
 void PbrRecord(Blob& b, const RemMaterial& m) {
   const double e = std::sqrt(std::min(std::max(m.emissive, 0.0), kPbrEmissiveMax));
-  const double k = std::min(std::max(m.backlight, 0.0), 2.0);
+  // ColorUnlit's backlight is its gain, and no backlight at all where drawn otherwise.
+  const double k = ColorUnlitDraw(m) ? std::max(m.backlight, 0.0)
+                   : m.colorUnlit    ? 0.0
+                                     : std::min(std::max(m.backlight, 0.0), 2.0);
   for (int i = 0; i < 3; ++i) {
     // A liquid has no glow of its own, and its colour goes where the glow's would.
     PF(b, m.kind == 5 || m.kind == 7 || m.kind == 8 ? m.tint[i] : e);
@@ -1484,7 +1501,8 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
   }
   if (m.height > 0.0 || m.unlit || m.mask || m.layered || m.tinted || m.kind) {
     PF(b, m.height);
-    PF(b, (m.unlit ? 1.0 : 0.0) + (m.mask ? 2.0 : 0.0) + (m.tinted ? 4.0 : 0.0));
+    PF(b, (m.unlit ? 1.0 : 0.0) + (m.mask ? 2.0 : 0.0) + (m.tinted ? 4.0 : 0.0) +
+              (ColorUnlitDraw(m) ? 8.0 : 0.0));
     if (m.layered || m.kind) {
       // Only a blend of two layers has an edge.
       PF(b, m.kind == 7 || (m.layered && m.kind <= 1) ? m.layerSmooth : 0.0);
@@ -1519,8 +1537,12 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
                  const uint32_t* coords, const RemMaterial& rem) {
   const int nmaps = rem.layered ? kLayeredMaps : kMaps;
   Blob b;
-  const uint32_t flags =
-      (pm.flags & 0xFFFF & ~uint32_t(0x8 | 0x40 | 0x100 | 0x400 | 0x800 | 0x2000)) | 0xF0000 | kPbrFlag;
+  // ColorUnlit's colour, out of linear light, is (2 x gain)^(1/2.2) times the vertex
+  // colour times the base map, both as stored: a stage multiplies by half that
+  // (konst 0) and doubles. Exact bar the tone curve, which TEV has none of.
+  const bool colorUnlit = ColorUnlitDraw(rem);
+  const uint32_t flags = (pm.flags & 0xFFFF & ~uint32_t(0x8 | 0x40 | 0x100 | 0x400 | 0x800 | 0x2000)) |
+                         0xF0000 | kPbrFlag | (colorUnlit ? 0x8u : 0u);
   P32(b, flags);
   P32(b, uint32_t(nmaps));
   for (int i = 0; i < nmaps; ++i) {
@@ -1532,6 +1554,12 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
   // The material's cache id: CCubeMaterial::SetCurrent skips the vertex layout
   // and TEV when it matches the previous draw's, so it must differ from retail's.
   P32(b, group);
+  if (colorUnlit) {
+    const double half = 0.5 * std::pow(2.0 * std::max(rem.backlight, 0.0), 1.0 / 2.2);
+    const uint32_t k = uint32_t(std::lround(std::clamp(half, 0.0, 1.0) * 255.0));
+    P32(b, 1);
+    P32(b, k << 24 | k << 16 | k << 8 | 0xFF);
+  }
   P16(b, pm.blendDst);
   P16(b, pm.blendSrc);
   // An unlit surface coloured by its vertices (a door shield) keeps that in the
@@ -1562,13 +1590,14 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
   P32(b, uint32_t(nstages));
   for (int i = 0; i < nstages; ++i) {
     const uint32_t* t = tev[std::min(i, kLayeredMaps - 1)];
-    P32(b, t[0]);
+    const bool gain = colorUnlit && i == 1;
+    P32(b, gain ? 0x7B80Fu : t[0]);  // ZERO, CPREV, KONST, ZERO, then x2
     P32(b, i == 0 && vertexGlow ? 0x39487u : t[1]);  // ZERO, TEXA, RASA, ZERO: base x vertex alpha
+    P32(b, gain ? 0x140u : 0x100u);
     P32(b, 0x100);
-    P32(b, 0x100);
     P8(b, 0);
     P8(b, 0);
-    P8(b, 0);
+    P8(b, gain ? 0x0C : 0);  // GX_TEV_KCSEL_K0
     P8(b, uint8_t(t[2]));
   }
   for (int i = 0; i < nstages; ++i) {

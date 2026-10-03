@@ -956,7 +956,14 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       let pbr_ng = normalize(in.pbr_nrm);
       let pbr_kind = ubuf.pbr_layer.y;
       let pbr_vraw = {};
-      let pbr_vc = select(vec4f(1.0), pbr_vraw, ubuf.pbr_backlight.w > 3.5);)""",
+      // 8 = Remastered's ColorUnlit: its vertex shader linearises the colour and doubles
+      // it, and the pixel shader's gain is in the backlight's place.
+      let pbr_cu = ubuf.pbr_backlight.w > 7.5;
+      let pbr_flags = ubuf.pbr_backlight.w - select(0.0, 8.0, pbr_cu);
+      var pbr_vc = select(vec4f(1.0), pbr_vraw, pbr_flags > 3.5);
+      if (pbr_cu) {{
+          pbr_vc = vec4f(2.0 * pow(abs(pbr_vraw.rgb), vec3f(2.2)) * ubuf.pbr_backlight.rgb, pbr_vraw.a);
+      }})""",
                                   vclr);
   const bool framed = mapStage[2] != -1 || layered;
   if (framed) {
@@ -1389,9 +1396,13 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           let pbr_hs = clamp((pbr_hx - 0.5 + ubuf.pbr_emissive.w) / (2.0 * ubuf.pbr_emissive.w), 0.0, 1.0);
           pbr_alpha = pbr_hs * pbr_hs * (3.0 - 2.0 * pbr_hs);
       }}
+      if (pbr_cu) {{
+          // ColorUnlit's alpha: the base map's times the vertex's.
+          pbr_alpha = {0}.a * pbr_vraw.a;
+      }}
       // 1 = unlit, 2 = the base map's alpha masks the glow, 4 = tinted by the vertex colour
-      // (pbr_vc); the sum of those.
-      let pbr_mode = ubuf.pbr_backlight.w - select(0.0, 4.0, ubuf.pbr_backlight.w > 3.5);
+      // (pbr_vc), 8 = ColorUnlit (above); the sum of those.
+      let pbr_mode = pbr_flags - select(0.0, 4.0, pbr_flags > 3.5);
       if (pbr_mode > 1.5) {{
           // The base map's alpha is how much of the glow shows, and no opacity: the
           // vertex alpha alone is.
