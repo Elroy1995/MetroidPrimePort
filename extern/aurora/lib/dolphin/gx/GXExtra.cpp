@@ -51,6 +51,13 @@ void GXSetSDF(u8 edge) {
   GX_WRITE_U8(edge);
 }
 
+void GXSetDrawTag(u32 asset, u32 model, u32 material) {
+  GX_WRITE_AURORA(GX_AURORA_SET_DRAW_TAG);
+  GX_WRITE_U32(asset);
+  GX_WRITE_U32(model);
+  GX_WRITE_U32(material);
+}
+
 void GXCopyProbeFace(u32 face) {
   GX_WRITE_AURORA(GX_AURORA_COPY_PROBE_FACE);
   GX_WRITE_U8(static_cast<u8>(face));

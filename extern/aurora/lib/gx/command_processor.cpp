@@ -380,6 +380,39 @@ static u32 calc_vtx_size(GXVtxFmt fmt) noexcept {
   return vtxSize;
 }
 
+// A texgen reading a UV set the vertices don't carry draws with zero UVs (shader.cpp
+// vtx_attr). Names the draw from GX_AURORA_SET_DRAW_TAG, once per model, material and
+// texcoord, so a bad mod model can be found.
+static void warn_missing_uv_sets(const ShaderConfig& config, const ShaderInfo& info) noexcept {
+  static std::vector<std::array<u32, 4>> sReported;
+  for (u32 i = 0; i < info.sampledTexCoords.size(); ++i) {
+    if (!info.sampledTexCoords.test(i)) {
+      continue;
+    }
+    const auto& tcg = config.tcgs[i];
+    if ((tcg.type >= GX_TG_BUMP0 && tcg.type <= GX_TG_BUMP7) || tcg.src < GX_TG_TEX0 || tcg.src > GX_TG_TEX7) {
+      continue;
+    }
+    const u32 set = tcg.src - GX_TG_TEX0;
+    if (config.attrs[GX_VA_TEX0 + set].attrType != GX_NONE) {
+      continue;
+    }
+    const auto& tag = g_gxState.drawTag;
+    const std::array<u32, 4> key{tag[0], tag[1], tag[2], i};
+    if (sReported.size() >= 64 || std::find(sReported.begin(), sReported.end(), key) != sReported.end()) {
+      continue;
+    }
+    sReported.push_back(key);
+    if (tag[0] == 0 && tag[1] == UINT32_MAX) {
+      Log.warn("untagged draw: texcoord {} reads UV set {}, which its vertices lack{}", i, set,
+               config.pbr ? " (PBR)" : "");
+    } else {
+      Log.warn("model {:08X} (index {}) material {}: texcoord {} reads UV set {}, which its vertices lack{}", tag[0],
+               static_cast<s32>(tag[1]), tag[2], i, set, config.pbr ? " (PBR)" : "");
+    }
+  }
+}
+
 static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange, gfx::Range idxRange,
                          u32 numIndices) noexcept {
   auto& state = g_gxState;
@@ -406,6 +439,7 @@ static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Rang
     const auto prevSampledIndTextures = cache.shaderInfo.sampledIndTextures;
     populate_pipeline_config(cache.config, prim, fmt);
     cache.shaderInfo = build_shader_info(cache.config.shaderConfig);
+    warn_missing_uv_sets(cache.config.shaderConfig, cache.shaderInfo);
     cache.pipelineRef = gfx::pipeline_ref(cache.config);
     cache.fmt = fmt;
     cache.lineMode = lineMode;
@@ -777,6 +811,10 @@ void handle_aurora(ByteReader& reader) noexcept {
     if (g_gxState.sdf != sdf) {
       g_gxState.sdf = sdf;
       g_gxState.dirty |= DirtyPipeline;
+    }
+  } else if (subCmd == GX_AURORA_SET_DRAW_TAG) {
+    for (u32& value : g_gxState.drawTag) {
+      value = reader.read<u32>();
     }
   } else if (subCmd == GX_AURORA_COPY_PROBE_FACE) {
     copy_probe_face(reader.read<u8>());

@@ -27,6 +27,10 @@ void GXSetPBR(GXBool enable);
 // Aurora extension: distance-field texturing for the following draws (see
 // GX_AURORA_SET_SDF). 0 turns it off.
 void GXSetSDF(u8 edge);
+// Aurora extension: names the following draws in Aurora's warnings about them (the
+// model's asset id, its index when it has no id, and the material); draws nothing
+// differently. Asset 0 with model 0xFFFFFFFF is no name (the initial state).
+void GXSetDrawTag(u32 asset, u32 model, u32 material);
 // Aurora extension: the PBR environment probe (see GX_AURORA_COPY_PROBE_FACE and
 // GX_AURORA_SET_PBR_PROBE).
 void GXCopyProbeFace(u32 face);

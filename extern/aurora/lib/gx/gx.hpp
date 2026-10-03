@@ -392,6 +392,7 @@ struct GXState {
   u8 numTexGens = 0;
   bool pbr = false; // GX_AURORA_SET_PBR
   u8 sdf = 0; // GX_AURORA_SET_SDF
+  std::array<u32, 3> drawTag{0, UINT32_MAX, 0}; // GX_AURORA_SET_DRAW_TAG: asset, model index, material
   Mat3x4<float> pbrProbe; // GX_AURORA_SET_PBR_PROBE
   Vec4<float> pbrEmissive{1.f, 1.f, 1.f, 0.f}; // GX_AURORA_SET_PBR_MATERIAL
   Vec4<float> pbrBacklight{0.f, 0.f, 0.f, 0.f};

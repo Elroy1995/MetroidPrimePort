@@ -193,6 +193,11 @@ extern "C" {
 //   u8 edge (distance of the outer edge x 255; 128 = the shape itself, 0 = off)
 #define GX_AURORA_SET_SDF 0x004F
 
+// Names the following draws for diagnostics (see GXSetDrawTag); changes no state.
+// Payload:
+//   u32 asset id, u32 model index, u32 material
+#define GX_AURORA_SET_DRAW_TAG 0x0050
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

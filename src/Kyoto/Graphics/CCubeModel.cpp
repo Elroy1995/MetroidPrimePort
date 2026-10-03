@@ -385,9 +385,12 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     CGX::SetBlendMode(GX_BM_BLEND, GX_BL_ONE, GX_BL_ONE, GX_LO_CLEAR);
     CGX::SetZMode(true, GX_LEQUAL, false);
   }
+  // Names the draw in Aurora's warnings (a mod model whose texgen reads a missing UV set).
+  GXSetDrawTag(PortAssetId(), static_cast< u32 >(x44_idx), surface.GetMaterialIndex());
 #endif
   surface.CallDisplayList();
 #ifdef TARGET_PC
+  GXSetDrawTag(0, 0xFFFFFFFF, 0);
   if (pbr) {
     GXSetPBR(GX_FALSE);
   }

@@ -113,6 +113,9 @@ public:
   // caller must clear before the model goes.
   static void PortOverridePBR(const CCubeModel* model, int material, int field, float value);
   static void PortClearPBROverrides();
+  // The CMDL this model was loaded from (0 for an area's models), for diagnostics.
+  void PortSetAssetId(uint id) { xPort_assetId = id; }
+  uint PortAssetId() const { return xPort_assetId; }
 #endif
   void SetStaticArraysCurrent() const;
   void SetArraysCurrent() const;
@@ -143,6 +146,9 @@ private:
   bool x40_25_visible : 1;
   uchar x41_visorFlags;
   int x44_idx;
+#ifdef TARGET_PC
+  uint xPort_assetId = 0;
+#endif
 
   static bool sUsingPackedLightmaps;
 };
