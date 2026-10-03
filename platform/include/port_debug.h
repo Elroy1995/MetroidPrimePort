@@ -241,6 +241,12 @@ void SetSwapScanXray(bool enabled);
 // (SDL gamepad button or PAD_NATIVE_BUTTON_TRIGGER_*); -1 for none.
 int ShiftBinding(int slot);
 void SetShiftBinding(int slot, int code);
+// A second controller button for a GameCube button (Aurora maps one each),
+// ORed in by CDolphinController: `bit` is the PAD_BUTTON_* / PAD_TRIGGER_* bit's
+// position, the code as ShiftBinding's slot 2; -1 for none.
+constexpr int kPadAltCount = 16;
+int PadAltButton(int bit);
+void SetPadAltButton(int bit, int code);
 // What mouse button `button` (0 left, 1 middle, 2 right, 3 X1, 4 X2) does under
 // mouse aim: a PortInputMap::EMouseAction.
 int MouseAction(int button);

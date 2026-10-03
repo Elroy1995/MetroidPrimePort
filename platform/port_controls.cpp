@@ -322,6 +322,41 @@ bool NewInput(SInput& out) {
   return found;
 }
 
+// The PAD bit's position, PortDebug::PadAltButton's index.
+int PadBit(PADButton button) {
+  int bit = 0;
+  while (bit < PortDebug::kPadAltCount && (static_cast< u32 >(button) >> bit) != 1u) {
+    ++bit;
+  }
+  return bit;
+}
+
+// The beam shift's pad slot and the alt buttons store a controller input as
+// Aurora's native button code, a trigger as its click code.
+s32 NativeCode(const SInput& input) {
+  if (input.kind == SInput::kPadButton && input.code >= 0) {
+    return input.code;
+  }
+  if (input.kind == SInput::kPadAxis && IsTrigger(input.code)) {
+    return static_cast< s32 >(input.code == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ? PAD_NATIVE_BUTTON_TRIGGER_LEFT
+                                                                         : PAD_NATIVE_BUTTON_TRIGGER_RIGHT);
+  }
+  return -1;
+}
+
+SInput NativeCodeInput(s32 code) {
+  if (code == static_cast< s32 >(PAD_NATIVE_BUTTON_TRIGGER_LEFT) ||
+      code == static_cast< s32 >(PAD_NATIVE_BUTTON_TRIGGER_RIGHT)) {
+    return {SInput::kPadAxis,
+            code == static_cast< s32 >(PAD_NATIVE_BUTTON_TRIGGER_LEFT) ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER
+                                                                      : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
+            AXIS_SIGN_POSITIVE};
+  }
+  return {SInput::kPadButton, code < 0 ? -1 : code, AXIS_SIGN_POSITIVE};
+}
+
+SInput ShiftPadInput() { return NativeCodeInput(PortDebug::ShiftBinding(kShiftPadSlot)); }
+
 // Points one row's slot at an input (code -1 unbinds a key or button row).
 // Doesn't save.
 void BindRow(ECapture kind, int index, int slot, const SInput& input) {
@@ -345,6 +380,11 @@ void BindRow(ECapture kind, int index, int slot, const SInput& input) {
     break;
   }
   case ECapture::kPadButton: {
+    // Slot 1 is the port's own alt button; Aurora maps one per PAD button.
+    if (slot != 0) {
+      PortDebug::SetPadAltButton(PadBit(kControlPadButtons[index].button), NativeCode(input));
+      break;
+    }
     PADButtonMapping mapping{};
     mapping.nativeButton = PAD_NATIVE_BUTTON_INVALID;
     if (input.kind == SInput::kPadButton && input.code >= 0) {
@@ -374,33 +414,12 @@ void BindRow(ECapture kind, int index, int slot, const SInput& input) {
   case ECapture::kShiftKey:
     PortDebug::SetShiftBinding(slot, input.kind == SInput::kKey ? input.code : PAD_KEY_INVALID);
     break;
-  case ECapture::kShiftPad: {
-    // Stored as Aurora's native button codes, a trigger as its click code.
-    s32 code = -1;
-    if (input.kind == SInput::kPadButton && input.code >= 0) {
-      code = input.code;
-    } else if (input.kind == SInput::kPadAxis && IsTrigger(input.code)) {
-      code = static_cast< s32 >(input.code == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ? PAD_NATIVE_BUTTON_TRIGGER_LEFT
-                                                                            : PAD_NATIVE_BUTTON_TRIGGER_RIGHT);
-    }
-    PortDebug::SetShiftBinding(kShiftPadSlot, code);
+  case ECapture::kShiftPad:
+    PortDebug::SetShiftBinding(kShiftPadSlot, NativeCode(input));
     break;
-  }
   case ECapture::kNone:
     break;
   }
-}
-
-SInput ShiftPadInput() {
-  const s32 code = PortDebug::ShiftBinding(kShiftPadSlot);
-  if (code == static_cast< s32 >(PAD_NATIVE_BUTTON_TRIGGER_LEFT) ||
-      code == static_cast< s32 >(PAD_NATIVE_BUTTON_TRIGGER_RIGHT)) {
-    return {SInput::kPadAxis,
-            code == static_cast< s32 >(PAD_NATIVE_BUTTON_TRIGGER_LEFT) ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER
-                                                                      : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
-            AXIS_SIGN_POSITIVE};
-  }
-  return {SInput::kPadButton, code < 0 ? -1 : code, AXIS_SIGN_POSITIVE};
 }
 
 s32 KeyForPadButton(const PADKeyButtonBinding* list, u32 count, PADButton button);
@@ -420,6 +439,9 @@ SInput RowInput(ECapture kind, int index, int slot) {
     return {SInput::kKey, KeyForPadAxis(list, count, static_cast< PADAxis >(index)), AXIS_SIGN_POSITIVE};
   }
   case ECapture::kPadButton: {
+    if (slot != 0) {
+      return NativeCodeInput(PortDebug::PadAltButton(PadBit(kControlPadButtons[index].button)));
+    }
     const PADButtonMapping* list = PADGetButtonMappings(kControlPort, &count);
     const u32 native = NativeButtonForPadButton(list, count, kControlPadButtons[index].button);
     if (native == PAD_NATIVE_BUTTON_TRIGGER_LEFT || native == PAD_NATIVE_BUTTON_TRIGGER_RIGHT) {
@@ -483,11 +505,12 @@ bool PairedRow(ECapture kind, int index, ECapture& pairKind, int& pairIndex) {
 }
 
 // Binds a row's slot, taking its L/R partner's same slot along if the two
-// shared the old key.
+// shared the old key. A controller axis row has no alt slot to pair with.
 void BindWithPair(ECapture kind, int index, int slot, const SInput& input) {
   ECapture pairKind = ECapture::kNone;
   int pairIndex = -1;
-  const bool paired = PairedRow(kind, index, pairKind, pairIndex) &&
+  const bool paired = (slot == 0 || kind == ECapture::kKeyButton || kind == ECapture::kKeyAxis) &&
+                      PairedRow(kind, index, pairKind, pairIndex) &&
                       SameInput(RowInput(kind, index, slot), RowInput(pairKind, pairIndex, slot));
   BindRow(kind, index, slot, input);
   if (paired) {
@@ -525,7 +548,7 @@ bool FindConflict(ECapture kind, int index, const SInput& input, ECapture& other
            check(ECapture::kKeyAxis, PAD_AXIS_COUNT, PAD_KEY_SLOT_COUNT);
   case SInput::kPadButton:
   case SInput::kPadAxis:
-    return check(ECapture::kPadButton, buttonRows, 1) || check(ECapture::kPadAxis, PAD_AXIS_COUNT, 1);
+    return check(ECapture::kPadButton, buttonRows, 2) || check(ECapture::kPadAxis, PAD_AXIS_COUNT, 1);
   }
   return false;
 }
@@ -674,13 +697,16 @@ std::string InputName(const SInput& input) {
   return "(unknown)";
 }
 
-// "Fire / Bomb (A)", or "the alt key of Fire / Bomb (A)" for a keyboard row's
-// second slot.
+// "Fire / Bomb (A)", or "the alt key of Fire / Bomb (A)" for a row's second
+// slot ("alt button" on the controller).
 std::string RowLabel(ECapture kind, int index, int slot) {
   std::string label = kind == ECapture::kKeyAxis || kind == ECapture::kPadAxis
                           ? ActionLabel(kControlPadAxes[index].function, kControlPadAxes[index].label)
                           : ActionLabel(kControlPadButtons[index].function, kControlPadButtons[index].label);
-  return slot != 0 ? "the alt key of " + label : label;
+  if (slot == 0) {
+    return label;
+  }
+  return (kind == ECapture::kPadButton ? "the alt button of " : "the alt key of ") + label;
 }
 
 // The swap / bind both / cancel prompt for a captured input another row uses.
@@ -751,7 +777,8 @@ void KeyRow(ECapture kind, int index, const std::string& label, const float* slo
 }
 
 // Controller layouts. GameCube is Aurora's default for the pad type; the others
-// start from it. The twin-stick beam modifier is L or LB, so no preset uses LB.
+// start from it. The twin-stick beam modifier is L or LB unless a pad beam shift
+// is bound, so only Remastered (which binds one) uses LB.
 enum class EPadPreset { kGameCube, kRemastered, kModern, kSouthpaw };
 
 s32 OtherStick(s32 axis) {
@@ -776,15 +803,17 @@ void ApplyPadPreset(EPadPreset preset) {
   PortDebug::SetTwinStick(false);
   PortDebug::SetShiftBinding(2, -1);
   PortDebug::SetSwapScanXray(false);
+  for (int bit = 0; bit < PortDebug::kPadAltCount; ++bit) {
+    PortDebug::SetPadAltButton(bit, -1);
+  }
   switch (preset) {
   case EPadPreset::kGameCube:
     break;
   case EPadPreset::kRemastered: {
-    // Remastered's Dual Sticks scheme: fire on RT, lock on with LT (the default
-    // L), missile on RB, jump on the bottom face button, morph on the left one,
-    // map on Start, pause on Back, and the top face button held with the D-pad
-    // picks beams. Remastered also fires with the right face button, but a PAD
-    // button takes one pad button, so that one stays free. Free look (no
+    // Remastered's Dual Sticks scheme: fire on RT and the right face button,
+    // lock on with LT (the default L), missile on RB, jump on the bottom face
+    // button and LB, morph on the left one, map on Start, pause on Back, and
+    // the top face button held with the D-pad picks beams. Free look (no
     // Remastered equivalent) goes on the right stick click.
     const PADButtonMapping buttons[] = {
         {PAD_NATIVE_BUTTON_TRIGGER_RIGHT, PAD_BUTTON_A},
@@ -799,6 +828,8 @@ void ApplyPadPreset(EPadPreset preset) {
       PADSetButtonMapping(kControlPort, mapping);
     }
     PADSetAxisMapping(kControlPort, {{-1, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_RIGHT_STICK, PAD_AXIS_TRIGGER_R});
+    PortDebug::SetPadAltButton(PadBit(PAD_BUTTON_A), SDL_GAMEPAD_BUTTON_EAST);
+    PortDebug::SetPadAltButton(PadBit(PAD_BUTTON_B), SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
     PortDebug::SetShiftBinding(2, SDL_GAMEPAD_BUTTON_NORTH);
     PortDebug::SetSwapScanXray(true);
     PortDebug::SetTwinStick(true);
@@ -888,7 +919,8 @@ void ShiftTooltip() {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled)) {
     ImGui::SetTooltip("While held, the D-pad picks beams instead of switching visors:\n"
                       "each direction gives the beam that direction on the C-stick does.\n"
-                      "Under Twin Stick Aim, L, LB and left shift do it too.");
+                      "Under Twin Stick Aim, left shift does it too, and so do L and LB\n"
+                      "while no controller button is bound here.");
   }
 }
 
@@ -1069,6 +1101,17 @@ bool ShiftHeld() {
   return pad.code != -1 && InputHeld(pad);
 }
 
+unsigned HeldAltPadButtons() {
+  unsigned buttons = 0;
+  for (const SControlPadButton& row : kControlPadButtons) {
+    const SInput alt = NativeCodeInput(PortDebug::PadAltButton(PadBit(row.button)));
+    if (alt.code != -1 && InputHeld(alt)) {
+      buttons |= row.button;
+    }
+  }
+  return buttons;
+}
+
 bool Capturing() {
   // Only the tab polls the capture, so one left running when the overlay closed
   // or the tab changed would otherwise block the overlay's pad navigation.
@@ -1170,7 +1213,8 @@ void DrawTab() {
   }
 
   // Columns: the action, then each key slot (a binding button and its clear
-  // button). The controller's single binding spans the key column.
+  // button). A controller row's binding spans the key column; a button row's
+  // alt button takes the alt key column.
   const ImGuiStyle& style = ImGui::GetStyle();
   const float clearWidth = ImGui::CalcTextSize("x").x + style.FramePadding.x * 2.f;
   const float slotX[PAD_KEY_SLOT_COUNT] = {
@@ -1257,12 +1301,12 @@ void DrawTab() {
       // A GameCube pad has no right stick click for free look.
       ImGui::BeginDisabled(PADIsGCAdapter(kControlPort));
       presetButton("Remastered", EPadPreset::kRemastered,
-                   "Metroid Prime Remastered's Dual Sticks scheme (Xbox labels): RT fire,\n"
-                   "LT lock on, A jump, X morph ball, RB missile, Menu map, View pause,\n"
-                   "right stick click free look. D-pad: up Combat, right Scan, left X-Ray,\n"
-                   "down Thermal visor; hold Y for up Power, right Wave, left Plasma,\n"
-                   "down Ice beam; in morph ball Y springs (with Spring Ball on). B doesn't\n"
-                   "fire as well. Turns on Twin Stick Aim and the Scan/X-Ray swap.");
+                   "Metroid Prime Remastered's Dual Sticks scheme (Xbox labels): RT or B\n"
+                   "fire, LT lock on, A or LB jump, X morph ball, RB missile, Menu map,\n"
+                   "View pause, right stick click free look. D-pad: up Combat, right Scan,\n"
+                   "left X-Ray, down Thermal visor; hold Y for up Power, right Wave, left\n"
+                   "Plasma, down Ice beam; in morph ball Y springs (with Spring Ball on).\n"
+                   "Turns on Twin Stick Aim and the Scan/X-Ray swap.");
       ImGui::SameLine();
       presetButton("Modern", EPadPreset::kModern,
                    "RT fire, LT lock on, A jump, B morph ball, RB missile, Y map,\n"
@@ -1291,7 +1335,30 @@ void DrawTab() {
           name = std::string("(") + kControlPadAxes[pairIndex].label + ")";
         }
         BindingButton(kind, index, 0, name, padWidth);
+        // A button row's second input (Aurora maps one; the port ORs this in).
+        if (kind == ECapture::kPadButton) {
+          const SInput alt = RowInput(kind, index, 1);
+          ImGui::SameLine(rowX + slotX[1]);
+          BindingButton(kind, index, 1, alt.code == -1 ? std::string("-") : InputName(alt), bindWidth);
+          ImGui::SameLine(0.f, style.ItemInnerSpacing.x);
+          ImGui::BeginDisabled(alt.code == -1);
+          if (ImGui::Button("x")) {
+            BindRow(kind, index, 1, SInput{});
+          }
+          if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+            ImGui::SetTooltip("Clear");
+          }
+          ImGui::EndDisabled();
+        }
       };
+      {
+        const float rowX = ImGui::GetCursorPosX();
+        ImGui::TextDisabled("Action");
+        ImGui::SameLine(rowX + slotX[0]);
+        ImGui::TextDisabled("Button");
+        ImGui::SameLine(rowX + slotX[1]);
+        ImGui::TextDisabled("Alt button");
+      }
       for (int i = 0; i < static_cast< int >(std::size(kControlPadButtons)); ++i) {
         ImGui::PushID(200 + i);
         padRow(ECapture::kPadButton, i, buttonLabels[i]);

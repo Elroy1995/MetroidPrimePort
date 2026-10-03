@@ -14,6 +14,8 @@ bool Capturing();
 // True while a bound beam shift key or pad input is held (Controls tab;
 // PortDebug::ShiftBinding stores them).
 bool ShiftHeld();
+// The PAD bits whose alt controller button (PortDebug::PadAltButton) is held.
+unsigned HeldAltPadButtons();
 // Draws the Controls tab of the debug overlay.
 void DrawTab();
 

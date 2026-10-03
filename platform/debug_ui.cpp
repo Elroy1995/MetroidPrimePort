@@ -185,6 +185,10 @@ int sMouseActions[PortInputMap::kMouseButtonCount] = {
 // a controller button (an SDL gamepad button or PAD_NATIVE_BUTTON_TRIGGER_*),
 // -1 for none.
 int sShiftBindings[3] = {SDL_SCANCODE_LSHIFT, -1, -1};
+// A second controller button per PAD button, indexed by the PAD bit's position;
+// the same codes as the shift's pad slot, -1 for none.
+int sPadAltButtons[PortDebug::kPadAltCount] = {-1, -1, -1, -1, -1, -1, -1, -1,
+                                               -1, -1, -1, -1, -1, -1, -1, -1};
 bool sMouseCrosshair = true;
 int sCrosshairSize = PortDebug::kCrosshairSizeDefault;
 PortMouse::AimState sMouseAimState;
@@ -447,6 +451,19 @@ void ApplySetting(const std::string& key, const std::string& value) {
     if (end != value.c_str() && *end == '\0') {
       sShiftBindings[slot] = static_cast< int >(code);
     }
+  } else if (key == "pad_alt") {
+    // kPadAltCount comma-separated codes; a short or malformed list keeps the
+    // rest as they are.
+    const char* cursor = value.c_str();
+    for (int i = 0; i < PortDebug::kPadAltCount && *cursor != '\0'; ++i) {
+      char* end = nullptr;
+      const long code = std::strtol(cursor, &end, 10);
+      if (end == cursor) {
+        break;
+      }
+      sPadAltButtons[i] = static_cast< int >(code);
+      cursor = *end == ',' ? end + 1 : end;
+    }
   } else if (MouseButtonSetting(key) >= 0) {
     const int action = PortInputMap::MouseActionFromName(value.c_str());
     if (action >= 0) {
@@ -606,6 +623,11 @@ void SaveSettings() {
   file << "shift_key=" << sShiftBindings[0] << '\n';
   file << "shift_key_alt=" << sShiftBindings[1] << '\n';
   file << "shift_pad=" << sShiftBindings[2] << '\n';
+  file << "pad_alt=";
+  for (int i = 0; i < PortDebug::kPadAltCount; ++i) {
+    file << (i != 0 ? "," : "") << sPadAltButtons[i];
+  }
+  file << '\n';
   file << "fast_morph=" << (sFastMorph ? 1 : 0) << '\n';
   file << "invulnerable=" << (sInvulnerable ? 1 : 0) << '\n';
   file << "lock_on_toggle=" << (sLockOnToggle ? 1 : 0) << '\n';
@@ -1228,6 +1250,19 @@ void SetShiftBinding(int slot, int code) {
   EnsureInitialized();
   if (slot >= 0 && slot < 3) {
     sShiftBindings[slot] = code;
+    MarkDirty();
+  }
+}
+
+int PadAltButton(int bit) {
+  EnsureInitialized();
+  return bit >= 0 && bit < kPadAltCount ? sPadAltButtons[bit] : -1;
+}
+
+void SetPadAltButton(int bit, int code) {
+  EnsureInitialized();
+  if (bit >= 0 && bit < kPadAltCount && sPadAltButtons[bit] != code) {
+    sPadAltButtons[bit] = code;
     MarkDirty();
   }
 }

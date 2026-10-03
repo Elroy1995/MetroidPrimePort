@@ -123,6 +123,14 @@ void CDolphinController::ReadDevices() {
     if (actions.buttons & PAD_TRIGGER_R) status[0].triggerR = 150;
     mouseShift = actions.shift;
   }
+  // Alt controller buttons (Controls tab): Aurora maps one native button to
+  // each PAD button, the port ORs in a second.
+  if (status[0].err == PAD_ERR_NONE) {
+    const unsigned alt = PortControls::HeldAltPadButtons();
+    status[0].button |= static_cast< u16 >(alt);
+    if ((alt & PAD_TRIGGER_L) && status[0].triggerL < 150) status[0].triggerL = 150;
+    if ((alt & PAD_TRIGGER_R) && status[0].triggerR < 150) status[0].triggerR = 150;
+  }
   // The beam shift, bound in the Controls tab (left shift by default).
   const bool shiftHeld = mouseShift || PortControls::ShiftHeld();
   for (int i = 0; i < 4; ++i) {
@@ -148,14 +156,16 @@ void CDolphinController::ReadDevices() {
     x4_status[0].substickY = 0;
 
     // Beams are selected from the C-stick, which twin-stick just consumed, so
-    // under twin-stick the L trigger, LB and left shift (the Android overlay's
-    // RB sends it) are beam shifts too, whatever the bound one is.
+    // under twin-stick left shift (the Android overlay's RB sends it) is a beam
+    // shift too, and so are the L trigger and LB unless a pad button is bound
+    // as the shift (Remastered's layout locks on with L and jumps with LB).
     const bool* keys = SDL_GetKeyboardState(nullptr);
     SDL_Gamepad* pad = PADGetSDLGamepadForIndex(0);
+    const bool padShiftBound = PortDebug::ShiftBinding(2) >= 0;
     const bool beamModifier =
-        shiftHeld || (x4_status[0].button & PAD_TRIGGER_L) != 0 ||
-        (keys != nullptr && keys[SDL_SCANCODE_LSHIFT] != 0) ||
-        (pad != nullptr && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
+        shiftHeld || (keys != nullptr && keys[SDL_SCANCODE_LSHIFT] != 0) ||
+        (!padShiftBound && ((x4_status[0].button & PAD_TRIGGER_L) != 0 ||
+                            (pad != nullptr && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER))));
     if (beamModifier) {
       ApplyBeamShift(x4_status[0]);
     }

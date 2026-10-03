@@ -757,8 +757,13 @@ a temporary directory instead of mounting.
   a C-stick. It has two key slots (`shift_key`, `shift_key_alt`; default left
   shift, which already did this under twin stick), a pad slot (`shift_pad`, a
   button or trigger, default none, because Aurora maps LB on many pads to L), and
-  it can go on a mouse button. Twin stick keeps its own modifier (L, LB or left
-  shift) as well.
+  it can go on a mouse button. Twin stick keeps left shift as its own modifier,
+  and L and LB too while `shift_pad` is unbound.
+- Alt controller buttons (Controls tab, "Alt button" column, persisted as
+  `pad_alt`, 16 comma-separated native codes indexed by the PAD bit, -1 for
+  none): a second controller button or trigger per GameCube button. Aurora maps
+  one native button to each PAD button, so the port reads the alt one itself and
+  ORs it in (`PortControls::HeldAltPadButtons`, from `CDolphinController`).
 - Control presets (Controls tab). Keyboard: **Classic** (the first-run layout)
   and **Mouse & keyboard** (WASD, E fire, Space jump, left ctrl/C morph, F
   missile, Q lock on, left alt free look, Tab/M map, 1-4 beams and 5-8 visors
@@ -766,12 +771,12 @@ a temporary directory instead of mounting.
   each, arrows on the D-pad too; turns mouse aim on and twin stick off, since
   twin stick takes the C-stick). Both also reset the mouse buttons and the beam
   shift keys. Controller: **GameCube** (Aurora's default), **Remastered**
-  (Remastered's Dual Sticks: RT fire, LT lock on, bottom face button jump, left
+  (Remastered's Dual Sticks: RT or right face button fire, LT lock on, bottom
+  face button or LB jump, left
   morph, RB missile, Start map, Back pause, right stick click free look, top
   face button as the pad beam shift (which springs in morph ball, as any bound
-  beam shift does), Scan and X-Ray swapped; twin stick on; the
-  right face button doesn't fire too, since a PAD button takes one pad button),
-  **Modern** and **Southpaw**. Only Remastered sets `shift_pad` and
+  beam shift does), Scan and X-Ray swapped; twin stick on),
+  **Modern** and **Southpaw**. Only Remastered sets `shift_pad`, `pad_alt` and
   `swap_scan_xray`; the others clear them. Remastered and Modern are off for a
   GameCube adapter.
 - Swap the Scan and X-Ray visor buttons (Input tab, persisted as
