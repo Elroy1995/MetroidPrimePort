@@ -11,6 +11,7 @@
 #include "port_debug.h"
 #include "port_log.h"
 #include "port_disc.h"
+#include "port_mods.h"
 #include "port_textures.h"
 #include "port_prompts.h"
 
@@ -623,6 +624,11 @@ void CGameGlobalObjects::AddPaksAndFactories() {
   CGraphics::SetModelMatrix(CTransform4f::Identity());
   factory.GetResLoader().AddPakFileAsync(rstl::string_l("aram:Tweaks"), false, false);
   factory.GetResLoader().AddPakFileAsync(rstl::string_l("NoARAM"), false, false);
+  // Mod resources that did not fit in NoARAM.pak (2 GiB file limit).
+  for (int i = 0; i < PortMods::ExtraPakCount(); ++i) {
+    factory.GetResLoader().AddPakFileAsync(rstl::string(PortMods::ExtraPakName(i).c_str()), false,
+                                           false);
+  }
   factory.GetResLoader().AddPakFileAsync(rstl::string_l("AudioGrp"), false, false);
   factory.GetResLoader().AddPakFileAsync(rstl::string_l("aram:MiscData"), false, false);
 

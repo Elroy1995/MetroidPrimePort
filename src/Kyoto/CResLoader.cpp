@@ -331,6 +331,23 @@ void CResLoader::PortReopenPaks(void (*between)()) {
     }
     *paks[i].slot = rstl::auto_ptr< CPakFile >(pak);
   }
+  // A reload can spill mod resources into more extra PAKs than before.
+  for (int i = 0; i < PortMods::ExtraPakCount(); ++i) {
+    const rstl::string name(PortMods::ExtraPakName(i).c_str());
+    const rstl::string file(name + ".pak");
+    bool open = false;
+    for (size_t j = 0; j < paks.size() && !open; ++j) {
+      open = CStringExtras::CompareCaseInsensitive(paks[j].name, file) == 0;
+    }
+    if (!open) {
+      AddPakFileAsync(name, false, false);
+    }
+  }
+  while (!AreAllPaksLoaded()) {
+    AsyncIdlePakLoading();
+    ARQPoll();
+    OSYieldThread();
+  }
 }
 #endif
 
