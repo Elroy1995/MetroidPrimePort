@@ -18,7 +18,9 @@
 #include "MetroidPrime/CActorLights.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CModelData.hpp"
+#include "MetroidPrime/CScriptLayerManager.hpp"
 #include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/CWorld.hpp"
 #include "MetaRender/CCubeRenderer.hpp"
 
 #include <algorithm>
@@ -50,6 +52,17 @@ struct Placed {
   std::unique_ptr< CActorLights > lights;
   bool areaLit = false; // `lights` holds the area's lights
   uint32_t volume = 0;  // the area whose baked ambient lights it, 0 for none
+  uint8_t layer = kEveryLayer; // drawn only while this script layer is on
+  bool shown = true;           // by the area's scripts
+  bool active = true;          // what the file starts it as
+};
+
+// An instance shown or hidden when a script object sends a state.
+struct Trigger {
+  uint32_t sender; // editor id without the layer bits (TEditorId::Value)
+  uint8_t state;
+  uint8_t action;
+  size_t item;
 };
 
 struct Area {
@@ -59,6 +72,8 @@ struct Area {
   std::vector< Model > models;
   std::vector< Placed > items;
   std::vector< const Placed* > sorted; // this frame's, with blended surfaces still to draw
+  std::vector< Trigger > triggers;
+  bool gated = false; // some instance has a layer
   size_t loaded = 0;
 };
 
@@ -75,6 +90,8 @@ bool sBuffersReady = false;
 bool sWarned = false;
 int sDrawn = 0;
 int sDrawnLast = 0;
+// Whether any area in memory has triggers, so the script hook costs nothing otherwise.
+bool sTriggers = false;
 
 // The console's material values, by model id; CCubeModel holds them by model, which is
 // only good while the model is in memory, so they are handed over again every frame.
@@ -141,12 +158,19 @@ void Load(uint32_t mrea, Area& area) {
     item.model = found->second;
     const float* const m = instance.transform;
     item.xf = CTransform4f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11]);
+    item.layer = instance.layer;
+    item.shown = item.active = instance.active;
+    area.gated = area.gated || item.layer != kEveryLayer;
+    for (const Link& link : instance.links) {
+      area.triggers.push_back({link.sender & 0x3ffffff, link.state, link.action, area.items.size() - 1});
+    }
   }
+  sTriggers = sTriggers || !area.triggers.empty();
   area.instances.clear();
   area.instances.shrink_to_fit();
   area.hasFile = !area.items.empty();
-  PortLog::Write("room geo: %08X: %zu instance(s) of %zu model(s), %zu without a model\n", mrea,
-                 area.items.size(), area.models.size(), missing);
+  PortLog::Write("room geo: %08X: %zu instance(s) of %zu model(s), %zu without a model, %zu trigger(s)\n", mrea,
+                 area.items.size(), area.models.size(), missing, area.triggers.size());
 }
 
 } // namespace
@@ -167,10 +191,12 @@ void SetLoadedAreas(const uint32_t* mreas, size_t count) {
     areas.clear();
     return;
   }
+  sTriggers = false;
   for (auto it = areas.begin(); it != areas.end();) {
     if (std::find(mreas, mreas + count, it->first) == mreas + count) {
       it = areas.erase(it);
     } else {
+      sTriggers = sTriggers || !it->second.triggers.empty();
       ++it;
     }
   }
@@ -226,9 +252,15 @@ bool Draw(const CStateManager& mgr, const CGameArea& gameArea, const CFrustumPla
     }
   }
   const bool baked = !AreaLights() && PortRoomEnv::HasVolume(gameArea.GetAreaAssetId());
+  CScriptLayerManager* const layers =
+      area.gated ? const_cast< CStateManager& >(mgr).WorldLayerState().GetPtr() : nullptr;
   for (Placed& item : area.items) {
     const Model& model = area.models[item.model];
-    if (!model.loaded || model.hidden) {
+    if (!model.loaded || model.hidden || !item.shown) {
+      continue;
+    }
+    if (item.layer != kEveryLayer && layers != nullptr &&
+        !layers->IsLayerActive(gameArea.GetAreaId(), item.layer)) {
       continue;
     }
     if (!item.bounded) {
@@ -322,6 +354,53 @@ void DrawSorted(const void* drawable) {
 
 bool sReplacingArea = false;
 
+void OnScriptState(CStateManager& mgr, uint32_t editorId, int state) {
+  const TAreaId areaId(int((editorId >> 16) & 0x3ff));
+  const CWorld* const world = mgr.GetWorld();
+  // An area's objects are made after it counts as loaded (CGameArea::PostConstructArea), so
+  // a state from elsewhere (editor id 0 reads as area 0) loads nothing.
+  if (GetMode() == Mode::Off || world == nullptr || areaId.Value() >= world->GetNumAreas() ||
+      !world->GetArea(areaId)->IsLoaded()) {
+    return;
+  }
+  const uint32_t mrea = world->GetArea(areaId)->GetAreaAssetId();
+  auto& areas = Areas();
+  auto found = areas.find(mrea);
+  if (found == areas.end()) {
+    // Script objects are made, and some send states, before the next SetLoadedAreas, which
+    // keeps the area (an area without a file stays in as an empty one).
+    found = areas.emplace(mrea, Area()).first;
+    Load(mrea, found->second);
+  }
+  if (!sTriggers) {
+    return;
+  }
+  Area& area = found->second;
+  const uint32_t sender = editorId & 0x3ffffff;
+  for (const Trigger& trigger : area.triggers) {
+    if (trigger.sender != sender || trigger.state != state) {
+      continue;
+    }
+    Placed& item = area.items[trigger.item];
+    const bool shown = trigger.action == kShow ? true : trigger.action == kHide ? false : !item.shown;
+    if (shown != item.shown) {
+      char line[96];
+      std::snprintf(line, sizeof(line), "room geo: %08X: instance %u %s by %08X\n", mrea,
+                    unsigned(trigger.item), shown ? "shown" : "hidden", sender);
+      PortLog::Write(line);
+    }
+    item.shown = shown;
+  }
+}
+
+void ResetScriptState() {
+  for (auto& [mrea, area] : Areas()) {
+    for (Placed& item : area.items) {
+      item.shown = item.active;
+    }
+  }
+}
+
 std::string At(const CVector3f& point, float margin) {
   std::string out;
   char line[160];
@@ -372,7 +451,7 @@ uint32_t Pick(const CVector3f& origin, const CVector3f& direction, std::string& 
   const float d[3] = {direction.GetX(), direction.GetY(), direction.GetZ()};
   for (const auto& [mrea, area] : Areas()) {
     for (const Placed& item : area.items) {
-      if (!item.bounded || area.models[item.model].hidden) {
+      if (!item.bounded || area.models[item.model].hidden || !item.shown) {
         continue;
       }
       const CVector3f lo = item.bounds.GetMinPoint();

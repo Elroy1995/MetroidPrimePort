@@ -443,6 +443,7 @@ CStateManager::CStateManager(const rstl::ncrc_ptr< CScriptMailbox >& mailbox,
 , xf94_30_fullThreat(false)
 
 {
+  PortRoomGeo::ResetScriptState();
   x808_objectLists[0] = rs_new CObjectList(kOL_All);
   x808_objectLists[1] = rs_new CActorList();
   x808_objectLists[2] = rs_new CPhysicsActorList();
