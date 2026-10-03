@@ -1356,7 +1356,7 @@ void Writer::WriteGeometry(const RoomData& r, uint32_t mrea) {
     Log("  " + r.name + ": could not write " + file);
     return;
   }
-  char line[160];
+  char line[200];
   std::snprintf(line, sizeof line, "  %s: %u instances (%zu actors, %zu attached and %zu inactive ones left out), %zu dropped",
                 r.name.c_str(), count, actors, attached, inactive, dropped);
   Log(line);

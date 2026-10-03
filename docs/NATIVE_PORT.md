@@ -606,7 +606,20 @@ surfaces: each water, poison or lava volume's own surface model, converted
 with that room's colour, opacity, wave directions and flow, and a
 `.roomliquid` per area in the `roomgeo` folder.
 
-The import also writes Remastered's typeface as `font/deface.sdfont` (see above): the
+The import also carries over Remastered's rewording of the English text (scan
+entries, logbook, pickups: 120 strings in 100 tables on the US disc). Each
+changed table is written as `<id>.STRG` in the mod's `text` folder: the
+disc's own table with the reworded strings replaced. A string is replaced only
+when its words differ, so layout-only differences stay as on the disc;
+Remastered's hand-placed line breaks (fitted to its own boxes) are kept only
+where the disc's string breaks a line too, the rest left to word wrap;
+highlight colours are kept (`&push;&main-color=…;…&pop;`) and the layout tags
+a disc string opens with are carried over. Strings that name a button of
+Remastered's controls or use one of its icons keep the disc's text, as do
+strings with characters outside ASCII. `MP_REMASTERED_TEXT=0` leaves the text
+out.
+
+It also writes Remastered's typeface as `font/deface.sdfont` (see above): the
 FONT asset with the most characters, its first face.
 
 The in-game HUD is carried over as well, into the mod's `hud` folder: the
@@ -1075,6 +1088,9 @@ a temporary directory instead of mounting.
   `roomenv` switches.
 - `MP_PBR_PROBE=<off|on|mirror|window>` (or 0-3): the reflection probe PBR mod
   materials reflect, on by default. The console's `probe` changes it live.
+- `MP_PBR_ANISO=<1-16>`: the most anisotropic filtering a PBR mod's native maps
+  take, 2 by default whatever the Anisotropy setting says: higher levels turn a
+  tiled floor into streaks towards the horizon.
 - `MP_GODMODE=<0|1>`: the Invulnerable cheat for this run, whatever the setting
   says. The console's `god [on|off]` changes the setting itself.
 - `MP_ROOM_GEO=<0|1|overlay>`: whether a mod's `.roomgeo` replaces an area's
@@ -1097,9 +1113,6 @@ a temporary directory instead of mounting.
   the curve's contrast, so re-import to get the right levels.
   Room geometry is lit by the baked ambient grid per pixel, as a 3D texture,
   and takes no area lights (Remastered has no lightmaps; this grid is its room
-- `MP_PBR_ANISO=<1-16>`: the most anisotropic filtering a PBR mod's native maps
-  take, 2 by default whatever the Anisotropy setting says: higher levels turn a
-  tiled floor into streaks towards the horizon.
   lighting). `MP_ROOM_ENV_VOLUME=0` goes back to the area's lights, as does
   `MP_ROOM_GEO_AREA_LIGHTS=1`. For tuning: `MP_ROOM_ENV_VOLUME_BIAS` (metres off
   the surface a sample is taken, default 0.25) and `MP_ROOM_ENV_VOLUME_SHOW`

@@ -19,9 +19,13 @@
 #include "port_savestate.h"
 #include "port_tracker.h"
 #include "port_viewmodel.h"
+#include "Kyoto/CResFactory.hpp"
+#include "Kyoto/CSimplePool.hpp"
 #include "Kyoto/Graphics/CCubeMaterial.hpp"
+#include "Kyoto/TToken.hpp"
 #include "Kyoto/Alloc/CMemorySys.hpp"
 #include "Kyoto/Alloc/IAllocator.hpp"
+#include "Kyoto/Text/CStringTable.hpp"
 #include "MetroidPrime/CActor.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
@@ -33,6 +37,7 @@
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
 #include "MetroidPrime/Cameras/CGameCamera.hpp"
 #include "MetroidPrime/Enemies/CPatterned.hpp"
+#include "MetroidPrime/HUD/CSamusHud.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/Player/CPlayerGun.hpp"
@@ -411,6 +416,8 @@ void CmdHelp() {
   Out("items                      the player's inventory");
   Out("heal                       refill health");
   Out("god [on|off]               the player takes no damage (no argument: show)");
+  Out("memo <text>                show text as a HUD message");
+  Out("strg <id> [index]          a string table as the game loads it (mods included)");
   Out("press <a+b+...> [frames]   hold pad buttons (a b x y z l r start up down left right;");
   Out("                           sx:<n> sy:<n> cx:<n> cy:<n> also hold a stick axis;");
   Out("                           frames 0 = keep holding until the next press/stick)");
@@ -751,6 +758,50 @@ void CmdGod() {
   Finish();
 }
 
+void CmdMemo() {
+  std::wstring wide;
+  for (size_t i = 1; i < sCmd.args.size(); ++i) {
+    if (i > 1) {
+      wide += L' ';
+    }
+    for (const char c : sCmd.args[i]) {
+      wide += static_cast< wchar_t >(static_cast< unsigned char >(c));
+    }
+  }
+  if (wide.empty()) {
+    return Finish("usage: memo <text>");
+  }
+  CSamusHud::DisplayHudMemo(rstl::wstring(wide.c_str()), CHUDMemoParms(5.f, true, false, false));
+  Finish();
+}
+
+// Loads the table through the game's own factory, so a mod's replacement is what is printed.
+// A blocking load, released before returning: a token kept across frames
+// outlives the pool when the game quits mid-command.
+void CmdStrg() {
+  uint32_t id = 0;
+  if (sCmd.args.size() < 2 || !ParseHex(sCmd.args[1], id)) {
+    return Finish("usage: strg <id> [index]");
+  }
+  if (!gpResourceFactory->CanBuild(SObjectTag('STRG', id))) {
+    return Finish("no such string table (only the current world's and the common ones load)");
+  }
+  const TLockedToken< CStringTable > token(gpSimplePool->GetObj(SObjectTag('STRG', id)));
+  const CStringTable& table = **token;
+  int first = 0;
+  int last = table.GetStringCount();
+  if (sCmd.args.size() > 2) {
+    if (std::sscanf(sCmd.args[2].c_str(), "%d", &first) != 1 || first < 0 || first >= last) {
+      return Finish("no such string");
+    }
+    last = first + 1;
+  }
+  for (int i = first; i < last; ++i) {
+    sCmd.out += std::to_string(i) + ": " + PortDiscord::GameTextToUtf8(table.GetString(i)) + "\n";
+  }
+  Finish();
+}
+
 bool ResolveWorld(const std::string& arg, uint32_t& id) {
   const auto& worlds = gpMemoryCard->GetMemoryWorlds();
   const std::string want = Lower(arg);
@@ -925,7 +976,7 @@ void CmdFreeCam() {
 
 bool IsTickCommand(const std::string& name) {
   static const char* const names[] = {"status", "areas", "objs", "obj", "send", "give",
-                                      "take", "items", "heal", "god", "tp", "face", "look", "warp",
+                                      "take", "items", "heal", "god", "memo", "strg", "tp", "face", "look", "warp",
                                       "tracker", "enter"};
   for (const char* n : names) {
     if (name == n) {
@@ -958,6 +1009,10 @@ void RunTick(CStateManager& mgr) {
     CmdHeal(mgr);
   } else if (name == "god") {
     CmdGod();
+  } else if (name == "memo") {
+    CmdMemo();
+  } else if (name == "strg") {
+    CmdStrg();
   } else if (name == "tp") {
     CmdTp(mgr);
   } else if (name == "face") {

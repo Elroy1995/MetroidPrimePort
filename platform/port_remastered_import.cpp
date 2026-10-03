@@ -32,6 +32,7 @@
 #include "port_remastered_pak.h"
 #include "port_remastered_room.h"
 #include "port_remastered_table.h"
+#include "port_remastered_text.h"
 #include "port_remastered_txtr.h"
 #include "port_ws.h"
 
@@ -57,6 +58,8 @@ constexpr uint32_t kCSKR = 0x43534B52;
 constexpr uint32_t kTXTR = 0x54585452;
 constexpr uint32_t kMLVL = 0x4D4C564C;
 constexpr uint32_t kMREA = 0x4D524541;
+constexpr uint32_t kSTRG = 0x53545247;
+constexpr uint32_t kMSBT = 0x4D534254;
 constexpr uint32_t kFONT = 0x464F4E54;
 constexpr uint32_t kGUIF = 0x47554946;
 constexpr uint32_t kCMAP = 0x434D4150;
@@ -70,6 +73,7 @@ constexpr const char* kStagingName = ".remastered-models.importing";
 constexpr const char* kMarkerName = "import-complete";
 constexpr const char* kRoomFolder = "roomenv";
 constexpr const char* kGeometryFolder = "roomgeo";
+constexpr const char* kTextFolder = "text";
 constexpr const char* kFontFolder = "font";
 constexpr const char* kFontName = "deface.sdfont";
 constexpr const char* kHudFolder = "hud";
@@ -148,6 +152,11 @@ void Finish(bool ok, const std::string& message) {
   sState.message = message;
 }
 
+// MP_REMASTERED_TEXT=0 leaves the disc's wording alone.
+bool WantsText() {
+  const char* env = std::getenv("MP_REMASTERED_TEXT");
+  return env == nullptr || std::strcmp(env, "0") != 0;
+}
 
 // MP_REMASTERED_HUD=0 leaves the disc's HUD alone.
 bool WantsHud() {
@@ -173,7 +182,7 @@ bool WantsMovies(MovieFormat& format) {
 
 // --- The retail disc ----------------------------------------------------------
 
-// The CMDL, CSKR, TXTR, MLVL, MREA, FRME, MAPA and MAPW resources of the unmodded disc, and every id on it.
+// The CMDL, CSKR, TXTR, MLVL, MREA, STRG, FRME, MAPA and MAPW resources of the unmodded disc, and every id on it.
 class Retail {
 public:
   ~Retail() {
@@ -214,7 +223,7 @@ public:
       for (const PortMods::PakResource& res : table.resources) {
         m_ids.insert(res.id);
         if (res.type == kCMDL || res.type == kCSKR || res.type == kTXTR || res.type == kMLVL || res.type == kMREA ||
-            res.type == kFRME || res.type == kMAPA || res.type == kMAPW) {
+            res.type == kSTRG || res.type == kFRME || res.type == kMAPA || res.type == kMAPW) {
           m_resources.emplace(Key(res.type, res.id), Where{entry, res.offset, res.size, res.compressed != 0});
         }
       }
@@ -339,6 +348,8 @@ public:
           for (const std::string& name : assets[a].names) {
             m_textureNames.emplace(FrameKey(name), Where{m_paks.size(), a});
           }
+        } else if (type == kMSBT) {
+          m_texts.emplace(assets[a].id, Where{m_paks.size(), a});
         } else if (type == kFONT) {
           m_fonts.emplace(assets[a].id, Where{m_paks.size(), a});
         } else if (type == kFMV0) {
@@ -438,6 +449,17 @@ public:
     return pak.ReadAsset(pak.Assets()[found->second.asset], out, error);
   }
 
+  // Every text asset, each once however many paks carry it.
+  std::vector<ModelUuid> Texts() const {
+    std::vector<ModelUuid> ids;
+    for (const auto& [id, where] : m_texts) {
+      ids.push_back(id);
+    }
+    return ids;
+  }
+  bool ReadText(const ModelUuid& id, std::vector<uint8_t>& out, std::string& error) const {
+    return Read(m_texts, id, out, error);
+  }
 
   // The paks of one world directory ("Intro_Master") as the room writer takes
   // them, and every pak of the image for the assets rooms share.
@@ -499,6 +521,7 @@ private:
   std::vector<std::string> m_paths;  // of m_paks, in the image
   Index m_models;
   Index m_textures;
+  Index m_texts;
   Index m_fonts;
   std::unordered_map<std::string, Where> m_frames;  // GUIF, by FrameKey
   std::unordered_map<std::string, Where> m_textureNames;  // the named TXTR, by FrameKey
@@ -939,6 +962,54 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
     fs::remove(geometryFolder, ec);
   }
 
+  // The strings Remastered reworded, as the disc's tables with those strings changed.
+  int textTables = 0;
+  int textStrings = 0;
+  if (WantsText()) {
+    SetMessage("Writing the text");
+    std::map<uint32_t, std::map<uint32_t, std::u16string>> tables;
+    for (const ModelUuid& id : remastered.Texts()) {
+      std::vector<uint8_t> raw;
+      std::vector<TextEntry> entries;
+      std::string textError;
+      if (!remastered.ReadText(id, raw, textError) ||
+          !ParseMsbt(raw.data(), raw.size(), "USEN", entries, textError)) {
+        AddLine("text " + IdToString(id) + ": " + textError);
+        continue;
+      }
+      for (TextEntry& entry : entries) {
+        uint32_t strg = 0;
+        uint32_t index = 0;
+        if (SplitTextLabel(entry.label, strg, index)) {
+          tables[strg][index] = std::move(entry.text);
+        }
+      }
+    }
+    const fs::path textFolder = staging / kTextFolder;
+    fs::create_directories(textFolder, ec);
+    for (const auto& [strg, strings] : tables) {
+      std::vector<uint8_t> original;
+      std::vector<uint8_t> merged;
+      int changed = 0;
+      if (!retail.Read(kSTRG, strg, original) ||
+          !MergeStringTable(original.data(), original.size(), strings, merged, changed)) {
+        continue;  // not on this disc, or worded as it was
+      }
+      char name[16];
+      std::snprintf(name, sizeof(name), "%08X.STRG", strg);
+      std::ofstream file(textFolder / name, std::ios::binary);
+      file.write(reinterpret_cast<const char*>(merged.data()), std::streamsize(merged.size()));
+      if (!file) {
+        AddLine(std::string(name) + ": cannot write");
+        continue;
+      }
+      ++textTables;
+      textStrings += changed;
+    }
+    if (textTables == 0) {
+      fs::remove(textFolder, ec);
+    }
+  }
   // Remastered's typeface, which the port draws the disc's text with.
   bool fontWritten = false;
   {
@@ -1094,6 +1165,9 @@ void Run(std::string nspPath, std::string keysPath, int threads, fs::path stagin
   message += ", " + std::to_string(roomFiles.load()) + " room environments";
   if (!geometry.empty()) {
     message += ", " + std::to_string(geometryDone.load()) + " of " + std::to_string(geometry.size()) + " room models";
+  }
+  if (textTables != 0) {
+    message += ", " + std::to_string(textStrings) + " strings in " + std::to_string(textTables) + " text tables";
   }
   if (fontWritten) {
     message += ", the font";
