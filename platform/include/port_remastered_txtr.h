@@ -108,6 +108,10 @@ bool ReadTxtrCubeBc6h(const uint8_t* data, size_t size, TxtrCubeBc6h& out, std::
 bool DecodeVolumeFloat(const uint8_t* compressed, size_t compressedSize, size_t surfaceSize, uint32_t format,
                        uint32_t width, uint32_t height, uint32_t depth, std::vector<float>& rgba,
                        std::string& error);
+// A whole 3D RGBA8 texture, every slice (colour grade LUTs). `data` is the complete RFRM
+// TXTR file; `rgba` gets width * height * depth * 4 bytes, z slowest, x fastest.
+bool DecodeTxtrVolumeRgba8(const uint8_t* data, size_t size, uint32_t& width, uint32_t& height, uint32_t& depth,
+                           std::vector<uint8_t>& rgba, std::string& error);
 // Decodes one face of BC6H blocks (`texels` on a side) into RGBA half floats, alpha 1.
 void DecodeBc6hFace(const uint8_t* blocks, uint32_t texels, bool isSigned, uint16_t* rgba);
 

@@ -1370,6 +1370,9 @@ void RunFrame() {
       } else if (arg == "bloom" && sCmd.args.size() > 2 &&
                  (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
         PortRoomEnv::SetBloomEnabled(Lower(sCmd.args[2]) == "on");
+      } else if (arg == "grade" && sCmd.args.size() > 2 &&
+                 (Lower(sCmd.args[2]) == "on" || Lower(sCmd.args[2]) == "off")) {
+        PortRoomEnv::SetColorGradeEnabled(Lower(sCmd.args[2]) == "on");
       } else if (arg == "on" || arg == "off") {
         PortRoomEnv::SetEnabled(arg == "on");
       } else if (arg == "volume" && sCmd.args.size() > 2 &&
@@ -1382,8 +1385,8 @@ void RunFrame() {
                   Lower(sCmd.args[2]) == "light")) {
         PortRoomEnv::SetVolumeView(Lower(sCmd.args[2]) == "off" ? 0 : Lower(sCmd.args[2]) == "coords" ? 1 : 2);
       } else {
-        return Finish("usage: roomenv [on|off|info [<x> <y> <z>]|exposure on|off|bloom on|off|volume on|off|"
-                      "ambient <scale>|"
+        return Finish("usage: roomenv [on|off|info [<x> <y> <z>]|exposure on|off|bloom on|off|grade on|off|"
+                      "volume on|off|ambient <scale>|"
                       "show off|coords|light]");
       }
     }
@@ -1394,10 +1397,10 @@ void RunFrame() {
     PortRoomEnv::Stats(areas, probes, cubes, grids);
     static const char* const kViews[] = {"off", "coords", "light"};
     Out("roomenv %s: %d area(s), %d probe(s), %d cube(s) loaded, %d ambient grid(s), exposure by %s, "
-        "bloom %s, volume %s, ambient %g, show %s",
+        "bloom %s, grade %s, volume %s, ambient %g, show %s",
         PortRoomEnv::Enabled() ? "on" : "off", areas, probes, cubes, grids,
         PortRoomEnv::RoomExposed() ? "room" : "cube", PortRoomEnv::BloomEnabled() ? "on" : "off",
-        PortRoomEnv::VolumesEnabled() ? "on" : "off",
+        PortRoomEnv::ColorGradeEnabled() ? "on" : "off", PortRoomEnv::VolumesEnabled() ? "on" : "off",
         PortRoomEnv::AmbientScale(), kViews[std::clamp(PortRoomEnv::VolumeView(), 0, 2)]);
     Finish();
   } else if (name == "roomgeo") {

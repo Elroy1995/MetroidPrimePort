@@ -8,7 +8,8 @@ namespace PortRoomEnv {
 namespace {
 
 constexpr uint32_t kMagic = 0x5645504D; // 'MPEV'
-constexpr uint32_t kVersion = 5;
+constexpr uint32_t kVersion = 6;
+constexpr uint32_t kMaxGrades = 64;
 constexpr size_t kHeaderSize = 32;
 constexpr size_t kProbeSize = 100;
 constexpr size_t kCubeHeaderSize = 16;
@@ -42,6 +43,25 @@ float GetHalf(const uint8_t* p) {
     return 65504.f;
   }
   return exponent == 0 ? std::ldexp(float(mantissa), -24) : std::ldexp(float(mantissa | 0x400), exponent - 25);
+}
+
+// A LUT's id: 0 for the identity (each texel its own coordinate, give or take the rounding
+// of 32 steps onto 255), else a hash of its texels.
+uint32_t GradeLutId(const uint8_t* lut) {
+  constexpr uint32_t n = kGradeLutSize;
+  bool identity = true;
+  uint32_t hash = 2166136261u;
+  for (uint32_t i = 0; i < n * n * n; ++i) {
+    const uint32_t coord[3] = {i % n, i / n % n, i / (n * n)};
+    for (int c = 0; c < 4; ++c) {
+      const uint8_t v = lut[i * 4 + c];
+      hash = (hash ^ v) * 16777619u;
+      if (c < 3 && std::fabs(float(v) - float(coord[c]) * (255.f / float(n - 1))) > 4.f) {
+        identity = false;
+      }
+    }
+  }
+  return identity ? 0u : (hash != 0 ? hash : 1u);
 }
 
 int HexDigit(char c) {
@@ -262,6 +282,38 @@ bool Parse(std::vector<uint8_t>&& data, File& out, std::string& error) {
     at += size_t(tints) * 16;
     if (!std::isfinite(out.bloomThreshold)) {
       out.bloomThreshold = 0.9f;
+    }
+  }
+  if (version >= 6) {
+    if (data.size() - at < 4) {
+      error = "cut short";
+      return false;
+    }
+    const uint32_t grades = Get32(data.data() + at);
+    at += 4;
+    if (grades > kMaxGrades) {
+      error = "too many grades";
+      return false;
+    }
+    out.grades.resize(grades);
+    for (Grade& grade : out.grades) {
+      if ((data.size() - at) < 12 + kGradeLutBytes) {
+        error = "cut short";
+        return false;
+      }
+      const uint8_t* p = data.data() + at;
+      grade.layer = int32_t(Get32(p));
+      grade.fadeIn = GetFloat(p + 4);
+      grade.fadeOut = GetFloat(p + 8);
+      if (!(grade.fadeIn >= 0.f && grade.fadeIn < 600.f)) {
+        grade.fadeIn = 0.f;
+      }
+      if (!(grade.fadeOut >= 0.f && grade.fadeOut < 600.f)) {
+        grade.fadeOut = 0.f;
+      }
+      grade.offset = at + 12;
+      grade.id = GradeLutId(data.data() + grade.offset);
+      at = grade.offset + kGradeLutBytes;
     }
   }
   out.data = std::move(data);

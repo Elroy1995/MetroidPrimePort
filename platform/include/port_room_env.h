@@ -13,7 +13,7 @@
 // ambient colour.
 //
 // The file is little endian:
-//   'MPEV', u32 version (1 to 5), f32 tonemap[4], u32 probes, u32 cubes
+//   'MPEV', u32 version (1 to 6), f32 tonemap[4], u32 probes, u32 cubes
 //   probe: f32 worldToBox[12], f32 worldToCube[9], s32 layer, u32 cube, f32 scale, f32 blend
 //   cube:  u32 size, u32 mips, u32 signed, u32 bytes, then BC6H blocks, every face of
 //          mip 0, then of mip 1 and so on
@@ -33,6 +33,12 @@
 // Version 5 goes on:
 //   f32 bloom threshold, of the exposed luminance
 //   u32 tints, then that many f32 RGBA: the bloom's colour per level (0 tints: no bloom)
+// Version 6 goes on:
+//   u32 grades
+//   grade: s32 layer (-1: every layer), f32 fadeIn, f32 fadeOut (seconds), then a colour
+//          grade LUT of 33^3 RGBA8, red fastest, blue slowest; the frame's tonemapped
+//          colour looks itself up in it. Of the grades whose layer is active, the last
+//          one is the room's.
 // The tonemap is Remastered's: the exposure value without auto exposure, the radiance
 // that comes out as middle grey once exposed, and how far the curve's toe and shoulder
 // are pulled in.
@@ -67,6 +73,17 @@ struct Grid {
   float average = 0.f; // geometric mean of the lit points' luminance
 };
 
+constexpr uint32_t kGradeLutSize = 33;
+constexpr size_t kGradeLutBytes = size_t(kGradeLutSize) * kGradeLutSize * kGradeLutSize * 4;
+
+struct Grade {
+  int32_t layer = -1;
+  float fadeIn = 0.f;
+  float fadeOut = 0.f;
+  size_t offset = 0; // of the LUT, in File::data
+  uint32_t id = 0;   // a hash of the LUT, never 0; 0 here means the LUT is the identity
+};
+
 struct File {
   float tonemap[4] = {};
   float exposure[2] = {}; // EV range; both 0 when the room has no auto exposure
@@ -74,6 +91,7 @@ struct File {
   float contrast = 0.f;
   float bloomThreshold = 0.9f;
   std::vector<float> bloomTints; // RGBA; empty: the room has no bloom
+  std::vector<Grade> grades;
   std::vector<Probe> probes;
   std::vector<Cube> cubes;
   std::vector<Grid> grids;
@@ -182,6 +200,15 @@ bool Bloom(float& threshold, float tints[5][3]);
 // MP_BLOOM, the console's `bloom`.
 void SetBloomEnabled(bool on);
 bool BloomEnabled();
+// The frame's colour grade (Remastered's ColorGrade + ColorGradeHint): the LUTs to blend,
+// for GXPortPostProcess (0: the identity) and how far towards `b` (0 to 1). `layerActive`
+// says whether a layer of the camera's area is active. Moving between grades fades over
+// the new one's fade-in. False when there is nothing to grade, or MP_COLOR_GRADE=0.
+using LayerActive = bool (*)(int32_t layer, void* context);
+bool ColorGrade(LayerActive layerActive, void* context, uint32_t& a, uint32_t& b, float& weight);
+// MP_COLOR_GRADE, the console's `grade`.
+void SetColorGradeEnabled(bool on);
+bool ColorGradeEnabled();
 // The area the camera is in: its exposure and tone curve are the frame's.
 void SetViewArea(uint32_t mrea);
 // The frame's tone curve, for GXSetPBRTone; false when rooms are not exposed or the

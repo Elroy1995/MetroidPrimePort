@@ -27,6 +27,7 @@
 
 #include "port_debug.h"
 #include "port_freecam.h"
+#include "MetroidPrime/CScriptLayerManager.hpp"
 #include "port_room_env.h"
 #include <dolphin/gx/GXExtra.h>
 
@@ -247,15 +248,29 @@ void CMFGame::Draw() const {
     mStateManager->DrawWorld();
     (void)mStateManager->GetPlayer()->IsPlayerDeadEnough();
 #ifdef TARGET_PC
-    // Remastered's bloom, over the world and under the visor. Thermal and X-ray draw their
-    // own picture, not the room's exposed light, so they keep none.
+    // Remastered's bloom and colour grade, over the world and under the visor. Thermal and
+    // X-ray draw their own picture, not the room's exposed light, so they keep neither.
     const CPlayerState::EPlayerVisor visor = mStateManager->GetPlayerState()->GetActiveVisor(*mStateManager);
-    float threshold;
-    float tints[5][3];
-    float tone[3][4];
-    if (visor != CPlayerState::kPV_Thermal && visor != CPlayerState::kPV_XRay &&
-        PortRoomEnv::Bloom(threshold, tints) && PortRoomEnv::Tone(tone)) {
-      GXPortBloom(threshold, tints, tone);
+    if (visor != CPlayerState::kPV_Thermal && visor != CPlayerState::kPV_XRay) {
+      float threshold = 0.f;
+      float tints[5][3] = {};
+      float tone[3][4] = {};
+      const bool bloom = PortRoomEnv::Bloom(threshold, tints) && PortRoomEnv::Tone(tone);
+      struct Layers {
+        CScriptLayerManager* layers;
+        TAreaId area;
+      } layers{mStateManager->WorldLayerState().GetPtr(), mStateManager->GetNextAreaId()};
+      uint32_t gradeA = 0;
+      uint32_t gradeB = 0;
+      float gradeWeight = 0.f;
+      PortRoomEnv::ColorGrade(
+          [](int32_t layer, void* context) {
+            const Layers& l = *static_cast< const Layers* >(context);
+            return l.layers == nullptr || l.area == kInvalidAreaId ||
+                   l.layers->IsLayerActive(l.area, TLayerId(layer));
+          },
+          &layers, gradeA, gradeB, gradeWeight);
+      GXPortPostProcess(bloom, threshold, tints, tone, gradeA, gradeB, gradeWeight);
     }
 #endif
   }

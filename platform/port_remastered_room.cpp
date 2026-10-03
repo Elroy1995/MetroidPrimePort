@@ -37,6 +37,8 @@ constexpr uint32_t kTonemap = 0xddea916d;
 constexpr uint32_t kReflectionProbe = 0x27807e39;
 constexpr uint32_t kAutoExposureHint = 0x98694074;
 constexpr uint32_t kBloomEffect = 0x7dcaf170;
+constexpr uint32_t kColorGrade = 0x6b091e44;
+constexpr uint32_t kColorGradeHint = 0xa36cd908;
 constexpr uint32_t kDoorMP1 = 0x564a1641;
 constexpr uint32_t kModCon = 0x451740eb;
 constexpr uint32_t kActorMP1 = 0xb6200be6;
@@ -50,6 +52,12 @@ constexpr uint32_t kPropTonemap[5] = {0x44a2e298, 0x34bb937d, 0x49ee7747, 0x2951
 // Bloom threshold, and a u32 count of RGBA float tints (SLdrBloomEffect).
 constexpr uint32_t kPropBloomThreshold = 0xa8e016d1;
 constexpr uint32_t kPropBloomTints = 0x033f2e2c;
+// A ColorGrade's 33^3 LUT (TXTR), and the hint on the same entity: global flag, fade times.
+constexpr uint32_t kPropGradeLut = 0x59a7df11;
+constexpr uint32_t kPropHintGlobal = 0x6182fd5e;
+constexpr uint32_t kPropHintFadeIn = 0x5c6f53d8;
+constexpr uint32_t kPropHintFadeOut = 0xa4967532;
+constexpr uint32_t kGradeLutSize = 33;
 constexpr uint32_t kPropHintMin = 0x682f8a1f;
 constexpr uint32_t kPropHintMax = 0x839d334c;
 constexpr uint32_t kPropHintMode = 0x590d6843;
@@ -1117,6 +1125,14 @@ public:
 
 private:
   void Log(const std::string& line) const {
+// A global ColorGrade: the retail layer it is on (-1 = always), its hint's fades, the LUT
+// (33^3 RGBA8, red fastest).
+struct GradeData {
+  int32_t layer = -1;
+  float fadeIn = 0, fadeOut = 0;
+  std::vector<uint8_t> lut;
+};
+
     if (m_io.log) {
       m_io.log(line);
     }
@@ -1153,13 +1169,16 @@ private:
   // The room's liquid surfaces (its water and lava render volumes), as "<MREA id>.roomliquid".
   void WriteLiquids(const RoomData& r, uint32_t mrea);
   std::string WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
-                        const float tonemap[5], const BloomData& bloom, int& written, std::string& matched);
+                        const float tonemap[5], const BloomData& bloom, const std::vector<GradeData>& worldGrades,
+                        int& written, std::string& matched);
 
   const RoomPak& m_master;
   const std::vector<RoomPak>& m_rooms;
   const std::vector<RoomPak>& m_others;
   const RoomIO& m_io;
   std::vector<Area> m_areas;
+  // The room's global ColorGrades in component order; `area` gives their retail layers.
+  void ReadGrades(const RoomData& r, const Area* area, std::vector<GradeData>& out) const;
 };
 
 double Spread(const std::vector<Vec3>& a, const std::vector<Vec3>& b) {
@@ -1403,6 +1422,61 @@ bool Writer::Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>&
   if (asset == nullptr) {
     note = "no grid";
     return false;
+void Writer::ReadGrades(const RoomData& r, const Area* area, std::vector<GradeData>& out) const {
+  const std::vector<const Component*> grades = r.room.Of(kColorGrade);
+  if (grades.empty()) {
+    return;
+  }
+  std::map<int, const Component*> hints;  // by entity
+  for (const Component* c : r.room.Of(kColorGradeHint)) {
+    if (c->entity >= 0) {
+      hints.emplace(c->entity, c);
+    }
+  }
+  SceneryScripts scripts;
+  if (area != nullptr) {
+    scripts = MatchScripts(r.room, *area);
+  }
+  const RoomPak home{r.name, r.pak};
+  for (const Component* c : grades) {
+    const auto h = hints.find(c->entity);
+    if (c->entity < 0 || h == hints.end()) {
+      continue;
+    }
+    const auto hf = r.room.Flat(*h->second);
+    const auto global = hf.find(kPropHintGlobal);
+    // A local hint is a volume the player stands in; only global ones are drawn yet.
+    if (global == hf.end() || global->second.size < 1 || r.room.Bytes(global->second)[0] == 0) {
+      continue;
+    }
+    const auto f = r.room.Flat(*c);
+    const auto lut = f.find(kPropGradeLut);
+    std::vector<uint8_t> txtr;
+    if (lut == f.end() || lut->second.size < 16 ||
+        !FindResource(r.room.Bytes(lut->second), Tag("TXTR"), home, txtr, nullptr, nullptr)) {
+      Log("  " + r.name + ": colour grade LUT not found");
+      continue;
+    }
+    GradeData g;
+    uint32_t w = 0, hgt = 0, d = 0;
+    std::string error;
+    if (!DecodeTxtrVolumeRgba8(txtr.data(), txtr.size(), w, hgt, d, g.lut, error) || w != kGradeLutSize ||
+        hgt != kGradeLutSize || d != kGradeLutSize) {
+      Log("  " + r.name + ": colour grade LUT unreadable (" + error + ")");
+      continue;
+    }
+    auto fade = [&](uint32_t prop) {
+      const auto it = hf.find(prop);
+      return it != hf.end() && it->second.size >= 4 ? LeFloat(r.room.Bytes(it->second)) : 0.f;
+    };
+    g.fadeIn = fade(kPropHintFadeIn);
+    g.fadeOut = fade(kPropHintFadeOut);
+    const auto layer = scripts.layer.find(c->entity);
+    g.layer = layer != scripts.layer.end() ? int32_t(layer->second) : -1;
+    out.push_back(std::move(g));
+  }
+}
+
   }
   std::vector<uint8_t> d;
   std::string error;
@@ -1994,8 +2068,8 @@ void Writer::WriteLiquids(const RoomData& r, uint32_t mrea) {
 }
 
 std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
-                              const float tonemap[5], const BloomData& worldBloom, int& written,
-                              std::string& matched) {
+                              const float tonemap[5], const BloomData& worldBloom,
+                              const std::vector<GradeData>& worldGrades, int& written, std::string& matched) {
   matched.clear();
   Match m;
   if (!MatchRoom(r, placed, m)) {
@@ -2120,7 +2194,7 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   }
 
   std::vector<uint8_t> out = {'M', 'P', 'E', 'V'};
-  PutLe32(out, 5);
+  PutLe32(out, 6);
   float tone[5];
   std::copy(tonemap, tonemap + 5, tone);
   Tonemap(r, tone);
@@ -2169,6 +2243,15 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
   if (m_master.pak == nullptr) {
     error = "no master pak";
     return false;
+  std::vector<GradeData> grades = worldGrades;
+  ReadGrades(r, m.area, grades);
+  PutLe32(out, uint32_t(grades.size()));
+  for (const GradeData& g : grades) {
+    PutLe32(out, uint32_t(g.layer));
+    PutFloat(out, g.fadeIn);
+    PutFloat(out, g.fadeOut);
+    out.insert(out.end(), g.lut.begin(), g.lut.end());
+  }
   }
   if (!LoadAreas(mlvl, error)) {
     return false;
@@ -2274,7 +2357,7 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
       return false;
     }
     std::string matched;
-    const std::string line = WriteRoom(*r, placed, shift, tonemap, bloom, written, matched);
+    const std::string line = WriteRoom(*r, placed, shift, tonemap, bloom, grades, written, matched);
     Log(line);
     if (!matched.empty()) {
       const auto s = seen.find(matched);
@@ -2286,6 +2369,9 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
   }
   Log(std::to_string(seen.size()) + " of " + std::to_string(m_areas.size()) + " areas");
   return true;
+  // The world's global grade sits under the room's own (the last active one is drawn).
+  std::vector<GradeData> grades;
+  ReadGrades(master, nullptr, grades);
 }
 
 }  // namespace

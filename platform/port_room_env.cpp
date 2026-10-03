@@ -10,11 +10,13 @@
 #include <dolphin/gx/GXExtra.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace PortRoomEnv {
 namespace {
@@ -53,6 +55,19 @@ int sEnabled = -1;
 int sExposure = -1;
 int sBloom = -1;
 uint32_t sViewArea = 0;
+int sGrade = -1;
+// The colour grade on screen: fading from one LUT to another (0 is the identity).
+struct GradeFade {
+  bool started = false;
+  uint32_t from = 0;
+  uint32_t to = 0;
+  float seconds = 0.f; // how long the fade to `to` takes
+  float fadeOut = 0.f; // of `to`, for when the next room has no grade
+  std::chrono::steady_clock::time_point start;
+};
+GradeFade sGradeFade;
+// LUTs handed to Aurora already; they are kept there for the run.
+std::unordered_set<uint32_t> sGradeLuts;
 // Model draws come in runs at one position.
 bool sLastValid = false;
 float sLastPos[3];
@@ -417,6 +432,71 @@ bool Bloom(float& threshold, float tints[5][3]) {
   return true;
 }
 
+bool ColorGradeEnabled() {
+  if (sGrade < 0) {
+    const char* const env = std::getenv("MP_COLOR_GRADE");
+    sGrade = env != nullptr && env[0] == '0' ? 0 : 1;
+  }
+  return sGrade != 0;
+}
+
+void SetColorGradeEnabled(bool on) { sGrade = on ? 1 : 0; }
+
+bool ColorGrade(LayerActive layerActive, void* context, uint32_t& a, uint32_t& b, float& weight) {
+  a = b = 0;
+  weight = 0.f;
+  if (!Enabled() || !ColorGradeEnabled()) {
+    sGradeFade.started = false;
+    return false;
+  }
+  // The room's grade: the last one whose layer is active. A room without a file keeps
+  // whatever the frame had, as the doors between two rooms do.
+  const auto view = sAreas.find(sViewArea);
+  if (view != sAreas.end() && !view->second.file.data.empty()) {
+    const File& file = view->second.file;
+    const Grade* pick = nullptr;
+    for (const Grade& grade : file.grades) {
+      if (grade.layer < 0 || layerActive == nullptr || layerActive(grade.layer, context)) {
+        pick = &grade;
+      }
+    }
+    const uint32_t target = pick != nullptr ? pick->id : 0;
+    if (target != 0 && sGradeLuts.insert(target).second) {
+      GXPortColorGradeLut(target, file.data.data() + pick->offset);
+    }
+    GradeFade& f = sGradeFade;
+    const auto now = std::chrono::steady_clock::now();
+    if (!f.started) {
+      f = {true, target, target, 0.f, 0.f, now};
+    } else if (target != f.to) {
+      // Mid-fade, the new fade starts from whichever grade showed more.
+      const float shown = f.seconds > 0.f
+          ? std::chrono::duration<float>(now - f.start).count() / f.seconds : 1.f;
+      f.from = shown >= 0.5f ? f.to : f.from;
+      f.to = target;
+      f.seconds = pick != nullptr ? pick->fadeIn : f.fadeOut;
+      f.start = now;
+    }
+    f.fadeOut = pick != nullptr ? pick->fadeOut : 0.f;
+  }
+  GradeFade& f = sGradeFade;
+  if (!f.started) {
+    return false;
+  }
+  float t = 1.f;
+  if (f.seconds > 0.f) {
+    t = std::chrono::duration<float>(std::chrono::steady_clock::now() - f.start).count() / f.seconds;
+  }
+  if (t >= 1.f) {
+    f.from = f.to;
+    t = 1.f;
+  }
+  a = f.from;
+  b = f.to;
+  weight = t;
+  return a != 0 || b != 0;
+}
+
 void SetViewArea(uint32_t mrea) {
   if (sViewArea != mrea) {
     sViewArea = mrea;
@@ -717,6 +797,12 @@ std::string Info(const float pos[3]) {
                   file.exposureBias, t[0], t[1], file.contrast, t[2], t[3], file.probes.size(), file.cubes.size(),
                   file.grids.size());
     out += line;
+    for (size_t i = 0; i < file.grades.size(); ++i) {
+      const Grade& grade = file.grades[i];
+      std::snprintf(line, sizeof(line), "  grade %zu: layer %d, fade in %g out %g, LUT %08X%s\n", i, grade.layer,
+                    grade.fadeIn, grade.fadeOut, grade.id, grade.id == 0 ? " (identity)" : "");
+      out += line;
+    }
     const Pick pick = PickProbe(file, pos);
     if (pick.probe >= 0) {
       const Probe& probe = file.probes[pick.probe];

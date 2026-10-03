@@ -2970,6 +2970,65 @@ bool DecodeVolumeFloat(const uint8_t* compressed, size_t compressedSize, size_t 
   return true;
 }
 
+bool DecodeTxtrVolumeRgba8(const uint8_t* data, size_t size, uint32_t& width, uint32_t& height, uint32_t& depth,
+                           std::vector<uint8_t>& rgba, std::string& error) {
+  rgba.clear();
+  if (data == nullptr || size == 0) {
+    error = "remastered txtr: no data";
+    return false;
+  }
+  TextureHeader head;
+  if (!ReadHeader(data, size, head, error)) {
+    return false;
+  }
+  if (head.kind != 2) {
+    error = "remastered txtr: not a 3D texture";
+    return false;
+  }
+  if (head.format != kTxtrFormatRgba8Unorm && head.format != kTxtrFormatRgba8Srgb) {
+    error = "remastered txtr: a volume of " + std::string(FormatName(head.format)) + " is not supported";
+    return false;
+  }
+  width = head.width;
+  height = head.height;
+  depth = head.layers;
+  if (width == 0 || height == 0 || depth == 0 || width > 256 || height > 256 || depth > 256) {
+    error = "remastered txtr: a volume of " + std::to_string(width) + "x" + std::to_string(height) + "x" +
+            std::to_string(depth);
+    return false;
+  }
+  Meta meta;
+  if (!ReadMeta(data, size, meta, error)) {
+    return false;
+  }
+  std::vector<uint8_t> surface;
+  if (!BuildSurface(data, size, meta, surface, error)) {
+    return false;
+  }
+  // The same untiling as DecodeVolumeFloat's, with a texel for a block. A 3D texture's
+  // blocks are one GOB tall, as in DecodeTxtr (33^3 LUTs: 368640 bytes, not the 589824 of 4).
+  const size_t rowBytes = size_t(width) * 4, wg = DivRoundUp(rowBytes, 64);
+  const size_t blockDepth = BlockDepth(depth);
+  const size_t bhg = 1, blk = 512 * bhg * blockDepth;
+  rgba.assign(rowBytes * height * depth, 0);
+  for (size_t z = 0; z < depth; ++z) {
+    for (size_t y = 0; y < height; ++y) {
+      for (size_t x = 0; x < rowBytes; ++x) {
+        const size_t a = (z / blockDepth) * DivRoundUp(height, 8 * bhg) * blk * wg +
+                         (z & (blockDepth - 1)) * 512 * bhg + (y / (8 * bhg)) * blk * wg + (x / 64) * blk +
+                         ((y % (8 * bhg)) / 8) * 512 + GobOffset(x, y);
+        if (a >= surface.size()) {
+          error = "remastered txtr: the volume's surface is short";
+          rgba.clear();
+          return false;
+        }
+        rgba[(z * height + y) * rowBytes + x] = surface[a];
+      }
+    }
+  }
+  return true;
+}
+
 void DecodeBc6hFace(const uint8_t* blocks, uint32_t texels, bool isSigned, uint16_t* rgba) {
   const size_t perSide = DivRoundUp(size_t(texels), 4);
   for (size_t by = 0; by < perSide; ++by) {

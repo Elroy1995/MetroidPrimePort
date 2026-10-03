@@ -1,5 +1,6 @@
 #include "port_room_env.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -179,6 +180,34 @@ void TestGrid() {
         "bloom: threshold and tints");
   Check(PortRoomEnv::Parse(std::vector<uint8_t>(v4), file, error) && file.bloomTints.empty(),
         "bloom: version 4 has none");
+
+  // Version 6 adds the colour grades: layer, fades, a 33^3 RGBA8 LUT each.
+  std::vector<uint8_t> v6 = v5;
+  v6[4] = 6;
+  Check(!PortRoomEnv::Parse(std::vector<uint8_t>(v6), file, error), "grade: cut short");
+  Put32(v6, 2);
+  for (int g = 0; g < 2; ++g) {
+    Put32(v6, g == 0 ? uint32_t(-1) : 3u);
+    PutFloat(v6, g == 0 ? 1.f : 1000.f);
+    PutFloat(v6, 0.5f);
+    for (uint32_t z = 0; z < 33; ++z) {
+      for (uint32_t y = 0; y < 33; ++y) {
+        for (uint32_t x = 0; x < 33; ++x) {
+          // The first is the identity, the second warms it.
+          const uint8_t px[4] = {uint8_t(std::min(255u, x * 255 / 32 + (g == 1 ? 20u : 0u))), uint8_t(y * 255 / 32),
+                                 uint8_t(z * 255 / 32), 255};
+          v6.insert(v6.end(), px, px + 4);
+        }
+      }
+    }
+  }
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(v6), file, error) && file.grades.size() == 2 &&
+            file.grades[0].layer == -1 && file.grades[0].fadeIn == 1.f && file.grades[0].id == 0 &&
+            file.grades[1].layer == 3 && file.grades[1].fadeIn == 0.f && file.grades[1].fadeOut == 0.5f &&
+            file.grades[1].id != 0,
+        "grade: layers, fades, the identity's id is 0");
+  v6.pop_back();
+  Check(!PortRoomEnv::Parse(std::vector<uint8_t>(v6), file, error), "grade: LUT cut short");
   Check(PortRoomEnv::Parse(std::vector<uint8_t>(good), file, error), "grid: parse once more");
 
   PortRoomEnv::Ambient a;
