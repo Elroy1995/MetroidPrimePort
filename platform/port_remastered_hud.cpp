@@ -61,6 +61,16 @@ const char* const kAlias[][2] = {
     {"textpane_yicon", "textpane_togglelegend"},
     {"basewidget_ybuttonpane", "basewidget_togglelegendpane"},
 };
+// Words the disc draws as models (the pause screen's "next", "back" and
+// "exit" under their buttons), where Remastered has a text pane its own code
+// fills. The model stands in the middle of that pane's box. The pairs go by
+// the button each word is under: Remastered's "nexttext" is under the pane
+// the disc calls textpane_back, and the other way round.
+const char* const kStandIn[][2] = {
+    {"model_next1", "textpane_backtext"},
+    {"model_back1", "textpane_nexttext"},
+    {"model_return1", "textpane_exittext"},
+};
 
 // The map screen. Remastered words its prompts as one line and keeps the
 // world map's off screen; the disc's code fills these three itself, so they
@@ -421,6 +431,7 @@ struct RemWidget {
   uint32_t projection = 0;
   float camera[4] = {};  // fov, aspect; or right, left, top, bottom
   std::vector<uint32_t> meshes;
+  uint32_t textJustify[2] = {9, 9};  // a text pane's; 9 when unread
 };
 
 constexpr size_t kFrameHeader = 32;
@@ -515,6 +526,15 @@ bool ParseRemFrame(const uint8_t* data, size_t size, std::vector<RemWidget>& out
       if (w.type == kModel) {
         in.U32();
       } else {
+        // Box (2 floats), offset (3), font name, wrap and horizontal flags,
+        // then the horizontal and vertical justification.
+        in.Skip(20);
+        in.Skip(size_t(in.U32()) + 2);
+        const uint32_t justify[2] = {in.U32(), in.U32()};
+        if (in.ok) {
+          std::memcpy(w.textJustify, justify, sizeof(justify));
+        }
+        in.ok = true;
         fixed = false;
       }
       break;
@@ -842,7 +862,10 @@ const std::vector<HudFrame>& HudFrames() {
   static const std::vector<HudFrame> frames = {
       {"FRME_CombatHud", 0xB10E1DCD}, {"FRME_ScanHud", 0xE47CD0DC}, {"FRME_ThermalHud", 0x143ACA19},
       {"FRME_XRayHudNew", 0x6493BB4F}, {"FRME_BallHud", 0xBF687554}, {"FRME_BaseHud", 0x2F972D0C},
-      {"FRME_MapScreen", 0x97FF54DE},
+      {"FRME_MapScreen", 0x97FF54DE}, {"FRME_PauseScreen", 0x6352720C},
+      {"FRME_PauseScreenInstructions", 0xB101FA1D}, {"FRME_GenericMenu", 0x7F85F25F},
+      {"FRME_MsgScreen", 0xAF0D63E8}, {"FRME_QuitScreen", 0x920276D2}, {"FRME_ScanHudFlat", 0xF176A9D5},
+      {"FRME_Helmet", 0xB7A308BD},
   };
   return frames;
 }
@@ -1068,6 +1091,42 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
       }
     }
   }
+  // The height of the view, in world units, at a point.
+  auto viewHeight = [](const Mat& eye, double fov, const double* at) {
+    const double len = AxisLength(eye, 1);
+    double depth = 0.0;
+    for (int c = 0; c < 3; ++c) {
+      depth += (at[c] - eye.m[c][3]) * eye.m[c][1] / len;
+    }
+    return depth > 1e-9 ? 2.0 * depth * std::tan(fov * kPi / 360.0) : 0.0;
+  };
+  int discCamera = -1;
+  for (size_t i = 0; i < original.size() && discCamera < 0; ++i) {
+    if (original[i].type == Tag('C', 'A', 'M', 'R') && original[i].typeData.size() >= 20) {
+      discCamera = int(i);
+    }
+  }
+  auto discView = [&](const double* at) {
+    if (discCamera < 0) {
+      return 0.0;
+    }
+    const Widget& c = original[size_t(discCamera)];
+    if (Get32(c.typeData, 0) == 0) {
+      return viewHeight(c.world, GetFloat(c.typeData, 4), at);
+    }
+    return std::abs(double(GetFloat(c.typeData, 12)) - GetFloat(c.typeData, 16));
+  };
+  auto remView = [&](const Mat& m) {
+    if (camera < 0) {
+      return 0.0;
+    }
+    const RemWidget& c = rem[size_t(camera)];
+    if (c.projection != 0) {
+      return std::abs(double(c.camera[2]) - c.camera[3]);
+    }
+    const double at[3] = {m.m[0][3], m.m[1][3], m.m[2][3]};
+    return viewHeight(remWorld(size_t(camera)), c.camera[0], at);
+  };
   auto meshBox = [&](size_t i, double* lo, double* hi) {
     Part part;
     if (rem[i].meshes.empty() || !MeshPart(model, rem[i].meshes[0], part) || part.positions.empty()) {
@@ -1196,6 +1255,51 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
       default:
         break;
       }
+    }
+    for (const auto& stand : kStandIn) {
+      const auto pane = remByName.find(stand[1]);
+      Blob cmdl;
+      double lo[3], hi[3];
+      if (found != remByName.end() || name != stand[0] || pane == remByName.end() ||
+          w.type != Tag('M', 'O', 'D', 'L') || w.typeData.size() < 4 ||
+          !m_io.retail(Tag('C', 'M', 'D', 'L'), Get32(w.typeData, 0), cmdl) || cmdl.size() < 36 ||
+          !meshBox(pane->second, lo, hi)) {
+        continue;
+      }
+      // The model's middle (its bounding box follows magic, version and
+      // flags) goes to the middle of the pane's box, and keeps the share of
+      // the view's height it had on the disc.
+      const Mat there = remWorld(pane->second);
+      double mid[3], from[3], to[3];
+      for (int c = 0; c < 3; ++c) {
+        mid[c] = 0.5 * (double(GetFloat(cmdl, 12 + size_t(c) * 4)) + GetFloat(cmdl, 24 + size_t(c) * 4));
+      }
+      for (int c = 0; c < 3; ++c) {
+        from[c] = w.world.m[c][3];
+        to[c] = there.m[c][3];
+        for (int k = 0; k < 3; ++k) {
+          from[c] += w.world.m[c][k] * mid[k];
+          to[c] += there.m[c][k] * 0.5 * (lo[k] + hi[k]);
+        }
+      }
+      Mat at = Identity();
+      for (int c = 0; c < 3; ++c) {
+        at.m[c][3] = to[c];
+      }
+      const double was = discView(from);
+      const double now = remView(at);
+      const double scale = was > 1e-9 && now > 1e-9 ? now / was : 1.0;
+      for (int c = 0; c < 3; ++c) {
+        for (int k = 0; k < 3; ++k) {
+          w.world.m[c][k] *= scale;
+        }
+        w.world.m[c][3] = to[c];
+        for (int k = 0; k < 3; ++k) {
+          w.world.m[c][3] -= w.world.m[c][k] * mid[k];
+        }
+      }
+      w.kept = true;
+      newName[Lower(rem[pane->second].name)] = w.name;
     }
     if (w.type == Tag('C', 'A', 'M', 'R') && camera >= 0 && w.typeData.size() >= 20) {
       // The layout is made for Remastered's camera, a 16:9 one. The clip planes stay the disc's.
@@ -1392,8 +1496,9 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
       w.draw = g.draw;
     } else if (w.type == Tag('T', 'X', 'P', 'N') && w.guif >= 0 && w.typeData.size() >= kTextPaneSize) {
       // The box is Remastered's mesh for the text. The disc's text is laid out
-      // in whole units of its font, so the box keeps the disc's line height
-      // and gets the width that gives its glyphs the proportions they had.
+      // in whole units of its font: the box's extent in those units gives the
+      // glyphs the proportions they had, filling the box's height or, where
+      // that would draw them bigger than the disc did, at the disc's size.
       const RemWidget& g = rem[size_t(w.guif)];
       Part part;
       if (g.meshes.empty() || !MeshPart(model, g.meshes[0], part)) {
@@ -1420,18 +1525,41 @@ bool HudConverter::Convert(uint32_t retailFrame, const uint8_t* guif, size_t siz
         log(w.name + ": no box to lay the text out in, the disc's kept");
         continue;
       }
+      // Remastered's text scale is relative to its own font, so the glyphs
+      // keep the size they had on the disc's screen when Remastered's box would
+      // make them bigger, and then take Remastered's justification in the box.
       Mat centre = Identity();
       for (int c = 0; c < 3; ++c) {
         centre.m[c][3] = (lo[c] + hi[c]) / 2.0;
       }
-      w.world = Mul(w.world, centre);
+      double from[3];
+      for (int c = 0; c < 3; ++c) {
+        from[c] = old.m[c][3];
+        for (int k = 0; k < 3; ++k) {
+          from[c] += old.m[c][k] * double(GetFloat(w.typeData, 8 + size_t(k) * 4));
+        }
+      }
+      const double was = discView(from);
+      const Mat placed = Mul(w.world, centre);
+      const double now = remView(placed);
+      double scale = 1.0;
+      if (was > 1e-9 && now > 1e-9 && pz / was < pz2 / now) {
+        scale = (pz / was) / (pz2 / now);
+        log(w.name + ": text at the disc's size, " + std::to_string(int(std::lround(100.0 / scale))) + "% of the box");
+        if (g.textJustify[0] <= 2 && g.textJustify[1] <= 2) {
+          Set32(w.typeData, kTextPaneJustify, g.textJustify[0]);
+          Set32(w.typeData, kTextPaneJustify + 4, g.textJustify[1]);
+        }
+      }
+      w.world = placed;
       SetFloat(w.typeData, 0, float(dim[0]));
       SetFloat(w.typeData, 4, float(dim[1]));
       for (size_t at = 8; at < 20; at += 4) {
         SetFloat(w.typeData, at, 0.0f);
       }
-      SetFloat(w.typeData, kTextPaneExtent, float(std::max(1.0, std::nearbyint(dim[0] * AxisLength(w.world, 0) / unit))));
-      SetFloat(w.typeData, kTextPaneExtent + 4, float(std::max(1.0, std::nearbyint(extent[1]))));
+      SetFloat(w.typeData, kTextPaneExtent,
+               float(std::max(1.0, std::nearbyint(dim[0] * AxisLength(w.world, 0) / (unit * scale)))));
+      SetFloat(w.typeData, kTextPaneExtent + 4, float(std::max(1.0, std::nearbyint(extent[1] / scale))));
     } else if (w.type == Tag('E', 'N', 'R', 'G') && w.guif >= 0 && w.typeData.size() >= 4) {
       const RemWidget& g = rem[size_t(w.guif)];
       Part part;
