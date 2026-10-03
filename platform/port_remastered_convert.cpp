@@ -2418,9 +2418,12 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     // Nor do the alpha and shading modes belong on one: what they say is about the
     // Remastered surface, and a retail model keeps the retail material's
     // (bar a glow of its own, whose colour and fade are all in it).
+    // The glow mask is the exception: a glow map is often a few solid blocks the
+    // base map's alpha cuts down to lamps (the save station's arms went yellow
+    // all over), and the opacity stays the retail draw's either way.
     if (!opt.standalone) {
       rem.unlit = glow;
-      rem.mask = false;
+      rem.mask = rem.mask && rem.maps[kEmissive].has;
       rem.height = 0.0;
     }
     const MapRef* rt = rem.maps;
@@ -2455,7 +2458,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     // Only a room's own material asks for a cutout: a retail material's alpha
     // test says nothing about what the Remastered map's alpha holds.
     const char* const baseAlpha =
-        glow ? "blend" : !opt.standalone ? "" : rem.cutout ? "punch" : rem.mask || rem.layered || rem.height > 0.0 ? "mask" : rem.blended ? "blend" : "";
+        glow ? "blend" : !opt.standalone ? (rem.mask ? "mask" : "") : rem.cutout ? "punch" : rem.mask || rem.layered || rem.height > 0.0 ? "mask" : rem.blended ? "blend" : "";
     const bool usePbr = opt.pbr && rt[kBase].has && (opt.standalone || glow || !IsFx(pm)) &&
                         Get("pbr:base", rt, baseAlpha, opt).has_value();
     if (usePbr) {
