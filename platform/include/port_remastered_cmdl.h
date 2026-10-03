@@ -125,6 +125,10 @@ struct ModelVertexBuffer {
   std::vector<float> normals;         // xyz per vertex
   std::vector<float> tangents;        // xyzw per vertex (TANGENT)
   std::vector<std::vector<float>> uvs;  // one entry per TEXCOORD_n, uv per vertex
+  // The zw of each TEXCOORD_n, empty when its format holds two components. The
+  // shaders take two texcoords from each attribute: a material's texcoord c is
+  // TEXCOORD_(c/2).xy when c is even and its zw when c is odd.
+  std::vector<std::vector<float>> uvsZw;
   std::vector<float> colors;          // rgba per vertex
   std::vector<uint16_t> joints;       // four per vertex, skinned models only
   std::vector<float> weights;         // four per vertex, skinned models only

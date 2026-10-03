@@ -1014,6 +1014,18 @@ bool DecodeVertexBuffers(const std::vector<VertexEntry>& entries,
                   uv[size_t(v) * 2 + c] = AttributeValue(attribute, v, c);
                 }
               }
+              if (decoded.uvsZw.size() <= set) {
+                decoded.uvsZw.resize(set + 1);
+              }
+              if (sourceComponents >= 4) {
+                std::vector<float>& zw = decoded.uvsZw[set];
+                zw.resize(size_t(vertexCount) * 2);
+                for (uint32_t v = 0; v < vertexCount; ++v) {
+                  for (uint32_t c = 0; c < 2; ++c) {
+                    zw[size_t(v) * 2 + c] = AttributeValue(attribute, v, c + 2);
+                  }
+                }
+              }
             } else {
               // The rest (TANGENT_1 and TANGENT_2, the baked lighting set, the
               // per-instance parameters) is kept as it was declared.

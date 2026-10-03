@@ -2021,8 +2021,11 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
           b.N[v * 3 + r] = nrm[r] / len;
         }
       }
-      for (const std::vector<float>& uv : vb.uvs) {
-        b.uv.emplace_back(uv.size() == b.n * 2 ? std::vector<double>(uv.begin(), uv.end()) : std::vector<double>());
+      // Indexed by a material's texcoord, which takes two from each attribute
+      // (TEXCOORD_n.xy, then its zw): the vertex shaders hand varying 2 + c to texcoord c.
+      for (size_t c = 0; c < vb.uvs.size() * 2; ++c) {
+        const std::vector<float>* uv = c % 2 == 0 ? &vb.uvs[c / 2] : c / 2 < vb.uvsZw.size() ? &vb.uvsZw[c / 2] : nullptr;
+        b.uv.emplace_back(uv && uv->size() == b.n * 2 ? std::vector<double>(uv->begin(), uv->end()) : std::vector<double>());
       }
       if (opt.water && opt.standalone) {
         // Its maps lie on the surface by where a point is, not by the model's texcoords.
