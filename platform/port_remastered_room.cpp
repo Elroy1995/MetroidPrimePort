@@ -216,6 +216,7 @@ struct Prop {
 struct Component {
   uint32_t type = 0;
   int layer = 0;
+  bool baseLayer = false;  // on the layer that is always loaded (no layer unit, "LU__")
   Span raw;
   Span idta;
   Id16 guid{};
@@ -365,6 +366,12 @@ bool Room::Parse(const std::vector<uint8_t>& data, std::string& error) {
   }
   std::map<Id16, size_t>& byGuid = m_byGuid;
   for (size_t li = 0; li < layers.size(); ++li) {
+    // The header (LHED) names the layer "LU_<layer unit>_PG_…"; the base layer has no unit.
+    static constexpr char kUnit[] = "LU_";
+    const uint8_t* const head = d.data() + layers[li].start;
+    const uint8_t* const headEnd = head + std::min<size_t>(layers[li].size, 256);
+    const uint8_t* const unit = std::search(head, headEnd, kUnit, kUnit + 3);
+    const bool baseLayer = unit + 3 < headEnd && unit[3] == '_';
     std::vector<Span> comps;
     const uint32_t pComp[] = {Tag("SRIP"), Tag("COMP")};
     if (!Find(layers[li].start, layers[li].start + layers[li].size, pComp, 2, comps, error)) {
@@ -381,6 +388,7 @@ bool Room::Parse(const std::vector<uint8_t>& data, std::string& error) {
         Component c;
         c.type = type;
         c.layer = int(li);
+        c.baseLayer = baseLayer;
         const Span s = sden[pi];
         c.raw = s.size >= 4 ? Span{s.start + 4, s.size - 4} : Span{s.start, 0};
         c.idta = idta[ii];
@@ -860,6 +868,7 @@ SceneryScripts MatchScripts(const Room& room, const Area& area) {
   struct Ent {
     int entity;
     int layer;
+    bool baseLayer;  // always loaded: drawn on no retail layer
     int type;
     bool hasPos;
     Vec3 w;  // GameCube world position
@@ -870,7 +879,7 @@ SceneryScripts MatchScripts(const Room& room, const Area& area) {
     if (c.entity < 0 || c.type == kEntity || entIndex.count(c.entity) != 0) {
       continue;
     }
-    Ent e{c.entity, c.layer, RetailType(c.type), false, {}};
+    Ent e{c.entity, c.layer, c.baseLayer, RetailType(c.type), false, {}};
     Vec3 pos, rot, scale;
     if (room.Xform(c, pos, rot, scale)) {
       e.hasPos = true;
@@ -1019,6 +1028,8 @@ SceneryScripts MatchScripts(const Room& room, const Area& area) {
     }
   }
   // A Remastered layer is drawn on the retail layer most of its matched entities are on.
+  // Remastered's base layer is always loaded, whatever its entities' retail layers (in
+  // Phendrana Shorelines its vote picked a 15-object layer), so it is on no layer.
   std::map<int, std::vector<std::pair<uint8_t, int>>> votes;
   for (size_t k = 0; k < ents.size(); ++k) {
     if (match[k] < 0) {
@@ -1044,7 +1055,7 @@ SceneryScripts MatchScripts(const Room& room, const Area& area) {
   }
   for (const Ent& e : ents) {
     const auto v = votes.find(e.layer);
-    if (v != votes.end()) {
+    if (v != votes.end() && !e.baseLayer) {
       auto best = v->second.begin();
       for (auto it = v->second.begin(); it != v->second.end(); ++it) {
         if (it->second > best->second) {
