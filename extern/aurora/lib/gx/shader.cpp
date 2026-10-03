@@ -1011,6 +1011,40 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           pbr_kglow = pbr_ki * (pbr_ka * ubuf.pbr_layer.z);
       }})""",
                          base, mapStage[4]);
+    // Kind 7, falling water: map 4's three channels are sheets that scroll at speeds of
+    // their own (pbr_layer_height the first two, pbr_layer.x and pbr_param.y the third,
+    // pbr_param.x the time). The vertex colour says how much of each there is, and their
+    // sum picks the colour and opacity from map 0, a ramp whose row is the vertex alpha
+    // (pbr_param.z and w and pbr_layer.z are the sum's softness and the ramp's offsets,
+    // pbr_emissive the colour). It is unlit.
+    {
+      const auto ramp = underlying(config.tevStages[mapStage[0]].texMapId);
+      layer += fmt::format(R"""(
+      let pbr_fuv1 = dpdx(tex{0}_uv);
+      let pbr_fuv2 = dpdy(tex{0}_uv);)""",
+                           underlying(inner.texCoordId));
+      kinds += fmt::format(R"""(
+      var pbr_kalpha = 1.0;
+      if (pbr_kind > 6.5 && pbr_kind < 7.5) {{
+          let pbr_ft = ubuf.pbr_param.x;
+          let pbr_fr = fract(vec2f(ubuf.pbr_layer_height.x, ubuf.pbr_layer_height.y) * pbr_ft) * vec2f(1.0, -1.0);
+          let pbr_fg = fract(vec2f(ubuf.pbr_layer_height.z, ubuf.pbr_layer_height.w) * pbr_ft) * vec2f(1.0, -1.0);
+          let pbr_fb = fract(vec2f(ubuf.pbr_layer.x, ubuf.pbr_param.y) * pbr_ft) * vec2f(1.0, -1.0);
+          let pbr_fs = vec3f(textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + pbr_fr, pbr_fuv1, pbr_fuv2).r,
+                             textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + pbr_fg, pbr_fuv1, pbr_fuv2).g,
+                             textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + pbr_fb, pbr_fuv1, pbr_fuv2).b);
+          let pbr_fw = max(pbr_fs + pbr_vraw.rgb * 2.0 + ubuf.pbr_param.w - 1.0, vec3f(0.0));
+          let pbr_fsum = pbr_fw.x + pbr_fw.y + pbr_fw.z;
+          let pbr_framp = textureSampleLevel(tex{2}, tex{2}_samp,
+                                             clamp(vec2f(pbr_fsum / max(pbr_fsum + ubuf.pbr_param.z, 1.0),
+                                                         pbr_vraw.a + ubuf.pbr_layer.z),
+                                                   vec2f(0.02), vec2f(0.98)), 0.0);
+          pbr_base = vec3f(0.0);
+          pbr_kglow = pow(max(pbr_framp.rgb, vec3f(0.0)), vec3f(2.2)) * max(ubuf.pbr_emissive.rgb, vec3f(0.0));
+          pbr_kalpha = pbr_framp.a;
+      }})""",
+                           underlying(inner.texMapId), underlying(inner.texCoordId), ramp);
+    }
     if (mapStage[5] != -1) {
       orm = fmt::format("mix({}, sampled{}, pbr_ls)", orm, mapStage[5]);
     }
@@ -1110,6 +1144,12 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           pbr_lo = (max(ubuf.pbr_emissive.rgb, vec3f(0.0)) * pbr_ambd * (ubuf.pbr_param.z * (1.0 - pbr_qf)) +
                     pbr_envspec * pbr_qf) / max(pbr_alpha, 1e-3);
           pbr_glow = vec3f(0.0);
+      })""";
+  }
+  if (layered) {
+    liquid += R"""(
+      if (pbr_kind > 6.5 && pbr_kind < 7.5) {
+          pbr_alpha = pbr_kalpha;
       })""";
   }
   std::string attn;

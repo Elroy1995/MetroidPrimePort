@@ -579,12 +579,12 @@ struct RemMaterial {
   double layerHeight[4] = {1.0, 0.0, 1.0, 0.0};  // BSAO: scale and offset of each layer's height
   // A shader of its own the port draws (GXSetPBRMaterial's kinds): 1 a second
   // layer on what faces up, 2 a detail map, 3 lava, 4 ice seen into, 5 a
-  // liquid's surface (water, poison), 6 a lava pool's.
+  // liquid's surface (water, poison), 6 a lava pool's, 7 falling water.
   int kind = 0;
   double kindStrength = 0.0;
   double kindParam[4] = {0.0, 0.0, 0.0, 0.0};
   bool vcolor = false;  // it reads the vertex colour, which is no tint
-  double tint[3] = {0.0, 0.0, 0.0};  // kind 5: the liquid's colour
+  double tint[3] = {0.0, 0.0, 0.0};  // kinds 5 and 7: the liquid's colour
   bool hidden = false;  // not drawn: the game has its own
 };
 
@@ -1065,11 +1065,15 @@ constexpr uint32_t kCutoutFlag = 0x20;       // one-bit alpha: ground leaves, gr
 constexpr uint32_t kIncanMaskFlag = 0x200;   // the base map's alpha masks the glow
 // The first four bytes of the id of a shader whose alpha is read below.
 constexpr uint32_t kShaderHeightBlend = 0xCA10C453;  // snow and ice over rock
-constexpr uint32_t kShaderWaterfall = 0x50412FE7;  // three scrolling unlit layers: falling water
 // Shaders with maps and parameters of their own (TCHn, CCHn), read from their code.
 constexpr uint32_t kShaderUpLayer = 0x9EFE0D2E;   // TCH0-2 are a second layer on what faces up, CCH0.x its edge
 constexpr uint32_t kShaderDetail = 0x9AB899E7;    // TCH0 is a detail map, on a texcoord of its own
 constexpr uint32_t kShaderLava = 0x023388CD;      // the glow is CCH0.x times the vertex alpha
+// Falling water, unlit: TCH0's three channels are sheets scrolling at CCH1's and CCH2's speeds
+// (times CCH0.x), weighted by the vertex colour, and their sum picks the colour from TCH1, a
+// ramp whose row is the vertex alpha. CCH0's y, z and w are the sum's softness and the ramp's
+// offsets, CCH3 the colour.
+constexpr uint32_t kShaderWaterfall = 0x50412FE7;
 constexpr uint32_t kShaderParallax = 0x2F3FB02B;  // TCH0 is seen inside the surface; CCH0 and CCH1.x say how
 // A lava pool's surface (a LavaRenderVolume's model): BCLR is a colour ramp, TCH0 a pattern
 // carried along TCH2's flow map in two phases that TCH1's noise offsets, CCH0 the flow's
@@ -1077,8 +1081,10 @@ constexpr uint32_t kShaderParallax = 0x2F3FB02B;  // TCH0 is seen inside the sur
 constexpr uint32_t kShaderLavaPool[] = {0x3ADE58B7, 0xB9C24545};
 // A shader with parameters of its own (TCHn, CCHn) reads the vertex colour as
 // it likes: masks for its extra maps, a colour seen through ice. These are the
-// ones read that multiply the albedo by it, as the standard shader does.
-constexpr uint32_t kShaderTints[] = {0x9EFE0D2E, 0xCA10C453, 0x17E458CD, 0xE9DF2188, 0x41A12C9E, 0xD6AA2A3A};
+// ones read that multiply the albedo by it, as the standard shader does
+// (992941B7 is ColorUnlit: a door shield's blue is all vertex colour).
+constexpr uint32_t kShaderTints[] = {0x9EFE0D2E, 0xCA10C453, 0x17E458CD, 0xE9DF2188,
+                                     0x41A12C9E, 0xD6AA2A3A, 0x992941B7};
 
 // Which of a Remastered material's parameters feed the four maps, and its two
 // strengths. Later parameters replace earlier ones, as in the reference.
@@ -1090,9 +1096,6 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   uint8_t sid[4];
   std::memcpy(sid, &mat.shaderId, 4);
   const uint32_t shader = uint32_t(sid[0]) << 24 | uint32_t(sid[1]) << 16 | uint32_t(sid[2]) << 8 | sid[3];
-  // A waterfall is an animated sheet in both games, and retail's is an actor of the room that
-  // is drawn whatever the geometry: Remastered's on top of it would be a second, still one.
-  out.hidden = shader == kShaderWaterfall;
   bool custom = false;
   for (const ModelMaterialData& d : mat.data) {
     const uint32_t family = d.usage & 0xFFFFFF00u;
@@ -1252,13 +1255,15 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   // The shaders of their own. ICNC is 1 in every lava material and the strength
   // is CCH0.x instead.
   const ModelMaterialData* tch[3] = {nullptr, nullptr, nullptr};
-  const ModelMaterialData* cch[2] = {nullptr, nullptr};
+  const ModelMaterialData* cch[4] = {nullptr, nullptr, nullptr, nullptr};
   for (const ModelMaterialData& d : mat.data) {
     for (uint32_t i = 0; i < 3; ++i) {
       if (d.kind == ModelMaterialData::Kind::Texture && d.usage == FourCC('T', 'C', 'H', char('0' + i))) {
         tch[i] = &d;
       }
-      if (i < 2 && d.kind == ModelMaterialData::Kind::Color && d.usage == FourCC('C', 'C', 'H', char('0' + i))) {
+    }
+    for (uint32_t i = 0; i < 4; ++i) {
+      if (d.kind == ModelMaterialData::Kind::Color && d.usage == FourCC('C', 'C', 'H', char('0' + i))) {
         cch[i] = &d;
       }
     }
@@ -1306,6 +1311,26 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     out.layerHeight[0] = ShortestDouble(cch[1]->color[1]);  // the noise map's scale
     out.layerHeight[1] = 1.0;
     out.kindStrength = ShortestDouble(cch[0]->color[2]);
+  } else if (shader == kShaderWaterfall && tch[0] && tch[1] && cch[0] && cch[1] && cch[2]) {
+    out.kind = 7;
+    out.vcolor = true;
+    set(kBase, tch[1]->texture);
+    set(kBase, tch[0]->texture, &out.layer[kBase]);
+    out.maps[kBase].coord = out.layer[kBase].coord = 0;
+    out.maps[kMr].has = out.maps[kNormal].has = out.maps[kEmissive].has = false;
+    const double rate = ShortestDouble(cch[0]->color[0]);
+    for (int i = 0; i < 4; ++i) {
+      out.layerHeight[i] = rate * ShortestDouble(cch[1]->color[i]);
+    }
+    out.layerSmooth = rate * ShortestDouble(cch[2]->color[0]);
+    out.kindParam[0] = 1.0;  // the game multiplies it by the time
+    out.kindParam[1] = rate * ShortestDouble(cch[2]->color[1]);
+    out.kindParam[2] = ShortestDouble(cch[0]->color[1]);
+    out.kindParam[3] = ShortestDouble(cch[0]->color[2]);
+    out.kindStrength = ShortestDouble(cch[0]->color[3]);
+    for (int i = 0; i < 3; ++i) {
+      out.tint[i] = cch[3] ? ShortestDouble(cch[3]->color[i]) : 1.0;
+    }
   }
   // BKLT is a parameter vector like CCHn, not a colour: x is the strength (0 to
   // 2), what y means is not known and it is not used.
@@ -1313,12 +1338,22 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   // Both layers' base maps and an edge width make a blend; the shader's own
   // floor on the width is not known, so a zero one is the thinnest edge.
   out.layered = out.maps[kBase].has && out.layer[kBase].has && !out.cutout && !out.blended;
-  out.layerSmooth = std::clamp(out.layerSmooth, 1e-3, 16.0);
+  if (out.kind != 7) {
+    out.layerSmooth = std::clamp(out.layerSmooth, 1e-3, 16.0);
+  }
   if (out.kind == 6) {
     // Its own colour, and the extra maps are no second layer but must be bound like one.
     out.layered = out.unlit = true;
     out.cutout = out.blended = out.tinted = out.mask = false;
     out.height = 0.0;
+  }
+  if (out.kind == 7) {
+    // The ramp's colour and alpha are all of it; the sheets' map is bound as a second layer.
+    out.layered = out.unlit = out.blended = true;
+    out.cutout = out.tinted = out.mask = false;
+    out.height = 0.0;
+    out.emissive = 1.0;
+    out.backlight = 0.0;
   }
   // All but lava draw with the second layer's maps.
   if (out.kind != 3 && !out.layered) {
@@ -1343,7 +1378,7 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
   const double k = std::min(std::max(m.backlight, 0.0), 2.0);
   for (int i = 0; i < 3; ++i) {
     // A liquid has no glow of its own, and its colour goes where the glow's would.
-    PF(b, m.kind == 5 ? m.tint[i] : e);
+    PF(b, m.kind == 5 || m.kind == 7 ? m.tint[i] : e);
   }
   for (int i = 0; i < 3; ++i) {
     PF(b, k);
@@ -1353,7 +1388,7 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
     PF(b, (m.unlit ? 1.0 : 0.0) + (m.mask ? 2.0 : 0.0) + (m.tinted ? 4.0 : 0.0));
     if (m.layered || m.kind) {
       // Only a blend of two layers has an edge.
-      PF(b, m.layered && m.kind <= 1 ? m.layerSmooth : 0.0);
+      PF(b, m.kind == 7 || (m.layered && m.kind <= 1) ? m.layerSmooth : 0.0);
       for (double h : m.layerHeight) {
         PF(b, h);
       }
@@ -1400,9 +1435,18 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
   P32(b, group);
   P16(b, pm.blendDst);
   P16(b, pm.blendSrc);
-  P32(b, uint32_t(pm.chans.size()));
-  for (uint32_t c : pm.chans) {
-    P32(b, c);
+  // An unlit surface coloured by its vertices (a door shield) keeps that in the
+  // fallback too, which is what draws it whenever the model is not opaque: channel
+  // 0 unlit with the vertex colour as its material colour (bit 2), and the alpha
+  // taken from it as well.
+  const bool vertexGlow = rem.unlit && rem.tinted;
+  P32(b, vertexGlow ? 1u : uint32_t(pm.chans.size()));
+  if (vertexGlow) {
+    P32(b, 0x4);
+  } else {
+    for (uint32_t c : pm.chans) {
+      P32(b, c);
+    }
   }
   static const uint32_t tev[kLayeredMaps][3] = {
       {0x7A14F, 0x21CE7, 4},  // ZERO, RASC, TEXC, ZERO: base x channel 0; alpha = base
@@ -1417,7 +1461,7 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
   for (int i = 0; i < nmaps; ++i) {
     const uint32_t* t = tev[i];
     P32(b, t[0]);
-    P32(b, t[1]);
+    P32(b, i == 0 && vertexGlow ? 0x39487u : t[1]);  // ZERO, TEXA, RASA, ZERO: base x vertex alpha
     P32(b, 0x100);
     P32(b, 0x100);
     P8(b, 0);
@@ -1536,9 +1580,67 @@ std::vector<WeightKey> SkinWeights(const std::vector<double>& P, size_t n, const
         assign[j].push_back(order[0]);
       }
       ++mapped;
+    }
+    // A rig cut finer than retail's, both of rigid pieces (the iris doors: each
+    // of six leaves is a stack of layers and plates there, one piece here): a
+    // piece split between bones tears, and the vote is no guide, since retail's
+    // few vertices on a wide leaf are nearer the next leaf's edge than its own.
+    // Such a piece rides the bone whose piece is nearest its own, whole.
+    size_t rehomed = 0;
+    const bool rigidRetail = std::all_of(groups.begin(), groups.end(),
+                                         [](const SkinGroup& g) { return g.weights.size() == 1; });
+    if (rigidRetail && mapped >= 2 * nb) {
+      std::vector<double> bc(nb * 3, 0.0), bn(nb, 0.0), jc(nj * 3, 0.0), jn(nj, 0.0);
+      std::vector<bool> loose(nj, false);
+      for (size_t v = 0; v < nr; ++v) {
+        const double* row = RW(v);
+        const size_t c = size_t(std::max_element(row, row + nb) - row);
+        for (int a = 0; a < 3; ++a) {
+          bc[c * 3 + a] += rp[v * 3 + a];
+        }
+        bn[c] += 1.0;
+      }
+      for (size_t v = 0; v < n; ++v) {
+        for (int k = 0; k < 4; ++k) {
+          const double w = double((*W)[v * 4 + k]);
+          const size_t j = (*J)[v * 4 + k];
+          if (w >= 0.999) {
+            for (int a = 0; a < 3; ++a) {
+              jc[j * 3 + a] += P[v * 3 + a];
+            }
+            jn[j] += 1.0;
+          } else if (w >= 1e-3) {
+            loose[j] = true;
+          }
+        }
+      }
+      for (size_t j = 0; j < nj; ++j) {
+        if (assign[j].empty() || loose[j] || jn[j] == 0.0) {
+          continue;
+        }
+        double best = -1.0;
+        for (size_t c = 0; c < nb; ++c) {
+          if (bn[c] == 0.0) {
+            continue;
+          }
+          double d = 0.0;
+          for (int a = 0; a < 3; ++a) {
+            const double e = jc[j * 3 + a] / jn[j] - bc[c * 3 + a] / bn[c];
+            d += e * e;
+          }
+          if (best < 0.0 || d < best) {
+            assign[j] = {uint32_t(c)};
+            best = d;
+          }
+        }
+        ++rehomed;
+      }
+    }
+    for (size_t j = 0; j < nj; ++j) {
       split += assign[j].size() > 1;
     }
-    log("  joints mapped " + std::to_string(mapped) + ", " + std::to_string(split) + " split");
+    log("  joints mapped " + std::to_string(mapped) + ", " + std::to_string(split) + " split" +
+        (rehomed ? ", " + std::to_string(rehomed) + " rigid by nearest piece" : std::string()));
     std::vector<double> VW(n * nb, 0.0);
     std::vector<uint32_t> sel, on, near;
     std::vector<double> selP, onP;
@@ -1997,12 +2099,16 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   // Vertex colours, for a room's own materials that are tinted by them. The
   // alpha is an opacity only on a blended surface (on an opaque one it weighs
   // the material's layers), so a vertex no blended surface uses is opaque.
+  // On a retail model, only a glow that is all vertex colour reads them: an
+  // unlit Remastered surface over a retail effect (a door shield's cyan rim).
+  auto ownGlow = [&](const RemMaterial& m, const RetailMaterial& pm) {
+    return !opt.standalone && m.unlit && m.tinted && IsFx(pm);
+  };
   std::vector<uint8_t> C;
   bool useColor = false;
-  if (opt.standalone) {
-    for (const Prim& p : prims) {
-      useColor = useColor || ((mats[p.mat].tinted || mats[p.mat].vcolor) && buffers[p.buffer].colored);
-    }
+  for (const Prim& p : prims) {
+    const bool reads = opt.standalone ? mats[p.mat].tinted || mats[p.mat].vcolor : ownGlow(mats[p.mat], retail.mats[p.rmat]);
+    useColor = useColor || (reads && buffers[p.buffer].colored);
   }
   if (useColor) {
     C.reserve(n * 4);
@@ -2011,7 +2117,8 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     }
     std::vector<bool> keepAlpha(n, false);
     for (const Prim& p : prims) {
-      if (((mats[p.mat].blended || mats[p.mat].layered) && mats[p.mat].tinted) || mats[p.mat].vcolor) {
+      if (((mats[p.mat].blended || mats[p.mat].layered) && mats[p.mat].tinted) || mats[p.mat].vcolor ||
+          ownGlow(mats[p.mat], retail.mats[p.rmat])) {
         for (uint32_t i : p.I) {
           keepAlpha[i] = true;
         }
@@ -2100,6 +2207,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     const int rmat = key.first;
     const RetailMaterial& pm = retail.mats[rmat];
     RemMaterial rem = mats[key.second];
+    const bool glow = ownGlow(rem, pm) && useColor;
     // Remastered's missile lock-on highlight is a runtime effect: its map is
     // solid red, so baked in it turns grey shards red.
     if (Lower(rem.name).find("missilelock") != std::string::npos) {
@@ -2114,9 +2222,11 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     }
     rem.layered = rem.layered && opt.standalone && (rem.kind != 0 || (useColor && rem.tinted));
     // Nor do the alpha and shading modes belong on one: what they say is about the
-    // Remastered surface, and a retail model keeps the retail material's.
+    // Remastered surface, and a retail model keeps the retail material's
+    // (bar a glow of its own, whose colour and fade are all in it).
     if (!opt.standalone) {
-      rem.unlit = rem.mask = false;
+      rem.unlit = glow;
+      rem.mask = false;
       rem.height = 0.0;
     }
     const MapRef* rt = rem.maps;
@@ -2133,8 +2243,8 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
       ntexattr = 1;
     }
     // Bits 4 and 5 are colour 0. Only a material that reads it declares it.
-    const bool colored = useColor && (rem.tinted || rem.vcolor);
-    rem.tinted = useColor && rem.tinted;
+    const bool colored = useColor && (opt.standalone ? rem.tinted || rem.vcolor : glow);
+    rem.tinted = colored && rem.tinted;
     if (colored) {
       vtx |= 3u << 4;
     }
@@ -2144,8 +2254,8 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     // Only a room's own material asks for a cutout: a retail material's alpha
     // test says nothing about what the Remastered map's alpha holds.
     const char* const baseAlpha =
-        !opt.standalone ? "" : rem.cutout ? "punch" : rem.mask || rem.layered || rem.height > 0.0 ? "mask" : rem.blended ? "blend" : "";
-    const bool usePbr = opt.pbr && rt[kBase].has && (opt.standalone || !IsFx(pm)) &&
+        glow ? "blend" : !opt.standalone ? "" : rem.cutout ? "punch" : rem.mask || rem.layered || rem.height > 0.0 ? "mask" : rem.blended ? "blend" : "";
+    const bool usePbr = opt.pbr && rt[kBase].has && (opt.standalone || glow || !IsFx(pm)) &&
                         Get("pbr:base", rt, baseAlpha, opt).has_value();
     if (usePbr) {
       ++pbr;
