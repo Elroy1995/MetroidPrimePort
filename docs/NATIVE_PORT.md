@@ -930,14 +930,19 @@ a temporary directory instead of mounting.
   until Show cheats is ticked (`cheats`, off by default). Invulnerable
   (`invulnerable`, off by default) makes Samus take no damage; it stays on
   across runs until unticked, and `MP_GODMODE=<0|1>` overrides it for one run.
-- F1 > Debug > Log, "Write the log to a file" (`log_file`, off by default,
-  desktop only): everything the game prints to stdout/stderr, including the
+- F1 > Debug > Log, "Write the log to a file" (`log_file`, off by default):
+  everything the game prints to stdout/stderr, including the
   line Aurora prints before it aborts, also goes to `metroid_prime_port.log` in
   the user folder; the previous run's is kept as `metroid_prime_port.old.log`.
   Ticking it starts the log at once; unticking stops it at the next start.
   On Linux a forked copy process tees a pipe to the terminal and the file, so
   nothing written before a crash is lost; on Windows the streams go to the file
-  only. `MP_LOG_FILE=<0|1>` overrides the setting for one run.
+  only. On Android the logcat lines (port, Aurora, SDL, and stdout/stderr,
+  which are copied into logcat under the `stdout` tag while the log runs) are
+  written to the file one line at a time; it lives in
+  `Android/data/org.metroidprime.port/files/` (reachable over USB) unless the
+  data folder was moved to shared storage, where it sits in that folder.
+  `MP_LOG_FILE=<0|1>` overrides the setting for one run.
 - Save states (F1 > States): eight slots in `savestates/` under the pref
   folder (`slot<N>.mpss`). F5 saves to the selected slot and F9 loads it
   (`savestate_hotkeys`, on by default). A state holds the whole game save

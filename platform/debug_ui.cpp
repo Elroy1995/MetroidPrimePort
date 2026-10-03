@@ -4475,7 +4475,6 @@ void DrawDebugTab() {
     DrawVoices();
   }
 
-#if !defined(__ANDROID__)
   ImGui::SeparatorText("Log");
   bool logFile = sLogFile || PortLogFile::Active();
   if (ImGui::Checkbox("Write the log to a file", &logFile)) {
@@ -4497,7 +4496,6 @@ void DrawDebugTab() {
   if (!logPath.empty() && ImGui::Button("Copy log path")) {
     ImGui::SetClipboardText(logPath.c_str());
   }
-#endif
 
   ImGui::SeparatorText("Cheats");
   bool cheats = sCheats;

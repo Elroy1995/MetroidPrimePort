@@ -76,8 +76,11 @@ void AndroidLogCallback(AuroraLogLevel level, const char* module, const char* me
     default:
         break;
     }
-    __android_log_print(priority, "aurora", "[%s] %.*s", module != nullptr ? module : "",
-                        static_cast< int >(len), message);
+    char line[2048];
+    std::snprintf(line, sizeof(line), "[%s] %.*s", module != nullptr ? module : "", static_cast< int >(len),
+                  message);
+    __android_log_write(priority, "aurora", line);
+    PortLogFile::Write("aurora", line);
 }
 #endif
 
@@ -475,6 +478,7 @@ int main(int argc, char** argv) {
         aurora_dvd_close();
         return result;
     }
+#endif
     // The file log starts first so it holds everything after it, build id included.
     {
         const char* e = std::getenv("MP_LOG_FILE");
@@ -483,7 +487,6 @@ int main(int argc, char** argv) {
             PortLog::Write("port: cannot write the log to %s\n", PortLogFile::Path().c_str());
         }
     }
-#endif
     PortLog::Write( "metroid_prime_port: build %s\n", MP_BUILD_REVISION);
     PortRandomizer::EnsureLoaded();
     PortAp::EnsureLoaded();
@@ -601,6 +604,7 @@ int main(int argc, char** argv) {
     // the port can fix that, so whenever an X display is available ask for the X11
     // backend instead. SDL_VIDEODRIVER still wins, which is also how anyone who
     // wants Wayland opts back in.
+#if !defined(_WIN32) && !defined(__ANDROID__)
     {
         const char* requested = SDL_GetHint(SDL_HINT_VIDEO_DRIVER);
         const char* x11 = std::getenv("DISPLAY");
@@ -623,6 +627,7 @@ int main(int argc, char** argv) {
                        stderr);
         }
     }
+#endif
     aurora_initialize(argc, argv, &config);
     // From what the device gave, which can be less than was asked for.
     if (aurora_get_frame_buffer_scale() != frameBufferScale) {

@@ -11,12 +11,19 @@
 //
 // On Linux a small forked process copies a pipe to both the terminal and the file:
 // it outlives an abort and drains everything already written. On Windows stdout
-// and stderr go to the file only. Android logs to logcat and has no file log.
+// and stderr go to the file only. On Android the logcat writers (PortLog, Aurora's
+// callback, SDL) also call Write, each line straight to the file, and stdout and
+// stderr are copied into logcat and the file; the log goes to the app's external
+// folder (Android/data/org.metroidprime.port/files) unless the data was moved to
+// shared storage.
 namespace PortLogFile {
 
 // Starts the file log (once per run); true when it is running.
 bool Start();
 bool Active();
+// Android: appends "<tag>: <text>" as one line while the log runs. Elsewhere a
+// no-op, since stdout and stderr already reach the file.
+void Write(const char* tag, const char* text);
 // The log's path, empty without a user folder.
 std::string Path();
 

@@ -7,18 +7,26 @@
 #include <filesystem>
 #include <system_error>
 
-#if !defined(_WIN32) && !defined(__ANDROID__)
+#if !defined(_WIN32)
 #include <cerrno>
-#include <csignal>
 #include <fcntl.h>
 #include <unistd.h>
+#endif
+#if defined(__ANDROID__)
+#include <android/log.h>
+#include <thread>
+
+#include <SDL3/SDL_log.h>
+#include <SDL3/SDL_system.h>
+#elif !defined(_WIN32)
+#include <csignal>
 #endif
 
 namespace PortLogFile {
 namespace {
 bool sActive = false;
 
-#if !defined(_WIN32) && !defined(__ANDROID__)
+#if !defined(_WIN32)
 void WriteAll(int fd, const char* data, ssize_t size) {
   while (size > 0) {
     const ssize_t n = write(fd, data, static_cast< size_t >(size));
@@ -32,7 +40,9 @@ void WriteAll(int fd, const char* data, ssize_t size) {
     size -= n;
   }
 }
+#endif
 
+#if !defined(_WIN32) && !defined(__ANDROID__)
 // The copying process: pipe -> terminal + file until every writer has gone. Only
 // async-signal-safe calls, since the game may already have threads when it forks.
 [[noreturn]] void Copy(int in, int terminal, int file, int maxFd) {
@@ -61,19 +71,102 @@ void WriteAll(int fd, const char* data, ssize_t size) {
   _exit(0);
 }
 #endif
+
+#if defined(__ANDROID__)
+// The open log file. Every line is one write() of its own, so whatever was logged
+// before a crash or a kill by Android is already in the file.
+int sFile = -1;
+SDL_LogOutputFunction sSdlDefault = nullptr;
+void* sSdlDefaultData = nullptr;
+
+void SdlLog(void* userdata, int category, SDL_LogPriority priority, const char* message) {
+  if (sSdlDefault != nullptr) {
+    sSdlDefault(sSdlDefaultData, category, priority, message);
+  }
+  Write("SDL", message);
+}
+
+// Nothing reads a process's stdout and stderr on Android, so printf output (the
+// game's own reports among it) went nowhere. While the log runs both go through
+// a pipe into logcat (tag "stdout") and the file.
+void CopyStdio(int in) {
+  char line[2048];
+  size_t used = 0;
+  char buffer[4096];
+  for (;;) {
+    const ssize_t n = read(in, buffer, sizeof(buffer));
+    if (n < 0 && errno == EINTR) {
+      continue;
+    }
+    if (n <= 0) {
+      return;
+    }
+    for (ssize_t i = 0; i < n; ++i) {
+      const char c = buffer[i];
+      if (c != '\n' && used + 1 < sizeof(line)) {
+        line[used++] = c;
+        continue;
+      }
+      if (c != '\n') {
+        line[used++] = c;
+      }
+      line[used] = '\0';
+      __android_log_write(ANDROID_LOG_INFO, "stdout", line);
+      Write("stdout", line);
+      used = 0;
+    }
+  }
+}
+#endif
 } // namespace
 
 std::string Path() {
+#if defined(__ANDROID__)
+  // The app's private folder is out of reach without root, so unless the data
+  // was moved to shared storage the log goes to the app's external folder,
+  // Android/data/org.metroidprime.port/files, which a USB file transfer shows.
+  if (!PortPaths::IsPortable()) {
+    const char* external = SDL_GetAndroidExternalStoragePath();
+    if (external == nullptr || external[0] == '\0') {
+      return {};
+    }
+    std::string folder = external;
+    if (folder.back() != '/') {
+      folder += '/';
+    }
+    return folder + "metroid_prime_port.log";
+  }
+#endif
   const std::string& folder = PortPaths::UserFolder();
   return folder.empty() ? std::string() : folder + "metroid_prime_port.log";
 }
 
 bool Active() { return sActive; }
 
-bool Start() {
+void Write(const char* tag, const char* text) {
 #if defined(__ANDROID__)
-  return false;
+  if (sFile < 0 || text == nullptr) {
+    return;
+  }
+  char line[2304];
+  size_t size = static_cast< size_t >(std::snprintf(line, sizeof(line), "%s: %s", tag, text));
+  if (size >= sizeof(line)) {
+    size = sizeof(line) - 1;
+  }
+  if (size > 0 && line[size - 1] != '\n') {
+    if (size + 1 >= sizeof(line)) {
+      --size;
+    }
+    line[size++] = '\n';
+  }
+  WriteAll(sFile, line, static_cast< ssize_t >(size));
 #else
+  (void)tag;
+  (void)text;
+#endif
+}
+
+bool Start() {
   if (sActive) {
     return true;
   }
@@ -108,6 +201,26 @@ bool Start() {
   }
   std::setvbuf(stdout, nullptr, _IONBF, 0);
   std::setvbuf(stderr, nullptr, _IONBF, 0);
+#elif defined(__ANDROID__)
+  const int out = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_APPEND | O_CLOEXEC, 0644);
+  if (out < 0) {
+    return false;
+  }
+  char header[128];
+  const int headerSize = std::snprintf(header, sizeof(header), "metroid_prime_port log, started %s\n", started);
+  WriteAll(out, header, headerSize);
+  sFile = out;
+  SDL_GetLogOutputFunction(&sSdlDefault, &sSdlDefaultData);
+  SDL_SetLogOutputFunction(SdlLog, nullptr);
+  int fds[2];
+  if (pipe(fds) == 0) {
+    dup2(fds[1], STDOUT_FILENO);
+    dup2(fds[1], STDERR_FILENO);
+    close(fds[1]);
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    std::setvbuf(stderr, nullptr, _IONBF, 0);
+    std::thread(CopyStdio, fds[0]).detach();
+  }
 #else
   const int out = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
   if (out < 0) {
@@ -149,7 +262,6 @@ bool Start() {
   sActive = true;
   std::fprintf(stderr, "port: writing the log to %s\n", path.c_str());
   return true;
-#endif
 }
 
 } // namespace PortLogFile
