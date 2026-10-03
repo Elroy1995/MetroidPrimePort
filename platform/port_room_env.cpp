@@ -51,6 +51,7 @@ uint32_t sHintArea = 0;
 float sHintCentre[3];
 int sEnabled = -1;
 int sExposure = -1;
+int sBloom = -1;
 uint32_t sViewArea = 0;
 // Model draws come in runs at one position.
 bool sLastValid = false;
@@ -385,6 +386,34 @@ bool Tone(float rows[3][4]) {
     return false;
   }
   std::memcpy(rows, view->second.tone, sizeof(view->second.tone));
+  return true;
+}
+
+bool BloomEnabled() {
+  if (sBloom < 0) {
+    const char* const env = std::getenv("MP_BLOOM");
+    sBloom = env != nullptr && env[0] == '0' ? 0 : 1;
+  }
+  return sBloom != 0;
+}
+
+void SetBloomEnabled(bool on) { sBloom = on ? 1 : 0; }
+
+bool Bloom(float& threshold, float tints[5][3]) {
+  if (!Enabled() || !RoomExposed() || !BloomEnabled()) {
+    return false;
+  }
+  const auto view = sAreas.find(sViewArea);
+  if (view == sAreas.end() || !(view->second.tone[1][0] > 0.f) || view->second.file.bloomTints.size() < 20) {
+    return false;
+  }
+  const std::vector<float>& rgba = view->second.file.bloomTints;
+  for (int i = 0; i < 5; ++i) {
+    for (int c = 0; c < 3; ++c) {
+      tints[i][c] = rgba[i * 4 + c];
+    }
+  }
+  threshold = view->second.file.bloomThreshold;
   return true;
 }
 

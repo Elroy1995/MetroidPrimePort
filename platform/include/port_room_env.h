@@ -13,7 +13,7 @@
 // ambient colour.
 //
 // The file is little endian:
-//   'MPEV', u32 version (1 to 4), f32 tonemap[4], u32 probes, u32 cubes
+//   'MPEV', u32 version (1 to 5), f32 tonemap[4], u32 probes, u32 cubes
 //   probe: f32 worldToBox[12], f32 worldToCube[9], s32 layer, u32 cube, f32 scale, f32 blend
 //   cube:  u32 size, u32 mips, u32 signed, u32 bytes, then BC6H blocks, every face of
 //          mip 0, then of mip 1 and so on
@@ -30,6 +30,9 @@
 // Version 4 goes on:
 //   f32 bias, what the room's auto exposure adds to the exposure value it measures
 //   f32 contrast, of the tonemap (0 to 1)
+// Version 5 goes on:
+//   f32 bloom threshold, of the exposed luminance
+//   u32 tints, then that many f32 RGBA: the bloom's colour per level (0 tints: no bloom)
 // The tonemap is Remastered's: the exposure value without auto exposure, the radiance
 // that comes out as middle grey once exposed, and how far the curve's toe and shoulder
 // are pulled in.
@@ -69,6 +72,8 @@ struct File {
   float exposure[2] = {}; // EV range; both 0 when the room has no auto exposure
   float exposureBias = 0.f;
   float contrast = 0.f;
+  float bloomThreshold = 0.9f;
+  std::vector<float> bloomTints; // RGBA; empty: the room has no bloom
   std::vector<Probe> probes;
   std::vector<Cube> cubes;
   std::vector<Grid> grids;
@@ -169,6 +174,14 @@ bool Enabled();
 // game's level.
 void SetRoomExposed(bool on);
 bool RoomExposed();
+// The frame's bloom (Remastered's CRenderPass_Bloom): the threshold of exposed luminance
+// above which light blooms, and the five tints (rgb), the last for the bright pass and the
+// others for the four levels it is spread over, coarsest first. False when the camera's
+// room has none, the frame has no tone curve (see Tone), or MP_BLOOM=0.
+bool Bloom(float& threshold, float tints[5][3]);
+// MP_BLOOM, the console's `bloom`.
+void SetBloomEnabled(bool on);
+bool BloomEnabled();
 // The area the camera is in: its exposure and tone curve are the frame's.
 void SetViewArea(uint32_t mrea);
 // The frame's tone curve, for GXSetPBRTone; false when rooms are not exposed or the

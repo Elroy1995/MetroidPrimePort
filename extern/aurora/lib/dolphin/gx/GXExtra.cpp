@@ -1,10 +1,20 @@
 #include "gx.hpp"
 #include "__gx.h"
 #include "dolphin/gx/GXAurora.h"
+#include "../../gfx/bloom.hpp"
 
+#include <cstring>
 #include <vector>
 
 extern "C" {
+GXBool GXPortBloom(f32 threshold, const f32 tints[5][3], const f32 tone[3][4]) {
+  aurora::gfx::bloom::Params params{};
+  params.threshold = threshold;
+  std::memcpy(params.tints, tints, sizeof(params.tints));
+  std::memcpy(params.tone, tone, sizeof(params.tone));
+  return aurora::gfx::bloom::push(params);
+}
+
 void GXDestroyTexObj(GXTexObj* obj_) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
   if (obj->texObjId != 0) {

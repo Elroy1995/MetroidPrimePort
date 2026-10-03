@@ -163,6 +163,22 @@ void TestGrid() {
   PutFloat(v4, 7.f);
   Check(PortRoomEnv::Parse(std::vector<uint8_t>(v4), file, error) && file.contrast == 0.f,
         "tone: a contrast out of range is none");
+
+  // Version 5 adds the bloom: a threshold and a count of RGBA tints.
+  std::vector<uint8_t> v5 = v4;
+  v5[4] = 5;
+  Check(!PortRoomEnv::Parse(std::vector<uint8_t>(v5), file, error), "bloom: cut short");
+  PutFloat(v5, 0.5f);
+  Put32(v5, 2);
+  Check(!PortRoomEnv::Parse(std::vector<uint8_t>(v5), file, error), "bloom: tints cut short");
+  for (int i = 0; i < 8; ++i) {
+    PutFloat(v5, float(i));
+  }
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(v5), file, error) && file.bloomThreshold == 0.5f &&
+            file.bloomTints.size() == 8 && file.bloomTints[6] == 6.f,
+        "bloom: threshold and tints");
+  Check(PortRoomEnv::Parse(std::vector<uint8_t>(v4), file, error) && file.bloomTints.empty(),
+        "bloom: version 4 has none");
   Check(PortRoomEnv::Parse(std::vector<uint8_t>(good), file, error), "grid: parse once more");
 
   PortRoomEnv::Ambient a;
@@ -214,7 +230,7 @@ void TestParse() {
     Check(!PortRoomEnv::Parse(std::vector<uint8_t>(good.begin(), good.begin() + length), file, error), "parse: cut short");
   }
   std::vector<uint8_t> bad = good;
-  bad[4] = 5;
+  bad[4] = 6;
   Check(!PortRoomEnv::Parse(std::vector<uint8_t>(bad), file, error), "parse: version");
   bad = good;
   bad[32 + 88] = 2;

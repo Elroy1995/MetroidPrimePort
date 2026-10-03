@@ -21,11 +21,14 @@
 #include "MetroidPrime/Player/CMorphBall.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/Player/CPlayerGun.hpp"
+#include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/TCastTo.hpp"
 #include "rstl/math.hpp"
 
 #include "port_debug.h"
 #include "port_freecam.h"
+#include "port_room_env.h"
+#include <dolphin/gx/GXExtra.h>
 
 CMFGame::CMFGame(rstl::ncrc_ptr< CStateManager > stateManager,
                  rstl::ncrc_ptr< CInGameGuiManager > guiManager,
@@ -243,6 +246,18 @@ void CMFGame::Draw() const {
     mStateManager->PreRender();
     mStateManager->DrawWorld();
     (void)mStateManager->GetPlayer()->IsPlayerDeadEnough();
+#ifdef TARGET_PC
+    // Remastered's bloom, over the world and under the visor. Thermal and X-ray draw their
+    // own picture, not the room's exposed light, so they keep none.
+    const CPlayerState::EPlayerVisor visor = mStateManager->GetPlayerState()->GetActiveVisor(*mStateManager);
+    float threshold;
+    float tints[5][3];
+    float tone[3][4];
+    if (visor != CPlayerState::kPV_Thermal && visor != CPlayerState::kPV_XRay &&
+        PortRoomEnv::Bloom(threshold, tints) && PortRoomEnv::Tone(tone)) {
+      GXPortBloom(threshold, tints, tone);
+    }
+#endif
   }
 
   mGuiManager->PreDraw(*mStateManager, IsCameraActiveFlow());

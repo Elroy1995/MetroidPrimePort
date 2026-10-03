@@ -36,6 +36,7 @@ constexpr uint32_t kRoomController = 0x83cc17aa;
 constexpr uint32_t kTonemap = 0xddea916d;
 constexpr uint32_t kReflectionProbe = 0x27807e39;
 constexpr uint32_t kAutoExposureHint = 0x98694074;
+constexpr uint32_t kBloomEffect = 0x7dcaf170;
 constexpr uint32_t kDoorMP1 = 0x564a1641;
 constexpr uint32_t kModCon = 0x451740eb;
 constexpr uint32_t kActorMP1 = 0xb6200be6;
@@ -46,6 +47,9 @@ constexpr uint32_t kPropProbeRefl = 0x020e5559;
 constexpr uint32_t kPropProbeBlend = 0x362216cf;
 // Exposure value, middle grey, toe, shoulder, contrast (SLdrTonemap::Load).
 constexpr uint32_t kPropTonemap[5] = {0x44a2e298, 0x34bb937d, 0x49ee7747, 0x295132dd, 0x3373d845};
+// Bloom threshold, and a u32 count of RGBA float tints (SLdrBloomEffect).
+constexpr uint32_t kPropBloomThreshold = 0xa8e016d1;
+constexpr uint32_t kPropBloomTints = 0x033f2e2c;
 constexpr uint32_t kPropHintMin = 0x682f8a1f;
 constexpr uint32_t kPropHintMax = 0x839d334c;
 constexpr uint32_t kPropHintMode = 0x590d6843;
@@ -1092,6 +1096,13 @@ struct RoomData {
   Id16 id{};                   // the ROOM asset's id, as property bytes (Python's bytes_le)
 };
 
+// A room's BloomEffect; SLdrBloomEffect's threshold when the component leaves it out.
+struct BloomData {
+  bool present = false;
+  float threshold = 0.9f;
+  std::vector<float> tints; // RGBA
+};
+
 struct Placement {
   Vec3 pos{};  // GameCube world coordinates, once the world shift is added
 };
@@ -1134,6 +1145,7 @@ private:
   bool MatchRoom(const RoomData& r, const std::map<std::string, Placement>& placed, Match& out) const;
   void Tonemap(const RoomData& r, float out[5]) const;
   void Exposure(const RoomData& r, float out[3]) const;
+  void ReadBloom(const RoomData& r, BloomData& out) const;
   bool Grid(const RoomPak& rp, const Vec3& shift, const std::vector<Vec3>& check, std::vector<uint8_t>& out,
             std::string& note) const;
   // The room's static geometry (its ModCon components), as "<MREA id>.roomgeo".
@@ -1141,7 +1153,7 @@ private:
   // The room's liquid surfaces (its water and lava render volumes), as "<MREA id>.roomliquid".
   void WriteLiquids(const RoomData& r, uint32_t mrea);
   std::string WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
-                        const float tonemap[5], int& written, std::string& matched);
+                        const float tonemap[5], const BloomData& bloom, int& written, std::string& matched);
 
   const RoomPak& m_master;
   const std::vector<RoomPak>& m_rooms;
@@ -1350,6 +1362,30 @@ void Writer::Exposure(const RoomData& r, float out[3]) const {
       out[1] = range[1];
       out[2] = std::isfinite(bias) ? bias : 0.f;
     }
+  }
+}
+
+// The first BloomEffect component's values, where the room has one; `out` keeps the rest.
+void Writer::ReadBloom(const RoomData& r, BloomData& out) const {
+  for (const Component* c : r.room.Of(kBloomEffect)) {
+    const auto f = r.room.Flat(*c);
+    auto it = f.find(kPropBloomThreshold);
+    if (it != f.end() && it->second.size >= 4) {
+      out.threshold = LeFloat(r.room.Bytes(it->second));
+    }
+    it = f.find(kPropBloomTints);
+    if (it != f.end() && it->second.size >= 4) {
+      const uint8_t* const p = r.room.Bytes(it->second);
+      const uint32_t count = Le32(p);
+      if (count <= 16 && it->second.size >= 4 + count * 16) {
+        out.tints.assign(count * 4, 0.f);
+        for (uint32_t i = 0; i < count * 4; ++i) {
+          out.tints[i] = LeFloat(p + 4 + i * 4);
+        }
+      }
+    }
+    out.present = true;
+    break;
   }
 }
 
@@ -1958,7 +1994,8 @@ void Writer::WriteLiquids(const RoomData& r, uint32_t mrea) {
 }
 
 std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Placement>& placed, const Vec3& shift,
-                              const float tonemap[5], int& written, std::string& matched) {
+                              const float tonemap[5], const BloomData& worldBloom, int& written,
+                              std::string& matched) {
   matched.clear();
   Match m;
   if (!MatchRoom(r, placed, m)) {
@@ -2083,7 +2120,7 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   }
 
   std::vector<uint8_t> out = {'M', 'P', 'E', 'V'};
-  PutLe32(out, 4);
+  PutLe32(out, 5);
   float tone[5];
   std::copy(tonemap, tonemap + 5, tone);
   Tonemap(r, tone);
@@ -2104,6 +2141,15 @@ std::string Writer::WriteRoom(const RoomData& r, const std::map<std::string, Pla
   PutFloat(out, exposure[1]);
   PutFloat(out, exposure[2]);
   PutFloat(out, tone[4]);
+  BloomData bloom = worldBloom;
+  ReadBloom(r, bloom);
+  PutFloat(out, bloom.threshold);
+  PutLe32(out, bloom.present ? uint32_t(bloom.tints.size() / 4) : 0);
+  if (bloom.present) {
+    for (const float v : bloom.tints) {
+      PutFloat(out, v);
+    }
+  }
   char file[32];
   std::snprintf(file, sizeof file, "%08X.roomenv", m.mrea);
   if (!m_io.write || !m_io.write(file, out)) {
@@ -2216,9 +2262,11 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
     placed[name].pos = {p[0] + shift[0], p[1] + shift[1], p[2] + shift[2]};
   }
 
-  // A room without a Tonemap of its own takes the world's.
+  // A room without a Tonemap or BloomEffect of its own takes the world's.
   float tonemap[5] = {4.0f, 0.18f, 0.6f, 0.15f, 0.f};
   Tonemap(master, tonemap);
+  BloomData bloom;
+  ReadBloom(master, bloom);
   std::map<std::string, std::string> seen;
   for (const auto& r : rooms) {
     if (m_io.cancelled && m_io.cancelled()) {
@@ -2226,7 +2274,7 @@ bool Writer::Run(uint32_t mlvl, int& written, std::string& error) {
       return false;
     }
     std::string matched;
-    const std::string line = WriteRoom(*r, placed, shift, tonemap, written, matched);
+    const std::string line = WriteRoom(*r, placed, shift, tonemap, bloom, written, matched);
     Log(line);
     if (!matched.empty()) {
       const auto s = seen.find(matched);

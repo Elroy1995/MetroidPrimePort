@@ -91,6 +91,13 @@ void GXSetPBRDebugView(u32 view);
 // x t / (1 + t) + w with t = y x + z. Null, or a slope of 0, is no curve.
 void GXSetPBRTone(const f32 rows[3][4]);
 
+// Aurora extension: Remastered's bloom over what the EFB holds now (see lib/gfx/bloom.cpp).
+// The EFB is taken as drawn through the tone curve `tone` (as GXSetPBRTone); light above
+// `threshold` (exposed luminance) blooms, tints 0 to 3 weight the levels from the coarsest
+// and tint 4 the bright pass. Not a FIFO command: it ends the current pass. False when it
+// could not be recorded.
+GXBool GXPortBloom(f32 threshold, const f32 tints[5][3], const f32 tone[3][4]);
+
 void GXColor4f32(float r, float g, float b, float a);
 
 #ifdef __cplusplus
