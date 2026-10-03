@@ -901,6 +901,12 @@ void CmdStats() {
         stats->lastUniformSize / 1048576.f, stats->lastTextureUploadSize / 1048576.f);
   }
   {
+    AuroraTextureStats textures{};
+    aurora_get_texture_stats(&textures);
+    Out("textures: %u, %.1f MiB; render targets %u, %.1f MiB", textures.count[0], textures.bytes[0] / 1048576.f,
+        textures.count[1], textures.bytes[1] / 1048576.f);
+  }
+  {
     const IAllocator::SMetrics m = CMemorySys::GetGameAllocator().GetMetrics();
     Out("heap: %.1f of %.1f MiB in use (%u allocations), %.1f free, peak %.1f", m.x10_ / 1048576.f,
         m.x0_heapSize / 1048576.f, m.x8_, m.x14_heapSize2 / 1048576.f, m.x1c_ / 1048576.f);
