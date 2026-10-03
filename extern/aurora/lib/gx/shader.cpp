@@ -1072,7 +1072,9 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     // scrolls at speeds of their own (pbr_layer_height the first two, pbr_param.y and z the
     // third, pbr_param.x the time). Their sum less twice the vertex colour's, offset by
     // pbr_param.w, picks the glow from map 5, a ramp whose row is the vertex alpha; it is
-    // scaled by its own alpha and pbr_layer.z. The surface under it stays lit.
+    // scaled by its own alpha and pbr_layer.z. The surface under it stays lit. Both maps are
+    // sRGB in Remastered, so the hardware linearised the noise as well as the ramp; the
+    // vertex colour is a plain UNORM attribute and stays as it is.
     if (mapStage[5] != -1) {
       kinds += fmt::format(R"""(
       if (pbr_kind > 8.5 && pbr_kind < 9.5) {{
@@ -1080,9 +1082,11 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
           let pbr_gr = fract(ubuf.pbr_layer_height.xy * pbr_gt) * vec2f(1.0, -1.0);
           let pbr_gg = fract(ubuf.pbr_layer_height.zw * pbr_gt) * vec2f(1.0, -1.0);
           let pbr_gb = fract(vec2f(ubuf.pbr_param.y, ubuf.pbr_param.z) * pbr_gt) * vec2f(1.0, -1.0);
-          let pbr_gs = textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + pbr_gr, pbr_fuv1, pbr_fuv2).r +
-                       textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + pbr_gg, pbr_fuv1, pbr_fuv2).g +
-                       textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + pbr_gb, pbr_fuv1, pbr_fuv2).b;
+          let pbr_gn = vec3f(textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + pbr_gr, pbr_fuv1, pbr_fuv2).r,
+                             textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + pbr_gg, pbr_fuv1, pbr_fuv2).g,
+                             textureSampleGrad(tex{0}, tex{0}_samp, tex{1}_uv + pbr_gb, pbr_fuv1, pbr_fuv2).b);
+          let pbr_gl = pow(max(pbr_gn, vec3f(0.0)), vec3f(2.2));
+          let pbr_gs = pbr_gl.x + pbr_gl.y + pbr_gl.z;
           let pbr_gu = pbr_gs - 2.0 * (pbr_vraw.r + pbr_vraw.g + pbr_vraw.b) + 3.0 + ubuf.pbr_param.w;
           let pbr_gramp = textureSampleLevel(tex{2}, tex{2}_samp,
                                              clamp(vec2f(pbr_gu, 1.0 - pbr_vraw.a), vec2f(0.02), vec2f(0.98)), 0.0);
