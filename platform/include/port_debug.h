@@ -287,6 +287,10 @@ std::string CardExportDolphin();
 // Cheat: the player takes no damage (F1 > Debug > cheats, MP_GODMODE, console `god`).
 bool Invulnerable();
 void SetInvulnerable(bool enabled);
+// Write the log to <user folder>/metroid_prime_port.log (port_log_file.h). MP_LOG_FILE=1
+// turns it on for one run without changing the setting.
+bool LogFile();
+void SetLogFile(bool enabled);
 // Fast Morph, as in Metroid Prime 4: short morph/unmorph transitions that keep
 // momentum (capped at walking speed when unmorphing on the ground).
 bool FastMorph();

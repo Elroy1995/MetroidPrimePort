@@ -8,6 +8,7 @@
 #include "port_room_env.h"
 #include "port_room_geo.h"
 #include "port_log.h"
+#include "port_log_file.h"
 #include "port_paths.h"
 #include "port_apclient.h"
 #include "port_controls.h"
@@ -152,6 +153,7 @@ bool sInvulnerable = false;
 // MP_GODMODE, for this run only: -1 unset, else 0 or 1. Never saved, and changing the
 // setting ends it.
 int sInvulnerableRun = -1;
+bool sLogFile = false;
 bool sLockOnToggle = false;
 bool sStickyCharge = false;
 bool sSpringFlick = false;
@@ -510,6 +512,8 @@ void ApplySetting(const std::string& key, const std::string& value) {
     sFastMorph = ParseBool(value);
   } else if (key == "invulnerable") {
     sInvulnerable = ParseBool(value);
+  } else if (key == "log_file") {
+    sLogFile = ParseBool(value);
   } else if (key == "lock_on_toggle") {
     sLockOnToggle = ParseBool(value);
   } else if (key == "sticky_charge") {
@@ -649,6 +653,7 @@ void SaveSettings() {
   file << '\n';
   file << "fast_morph=" << (sFastMorph ? 1 : 0) << '\n';
   file << "invulnerable=" << (sInvulnerable ? 1 : 0) << '\n';
+  file << "log_file=" << (sLogFile ? 1 : 0) << '\n';
   file << "lock_on_toggle=" << (sLockOnToggle ? 1 : 0) << '\n';
   file << "sticky_charge=" << (sStickyCharge ? 1 : 0) << '\n';
   file << "spring_ball_flick=" << (sSpringFlick ? 1 : 0) << '\n';
@@ -1415,6 +1420,17 @@ void SetInvulnerable(bool enabled) {
   EnsureInitialized();
   sInvulnerable = enabled;
   sInvulnerableRun = -1;
+  MarkDirty();
+}
+
+bool LogFile() {
+  EnsureInitialized();
+  return sLogFile;
+}
+
+void SetLogFile(bool enabled) {
+  EnsureInitialized();
+  sLogFile = enabled;
   MarkDirty();
 }
 
@@ -4404,6 +4420,30 @@ void DrawDebugTab() {
   if (ImGui::CollapsingHeader("Voices")) {
     DrawVoices();
   }
+
+#if !defined(__ANDROID__)
+  ImGui::SeparatorText("Log");
+  bool logFile = sLogFile || PortLogFile::Active();
+  if (ImGui::Checkbox("Write the log to a file", &logFile)) {
+    SetLogFile(logFile);
+    if (logFile) {
+      PortLogFile::Start();
+    }
+  }
+  const std::string logPath = PortLogFile::Path();
+  if (PortLogFile::Active()) {
+    ImGui::TextWrapped("Writing to %s (last run's: metroid_prime_port.old.log).", logPath.c_str());
+    if (!sLogFile) {
+      ImGui::TextDisabled("Stops at the next start.");
+    }
+  } else {
+    ImGui::TextWrapped("Everything the game logs, including the reason for a crash, goes to %s.",
+                       logPath.empty() ? "(no user folder)" : logPath.c_str());
+  }
+  if (!logPath.empty() && ImGui::Button("Copy log path")) {
+    ImGui::SetClipboardText(logPath.c_str());
+  }
+#endif
 
   ImGui::SeparatorText("Cheats");
   bool cheats = sCheats;

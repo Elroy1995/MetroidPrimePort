@@ -21,6 +21,7 @@
 #include "port_prompts.h"
 #include "port_build_info.h"
 #include "port_log.h"
+#include "port_log_file.h"
 #include "port_mods.h"
 #include "port_room_geo.h"
 #include "port_importers.h"
@@ -473,6 +474,14 @@ int main(int argc, char** argv) {
         }
         aurora_dvd_close();
         return result;
+    }
+    // The file log starts first so it holds everything after it, build id included.
+    {
+        const char* e = std::getenv("MP_LOG_FILE");
+        const bool logFile = e != nullptr ? e[0] != '\0' && std::strcmp(e, "0") != 0 : PortDebug::LogFile();
+        if (logFile && !PortLogFile::Start()) {
+            PortLog::Write("port: cannot write the log to %s\n", PortLogFile::Path().c_str());
+        }
     }
 #endif
     PortLog::Write( "metroid_prime_port: build %s\n", MP_BUILD_REVISION);

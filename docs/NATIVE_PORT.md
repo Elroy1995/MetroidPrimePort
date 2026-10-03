@@ -930,6 +930,14 @@ a temporary directory instead of mounting.
   until Show cheats is ticked (`cheats`, off by default). Invulnerable
   (`invulnerable`, off by default) makes Samus take no damage; it stays on
   across runs until unticked, and `MP_GODMODE=<0|1>` overrides it for one run.
+- F1 > Debug > Log, "Write the log to a file" (`log_file`, off by default,
+  desktop only): everything the game prints to stdout/stderr, including the
+  line Aurora prints before it aborts, also goes to `metroid_prime_port.log` in
+  the user folder; the previous run's is kept as `metroid_prime_port.old.log`.
+  Ticking it starts the log at once; unticking stops it at the next start.
+  On Linux a forked copy process tees a pipe to the terminal and the file, so
+  nothing written before a crash is lost; on Windows the streams go to the file
+  only. `MP_LOG_FILE=<0|1>` overrides the setting for one run.
 - Save states (F1 > States): eight slots in `savestates/` under the pref
   folder (`slot<N>.mpss`). F5 saves to the selected slot and F9 loads it
   (`savestate_hotkeys`, on by default). A state holds the whole game save
@@ -1091,6 +1099,8 @@ a temporary directory instead of mounting.
   tiled floor into streaks towards the horizon.
 - `MP_GODMODE=<0|1>`: the Invulnerable cheat for this run, whatever the setting
   says. The console's `god [on|off]` changes the setting itself.
+- `MP_LOG_FILE=<0|1>`: the file log (`metroid_prime_port.log` in the user
+  folder) for this run, whatever the `log_file` setting says.
 - `MP_ROOM_GEO=<0|1|overlay>`: whether a mod's `.roomgeo` replaces an area's
   geometry (default 1; `overlay` draws both). Console `roomgeo [on|off|overlay]`,
   which also prints what is loaded and what the last frame streamed.
