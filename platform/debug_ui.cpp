@@ -3085,15 +3085,29 @@ void DrawRemasteredImport() {
   if (ImGui::Button("Browse...##remastered-keys")) {
     OpenRemasteredDialog(1);
   }
-  // A phone has neither the storage nor the memory for the rooms.
+#endif
+#if defined(__ANDROID__)
+  // Off on a phone: the rooms have never run on one, and need storage and
+  // memory many phones lack (a 256 MB game arena and 12x frame buffers).
+  static bool sGeometry = false;
+#else
   static bool sGeometry = true;
+#endif
   ImGui::Checkbox("Room geometry too##remastered", &sGeometry);
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
     ImGui::SetTooltip("Also converts the rooms themselves, not only the models in them. About 6.5 GB in place of "
                       "1 GB, and twice as long. Restart the game afterwards.");
   }
-  PortRemastered::SetImportGeometry(sGeometry);
+#if defined(__ANDROID__)
+  // A tap shows no tooltip, so the warning is spelled out.
+  if (sGeometry) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.f, 0.75f, 0.3f, 1.f));
+    ImGui::TextWrapped("Untested on phones: needs about 6.5 GB free and lots of RAM, and the game may run slowly "
+                       "or be closed by Android. Remove mods/remastered-models to go back.");
+    ImGui::PopStyleColor();
+  }
 #endif
+  PortRemastered::SetImportGeometry(sGeometry);
   ImGui::EndDisabled();
   if (state.running) {
     ImGui::ProgressBar(state.total > 0 ? float(state.done) / float(state.total) : 0.f, ImVec2(-1.f, 0.f),
