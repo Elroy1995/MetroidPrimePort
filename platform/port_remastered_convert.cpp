@@ -597,6 +597,7 @@ struct RemMaterial {
   bool vcolor = false;  // it reads the vertex colour, which is no tint
   double tint[3] = {0.0, 0.0, 0.0};  // kinds 5 and 7: the liquid's colour; 8: what is seen through it
   bool hidden = false;  // not drawn: the game has its own
+  double scroll[2] = {0.0, 0.0};  // the base map's texcoord, per second
 };
 
 struct Buffer {
@@ -1114,6 +1115,9 @@ constexpr uint32_t kShaderLavaPool[] = {0x3ADE58B7, 0xB9C24545};
 // the vertex colour, plus CCH0.w, pick a colour from TCH1, a ramp whose row is
 // the vertex alpha and whose alpha scales it, times CCH0.z.
 constexpr uint32_t kShaderGunGlow[] = {0xA13D6235, 0x62F671E0};
+// Unlit, the vertex colour times the base map (a door shield's noise), which
+// scrolls at (CCH0.y, -CCH0.z) a second over texcoords scaled by CCH1.yz.
+constexpr uint32_t kShaderColorUnlit = 0x992941B7;
 // A shader with parameters of its own (TCHn, CCHn) reads the vertex colour as
 // it likes: masks for its extra maps, a colour seen through ice. These are the
 // ones read that multiply the albedo by it, as the standard shader does
@@ -1405,6 +1409,12 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     // An HDR strength (10-15) meant for Remastered's bloom, compressed like the emissive one.
     out.kindStrength = std::sqrt(std::min(std::max(ShortestDouble(cch[0]->color[2]), 0.0), kPbrEmissiveMax));
   }
+  // The texture matrix a scroll loads has no scale, so CCH1.yz (1 on every door
+  // shield seen) is not drawn.
+  if (shader == kShaderColorUnlit && cch[0]) {
+    out.scroll[0] = ShortestDouble(cch[0]->color[1]);
+    out.scroll[1] = -ShortestDouble(cch[0]->color[2]);
+  }
   // BKLT is a parameter vector like CCHn, not a colour: x is the strength (0 to
   // 2), what y means is not known and it is not used.
   out.backlight = bklt ? ShortestDouble(bklt->color[0]) : 0.0;
@@ -1579,19 +1589,34 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
   for (uint32_t i = 0; i < n; ++i) {
     gens[i] = 0x1EBC00 | ((4 + i) << 4);
   }
+  // A scroll of Remastered's own replaces retail's animations: the base map's
+  // texcoord goes through GX_TEXMTX0, which a UV scroll (mode 2: offset, then
+  // speed per second) loads.
+  const bool scroll = rem.scroll[0] != 0.0 || rem.scroll[1] != 0.0;
   bool retailGens = false;
-  for (int i = 0; i < nmaps; ++i) {
+  for (int i = 0; i < nmaps && !scroll; ++i) {
     const uint32_t c = coords[i];
     if (c < pm.texgen.size() && ((pm.texgen[c] >> 4) & 31) == 4 + c) {
       gens[c] = pm.texgen[c];
       retailGens = true;
     }
   }
+  if (scroll) {
+    gens[coords[kBase]] = 0x1E8000 | ((4 + coords[kBase]) << 4);  // GX_TG_MTX3x4, TEXc, GX_TEXMTX0, GX_PTIDENTITY
+  }
   P32(b, n);
   for (uint32_t g : gens) {
     P32(b, g);
   }
-  if (retailGens && !pm.uvAnim.empty()) {
+  if (scroll) {
+    P32(b, 24);  // the count and one animation of five words
+    P32(b, 1);
+    P32(b, 2);
+    PF(b, 0.0);
+    PF(b, 0.0);
+    PF(b, rem.scroll[0]);
+    PF(b, rem.scroll[1]);
+  } else if (retailGens && !pm.uvAnim.empty()) {
     b.insert(b.end(), pm.uvAnim.begin(), pm.uvAnim.end());
   } else {
     P32(b, 4);  // no UV animations
