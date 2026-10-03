@@ -46,6 +46,9 @@ public:
   // Port: whether a kStateFlag_PortPBR material may use the PBR path for this
   // draw. The black, shadow-map, thermal and blended paths keep the TEV.
   static bool PortPBRAllowed(const CModelFlags& flags);
+  // Port: whether a glass material's screen stage (map 7) is drawn: the projected shadow
+  // takes map 7, and the thermal visor draws only the first stage.
+  static bool PortScreenCopyUsed();
   // Port: the PBR reflection probe. The weight is 1 once CStateManager has filled all six
   // faces, and the draw count tells it whether anything would reflect the probe.
   static float sPortPBRProbeWeight;

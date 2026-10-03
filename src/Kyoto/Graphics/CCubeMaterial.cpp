@@ -890,6 +890,10 @@ bool CCubeMaterial::PortPBRAllowed(const CModelFlags& flags) {
          (!CCubeRenderer::That()->GetThermal() || sPortPBRThermal != kPT_None) &&
          flags.GetTrans() == CModelFlags::kT_Opaque;
 }
+
+bool CCubeMaterial::PortScreenCopyUsed() {
+  return !sbRenderModelShadow && !CCubeRenderer::That()->GetThermal();
+}
 #endif
 
 uint CCubeMaterial::GetCompressedBlend() const {

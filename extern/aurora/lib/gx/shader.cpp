@@ -918,6 +918,15 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
   if (mapStage[0] == -1) {
     return {};
   }
+  // Glass (kind 8) also samples map 7, a copy of what is behind it on screen. The
+  // shadow's stage samples map 7 too, so a shadowed surface goes without.
+  bool screen = false;
+  for (int i = 0; i < config.tevStageCount && !shadowed; ++i) {
+    const auto& stage = config.tevStages[i];
+    if (stage.texMapId == GX_TEXMAP7 && uses_texture_sample(stage) && stage.texCoordId != GX_TEXCOORD_NULL) {
+      screen = true;
+    }
+  }
   const auto sampled = [&](int map, std::string_view fallback) {
     return mapStage[map] == -1 ? std::string(fallback) : fmt::format("sampled{}", mapStage[map]);
   };
@@ -1062,6 +1071,9 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
     if (mapStage[5] != -1) {
       orm = fmt::format("mix({}, sampled{}, pbr_ls)", orm, mapStage[5]);
     }
+    // Glass keeps its roughness in map 4's blue: map 5 is its distortion noise.
+    orm = fmt::format("select({}, vec4f(1.0, sampled{}.b, 0.0, 1.0), pbr_kind > 7.5 && pbr_kind < 8.5)", orm,
+                      mapStage[4]);
     if (mapStage[6] != -1 && mapStage[2] != -1) {
       normalXy = fmt::format("mix({}, sampled{}.rg, pbr_ls)", normalXy, mapStage[6]);
     }
@@ -1165,6 +1177,33 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       if (pbr_kind > 6.5 && pbr_kind < 7.5) {
           pbr_alpha = pbr_kalpha;
       })""";
+    // Kind 8, glass (Remastered's 231F8383): map 4 is a mask (red how clear, green the
+    // glow, alpha the opacity, each lifted by the vertex colour), and the room behind it
+    // (map 7) is seen through it, bent by map 5's noise (pbr_param.x) and tinted
+    // (pbr_emissive). pbr_param.z is how fast the clear part loses its opacity, y the
+    // reflection's weight, pbr_layer_height the glow's colour and in w the reflection's
+    // level. It is drawn premultiplied, so what shows through is added after the tone curve.
+    std::string through;
+    if (screen) {
+      vtxOutAttrs += fmt::format("\n    @location({}) pbr_scr: vec4f,", vtxOutIdx++);
+      vtxXfrAttrs += "\n    out.pbr_scr = out.pos;";
+      through = fmt::format(R"""(
+          let pbr_gn = ({0} - 0.5) * ubuf.pbr_param.x * vec2f(1.0, -1.0);
+          let pbr_guv = in.pbr_scr.xy / in.pbr_scr.w * vec2f(0.5, -0.5) + 0.5 + pbr_gn;
+          let pbr_gs = textureSampleLevel(tex7, tex7_samp, clamp(pbr_guv, vec2f(0.0), vec2f(1.0)), 0.0).rgb;
+          pbr_pass = pow(max(pbr_gs, vec3f(0.0)), vec3f(2.2)) * max(ubuf.pbr_emissive.rgb, vec3f(0.0)) * pbr_gt;)""",
+                            mapStage[5] == -1 ? "vec2f(0.5)"s : fmt::format("sampled{}.rg", mapStage[5]));
+    }
+    liquid += fmt::format(R"""(
+      if (pbr_kind > 7.5 && pbr_kind < 8.5) {{
+          let pbr_gm = sampled{0};
+          let pbr_gt = clamp(pbr_gm.r * pbr_vraw.b + pbr_vraw.r, 0.0, 1.0);
+          pbr_alpha = clamp(pbr_gm.a * pow(max(1.0 - pbr_gt, 1e-6), ubuf.pbr_param.z) * pbr_vraw.a, 0.0, 1.0);
+          pbr_lo = clamp(pbr_gm.g + pbr_vraw.g, 0.0, 1.0) * max(ubuf.pbr_layer_height.xyz, vec3f(0.0)) +
+                   pbr_envspec * (pbr_ab.x * pbr_alpha * ubuf.pbr_param.y + pbr_ab.y) * ubuf.pbr_layer_height.w;
+          pbr_glow = vec3f(0.0);{1}
+      }})""",
+                          mapStage[4], through);
   }
   std::string attn;
   if (cc.attnFn == GX_AF_SPOT) {
@@ -1315,6 +1354,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
       // Kind 3 (lava, embers): the vertex alpha is how much of the glow shows.
       var pbr_glow = pbr_emissive * select(1.0, pbr_vraw.a, pbr_kind > 2.5 && pbr_kind < 3.5) + pbr_kglow;
       var pbr_alpha = {12}{9};
+      var pbr_pass = vec3f(0.0);
       if (ubuf.pbr_emissive.w > 0.0) {{
           // A height blend (snow and ice laid over rock): the base map's alpha lifts the
           // vertex alpha, and a smoothstep as wide as the threshold cuts the edge.
@@ -1350,7 +1390,7 @@ auto pbr_func(const ShaderConfig& config, const ShaderInfo& info, std::string& v
                           pbr_out < vec3f(ubuf.pbr_tone[1].z));
           pbr_tm = clamp(pbr_tm, vec3f(0.0), vec3f(1.0));
       }}
-      prev = vec4f(pow(pbr_tm, vec3f(1.0 / 2.2)), pbr_alpha);
+      prev = vec4f(pow(clamp(pbr_tm + pbr_pass, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), pbr_alpha);
       // A debug view (GXSetPBRDebugView): one input of the shading in place of the result.
       if (ubuf.pbr_layer.w > 0.5) {{
           let pbr_dv = ubuf.pbr_layer.w;

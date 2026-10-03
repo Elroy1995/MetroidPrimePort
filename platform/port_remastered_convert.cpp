@@ -579,12 +579,12 @@ struct RemMaterial {
   double layerHeight[4] = {1.0, 0.0, 1.0, 0.0};  // BSAO: scale and offset of each layer's height
   // A shader of its own the port draws (GXSetPBRMaterial's kinds): 1 a second
   // layer on what faces up, 2 a detail map, 3 lava, 4 ice seen into, 5 a
-  // liquid's surface (water, poison), 6 a lava pool's, 7 falling water.
+  // liquid's surface (water, poison), 6 a lava pool's, 7 falling water, 8 glass.
   int kind = 0;
   double kindStrength = 0.0;
   double kindParam[4] = {0.0, 0.0, 0.0, 0.0};
   bool vcolor = false;  // it reads the vertex colour, which is no tint
-  double tint[3] = {0.0, 0.0, 0.0};  // kinds 5 and 7: the liquid's colour
+  double tint[3] = {0.0, 0.0, 0.0};  // kinds 5 and 7: the liquid's colour; 8: what is seen through it
   bool hidden = false;  // not drawn: the game has its own
 };
 
@@ -1075,6 +1075,11 @@ constexpr uint32_t kShaderLava = 0x023388CD;      // the glow is CCH0.x times th
 // offsets, CCH3 the colour.
 constexpr uint32_t kShaderWaterfall = 0x50412FE7;
 constexpr uint32_t kShaderParallax = 0x2F3FB02B;  // TCH0 is seen inside the surface; CCH0 and CCH1.x say how
+// Glass: the frame behind it, offset by TCH1's RG noise times CCH0.x and tinted by
+// CCH1 x CCH3 x CCH4.x x CCH4.z, where TCH0's R (and the vertex blue) lets it through;
+// TCH0's G plus the vertex green glows in CCH2 x CCH4.y, its B is the roughness and its
+// A (times the vertex alpha) the opacity of a reflection CCH0.y and CCH1.w scale.
+constexpr uint32_t kShaderGlass = 0x231F8383;
 // A lava pool's surface (a LavaRenderVolume's model): BCLR is a colour ramp, TCH0 a pattern
 // carried along TCH2's flow map in two phases that TCH1's noise offsets, CCH0 the flow's
 // strength, its period in seconds and the brightness, CCH1 the maps' scales.
@@ -1109,8 +1114,8 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   // with the mask flag the base alpha scales the glow instead and the vertex
   // alpha alone is the opacity, a material in no lit pass (screens, holograms)
   // is its own colour and glow, a framebuffer one (ice, glass) writes alpha 1
-  // and refracts what is behind it, which the port does not do, and the snow
-  // shader cuts its edge by height.
+  // and refracts what is behind it (the port does that for glass, kind 8), and
+  // the snow shader cuts its edge by height.
   out.mask = (mat.unk1 & kIncanMaskFlag) != 0;
   out.unlit = mat.types.empty();
   bool lit = false, framebuffer = false;
@@ -1255,14 +1260,14 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
   // The shaders of their own. ICNC is 1 in every lava material and the strength
   // is CCH0.x instead.
   const ModelMaterialData* tch[3] = {nullptr, nullptr, nullptr};
-  const ModelMaterialData* cch[4] = {nullptr, nullptr, nullptr, nullptr};
+  const ModelMaterialData* cch[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
   for (const ModelMaterialData& d : mat.data) {
     for (uint32_t i = 0; i < 3; ++i) {
       if (d.kind == ModelMaterialData::Kind::Texture && d.usage == FourCC('T', 'C', 'H', char('0' + i))) {
         tch[i] = &d;
       }
     }
-    for (uint32_t i = 0; i < 4; ++i) {
+    for (uint32_t i = 0; i < 5; ++i) {
       if (d.kind == ModelMaterialData::Kind::Color && d.usage == FourCC('C', 'C', 'H', char('0' + i))) {
         cch[i] = &d;
       }
@@ -1331,6 +1336,24 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     for (int i = 0; i < 3; ++i) {
       out.tint[i] = cch[3] ? ShortestDouble(cch[3]->color[i]) : 1.0;
     }
+  } else if (shader == kShaderGlass && out.maps[kBase].has && tch[0] && tch[1] && cch[0] && cch[1] && cch[2] &&
+             cch[3] && cch[4]) {
+    out.kind = 8;
+    out.vcolor = true;
+    // The mask and the noise are bound as the second layer's base and MR. CCH4.w
+    // (8 in every glass material) is no uv scale the maps are read with.
+    set(kBase, tch[0]->texture, &out.layer[kBase]);
+    set(kMr, tch[1]->texture, &out.layer[kMr]);
+    const double glow = ShortestDouble(cch[4]->color[1]);
+    for (int i = 0; i < 3; ++i) {
+      out.layerHeight[i] = ShortestDouble(cch[2]->color[i]) * glow;
+      out.tint[i] = ShortestDouble(cch[1]->color[i]) * ShortestDouble(cch[3]->color[i]) *
+                    ShortestDouble(cch[4]->color[0]) * ShortestDouble(cch[4]->color[2]);
+    }
+    out.layerHeight[3] = ShortestDouble(cch[1]->color[3]);
+    for (int i = 0; i < 3; ++i) {
+      out.kindParam[i] = ShortestDouble(cch[0]->color[i]);
+    }
   }
   // BKLT is a parameter vector like CCHn, not a colour: x is the strength (0 to
   // 2), what y means is not known and it is not used.
@@ -1355,6 +1378,15 @@ RemMaterial ReadMaterial(const ModelMaterial& mat, const ConvertOptions& opt) {
     out.emissive = 1.0;
     out.backlight = 0.0;
   }
+  if (out.kind == 8) {
+    // Lit, but only by its reflection: what shows through is the frame behind it.
+    out.layered = out.blended = true;
+    out.cutout = out.tinted = out.mask = out.unlit = false;
+    out.height = 0.0;
+    out.emissive = 1.0;
+    out.backlight = 0.0;
+    out.maps[kMr].has = out.maps[kEmissive].has = false;
+  }
   // All but lava draw with the second layer's maps.
   if (out.kind != 3 && !out.layered) {
     out.kind = 0;
@@ -1378,7 +1410,7 @@ void PbrRecord(Blob& b, const RemMaterial& m) {
   const double k = std::min(std::max(m.backlight, 0.0), 2.0);
   for (int i = 0; i < 3; ++i) {
     // A liquid has no glow of its own, and its colour goes where the glow's would.
-    PF(b, m.kind == 5 || m.kind == 7 ? m.tint[i] : e);
+    PF(b, m.kind == 5 || m.kind == 7 || m.kind == 8 ? m.tint[i] : e);
   }
   for (int i = 0; i < 3; ++i) {
     PF(b, k);
@@ -1457,9 +1489,12 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
       {0x3D0F, 0x1CE7, 255},
       {0x3D0F, 0x1CE7, 255},
   };
-  P32(b, uint32_t(nmaps));
-  for (int i = 0; i < nmaps; ++i) {
-    const uint32_t* t = tev[i];
+  // Glass samples the frame behind it, which the game copies into map 7 (the
+  // spare buffer's) before it draws one: a stage of its own binds it.
+  const int nstages = rem.kind == 8 ? nmaps + 1 : nmaps;
+  P32(b, uint32_t(nstages));
+  for (int i = 0; i < nstages; ++i) {
+    const uint32_t* t = tev[std::min(i, kLayeredMaps - 1)];
     P32(b, t[0]);
     P32(b, i == 0 && vertexGlow ? 0x39487u : t[1]);  // ZERO, TEXA, RASA, ZERO: base x vertex alpha
     P32(b, 0x100);
@@ -1469,11 +1504,11 @@ Blob PbrMaterial(const RetailMaterial& pm, uint32_t vtx, const uint32_t* texIdx,
     P8(b, 0);
     P8(b, uint8_t(t[2]));
   }
-  for (int i = 0; i < nmaps; ++i) {
+  for (int i = 0; i < nstages; ++i) {
     P8(b, 0);
     P8(b, 0);
-    P8(b, uint8_t(i));
-    P8(b, uint8_t(coords[i]));
+    P8(b, uint8_t(i < nmaps ? i : 7));
+    P8(b, uint8_t(i < nmaps ? coords[i] : 0));
   }
   // One texgen per texcoord the maps use, taken from retail so an animated or
   // projected coordinate still drives the maps. A coord retail has no texgen
@@ -1823,6 +1858,9 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
     lit.blendSrc = 4;  // GX_BL_SRCALPHA, GX_BL_INVSRCALPHA
     lit.blendDst = 5;
     retail.mats.push_back(lit);
+    // And glass, whose colour is premultiplied: GX_BL_ONE, GX_BL_INVSRCALPHA.
+    lit.blendSrc = 1;
+    retail.mats.push_back(lit);
   } else {
     if (!io.retail(FourCC('C', 'M', 'D', 'L'), opt.retail, retail.data)) {
       throw Fail{"retail model " + Hex8(opt.retail) + " is not on the disc"};
@@ -1995,7 +2033,7 @@ void Converter::State::Convert(const Model& model, const ConvertOptions& opt) {
   }
   for (Prim& p : prims) {
     if (opt.standalone) {
-      p.rmat = mats[p.mat].cutout ? 1 : mats[p.mat].blended ? 2 : 0;
+      p.rmat = mats[p.mat].kind == 8 ? 3 : mats[p.mat].cutout ? 1 : mats[p.mat].blended ? 2 : 0;
       continue;
     }
     if (opt.material >= 0) {

@@ -244,8 +244,8 @@ void CCubeModel::PortSetPBRMaterial(const int idx) const {
     }
   }
   // A liquid's surface (kinds 5 and 6) moves: its first parameter is a rate, and the
-  // shader gets the phase.
-  if (values[13] > 4.5f) {
+  // shader gets the phase. So does falling water (kind 7); glass (8) does not move.
+  if (values[13] > 4.5f && values[13] < 7.5f) {
     values[15] *= CGraphics::GetSecondsMod900();
   }
   // World up as the shader sees it: view space is right, up, -forward.
@@ -358,6 +358,24 @@ void CCubeModel::DrawSurface(const CCubeSurface& surface, const CModelFlags& mod
     f32 tone[3][4];
     GXSetPBRTone(PortRoomEnv::Tone(tone) ? tone : nullptr);
     PortSetPBRMaterial(surface.GetMaterialIndex());
+    // Glass (kind 8) sees what is behind it: the screen so far, copied into map 7 as the
+    // refracting particles copy it (CElementGen).
+    f32 record[19];
+    PortReadPBRMaterial(surface.GetMaterialIndex(), record);
+    if (record[13] > 7.5f && record[13] < 8.5f && CCubeMaterial::PortScreenCopyUsed()) {
+      int portLeft, portTop, portWidth, portHeight;
+      CGraphics::GetViewport(portLeft, portTop, portWidth, portHeight);
+      GXSetTexCopySrc(static_cast< u16 >(portLeft), static_cast< u16 >(portTop), static_cast< u16 >(portWidth),
+                      static_cast< u16 >(portHeight));
+      GXSetTexCopyDst(static_cast< u16 >(portWidth), static_cast< u16 >(portHeight), GX_TF_RGB565, GX_FALSE);
+      const bool useVideoFilter = CGraphics::GetUseVideoFilter();
+      CGraphics::SetUseVideoFilter(false);
+      GXCopyTex(CGraphics::GetDolphinSpareBuffer(), GX_FALSE);
+      CGraphics::SetUseVideoFilter(useVideoFilter);
+      GXPixModeSync();
+      CGraphics::LoadDolphinSpareTexture(portWidth, portHeight, GX_TF_RGB565, nullptr,
+                                         CGraphics::kSpareBufferTexMapID);
+    }
     GXSetPBR(GX_TRUE);
     ++CCubeMaterial::sPortPBRDraws;
   }
