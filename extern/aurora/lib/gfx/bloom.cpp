@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
 
 // Remastered's bloom, as its CRenderPass_Bloom and shaders do it:
 //  - a bright pass over the exposed colour X, at a quarter of the frame's size:
@@ -18,6 +21,9 @@
 //  - the result b added to the frame as b / (1 + b).
 // The EFB holds the tone-mapped colour gamma encoded, so the bright pass undoes the room's
 // tone curve to get X back, and the frame is added to in linear terms.
+// The colour grade follows in the same composite, as Remastered's tonemap shader does it right
+// after its tone curve: a 33^3 LUT over the tone-mapped linear colour, sampled at
+// c * 32/33 + 0.5/33; two LUTs mixed while a grade fades into another.
 namespace aurora::gfx::bloom {
 namespace {
 Module Log("aurora::gfx::bloom");
@@ -32,6 +38,7 @@ struct Uniform {
   float texel[4];
   float tint[4]; // w: the threshold
   float tone[3][4];
+  float grade[4]; // x: B's weight, y: A is a LUT, z: B is a LUT, w: bloom on
 };
 static_assert(sizeof(Uniform) <= SlotSize);
 
@@ -40,11 +47,14 @@ struct Params {
   texel: vec4f,
   tint: vec4f,
   tone: array<vec4f, 3>,
+  grade: vec4f,
 };
 @group(0) @binding(0) var samp: sampler;
 @group(0) @binding(1) var src: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> p: Params;
 @group(0) @binding(3) var bloomTex: texture_2d<f32>;
+@group(0) @binding(4) var lutA: texture_3d<f32>;
+@group(0) @binding(5) var lutB: texture_3d<f32>;
 
 struct VertexOutput {
   @builtin(position) pos: vec4f,
@@ -149,9 +159,17 @@ fn fs_up(in: VertexOutput) -> @location(0) vec4f {
 fn fs_composite(in: VertexOutput) -> @location(0) vec4f {
   let size = vec2i(textureDimensions(src));
   let f = textureLoad(src, min(vec2i(floor(in.pos.xy)), size - vec2i(1)), 0);
-  let b = max(textureSampleLevel(bloomTex, samp, in.uv, 0.0).rgb, vec3f(0.0));
-  let lin = pow(f.rgb, vec3f(2.2)) + b / (1.0 + b);
-  return vec4f(pow(clamp(lin, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), f.a);
+  var lin = pow(f.rgb, vec3f(2.2));
+  if (p.grade.w > 0.5) {
+    let b = max(textureSampleLevel(bloomTex, samp, in.uv, 0.0).rgb, vec3f(0.0));
+    lin += b / (1.0 + b);
+  }
+  lin = clamp(lin, vec3f(0.0), vec3f(1.0));
+  let at = lin * (32.0 / 33.0) + vec3f(0.5 / 33.0);
+  let a = select(lin, textureSampleLevel(lutA, samp, at, 0.0).rgb, p.grade.y > 0.5);
+  let g = select(lin, textureSampleLevel(lutB, samp, at, 0.0).rgb, p.grade.z > 0.5);
+  let graded = mix(a, g, p.grade.x);
+  return vec4f(pow(clamp(graded, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), f.a);
 }
 )";
 
@@ -182,8 +200,55 @@ struct State {
   uint32_t width = 0;
   uint32_t height = 0;
   std::array<Level, Levels> levels;
+  // Grade LUTs by id, and a 1^3 stand-in bound where a pass draws none.
+  std::unordered_map<uint32_t, wgpu::TextureView> luts;
+  wgpu::TextureView noLut;
 };
 State g_state;
+
+// LUTs set by the game thread, uploaded by the next encode.
+std::mutex g_pendingMutex;
+std::unordered_map<uint32_t, std::vector<uint8_t>> g_pendingLuts;
+
+wgpu::TextureView make_lut(uint32_t size, const uint8_t* rgba, const wgpu::Queue& queue) {
+  const wgpu::TextureDescriptor descriptor{
+      .label = "Colour Grade LUT",
+      .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+      .dimension = wgpu::TextureDimension::e3D,
+      .size = {size, size, size},
+      .format = wgpu::TextureFormat::RGBA8Unorm,
+  };
+  const auto texture = g_device.CreateTexture(&descriptor);
+  const wgpu::TexelCopyTextureInfo dst{.texture = texture};
+  const wgpu::TexelCopyBufferLayout layout{.bytesPerRow = size * 4, .rowsPerImage = size};
+  const wgpu::Extent3D extent{size, size, size};
+  queue.WriteTexture(&dst, rgba, size_t(size) * size * size * 4, &layout, &extent);
+  return texture.CreateView();
+}
+
+void upload_pending(const wgpu::Queue& queue) {
+  std::unordered_map<uint32_t, std::vector<uint8_t>> pending;
+  {
+    std::lock_guard lock(g_pendingMutex);
+    pending.swap(g_pendingLuts);
+  }
+  for (const auto& [id, data] : pending) {
+    g_state.luts[id] = make_lut(GradeLutSize, data.data(), queue);
+  }
+  if (!g_state.noLut) {
+    const uint8_t white[4]{255, 255, 255, 255};
+    g_state.noLut = make_lut(1, white, queue);
+  }
+}
+
+wgpu::TextureView find_lut(uint32_t id) {
+  if (id != 0) {
+    if (const auto it = g_state.luts.find(id); it != g_state.luts.end()) {
+      return it->second;
+    }
+  }
+  return {};
+}
 
 wgpu::RenderPipeline make_pipeline(const char* label, const char* entry, wgpu::TextureFormat format,
                                    uint32_t samples, const wgpu::BlendState* blend) {
@@ -237,6 +302,16 @@ void ensure_pipelines() {
           .binding = 3,
           .visibility = wgpu::ShaderStage::Fragment,
           .texture = {.sampleType = wgpu::TextureSampleType::Float, .viewDimension = wgpu::TextureViewDimension::e2D},
+      },
+      wgpu::BindGroupLayoutEntry{
+          .binding = 4,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .texture = {.sampleType = wgpu::TextureSampleType::Float, .viewDimension = wgpu::TextureViewDimension::e3D},
+      },
+      wgpu::BindGroupLayoutEntry{
+          .binding = 5,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .texture = {.sampleType = wgpu::TextureSampleType::Float, .viewDimension = wgpu::TextureViewDimension::e3D},
       },
   };
   const wgpu::BindGroupLayoutDescriptor layoutDescriptor{
@@ -313,12 +388,15 @@ void ensure_targets(uint32_t width, uint32_t height, wgpu::TextureFormat format)
 
 void draw(const wgpu::CommandEncoder& cmd, const wgpu::RenderPipeline& pipeline, uint32_t slot,
           const wgpu::TextureView& source, const wgpu::TextureView& bloomSource, const wgpu::TextureView& target,
-          bool load, const wgpu::TextureView& resolve = {}) {
+          bool load, const wgpu::TextureView& resolve = {}, const wgpu::TextureView& lutA = {},
+          const wgpu::TextureView& lutB = {}) {
   const std::array entries{
       wgpu::BindGroupEntry{.binding = 0, .sampler = g_state.sampler},
       wgpu::BindGroupEntry{.binding = 1, .textureView = source},
       wgpu::BindGroupEntry{.binding = 2, .buffer = g_state.uniforms, .offset = slot * SlotSize, .size = sizeof(Uniform)},
       wgpu::BindGroupEntry{.binding = 3, .textureView = bloomSource},
+      wgpu::BindGroupEntry{.binding = 4, .textureView = lutA ? lutA : g_state.noLut},
+      wgpu::BindGroupEntry{.binding = 5, .textureView = lutB ? lutB : g_state.noLut},
   };
   const wgpu::BindGroupDescriptor groupDescriptor{
       .layout = g_state.layout,
@@ -363,6 +441,13 @@ void encode(const EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd, cons
   }
   ensure_pipelines();
   ensure_targets(width, height, format);
+  upload_pending(ctx.queue);
+  const auto lutA = find_lut(params.gradeA);
+  const auto lutB = find_lut(params.gradeB);
+  const bool bloom = params.bloom != 0;
+  if (!bloom && !lutA && !lutB) {
+    return;
+  }
   if (!g_state.composite || g_state.compositeFormat != format || g_state.compositeSamples != samples) {
     g_state.composite = make_pipeline("Bloom Composite", "fs_composite", format, samples, nullptr);
     g_state.compositeFormat = format;
@@ -380,6 +465,10 @@ void encode(const EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd, cons
     }
     u.tint[3] = params.threshold;
     std::memcpy(u.tone, params.tone, sizeof(u.tone));
+    u.grade[0] = std::clamp(params.gradeWeight, 0.f, 1.f);
+    u.grade[1] = lutA ? 1.f : 0.f;
+    u.grade[2] = lutB ? 1.f : 0.f;
+    u.grade[3] = bloom ? 1.f : 0.f;
     std::memcpy(slots[slot].data(), &u, sizeof(u));
   };
   uint32_t slot = 0;
@@ -402,15 +491,19 @@ void encode(const EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd, cons
 
   slot = 0;
   auto& levels = g_state.levels;
-  draw(cmd, g_state.bright, slot++, g_state.frameView, g_state.frameView, levels[0].view, false);
-  for (uint32_t i = 1; i < Levels; ++i) {
-    draw(cmd, g_state.down, slot++, levels[i - 1].view, levels[i - 1].view, levels[i].view, false);
-  }
-  for (uint32_t i = Levels - 1; i-- > 0;) {
-    draw(cmd, g_state.up, slot++, levels[i + 1].view, levels[i + 1].view, levels[i].view, true);
+  if (bloom) {
+    draw(cmd, g_state.bright, slot++, g_state.frameView, g_state.frameView, levels[0].view, false);
+    for (uint32_t i = 1; i < Levels; ++i) {
+      draw(cmd, g_state.down, slot++, levels[i - 1].view, levels[i - 1].view, levels[i].view, false);
+    }
+    for (uint32_t i = Levels - 1; i-- > 0;) {
+      draw(cmd, g_state.up, slot++, levels[i + 1].view, levels[i + 1].view, levels[i].view, true);
+    }
+  } else {
+    slot = PassCount - 1;
   }
   draw(cmd, g_state.composite, slot++, g_state.frameView, levels[0].view, target.view, true,
-       samples > 1 ? webgpu::g_frameBufferResolved.view : wgpu::TextureView{});
+       samples > 1 ? webgpu::g_frameBufferResolved.view : wgpu::TextureView{}, lutA, lutB);
 }
 } // namespace
 
@@ -425,9 +518,21 @@ bool push(const Params& params) {
   return push_encoder_task(g_state.task, &params, sizeof(params));
 }
 
+void set_grade_lut(uint32_t id, const uint8_t* rgba) {
+  if (id == 0 || rgba == nullptr) {
+    return;
+  }
+  std::lock_guard lock(g_pendingMutex);
+  g_pendingLuts[id].assign(rgba, rgba + size_t(GradeLutSize) * GradeLutSize * GradeLutSize * 4);
+}
+
 void shutdown() {
   const auto task = g_state.task;
   g_state = {};
+  {
+    std::lock_guard lock(g_pendingMutex);
+    g_pendingLuts.clear();
+  }
   if (task != InvalidEncoderTask) {
     unregister_encoder_task_type(task);
   }

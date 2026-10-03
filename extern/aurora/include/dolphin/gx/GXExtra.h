@@ -95,8 +95,13 @@ void GXSetPBRTone(const f32 rows[3][4]);
 // The EFB is taken as drawn through the tone curve `tone` (as GXSetPBRTone); light above
 // `threshold` (exposed luminance) blooms, tints 0 to 3 weight the levels from the coarsest
 // and tint 4 the bright pass. Not a FIFO command: it ends the current pass. False when it
-// could not be recorded.
-GXBool GXPortBloom(f32 threshold, const f32 tints[5][3], const f32 tone[3][4]);
+// could not be recorded. Then the colour grade: the LUTs gradeA and gradeB (ids from
+// GXPortColorGradeLut, 0 = none) over the tone-mapped colour, mixed by gradeWeight (1 = B).
+// Without bloom (bloom false) only the grade runs, and nothing when there is none either.
+GXBool GXPortPostProcess(GXBool bloom, f32 threshold, const f32 tints[5][3], const f32 tone[3][4], u32 gradeA,
+                         u32 gradeB, f32 gradeWeight);
+// Stores a 33x33x33 RGBA8 colour grade LUT (red fastest) under a non-zero id.
+void GXPortColorGradeLut(u32 id, const u8* rgba);
 
 void GXColor4f32(float r, float g, float b, float a);
 

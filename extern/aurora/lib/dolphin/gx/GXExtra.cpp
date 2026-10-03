@@ -7,13 +7,27 @@
 #include <vector>
 
 extern "C" {
-GXBool GXPortBloom(f32 threshold, const f32 tints[5][3], const f32 tone[3][4]) {
+GXBool GXPortPostProcess(GXBool bloom, f32 threshold, const f32 tints[5][3], const f32 tone[3][4], u32 gradeA,
+                         u32 gradeB, f32 gradeWeight) {
   aurora::gfx::bloom::Params params{};
+  params.bloom = bloom ? 1 : 0;
   params.threshold = threshold;
-  std::memcpy(params.tints, tints, sizeof(params.tints));
-  std::memcpy(params.tone, tone, sizeof(params.tone));
+  if (tints != nullptr) {
+    std::memcpy(params.tints, tints, sizeof(params.tints));
+  }
+  if (tone != nullptr) {
+    std::memcpy(params.tone, tone, sizeof(params.tone));
+  }
+  params.gradeA = gradeA;
+  params.gradeB = gradeB;
+  params.gradeWeight = gradeWeight;
+  if (!params.bloom && gradeA == 0 && gradeB == 0) {
+    return true;
+  }
   return aurora::gfx::bloom::push(params);
 }
+
+void GXPortColorGradeLut(u32 id, const u8* rgba) { aurora::gfx::bloom::set_grade_lut(id, rgba); }
 
 void GXDestroyTexObj(GXTexObj* obj_) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
