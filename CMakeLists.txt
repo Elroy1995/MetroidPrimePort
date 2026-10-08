@@ -408,8 +408,25 @@ elseif(CMAKE_LINK_GROUP_USING_RESCAN_SUPPORTED OR CMAKE_CXX_LINK_GROUP_USING_RES
         mp_game
         aurora::main
         "$<LINK_GROUP:RESCAN,aurora::core,aurora::gx>")
+elseif(APPLE)
+    # Apple's linker resolves static archives in any order, so the
+    # aurora::core <-> aurora::gx cycle needs no rescan group.
+    target_link_libraries(metroid_prime_port PRIVATE
+        mp_game
+        aurora::main aurora::core aurora::gx)
 else()
     message(FATAL_ERROR "This port currently requires an ELF linker with RESCAN support or an MSVC-compatible COFF linker")
+endif()
+
+# iOS: build an app bundle instead of a bare executable.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set_target_properties(metroid_prime_port PROPERTIES
+        MACOSX_BUNDLE ON
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.example.metroidprimeport"
+        MACOSX_BUNDLE_BUNDLE_NAME "Metroid Prime"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/ios/Info.plist.in"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.example.metroidprimeport")
 endif()
 
 include(extern/aurora/cmake/AuroraCopyRuntimeDLLs.cmake)
@@ -435,7 +452,9 @@ endif()
 # <SDL_GetBasePath()> + "textures", and Aurora's pipeline cache is opened by name
 # beside the binary. They are installed to bin/ for that reason, not by accident.
 include(GNUInstallDirs)
-install(TARGETS metroid_prime_port RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS metroid_prime_port
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    BUNDLE DESTINATION .)
 if(NOT MP_EMBED_RESOURCES)
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/textures/
         DESTINATION ${CMAKE_INSTALL_BINDIR}/textures)
