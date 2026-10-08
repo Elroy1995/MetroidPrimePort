@@ -18,7 +18,9 @@ jobs:
           rustup target add aarch64-apple-ios
 
       - name: Configure
+        shell: bash
         run: |
+          set -o pipefail
           cmake -S . -B build/ios -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -29,16 +31,25 @@ jobs:
             2>&1 | tee configure.log
 
       - name: Build
+        shell: bash
         run: |
+          set -o pipefail
+          defaults write com.apple.dt.Xcode IDEBuildOperationContinueBuildingAfterErrors -bool YES || true
           cmake --build build/ios --config Release -j 4 2>&1 | tee build.log
 
       - name: Package unsigned IPA
+        shell: bash
         run: |
-          APP=$(find build/ios -name "*.app" -maxdepth 4 | head -n 1)
-          echo "Found app: $APP"
+          APP=$(find build/ios -type d -name "metroid_prime_port.app" | head -n 1)
+          if [ -z "$APP" ] || [ ! -f "$APP/metroid_prime_port" ]; then
+            echo "No built metroid_prime_port.app found"
+            find build/ios -name "*.app"
+            exit 1
+          fi
           mkdir -p Payload
           cp -R "$APP" Payload/
           zip -r MetroidPrime-unsigned.ipa Payload
+          ls -lh MetroidPrime-unsigned.ipa
 
       - uses: actions/upload-artifact@v4
         with:
