@@ -1,1 +1,54 @@
+name: Build iOS
 
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Tools
+        run: |
+          brew install cmake ninja
+          rustup target add aarch64-apple-ios
+
+      - name: Configure
+        run: |
+          cmake -S . -B build/ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+            -DAURORA_ENABLE_TESTS=OFF -DMP_BUILD_TESTS=OFF \
+            2>&1 | tee configure.log
+
+      - name: Build
+        run: |
+          cmake --build build/ios --config Release -j 4 2>&1 | tee build.log
+
+      - name: Package unsigned IPA
+        run: |
+          APP=$(find build/ios -name "*.app" -maxdepth 4 | head -n 1)
+          echo "Found app: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r MetroidPrime-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MetroidPrime-ipa
+          path: MetroidPrime-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs
+          path: |
+            configure.log
+            build.log
