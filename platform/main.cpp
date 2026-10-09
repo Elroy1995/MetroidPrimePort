@@ -43,9 +43,6 @@
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
-#if TARGET_OS_IPHONE
-#import <Foundation/Foundation.h>
-#endif
 #endif
 
 #if defined(__ANDROID__)
@@ -149,42 +146,42 @@ DiscMatch MatchDiscImage(const std::filesystem::path& path) {
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
 // iOS: Searches the sandboxed Documents directory where the user can place files via Files app
 std::string FindDiscInIosDocuments() {
-    @autoreleasepool {
-        NSArray* paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-        if ([paths count] == 0) {
+    namespace fs = std::filesystem;
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || home[0] == '\0') {
+        return {};
+    }
+    fs::path baseDir = fs::path(home) / "Documents";
+    try {
+        std::error_code ec;
+        if (!fs::exists(baseDir, ec) || !fs::is_directory(baseDir, ec)) {
             return {};
         }
-        NSString* docsDir = [paths objectAtIndex:0];
-        std::filesystem::path baseDir([docsDir UTF8String]);
-        namespace fs = std::filesystem;
-        try {
-            std::error_code ec;
-            std::string maybe;
-            std::vector<fs::path> files;
-            for (fs::directory_iterator it(baseDir, ec), end; !ec && it != end; it.increment(ec)) {
-                std::error_code entryEc;
-                if (it->is_regular_file(entryEc) && IsDiscImage(it->path())) {
-                    files.push_back(it->path());
-                }
+        std::string maybe;
+        std::vector<fs::path> files;
+        for (fs::directory_iterator it(baseDir, ec), end; !ec && it != end; it.increment(ec)) {
+            std::error_code entryEc;
+            if (it->is_regular_file(entryEc) && IsDiscImage(it->path())) {
+                files.push_back(it->path());
             }
-            std::sort(files.begin(), files.end());
-            for (const fs::path& file : files) {
-                const DiscMatch match = MatchDiscImage(file);
-                if (match == DiscMatch::Yes) {
-                    PortLog::Write("metroid_prime_port: found valid disc in iOS Documents: %s\n", file.string().c_str());
-                    return file.string();
-                }
-                if (match == DiscMatch::Maybe && maybe.empty()) {
-                    maybe = file.string();
-                }
-            }
-            if (!maybe.empty()) {
-                PortLog::Write("metroid_prime_port: using candidate disc in iOS Documents: %s\n", maybe.c_str());
-                return maybe;
-            }
-        } catch (const std::exception& e) {
-            PortLog::Write("metroid_prime_port: iOS Documents scan failed: %s\n", e.what());
         }
+        std::sort(files.begin(), files.end());
+        for (const fs::path& file : files) {
+            const DiscMatch match = MatchDiscImage(file);
+            if (match == DiscMatch::Yes) {
+                PortLog::Write("metroid_prime_port: found valid disc in iOS Documents: %s\n", file.string().c_str());
+                return file.string();
+            }
+            if (match == DiscMatch::Maybe && maybe.empty()) {
+                maybe = file.string();
+            }
+        }
+        if (!maybe.empty()) {
+            PortLog::Write("metroid_prime_port: using candidate disc in iOS Documents: %s\n", maybe.c_str());
+            return maybe;
+        }
+    } catch (const std::exception& e) {
+        PortLog::Write("metroid_prime_port: iOS Documents scan failed: %s\n", e.what());
     }
     return {};
 }
