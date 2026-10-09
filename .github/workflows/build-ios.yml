@@ -48,6 +48,14 @@ jobs:
             find build/ios -name "*.app"
             exit 1
           fi
+
+          # Enable iOS Files app folder access (File Sharing)
+          if [ -f "$APP/Info.plist" ]; then
+            echo "Injecting File Sharing keys into Info.plist..."
+            /usr/libexec/PlistBuddy -c "Add :UIFileSharingEnabled bool true" "$APP/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :UIFileSharingEnabled true" "$APP/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :LSSupportsOpeningDocumentsInPlace bool true" "$APP/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :LSSupportsOpeningDocumentsInPlace true" "$APP/Info.plist"
+          fi
+
           mkdir -p Payload
           cp -R "$APP" Payload/
           zip -r MetroidPrime-unsigned.ipa Payload
