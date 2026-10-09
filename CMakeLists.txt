@@ -429,6 +429,7 @@ endif()
 # iOS: build an app bundle instead of a bare executable.
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_link_libraries(metroid_prime_port PRIVATE z)
+    target_link_libraries(metroid_prime_port PRIVATE "-framework UIKit" "-framework UniformTypeIdentifiers" "-framework QuartzCore" "-framework Foundation")
     set_target_properties(metroid_prime_port PROPERTIES
         MACOSX_BUNDLE ON
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.example.metroidprimeport"
