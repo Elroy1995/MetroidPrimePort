@@ -16,19 +16,6 @@ jobs:
         run: |
           brew install cmake ninja
           rustup target add aarch64-apple-ios
-          pip3 install --break-system-packages gdown
-
-      - name: Download ISO from Google Drive
-        env:
-          GDRIVE_ISO_ID: ${{ secrets.GDRIVE_ISO_ID }}
-        run: |
-          if [ -z "$GDRIVE_ISO_ID" ]; then
-            echo "Error: GDRIVE_ISO_ID secret is empty."
-            exit 1
-          fi
-          echo "Downloading GameCube disc image..."
-          gdown "https://drive.google.com/uc?id=${GDRIVE_ISO_ID}" -O metroid_prime.iso
-          ls -lh metroid_prime.iso
 
       - name: Configure
         shell: bash
@@ -52,7 +39,7 @@ jobs:
           defaults write com.apple.dt.Xcode IDEBuildOperationContinueBuildingAfterErrors -bool YES || true
           cmake --build build/ios --config Release -j 4 2>&1 | tee build.log
 
-      - name: Package Baked IPA
+      - name: Package unsigned IPA
         shell: bash
         run: |
           APP=$(find build/ios -type d -name "metroid_prime_port.app" | head -n 1)
@@ -62,17 +49,7 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f metroid_prime.iso ]; then
-            echo "metroid_prime.iso not found in working directory!"
-            exit 1
-          fi
-
-          # Bake the ISO into the app bundle root
-          echo "Embedding disc image into app bundle..."
-          cp metroid_prime.iso "$APP/game.iso"
-          cp metroid_prime.iso "$APP/GM8E01.iso"
-
-          # Enable File Sharing in Info.plist as fallback
+          # Enable iOS Files app folder visibility
           if [ -f "$APP/Info.plist" ]; then
             /usr/libexec/PlistBuddy -c "Add :UIFileSharingEnabled bool true" "$APP/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :UIFileSharingEnabled true" "$APP/Info.plist"
             /usr/libexec/PlistBuddy -c "Add :LSSupportsOpeningDocumentsInPlace bool true" "$APP/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :LSSupportsOpeningDocumentsInPlace true" "$APP/Info.plist"
@@ -80,13 +57,13 @@ jobs:
 
           mkdir -p Payload
           cp -R "$APP" Payload/
-          zip -r -0 MetroidPrime-baked.ipa Payload
-          ls -lh MetroidPrime-baked.ipa
+          zip -r MetroidPrime-unsigned.ipa Payload
+          ls -lh MetroidPrime-unsigned.ipa
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MetroidPrime-baked-ipa
-          path: MetroidPrime-baked.ipa
+          name: MetroidPrime-ipa
+          path: MetroidPrime-unsigned.ipa
 
       - uses: actions/upload-artifact@v4
         if: always()
