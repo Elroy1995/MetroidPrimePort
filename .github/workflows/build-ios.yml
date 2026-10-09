@@ -27,7 +27,7 @@ jobs:
             exit 1
           fi
           echo "Downloading GameCube disc image..."
-          gdown --id "$GDRIVE_ISO_ID" -O metroid_prime.iso
+          gdown "https://drive.google.com/uc?id=${GDRIVE_ISO_ID}" -O metroid_prime.iso
           ls -lh metroid_prime.iso
 
       - name: Configure
