@@ -232,6 +232,11 @@ if(ANDROID)
 else()
     list(APPEND MP_PORT_SOURCES platform/port_remastered_ffmpeg.cpp)
 endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    enable_language(OBJCXX)
+    list(APPEND MP_PORT_SOURCES platform/ios_disc_picker.mm)
+    set_source_files_properties(platform/ios_disc_picker.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+endif()
 # The port's own sources build warning-clean: -Wall -Wextra catch mistakes in
 # port code. Decompiled game/engine code (src/, include/) and vendored code
 # (extern/) are excluded. -Wno-multichar: the code deliberately uses 'TXTR'-style
