@@ -30,7 +30,11 @@
 #include <cxxabi.h>
 #include <dlfcn.h>
 #include <sys/syscall.h>
+#if defined(__APPLE__)
+#include <sys/ucontext.h>
+#else
 #include <ucontext.h>
+#endif
 #include <unistd.h>
 #include <unwind.h>
 #endif
@@ -370,7 +374,9 @@ void Describe(Line& line, uintptr_t pc) {
 
 uintptr_t FaultAddress(void* context) {
   const auto* user = static_cast< const ucontext_t* >(context);
-#if defined(__x86_64__)
+#if defined(__APPLE__) && defined(__aarch64__)
+  return static_cast< uintptr_t >(user->uc_mcontext->__ss.__pc);
+#elif defined(__x86_64__)
   return static_cast< uintptr_t >(user->uc_mcontext.gregs[REG_RIP]);
 #elif defined(__aarch64__)
   return static_cast< uintptr_t >(user->uc_mcontext.pc);
@@ -503,6 +509,10 @@ void Install() {
 
 bool RequestStack(long threadId) {
 #if defined(_WIN32)
+  (void)threadId;
+  return false;
+#elif defined(__APPLE__)
+  // No tgkill on iOS; per-thread stack capture is unavailable.
   (void)threadId;
   return false;
 #else
